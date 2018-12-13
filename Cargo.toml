@@ -1,0 +1,14 @@
+[package]
+name = "vr-lab"
+version = "0.1.0"
+authors = ["Mick van Gelderen <mickvangelderen@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+glutin = "0.19.0"
+gl = "0.11.0"
+openvr_sys = { path = "../openvr-sys-rust" }
+ 
+[profile.dev]
+opt-level = 2
