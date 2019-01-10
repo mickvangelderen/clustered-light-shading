@@ -1,71 +1,17 @@
 #![allow(non_snake_case)]
 
-pub mod vr;
+use openvr as vr;
+use openvr::enums::Enum;
 
 use glutin::GlContext;
-use openvr_sys::*;
-
 use std::ffi::CStr;
 use std::mem;
-use std::os::raw::*;
 use std::ptr;
 
 unsafe fn get_string(name: u32) -> &'static str {
     CStr::from_ptr(gl::GetString(name) as *const i8)
         .to_str()
         .unwrap()
-}
-
-unsafe fn vr_get_generic_interface(
-    pchInterfaceVersion: &[u8],
-) -> Result<*mut c_void, EVRInitError> {
-    // NOTE(mickvangelderen): WHAT WHAT WAHT WHY HOW WHERE DOC?
-    let mut magic = Vec::from(b"FnTable:".as_ref());
-    magic.extend(pchInterfaceVersion);
-
-    let mut err = EVRInitError_VRInitError_None;
-    let p = VR_GetGenericInterface(magic.as_ptr() as *const c_char, &mut err);
-    if err == EVRInitError_VRInitError_None {
-        Ok(p as *mut c_void)
-    } else {
-        Err(err)
-    }
-}
-
-unsafe fn vr_init(eApplicationType: EVRApplicationType) -> Result<COpenVRContext, EVRInitError> {
-    let mut err = EVRInitError_VRInitError_None;
-    let _token = VR_InitInternal(&mut err, eApplicationType);
-    if err == EVRInitError_VRInitError_None {
-        Ok(COpenVRContext {
-            m_pVRSystem: vr_get_generic_interface(IVRSystem_Version.as_ref())? as isize,
-            m_pVRChaperone: vr_get_generic_interface(IVRChaperone_Version.as_ref())? as isize,
-            m_pVRChaperoneSetup: vr_get_generic_interface(IVRChaperoneSetup_Version.as_ref())?
-                as isize,
-            m_pVRCompositor: vr_get_generic_interface(IVRCompositor_Version.as_ref())? as isize,
-            m_pVROverlay: vr_get_generic_interface(IVROverlay_Version.as_ref())? as isize,
-            m_pVRResources: vr_get_generic_interface(IVRResources_Version.as_ref())? as isize,
-            m_pVRRenderModels: vr_get_generic_interface(IVRRenderModels_Version.as_ref())? as isize,
-            m_pVRExtendedDisplay: vr_get_generic_interface(IVRExtendedDisplay_Version.as_ref())?
-                as isize,
-            m_pVRSettings: vr_get_generic_interface(IVRSettings_Version.as_ref())? as isize,
-            m_pVRApplications: vr_get_generic_interface(IVRApplications_Version.as_ref())? as isize,
-            m_pVRTrackedCamera: vr_get_generic_interface(IVRTrackedCamera_Version.as_ref())?
-                as isize,
-            m_pVRScreenshots: vr_get_generic_interface(IVRScreenshots_Version.as_ref())? as isize,
-            m_pVRDriverManager: vr_get_generic_interface(IVRDriverManager_Version.as_ref())?
-                as isize,
-            m_pVRInput: vr_get_generic_interface(IVRInput_Version.as_ref())? as isize,
-            m_pVRIOBuffer: vr_get_generic_interface(IVRIOBuffer_Version.as_ref())? as isize,
-            m_pVRSpatialAnchors: vr_get_generic_interface(IVRSpatialAnchors_Version.as_ref())?
-                as isize,
-        })
-    } else {
-        Err(err)
-    }
-}
-
-unsafe fn vr_shutdown() {
-    VR_ShutdownInternal();
 }
 
 fn main() {
@@ -91,45 +37,15 @@ fn main() {
     }
 
     // === VR ===
-    let vr_context = unsafe {
-        let vr_context = vr_init(EVRApplicationType_VRApplication_Scene).unwrap_or_else(|err| {
-            panic!(
-                "{}",
-                CStr::from_ptr(VR_GetVRInitErrorAsEnglishDescription(err))
-                    .to_str()
-                    .unwrap()
-            );
-        });
-        vr_context
-    };
+    let vr_context = vr::Context::new(vr::ApplicationType::Scene).unwrap_or_else(|error| {
+        panic!("Failed to acquire context: {:?}", vr::InitError::from_unchecked(error).unwrap());
+    });
+    let vr_system = vr::System::new(&vr_context).unwrap();
+    // let vr_compositor = vr::Compositor::new(&vr_context).unwrap();
 
-    let vr_system;
-    let vr_compositor;
-    unsafe {
-        vr_system = {
-            let p = vr_context.m_pVRSystem as *const VR_IVRSystem_FnTable;
-            if p == ptr::null_mut() {
-                panic!("m_pVRSystem is null");
-            }
-            &*p
-        };
+    let render_dims = vr_system.get_recommended_render_target_size();
 
-        vr_compositor = {
-            let p = vr_context.m_pVRCompositor as *const VR_IVRCompositor_FnTable;
-            if p == ptr::null_mut() {
-                panic!("m_pVRCompositor is null");
-            }
-            &*p
-        }
-    }
-
-    let mut recRenW: u32 = 0;
-    let mut recRenH: u32 = 0;
-    unsafe {
-        vr_system.GetRecommendedRenderTargetSize.unwrap()(&mut recRenW, &mut recRenH);
-    }
-
-    println!("{} {}", recRenW, recRenH);
+    println!("Recommender render target size: {:?}", render_dims);
 
     // --- VR ---
 
@@ -158,8 +74,8 @@ fn main() {
                 gl::TEXTURE_2D,
                 0,
                 gl::RGBA8 as i32,
-                recRenW as i32,
-                recRenH as i32,
+                render_dims.width as i32,
+                render_dims.height as i32,
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
@@ -251,29 +167,19 @@ fn main() {
         });
 
         // === VR ===
-        unsafe {
-            let mut event: VREvent_t = mem::zeroed();
-            while vr_system.PollNextEvent.unwrap()(&mut event, mem::size_of::<VREvent_t>() as u32) {
-                let event_type = vr::EventType::from_u32(event.eventType).unwrap();
-
-                println!(
-                    "event {:?}, device {}, age {}",
-                    event_type, event.trackedDeviceIndex, event.eventAgeSeconds
-                );
-
-                match event_type {
-                    vr::EventType::TrackedDeviceActivated => {
-                        println!("Device {} detached.", event.trackedDeviceIndex);
-                    }
-                    vr::EventType::TrackedDeviceUpdated => {}
-                    _ => {}
-                }
-            }
-
-            let mut poses: [TrackedDevicePose_t; k_unMaxTrackedDeviceCount as usize] = mem::zeroed();
-
-            vr_compositor.WaitGetPoses.unwrap()(poses.as_mut_ptr(), k_unMaxTrackedDeviceCount, ptr::null_mut(), 0);
+        while let Some(event) = vr_system.poll_next_event() {
+            println!("{:?}", &event);
         }
+
+        // let mut poses: [sys::TrackedDevicePose_t; sys::k_unMaxTrackedDeviceCount as usize] =
+        //     mem::zeroed();
+
+        // vr_compositor.fn_table.WaitGetPoses.unwrap()(
+        //     poses.as_mut_ptr(),
+        //     sys::k_unMaxTrackedDeviceCount,
+        //     ptr::null_mut(),
+        //     0,
+        // );
         // --- VR ---
 
         // draw everything here
@@ -292,7 +198,7 @@ fn main() {
 
         // === VR ===
         unsafe {
-            gl::Viewport(0, 0, recRenW as i32, recRenH as i32);
+            gl::Viewport(0, 0, render_dims.width as i32, render_dims.height as i32);
             gl::BindFramebuffer(gl::FRAMEBUFFER, vr_fb);
             gl::ClearColor(0.6, 0.7, 0.8, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
@@ -303,25 +209,25 @@ fn main() {
             // vr::Texture_t rightEyeTexture = {(void*)(uintptr_t)rightEyeDesc.m_nResolveTextureId, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
             // vr::VRCompositor()->Submit(vr::Eye_Right, &rightEyeTexture );
 
-            let mut l = Texture_t {
-                handle: &vr_fb_tex as *const u32 as *mut c_void, // Screw it
-                eType: ETextureType_TextureType_OpenGL,
-                eColorSpace: EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
-            };
+            // let mut l = sys::Texture_t {
+            //     handle: &vr_fb_tex as *const u32 as *mut c_void, // Screw it
+            //     eType: sys::ETextureType_TextureType_OpenGL,
+            //     eColorSpace: sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
+            // };
             gl::BindTexture(gl::TEXTURE_2D, vr_fb_tex);
             {
-                vr_compositor.Submit.unwrap()(
-                    EVREye_Eye_Left,
-                    &mut l,
-                    ptr::null_mut(),
-                    EVRSubmitFlags_Submit_Default,
-                );
-                vr_compositor.Submit.unwrap()(
-                    EVREye_Eye_Right,
-                    &mut l,
-                    ptr::null_mut(),
-                    EVRSubmitFlags_Submit_Default,
-                );
+                // vr_compositor.fn_table.Submit.unwrap()(
+                //     sys::EVREye_Eye_Left,
+                //     &mut l,
+                //     ptr::null_mut(),
+                //     sys::EVRSubmitFlags_Submit_Default,
+                // );
+                // vr_compositor.fn_table.Submit.unwrap()(
+                //     sys::EVREye_Eye_Right,
+                //     &mut l,
+                //     ptr::null_mut(),
+                //     sys::EVRSubmitFlags_Submit_Default,
+                // );
             }
             gl::BindTexture(gl::TEXTURE_2D, 0);
         }
@@ -331,12 +237,6 @@ fn main() {
 
         std::thread::sleep(std::time::Duration::from_millis(17));
     }
-
-    // === VR ===
-    unsafe {
-        vr_shutdown();
-    }
-    // --- VR ---
 }
 
 static VERTEX_DATA: [f32; 15] = [

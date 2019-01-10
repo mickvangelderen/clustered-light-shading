@@ -8,7 +8,13 @@ publish = false
 [dependencies]
 glutin = "0.19.0"
 gl = "0.11.0"
-openvr_sys = { path = "../openvr-sys-rust" }
+openvr = { git = "https://github.com/mickvangelderen/openvr-rust", branch = "0.1.x" }
  
+[patch."https://github.com/mickvangelderen/openvr-sys-rust"]
+openvr-sys = { path = "../openvr-sys-rust" }
+
+[patch."https://github.com/mickvangelderen/openvr-rust"]
+openvr = { path = "../openvr-rust" }
+
 [profile.dev]
 opt-level = 2

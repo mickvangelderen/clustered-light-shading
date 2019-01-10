@@ -16,3 +16,8 @@ Run with steam-runtime, for example:
 Probably missed something.
 
 I am really frustrated that things don't work right now.
+
+## Troubleshooting
+
+If SteamVR is running and *then* you plug in the HMD, it will not work, at least
+on Linux by Jan 2019. Kill the SteamVR processes and start the application.
