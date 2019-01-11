@@ -6,6 +6,7 @@ use openvr::enums::Enum;
 use glutin::GlContext;
 use std::ffi::CStr;
 use std::mem;
+use std::os::raw::c_void;
 use std::ptr;
 
 unsafe fn get_string(name: u32) -> &'static str {
@@ -44,7 +45,7 @@ fn main() {
         );
     });
     let vr_system = vr::System::new(&vr_context).unwrap();
-    // let vr_compositor = vr::Compositor::new(&vr_context).unwrap();
+    let vr_compositor = vr::Compositor::new(&vr_context).unwrap();
 
     let render_dims = vr_system.get_recommended_render_target_size();
 
@@ -54,54 +55,72 @@ fn main() {
 
     unsafe { gl_window.make_current().unwrap() };
 
-    let vr_fb;
-    let vr_fb_tex;
+    let vr_fb_left;
+    let vr_fb_left_tex;
 
-    unsafe {
-        vr_fb = {
+    let vr_fb_right;
+    let vr_fb_right_tex;
+
+    unsafe fn create_fb_and_tex(dims: vr::Dimensions) -> (u32, u32) {
+        let fb = {
             let mut names: [u32; 1] = mem::uninitialized();
             gl::GenFramebuffers(names.len() as i32, names.as_mut_ptr());
             assert!(names[0] > 0, "Failed to acquire framebuffer.");
             names[0]
         };
-        vr_fb_tex = {
+        let tex = {
             let mut names: [u32; 1] = mem::uninitialized();
             gl::GenTextures(names.len() as i32, names.as_mut_ptr());
             assert!(names[0] > 0, "Failed to acquire texture.");
             names[0]
         };
 
-        gl::BindTexture(gl::TEXTURE_2D, vr_fb_tex);
+        gl::BindTexture(gl::TEXTURE_2D, tex);
         {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
                 gl::RGBA8 as i32,
-                render_dims.width as i32,
-                render_dims.height as i32,
+                dims.width as i32,
+                dims.height as i32,
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
                 ptr::null(),
             );
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
         }
         gl::BindTexture(gl::TEXTURE_2D, 0);
 
-        gl::BindFramebuffer(gl::FRAMEBUFFER, vr_fb);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, fb);
         {
             gl::FramebufferTexture2D(
                 gl::FRAMEBUFFER,
                 gl::COLOR_ATTACHMENT0,
                 gl::TEXTURE_2D,
-                vr_fb_tex,
+                tex,
                 0,
             );
 
             assert!(gl::CheckFramebufferStatus(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE);
         }
         gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        (fb, tex)
+    }
+
+    unsafe {
+        {
+            let r = create_fb_and_tex(render_dims);
+            vr_fb_left = r.0;
+            vr_fb_left_tex = r.1;
+        }
+
+        {
+            let r = create_fb_and_tex(render_dims);
+            vr_fb_right = r.0;
+            vr_fb_right_tex = r.1;
+        }
 
         let vs = gl::CreateShader(gl::VERTEX_SHADER);
         gl::ShaderSource(vs, 1, [VS_SRC.as_ptr() as *const _].as_ptr(), ptr::null());
@@ -195,15 +214,10 @@ fn main() {
             println!("{:?}", &event);
         }
 
-        // let mut poses: [sys::TrackedDevicePose_t; sys::k_unMaxTrackedDeviceCount as usize] =
-        //     mem::zeroed();
+        let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
+            unsafe { mem::zeroed() };
 
-        // vr_compositor.fn_table.WaitGetPoses.unwrap()(
-        //     poses.as_mut_ptr(),
-        //     sys::k_unMaxTrackedDeviceCount,
-        //     ptr::null_mut(),
-        //     0,
-        // );
+        vr_compositor.wait_get_poses(&mut poses[..], None).unwrap();
         // --- VR ---
 
         // draw everything here
@@ -221,7 +235,7 @@ fn main() {
         }
 
         // === VR ===
-        unsafe {
+        unsafe fn render_vr(vr_fb: u32, render_dims: vr::Dimensions) {
             gl::Viewport(0, 0, render_dims.width as i32, render_dims.height as i32);
             gl::BindFramebuffer(gl::FRAMEBUFFER, vr_fb);
             gl::ClearColor(0.6, 0.7, 0.8, 1.0);
@@ -232,28 +246,48 @@ fn main() {
             // vr::VRCompositor()->Submit(vr::Eye_Left, &leftEyeTexture );
             // vr::Texture_t rightEyeTexture = {(void*)(uintptr_t)rightEyeDesc.m_nResolveTextureId, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
             // vr::VRCompositor()->Submit(vr::Eye_Right, &rightEyeTexture );
+        }
 
-            // let mut l = sys::Texture_t {
-            //     handle: &vr_fb_tex as *const u32 as *mut c_void, // Screw it
-            //     eType: sys::ETextureType_TextureType_OpenGL,
-            //     eColorSpace: sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
-            // };
-            gl::BindTexture(gl::TEXTURE_2D, vr_fb_tex);
+        unsafe {
+            render_vr(vr_fb_left, render_dims);
+            render_vr(vr_fb_right, render_dims);
+
+            let mut l = vr::sys::Texture_t {
+                handle: &vr_fb_left_tex as *const u32 as *mut c_void, // Screw it
+                eType: vr::sys::ETextureType_TextureType_OpenGL,
+                eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
+            };
+
+            let mut r = vr::sys::Texture_t {
+                handle: &vr_fb_right_tex as *const u32 as *mut c_void, // Screw it
+                eType: vr::sys::ETextureType_TextureType_OpenGL,
+                eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
+            };
+
+            // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
+            // gl::BindTexture(gl::TEXTURE_2D, vr_fb_left_tex);
             {
-                // vr_compositor.fn_table.Submit.unwrap()(
-                //     sys::EVREye_Eye_Left,
-                //     &mut l,
-                //     ptr::null_mut(),
-                //     sys::EVRSubmitFlags_Submit_Default,
-                // );
-                // vr_compositor.fn_table.Submit.unwrap()(
-                //     sys::EVREye_Eye_Right,
-                //     &mut l,
-                //     ptr::null_mut(),
-                //     sys::EVRSubmitFlags_Submit_Default,
-                // );
+                vr_compositor
+                    .submit(vr::Eye::Left, &mut l, None, vr::SubmitFlag::Default)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "failed to submit texture: {:?}",
+                            vr::CompositorError::from_unchecked(error).unwrap()
+                        );
+                    });
             }
-            gl::BindTexture(gl::TEXTURE_2D, 0);
+            // gl::BindTexture(gl::TEXTURE_2D, vr_fb_right_tex);
+            {
+                vr_compositor
+                    .submit(vr::Eye::Right, &mut r, None, vr::SubmitFlag::Default)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "failed to submit texture: {:?}",
+                            vr::CompositorError::from_unchecked(error).unwrap()
+                        );
+                    });
+            }
+            // gl::BindTexture(gl::TEXTURE_2D, 0);
         }
         // --- VR ---
 
