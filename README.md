@@ -19,5 +19,11 @@ I am really frustrated that things don't work right now.
 
 ## Troubleshooting
 
-If SteamVR is running and *then* you plug in the HMD, it will not work, at least
-on Linux by Jan 2019. Kill the SteamVR processes and start the application.
+1. If SteamVR is running and *then* you plug in the HMD, it will not work, at
+   least on Linux by Jan 2019. Kill the SteamVR processes and start the
+   application.
+
+2. If SteamVR is not running and you start the application, it might give up
+   before SteamVR has completely launched and exit. Starting the application
+   again might make things work because SteamVR had time to launch.
+
