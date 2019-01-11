@@ -38,7 +38,10 @@ fn main() {
 
     // === VR ===
     let vr_context = vr::Context::new(vr::ApplicationType::Scene).unwrap_or_else(|error| {
-        panic!("Failed to acquire context: {:?}", vr::InitError::from_unchecked(error).unwrap());
+        panic!(
+            "Failed to acquire context: {:?}",
+            vr::InitError::from_unchecked(error).unwrap()
+        );
     });
     let vr_system = vr::System::new(&vr_context).unwrap();
     // let vr_compositor = vr::Compositor::new(&vr_context).unwrap();
@@ -152,18 +155,39 @@ fn main() {
 
     let mut running = true;
     while running {
-        events_loop.poll_events(|event| match event {
-            glutin::Event::WindowEvent { event, .. } => match event {
-                glutin::WindowEvent::CloseRequested => running = false,
-                glutin::WindowEvent::HiDpiFactorChanged(x) => {
-                    win_dpi = x;
+        events_loop.poll_events(|event| {
+            use glutin::Event;
+            match event {
+                Event::WindowEvent { event, .. } => {
+                    use glutin::WindowEvent;
+                    match event {
+                        WindowEvent::CloseRequested => running = false,
+                        WindowEvent::HiDpiFactorChanged(x) => {
+                            win_dpi = x;
+                        }
+                        WindowEvent::Resized(x) => {
+                            win_size = x;
+                        }
+                        _ => (),
+                    }
                 }
-                glutin::WindowEvent::Resized(x) => {
-                    win_size = x;
+                Event::DeviceEvent { event, .. } => {
+                    use glutin::DeviceEvent;
+                    match event {
+                        DeviceEvent::Key(keyboard_input) => {
+                            if let Some(vk) = keyboard_input.virtual_keycode {
+                                use glutin::VirtualKeyCode;
+                                match vk {
+                                    VirtualKeyCode::Escape => running = false,
+                                    _ => (),
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
                 }
                 _ => (),
-            },
-            _ => (),
+            }
         });
 
         // === VR ===
