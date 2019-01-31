@@ -21,7 +21,9 @@ fn main() {
         glutin::WindowBuilder::new()
             .with_title("Hello world!")
             .with_dimensions(glutin::dpi::LogicalSize::new(1024.0, 768.0)),
-        glutin::ContextBuilder::new(),
+        glutin::ContextBuilder::new()
+            .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
+            .with_gl_profile(glutin::GlProfile::Core),
         &events_loop,
     )
     .unwrap();
