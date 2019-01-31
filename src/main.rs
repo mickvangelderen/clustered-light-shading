@@ -253,13 +253,13 @@ fn main() {
             render_vr(vr_fb_right, render_dims);
 
             let mut l = vr::sys::Texture_t {
-                handle: &vr_fb_left_tex as *const u32 as *mut c_void, // Screw it
+                handle: vr_fb_left_tex as usize as *const u32 as *mut c_void, // Screw it
                 eType: vr::sys::ETextureType_TextureType_OpenGL,
                 eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
             };
 
             let mut r = vr::sys::Texture_t {
-                handle: &vr_fb_right_tex as *const u32 as *mut c_void, // Screw it
+                handle: vr_fb_right_tex as usize as *const u32 as *mut c_void, // Screw it
                 eType: vr::sys::ETextureType_TextureType_OpenGL,
                 eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
             };
