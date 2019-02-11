@@ -10,7 +10,7 @@ Probably only works on unixies.
 Run with steam-runtime, for example:
 
 ```
-~/.steam/steam/ubuntu12_32/steam-runtime/run.sh lldb ./vr-lab
+~/.steam/steam/ubuntu12_32/steam-runtime/run.sh lldb target/debug/vr-lab
 ```
 
 Probably missed something.
