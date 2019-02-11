@@ -9,12 +9,16 @@ publish = false
 glutin = "0.19.0"
 gl = "0.11.0"
 openvr = { git = "https://github.com/mickvangelderen/openvr-rust", branch = "0.1.x" }
+gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", branch = "0.1.x" }
  
 [patch."https://github.com/mickvangelderen/openvr-sys-rust"]
 openvr-sys = { path = "../openvr-sys-rust" }
 
 [patch."https://github.com/mickvangelderen/openvr-rust"]
 openvr = { path = "../openvr-rust" }
+
+[patch."https://github.com/mickvangelderen/gl-typed-rust"]
+gl-typed = { path = "../gl-typed-rust" }
 
 [profile.dev]
 opt-level = 2
