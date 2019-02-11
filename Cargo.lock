@@ -295,6 +295,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gl-typed"
+version = "0.1.0"
+dependencies = [
+ "gl_generator 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "gl_generator"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -859,6 +866,7 @@ name = "vr-lab"
 version = "0.1.0"
 dependencies = [
  "gl 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gl-typed 0.1.0",
  "glutin 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "openvr 0.1.0",
 ]
