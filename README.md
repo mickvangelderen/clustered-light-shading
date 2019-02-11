@@ -1,7 +1,8 @@
 Requires https://github.com/mickvangelderen/openvr-sys-rust as a sibling
 directory. Sorry didn't bother with setting up a cargo workspace.
 
-Requires SteamVR (installed through steam). 
+Requires SteamVR (installed through steam) and standard OpenGL development
+headers and libraries to be installed.
 
 Requires rust (nigtly probably)
 
@@ -28,6 +29,9 @@ I am really frustrated that things don't work right now.
    again might make things work because SteamVR had time to launch.
    
 3. If you're using a single base-station, make sure it is configured as type A.
+
+4. If somethings up with the config path:
+   https://github.com/ValveSoftware/SteamVR-for-Linux/issues/89
 
 ## Interesting stuff
 

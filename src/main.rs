@@ -3,17 +3,11 @@
 use openvr as vr;
 use openvr::enums::Enum;
 
+use gl_typed as gl;
 use glutin::GlContext;
-use std::ffi::CStr;
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
-
-unsafe fn get_string(name: u32) -> &'static str {
-    CStr::from_ptr(gl::GetString(name) as *const i8)
-        .to_str()
-        .unwrap()
-}
 
 fn main() {
     let mut events_loop = glutin::EventsLoop::new();
@@ -33,10 +27,10 @@ fn main() {
 
     unsafe { gl_window.make_current().unwrap() };
 
-    let _ = gl::load_with(|s| gl_window.context().get_proc_address(s) as *const _);
+    let gl = unsafe { gl::Gl::load_with(|s| gl_window.context().get_proc_address(s) as *const _) };
 
     unsafe {
-        println!("OpenGL version {}", get_string(gl::VERSION));
+        println!("OpenGL version {}", gl.get_string(gl::VERSION));
     }
 
     // === VR ===
@@ -63,115 +57,137 @@ fn main() {
     let vr_fb_right;
     let vr_fb_right_tex;
 
-    unsafe fn create_fb_and_tex(dims: vr::Dimensions) -> (u32, u32) {
+    unsafe fn recompile_shader(gl: &gl::Gl,
+                             name: &mut gl::ShaderName,
+                             source: &[u8],
+    ) -> Result<(), String> {
+        gl.shader_source(name, &[source]);
+        gl.compile_shader(name);
+        let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
+        if status == gl::ShaderCompileStatus::Compiled.into() {
+            Ok(())
+        } else {
+            let log = gl.get_shader_info_log_move(&name);
+            Err(String::from_utf8(log).unwrap())
+        }
+    }
+
+    unsafe fn create_fb_and_tex(
+        gl: &gl::Gl,
+        dims: vr::Dimensions,
+    ) -> (gl::FramebufferName, gl::TextureName) {
         let fb = {
-            let mut names: [u32; 1] = mem::uninitialized();
-            gl::GenFramebuffers(names.len() as i32, names.as_mut_ptr());
-            assert!(names[0] > 0, "Failed to acquire framebuffer.");
-            names[0]
+            let mut names: [Option<gl::FramebufferName>; 1] = mem::uninitialized();
+            gl.gen_framebuffers(&mut names);
+            let [ name ] = names;
+            name.expect("Failed to acquire framebuffer name.")
         };
         let tex = {
-            let mut names: [u32; 1] = mem::uninitialized();
-            gl::GenTextures(names.len() as i32, names.as_mut_ptr());
-            assert!(names[0] > 0, "Failed to acquire texture.");
-            names[0]
+            let mut names: [Option<gl::TextureName>; 1] = mem::uninitialized();
+            gl.gen_textures(&mut names);
+            let [ name ] = names;
+            name.expect("Failed to acquire texture name.")
         };
 
-        gl::BindTexture(gl::TEXTURE_2D, tex);
+        gl.bind_texture(gl::TEXTURE_2D, &tex);
         {
-            gl::TexImage2D(
+            gl.tex_image_2d(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA8 as i32,
+                gl::RGBA8,
                 dims.width as i32,
                 dims.height as i32,
-                0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
                 ptr::null(),
             );
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
         }
-        gl::BindTexture(gl::TEXTURE_2D, 0);
+        gl.bind_texture(gl::TEXTURE_2D, &gl::Unbind);
 
-        gl::BindFramebuffer(gl::FRAMEBUFFER, fb);
+        gl.bind_framebuffer(gl::FRAMEBUFFER, &fb);
         {
-            gl::FramebufferTexture2D(
+            gl.framebuffer_texture_2d(
                 gl::FRAMEBUFFER,
                 gl::COLOR_ATTACHMENT0,
                 gl::TEXTURE_2D,
-                tex,
+                &tex,
                 0,
             );
 
-            assert!(gl::CheckFramebufferStatus(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE);
+            assert!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE.into()
+            );
         }
-        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
         (fb, tex)
     }
 
     unsafe {
         {
-            let r = create_fb_and_tex(render_dims);
+            let r = create_fb_and_tex(&gl, render_dims);
             vr_fb_left = r.0;
             vr_fb_left_tex = r.1;
         }
 
         {
-            let r = create_fb_and_tex(render_dims);
+            let r = create_fb_and_tex(&gl, render_dims);
             vr_fb_right = r.0;
             vr_fb_right_tex = r.1;
         }
 
-        let vs = gl::CreateShader(gl::VERTEX_SHADER);
-        gl::ShaderSource(vs, 1, [VS_SRC.as_ptr() as *const _].as_ptr(), ptr::null());
-        gl::CompileShader(vs);
+        let mut vs = gl
+            .create_shader(gl::VERTEX_SHADER)
+            .expect("Failed to create shader.");
+        recompile_shader(&gl, &mut vs, VS_SRC).unwrap_or_else(|e| panic!("{}", e));
 
-        let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
-        gl::ShaderSource(fs, 1, [FS_SRC.as_ptr() as *const _].as_ptr(), ptr::null());
-        gl::CompileShader(fs);
+        let mut fs = gl
+            .create_shader(gl::FRAGMENT_SHADER)
+            .expect("Failed to create shader.");
+        recompile_shader(&gl, &mut fs, FS_SRC).unwrap_or_else(|e| panic!("{}", e));
 
-        let program = gl::CreateProgram();
-        gl::AttachShader(program, vs);
-        gl::AttachShader(program, fs);
-        gl::LinkProgram(program);
-        gl::UseProgram(program);
+        let mut program = gl.create_program().expect("Failed to create program.");
+        gl.attach_shader(&mut program, &vs);
+        gl.attach_shader(&mut program, &fs);
+        gl.link_program(&mut program);
+        gl.use_program(&program);
 
-        let mut vb = mem::uninitialized();
-        gl::GenBuffers(1, &mut vb);
-        gl::BindBuffer(gl::ARRAY_BUFFER, vb);
-        gl::BufferData(
-            gl::ARRAY_BUFFER,
-            mem::size_of_val(&VERTEX_DATA) as isize,
-            VERTEX_DATA.as_ptr() as *const _,
-            gl::STATIC_DRAW,
-        );
+        let vb = {
+            let mut names: [Option<gl::BufferName>; 1] = mem::uninitialized();
+            gl.gen_buffers(&mut names);
+            let [ name ] = names;
+            name.expect("Failed to acquire buffer name.")
+        };
+        gl.bind_buffer(gl::ARRAY_BUFFER, &vb);
+        gl.buffer_data(gl::ARRAY_BUFFER, &VERTEX_DATA, gl::STATIC_DRAW);
 
-        let mut vao = mem::uninitialized();
-        gl::GenVertexArrays(1, &mut vao);
-        gl::BindVertexArray(vao);
+        let vao = {
+            let mut names: [Option<gl::VertexArrayName>; 1] = mem::uninitialized();
+            gl.gen_vertex_arrays(&mut names);
+            let [ name ] = names;
+            name.expect("Failed to acquire vertex array name.")
+        };
+        gl.bind_vertex_array(&vao);
 
-        let pos_attrib = gl::GetAttribLocation(program, b"position\0".as_ptr() as *const _);
-        let color_attrib = gl::GetAttribLocation(program, b"color\0".as_ptr() as *const _);
-        gl::VertexAttribPointer(
-            pos_attrib as u32,
-            2,
-            gl::FLOAT,
-            0,
-            5 * mem::size_of::<f32>() as i32,
-            ptr::null(),
-        );
-        gl::VertexAttribPointer(
-            color_attrib as u32,
+        let pos_attrib = gl
+            .get_attrib_location(&program, gl::static_cstr!("position"))
+            .expect("Could not find attribute location.");
+        let color_attrib = gl
+            .get_attrib_location(&program, gl::static_cstr!("color"))
+            .expect("Could not find attribute location.");
+        const STRIDE: usize = 5 * mem::size_of::<f32>();
+        gl.vertex_attrib_pointer(&pos_attrib, 2, gl::FLOAT, gl::FALSE, STRIDE, 0);
+        gl.vertex_attrib_pointer(
+            &color_attrib,
             3,
             gl::FLOAT,
-            0,
-            5 * mem::size_of::<f32>() as i32,
-            (2 * mem::size_of::<f32>()) as *const () as *const _,
+            gl::FALSE,
+            STRIDE,
+            2 * mem::size_of::<f32>(),
         );
-        gl::EnableVertexAttribArray(pos_attrib as u32);
-        gl::EnableVertexAttribArray(color_attrib as u32);
+        gl.enable_vertex_attrib_array(&pos_attrib);
+        gl.enable_vertex_attrib_array(&color_attrib);
     }
 
     let mut running = true;
@@ -225,25 +241,25 @@ fn main() {
         // draw everything here
         unsafe {
             let physical_size = win_size.to_physical(win_dpi);
-            gl::Viewport(
+            gl.viewport(
                 0,
                 0,
                 physical_size.width as i32,
                 physical_size.height as i32,
             );
-            gl::ClearColor(0.6, 0.7, 0.8, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-            gl::DrawArrays(gl::TRIANGLES, 0, 3);
+            gl.clear_color(0.6, 0.7, 0.8, 1.0);
+            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT);
+            gl.draw_arrays(gl::TRIANGLES, 0, 3);
         }
 
         // === VR ===
-        unsafe fn render_vr(vr_fb: u32, render_dims: vr::Dimensions) {
-            gl::Viewport(0, 0, render_dims.width as i32, render_dims.height as i32);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, vr_fb);
-            gl::ClearColor(0.6, 0.7, 0.8, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-            gl::DrawArrays(gl::TRIANGLES, 0, 3);
-            gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        unsafe fn render_vr(gl: &gl::Gl, vr_fb: &gl::FramebufferName, render_dims: vr::Dimensions) {
+            gl.viewport(0, 0, render_dims.width as i32, render_dims.height as i32);
+            gl.bind_framebuffer(gl::FRAMEBUFFER, vr_fb);
+            gl.clear_color(0.6, 0.7, 0.8, 1.0);
+            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT);
+            gl.draw_arrays(gl::TRIANGLES, 0, 3);
+            gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
             // vr::Texture_t leftEyeTexture = {(void*)(uintptr_t)leftEyeDesc.m_nResolveTextureId, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
             // vr::VRCompositor()->Submit(vr::Eye_Left, &leftEyeTexture );
             // vr::Texture_t rightEyeTexture = {(void*)(uintptr_t)rightEyeDesc.m_nResolveTextureId, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
@@ -251,17 +267,17 @@ fn main() {
         }
 
         unsafe {
-            render_vr(vr_fb_left, render_dims);
-            render_vr(vr_fb_right, render_dims);
+            render_vr(&gl, &vr_fb_left, render_dims);
+            render_vr(&gl, &vr_fb_right, render_dims);
 
             let mut l = vr::sys::Texture_t {
-                handle: vr_fb_left_tex as usize as *const u32 as *mut c_void, // Screw it
+                handle: vr_fb_left_tex.as_u32() as usize as *const c_void as *mut c_void, // Screw it
                 eType: vr::sys::ETextureType_TextureType_OpenGL,
                 eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
             };
 
             let mut r = vr::sys::Texture_t {
-                handle: vr_fb_right_tex as usize as *const u32 as *mut c_void, // Screw it
+                handle: vr_fb_right_tex.as_u32() as usize as *const c_void as *mut c_void, // Screw it
                 eType: vr::sys::ETextureType_TextureType_OpenGL,
                 eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
             };
