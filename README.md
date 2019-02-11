@@ -27,6 +27,7 @@ I am really frustrated that things don't work right now.
    before SteamVR has completely launched and exit. Starting the application
    again might make things work because SteamVR had time to launch.
    
+3. If you're using a single base-station, make sure it is configured as type A.
 
 ## Interesting stuff
 
