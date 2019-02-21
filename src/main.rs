@@ -260,10 +260,6 @@ fn main() {
             gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT);
             gl.draw_arrays(gl::TRIANGLES, 0, 3);
             gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
-            // vr::Texture_t leftEyeTexture = {(void*)(uintptr_t)leftEyeDesc.m_nResolveTextureId, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
-            // vr::VRCompositor()->Submit(vr::Eye_Left, &leftEyeTexture );
-            // vr::Texture_t rightEyeTexture = {(void*)(uintptr_t)rightEyeDesc.m_nResolveTextureId, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
-            // vr::VRCompositor()->Submit(vr::Eye_Right, &rightEyeTexture );
         }
 
         unsafe {
