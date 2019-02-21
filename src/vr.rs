@@ -1,7 +1,7 @@
 use openvr_sys as sys;
 use std::marker::PhantomData;
 use std::os::raw::c_char;
-use std::sync::atomic::{AtomicBool, Ordering, ATOMIC_BOOL_INIT};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod enums;
 
@@ -12,13 +12,14 @@ fn phantom_data<T>(_: T) -> PhantomData<T> {
     PhantomData
 }
 
+static 
 pub struct RawInitError(u32);
 
 pub enum InitError {
     None,
 }
 
-static INITIALIZED: AtomicBool = ATOMIC_BOOL_INIT;
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 pub struct Context {}
 
@@ -55,6 +56,31 @@ pub struct System<'context> {
     pub fn_table: sys::VR_IVRSystem_FnTable,
     _context: PhantomData<&'context Context>,
 }
+
+mod symbols {
+    #[derive(Debug, Copy, Clone)]
+    pub struct System;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Compositor;
+
+    pub trait Interface {
+        const MAGIC: &'static [u8]
+    }
+
+    impl Interface for System {
+        // TODO: Create constants in build.
+        const MAGIC: &'static [u8] = &b"FnTable:IVRSystem_019\0";
+    }
+
+    impl Interface for Compositor {
+        // TODO: Create constants in build.
+        const MAGIC: &'static [u8] = &b"FnTable:IVRCompositor_022\0";
+    }
+}
+
+
+pub unsafe fn get_generic_interface<I: Interface>(context: &Context) -> Result<I, 
 
 impl<'context> System<'context> {
     pub fn new(context: &'context Context) -> Result<Self, sys::EVRInitError> {
