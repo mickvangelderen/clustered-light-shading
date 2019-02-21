@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 glutin = "0.19.0"
+tobj = "0.1.6"
 openvr = { git = "https://github.com/mickvangelderen/openvr-rust", branch = "0.1.x" }
 gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", branch = "0.1.x" }
  
