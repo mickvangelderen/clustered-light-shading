@@ -307,7 +307,7 @@ fn main() {
 
         gl_window.swap_buffers().unwrap();
 
-        std::thread::sleep(std::time::Duration::from_millis(17));
+        // std::thread::sleep(std::time::Duration::from_millis(17));
     }
 }
 
