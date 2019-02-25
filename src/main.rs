@@ -1,13 +1,22 @@
 #![allow(non_snake_case)]
 
+mod basic_renderer;
+mod camera;
+mod convert;
+mod frustrum;
+
 use openvr as vr;
 use openvr::enums::Enum;
 
+use cgmath::*;
+use convert::*;
 use gl_typed as gl;
 use glutin::GlContext;
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
+
+const DESIRED_UPS: f32 = 90.0;
 
 /// Print out all loaded properties of some models and associated materials
 pub fn print_model_info(models: &[tobj::Model], materials: &[tobj::Material]) {
@@ -21,12 +30,32 @@ pub fn print_model_info(models: &[tobj::Model], materials: &[tobj::Material]) {
     }
 }
 
+pub struct World {
+    clear_color: [f32; 3],
+    camera: camera::Camera,
+    pos_from_cam_to_hmd: cgmath::Matrix4<f32>,
+    model: tobj::Model,
+}
+
 fn main() {
     let obj = tobj::load_obj(&std::path::Path::new("data/bunny.obj"));
-    let (models, materials) = obj.unwrap();
-    let model = models.iter().next().unwrap();
+    let (models, _materials) = obj.unwrap();
+    let model = models.into_iter().next().unwrap();
 
-    print_model_info(&models, &materials);
+    let mut world = World {
+        clear_color: [0.0, 0.0, 0.0],
+        camera: camera::Camera {
+            position: Vector3::new(0.0, 0.0, 5.0),
+            yaw: Rad(0.0),
+            pitch: Rad(0.0),
+            fovy: Deg(90.0).into(),
+            positional_velocity: 2.0,
+            angular_velocity: 0.8,
+            zoom_velocity: 1.0,
+        },
+        pos_from_cam_to_hmd: Matrix4::from_translation(Vector3::zero()),
+        model,
+    };
 
     let mut events_loop = glutin::EventsLoop::new();
     let gl_window = glutin::GlWindow::new(
@@ -53,23 +82,19 @@ fn main() {
 
     // === VR ===
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
-        Ok(context) => {
-            unsafe {
+        Ok(context) => unsafe {
             let dims = context.system().get_recommended_render_target_size();
             println!("Recommender render target size: {:?}", dims);
-            let eye_left = EyeResources::new(&gl, dims);
-            let eye_right = EyeResources::new(&gl, dims);
+            let eye_left = EyeResources::new(&gl, &context, vr::Eye::Left, dims);
+            let eye_right = EyeResources::new(&gl, &context, vr::Eye::Right, dims);
 
-            Some(
-                VrResources {
-                    context,
-                    dims,
-                    eye_left,
-                    eye_right,
-                },
-            )
-        }
-        }
+            Some(VrResources {
+                context,
+                dims,
+                eye_left,
+                eye_right,
+            })
+        },
         Err(error) => {
             eprintln!(
                 "Failed to acquire context: {:?}",
@@ -83,63 +108,21 @@ fn main() {
 
     unsafe { gl_window.make_current().unwrap() };
 
-    let (program, vao) = unsafe {
-        let mut vs = gl
-            .create_shader(gl::VERTEX_SHADER)
-            .expect("Failed to create shader.");
-        recompile_shader(&gl, &mut vs, VS_SRC).unwrap_or_else(|e| panic!("{}", e));
+    let renderer = unsafe { basic_renderer::Renderer::new(&gl, &world) };
 
-        let mut fs = gl
-            .create_shader(gl::FRAGMENT_SHADER)
-            .expect("Failed to create shader.");
-        recompile_shader(&gl, &mut fs, FS_SRC).unwrap_or_else(|e| panic!("{}", e));
-
-        let mut program = gl.create_program().expect("Failed to create program.");
-        gl.attach_shader(&mut program, &vs);
-        gl.attach_shader(&mut program, &fs);
-        gl.link_program(&mut program);
-        gl.use_program(&program);
-
-        let vao = {
-            let mut names: [Option<gl::VertexArrayName>; 1] = mem::uninitialized();
-            gl.gen_vertex_arrays(&mut names);
-            let [name] = names;
-            name.expect("Failed to acquire vertex array name.")
-        };
-        gl.bind_vertex_array(&vao);
-
-        let (vb, eb) = {
-            let mut names: [Option<gl::BufferName>; 2] = mem::uninitialized();
-            gl.gen_buffers(&mut names);
-            let [vb, eb] = names;
-            (
-                vb.expect("Failed to acquire buffer name."),
-                eb.expect("Failed to acquire buffer name."),
-            )
-        };
-
-        gl.bind_buffer(gl::ARRAY_BUFFER, &vb);
-        gl.buffer_data(gl::ARRAY_BUFFER, &model.mesh.positions, gl::STATIC_DRAW);
-
-        let pos_attrib = gl
-            .get_attrib_location(&program, gl::static_cstr!("position"))
-            .expect("Could not find attribute location.");
-        const STRIDE: usize = 3 * mem::size_of::<f32>();
-        gl.vertex_attrib_pointer(&pos_attrib, 3, gl::FLOAT, gl::FALSE, STRIDE, 0);
-        gl.enable_vertex_attrib_array(&pos_attrib);
-
-        gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &eb);
-        gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, &model.mesh.indices, gl::STATIC_DRAW);
-
-        gl.bind_vertex_array(&gl::Unbind);
-        gl.bind_buffer(gl::ARRAY_BUFFER, &gl::Unbind);
-        gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &gl::Unbind);
-
-        (program, vao)
-    };
+    let mut input_forward = glutin::ElementState::Released;
+    let mut input_backward = glutin::ElementState::Released;
+    let mut input_left = glutin::ElementState::Released;
+    let mut input_right = glutin::ElementState::Released;
+    let mut input_up = glutin::ElementState::Released;
+    let mut input_down = glutin::ElementState::Released;
 
     let mut running = true;
     while running {
+        let mut mouse_dx = 0.0;
+        let mut mouse_dy = 0.0;
+        let mut mouse_dscroll = 0.0;
+
         events_loop.poll_events(|event| {
             use glutin::Event;
             match event {
@@ -163,16 +146,64 @@ fn main() {
                             if let Some(vk) = keyboard_input.virtual_keycode {
                                 use glutin::VirtualKeyCode;
                                 match vk {
+                                    VirtualKeyCode::W => input_forward = keyboard_input.state,
+                                    VirtualKeyCode::S => input_backward = keyboard_input.state,
+                                    VirtualKeyCode::A => input_left = keyboard_input.state,
+                                    VirtualKeyCode::D => input_right = keyboard_input.state,
+                                    VirtualKeyCode::Q => input_up = keyboard_input.state,
+                                    VirtualKeyCode::Z => input_down = keyboard_input.state,
                                     VirtualKeyCode::Escape => running = false,
                                     _ => (),
                                 }
                             }
+                        }
+                        DeviceEvent::Motion { axis, value } => {
+                            // if window_has_focus {
+                            match axis {
+                                0 => mouse_dx += value,
+                                1 => mouse_dy += value,
+                                3 => mouse_dscroll += value,
+                                _ => (),
+                            }
+                            // }
                         }
                         _ => (),
                     }
                 }
                 _ => (),
             }
+        });
+
+        use glutin::ElementState;
+
+        world.camera.update(&camera::CameraUpdate {
+            delta_time: 1.0 / DESIRED_UPS as f32,
+            delta_position: Vector3 {
+                x: match input_left {
+                    ElementState::Pressed => -1.0,
+                    ElementState::Released => 0.0,
+                } + match input_right {
+                    ElementState::Pressed => 1.0,
+                    ElementState::Released => 0.0,
+                },
+                y: match input_up {
+                    ElementState::Pressed => 1.0,
+                    ElementState::Released => 0.0,
+                } + match input_down {
+                    ElementState::Pressed => -1.0,
+                    ElementState::Released => 0.0,
+                },
+                z: match input_forward {
+                    ElementState::Pressed => -1.0,
+                    ElementState::Released => 0.0,
+                } + match input_backward {
+                    ElementState::Pressed => 1.0,
+                    ElementState::Released => 0.0,
+                },
+            },
+            delta_yaw: Rad(mouse_dx as f32),
+            delta_pitch: Rad(mouse_dy as f32),
+            delta_scroll: mouse_dscroll as f32,
         });
 
         // === VR ===
@@ -184,60 +215,106 @@ fn main() {
             let mut poses: [vr::sys::TrackedDevicePose_t;
                 vr::sys::k_unMaxTrackedDeviceCount as usize] = unsafe { mem::zeroed() };
 
-            vr_resources.compositor().wait_get_poses(&mut poses[..], None).unwrap();
+            vr_resources
+                .compositor()
+                .wait_get_poses(&mut poses[..], None)
+                .unwrap();
+
+            const HMD_POSE_INDEX: usize = vr::sys::k_unTrackedDeviceIndex_Hmd as usize;
+            let hmd_pose = poses[HMD_POSE_INDEX];
+            if hmd_pose.bPoseIsValid {
+                for i in 0..3 {
+                    // Fun.
+                    world.clear_color[i] = hmd_pose.vAngularVelocity.v[i].abs() * 0.1;
+                }
+                world.pos_from_cam_to_hmd =
+                    Matrix4::<f32>::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m)
+                        .invert()
+                        .unwrap();
+            } else {
+                // TODO: Structure code better to facilitate reset in case of vr crash/disconnect.
+                world.pos_from_cam_to_hmd = Matrix4::from_translation(Vector3::zero());
+            }
         }
         // --- VR ---
 
         // draw everything here
         unsafe {
-            gl.enable(gl::DEPTH_TEST);
-            // gl.polygon_mode(gl::FRONT_AND_BACK, gl::LINE);
-
-            gl.use_program(&program);
-            gl.bind_vertex_array(&vao);
-
             let physical_size = win_size.to_physical(win_dpi);
-            gl.viewport(
-                0,
-                0,
-                physical_size.width as i32,
-                physical_size.height as i32,
+
+            let frustrum = {
+                let z0 = 0.2;
+                let dy = z0 * Rad::tan(Rad::from(world.camera.fovy) / 2.0);
+                let dx = dy * physical_size.width as f32 / physical_size.height as f32;
+                frustrum::Frustrum {
+                    x0: -dx,
+                    x1: dx,
+                    y0: -dy,
+                    y1: dy,
+                    z0,
+                    z1: 100.0,
+                }
+            };
+
+            let pos_from_hmd_to_clp = Matrix4::from(Perspective {
+                left: frustrum.x0,
+                right: frustrum.x1,
+                bottom: frustrum.y0,
+                top: frustrum.y1,
+                near: frustrum.z0,
+                far: frustrum.z1,
+            });
+
+            renderer.render(
+                &gl,
+                &basic_renderer::Parameters {
+                    framebuffer: &gl::DefaultFramebufferName,
+                    width: physical_size.width as i32,
+                    height: physical_size.height as i32,
+                    pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
+                },
+                &world,
             );
-            gl.clear_color(0.6, 0.7, 0.8, 1.0);
-            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
-            gl.draw_elements(gl::TRIANGLES, model.mesh.indices.len(), gl::UNSIGNED_INT, 0);
         }
 
         // === VR ===
-        unsafe fn render_vr(
-            gl: &gl::Gl,
-            eye: &EyeResources,
-            model: &tobj::Model,
-            render_dims: vr::Dimensions,
-        ) {
-            gl.viewport(0, 0, render_dims.width as i32, render_dims.height as i32);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, &eye.framebuffer);
-            gl.clear_color(0.6, 0.7, 0.8, 1.0);
-            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT);
-            gl.draw_elements(
-                gl::TRIANGLES,
-                model.mesh.indices.len() / 3,
-                gl::UNSIGNED_INT,
-                0,
-            );
-            gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
-        }
-
         if let Some(ref vr_resources) = vr_resources {
             unsafe {
-                render_vr(&gl, &vr_resources.eye_left, &model, vr_resources.dims);
-                render_vr(&gl, &vr_resources.eye_right, &model, vr_resources.dims);
+                renderer.render(
+                    &gl,
+                    &basic_renderer::Parameters {
+                        framebuffer: &vr_resources.eye_left.framebuffer,
+                        width: vr_resources.dims.width as i32,
+                        height: vr_resources.dims.height as i32,
+                        pos_from_cam_to_clp: vr_resources.eye_left.pos_from_hmd_to_clp
+                            * world.pos_from_cam_to_hmd,
+                    },
+                    &world,
+                );
+
+                renderer.render(
+                    &gl,
+                    &basic_renderer::Parameters {
+                        framebuffer: &vr_resources.eye_right.framebuffer,
+                        width: vr_resources.dims.width as i32,
+                        height: vr_resources.dims.height as i32,
+                        pos_from_cam_to_clp: vr_resources.eye_right.pos_from_hmd_to_clp
+                            * world.pos_from_cam_to_hmd,
+                    },
+                    &world,
+                );
 
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
                 {
                     let mut texture_t = vr_resources.eye_left.gen_texture_t();
-                    vr_resources.compositor()
-                        .submit(vr::Eye::Left, &mut texture_t, None, vr::SubmitFlag::Default)
+                    vr_resources
+                        .compositor()
+                        .submit(
+                            vr_resources.eye_left.eye,
+                            &mut texture_t,
+                            None,
+                            vr::SubmitFlag::Default,
+                        )
                         .unwrap_or_else(|error| {
                             panic!(
                                 "failed to submit texture: {:?}",
@@ -247,9 +324,10 @@ fn main() {
                 }
                 {
                     let mut texture_t = vr_resources.eye_right.gen_texture_t();
-                    vr_resources.compositor()
+                    vr_resources
+                        .compositor()
                         .submit(
-                            vr::Eye::Right,
+                            vr_resources.eye_right.eye,
                             &mut texture_t,
                             None,
                             vr::SubmitFlag::Default,
@@ -271,42 +349,6 @@ fn main() {
     }
 }
 
-unsafe fn recompile_shader(
-    gl: &gl::Gl,
-    name: &mut gl::ShaderName,
-    source: &[u8],
-) -> Result<(), String> {
-    gl.shader_source(name, &[source]);
-    gl.compile_shader(name);
-    let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
-    if status == gl::ShaderCompileStatus::Compiled.into() {
-        Ok(())
-    } else {
-        let log = gl.get_shader_info_log_move(&name);
-        Err(String::from_utf8(log).unwrap())
-    }
-}
-
-const VS_SRC: &'static [u8] = b"
-#version 100
-precision mediump float;
-attribute vec3 position;
-varying vec3 v_color;
-void main() {
-    gl_Position = vec4(position, 1.0);
-    v_color = position;
-}
-\0";
-
-const FS_SRC: &'static [u8] = b"
-#version 100
-precision mediump float;
-varying vec3 v_color;
-void main() {
-    gl_FragColor = vec4(v_color, 1.0);
-}
-\0";
-
 struct VrResources {
     context: vr::Context,
     dims: vr::Dimensions,
@@ -327,26 +369,40 @@ impl VrResources {
 }
 
 struct EyeResources {
+    eye: vr::Eye,
+    pos_from_hmd_to_clp: Matrix4<f32>,
     framebuffer: gl::FramebufferName,
-    texture: gl::TextureName,
+    color_texture: gl::TextureName,
+    #[allow(unused)]
+    depth_texture: gl::TextureName,
 }
 
 impl EyeResources {
-    unsafe fn new(gl: &gl::Gl, dims: vr::Dimensions) -> Self {
+    unsafe fn new(gl: &gl::Gl, vr: &vr::Context, eye: vr::Eye, dims: vr::Dimensions) -> Self {
+        // VR.
+        let pos_from_eye_to_clp: Matrix4<f32> = vr
+            .system()
+            .get_projection_matrix(eye, 0.2, 200.0)
+            .hmd_into();
+        let pos_from_eye_to_hmd: Matrix4<f32> =
+            vr.system().get_eye_to_head_transform(eye).hmd_into();
+        let pos_from_hmd_to_clp = pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
+
+        // OpenGL.
         let framebuffer = {
             let mut names: [Option<gl::FramebufferName>; 1] = mem::uninitialized();
             gl.gen_framebuffers(&mut names);
             let [name] = names;
             name.expect("Failed to acquire framebuffer name.")
         };
-        let texture = {
-            let mut names: [Option<gl::TextureName>; 1] = mem::uninitialized();
+        let (color_texture, depth_texture) = {
+            let mut names: [Option<gl::TextureName>; 2] = mem::uninitialized();
             gl.gen_textures(&mut names);
-            let [name] = names;
-            name.expect("Failed to acquire texture name.")
+            let [n0, n1] = names;
+            (n0.expect("Failed to acquire texture name."), n1.expect("Failed to acquire texture name."))
         };
 
-        gl.bind_texture(gl::TEXTURE_2D, &texture);
+        gl.bind_texture(gl::TEXTURE_2D, &color_texture);
         {
             gl.tex_image_2d(
                 gl::TEXTURE_2D,
@@ -361,6 +417,23 @@ impl EyeResources {
             gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
             gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
         }
+
+        gl.bind_texture(gl::TEXTURE_2D, &depth_texture);
+        {
+            gl.tex_image_2d(
+                gl::TEXTURE_2D,
+                0,
+                gl::DEPTH24_STENCIL8,
+                dims.width as i32,
+                dims.height as i32,
+                gl::DEPTH_STENCIL,
+                gl::UNSIGNED_INT_24_8,
+                ptr::null(),
+            );
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+        }
+
         gl.bind_texture(gl::TEXTURE_2D, &gl::Unbind);
 
         gl.bind_framebuffer(gl::FRAMEBUFFER, &framebuffer);
@@ -369,7 +442,15 @@ impl EyeResources {
                 gl::FRAMEBUFFER,
                 gl::COLOR_ATTACHMENT0,
                 gl::TEXTURE_2D,
-                &texture,
+                &color_texture,
+                0,
+            );
+
+            gl.framebuffer_texture_2d(
+                gl::FRAMEBUFFER,
+                gl::DEPTH_STENCIL_ATTACHMENT,
+                gl::TEXTURE_2D,
+                &depth_texture,
                 0,
             );
 
@@ -378,9 +459,13 @@ impl EyeResources {
             );
         }
         gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
+
         EyeResources {
+            eye,
+            pos_from_hmd_to_clp,
             framebuffer,
-            texture,
+            color_texture,
+            depth_texture,
         }
     }
 
@@ -388,7 +473,7 @@ impl EyeResources {
         // NOTE(mickvangelderen): The handle is not actually a pointer in
         // OpenGL's case, it's just the texture name.
         vr::sys::Texture_t {
-            handle: self.texture.as_u32() as usize as *const c_void as *mut c_void,
+            handle: self.color_texture.as_u32() as usize as *const c_void as *mut c_void,
             eType: vr::sys::ETextureType_TextureType_OpenGL,
             eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
         }
