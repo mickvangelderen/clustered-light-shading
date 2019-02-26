@@ -38,7 +38,7 @@ pub struct World {
 }
 
 fn main() {
-    let obj = tobj::load_obj(&std::path::Path::new("data/bunny.obj"));
+    let obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
     let (models, _materials) = obj.unwrap();
     let model = models.into_iter().next().unwrap();
 
