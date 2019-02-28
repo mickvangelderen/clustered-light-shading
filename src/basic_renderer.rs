@@ -9,7 +9,8 @@ const VS_SRC: &'static [u8] = b"
 uniform mat4 pos_from_wld_to_clp;
 
 in vec3 vs_ver_pos;
-out vec3 vs_color;
+in vec2 vs_tex_pos;
+out vec2 fs_tex_pos;
 
 void main() {
     mat4 pos_from_obj_to_wld = mat4(
@@ -20,16 +21,21 @@ void main() {
     );
 
     gl_Position = pos_from_wld_to_clp*pos_from_obj_to_wld*vec4(vs_ver_pos, 1.0);
-    vs_color = vs_ver_pos;
+    fs_tex_pos = vs_tex_pos;
 }\0";
 
 const FS_SRC: &'static [u8] = b"
 #version 400
 
-in vec3 vs_color;
+uniform sampler2D diffuse_sampler;
+// uniform sampler2D normal_sampler;
+
+in vec2 fs_tex_pos;
+out vec4 frag_color;
 
 void main() {
-    gl_FragColor = vec4(vs_color, 1.0);
+    vec4 d = texture(diffuse_sampler, fs_tex_pos);
+    frag_color = vec4(d);
 }
 \0";
 
@@ -53,6 +59,12 @@ pub struct Renderer {
     program: gl::ProgramName,
     vao: gl::VertexArrayName,
     pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]>,
+    diffuse_sampler_loc: gl::UniformLocation<i32>,
+    // #[allow(unused)]
+    // normal_sampler_loc: gl::UniformLocation<i32>,
+    diffuse_texture: gl::TextureName,
+    #[allow(unused)]
+    normal_texture: gl::TextureName,
 }
 
 pub struct Parameters<'a, N: 'a>
@@ -66,12 +78,8 @@ where
 }
 
 impl Renderer {
-    pub unsafe fn render<'a, N>(
-        &self,
-        gl: &gl::Gl,
-        params: &Parameters<'a, N>,
-        world: &World,
-    ) where
+    pub unsafe fn render<'a, N>(&self, gl: &gl::Gl, params: &Parameters<'a, N>, world: &World)
+    where
         N: gl::MaybeDefaultFramebufferName,
     {
         gl.enable(gl::DEPTH_TEST);
@@ -91,8 +99,15 @@ impl Renderer {
         gl.use_program(&self.program);
         gl.bind_vertex_array(&self.vao);
 
-        let pos_from_wld_to_clp = params.pos_from_cam_to_clp
-            * world.camera.pos_from_wld_to_cam();
+        gl.active_texture(gl::TEXTURE0);
+        gl.bind_texture(gl::TEXTURE_2D, &self.diffuse_texture);
+        gl.uniform_1i(&self.diffuse_sampler_loc, 0);
+
+        // gl.active_texture(gl::TEXTURE1);
+        // gl.bind_texture(gl::TEXTURE_2D, &self.normal_texture);
+        // gl.uniform_1i(&self.normal_sampler_loc, 1);
+
+        let pos_from_wld_to_clp = params.pos_from_cam_to_clp * world.camera.pos_from_wld_to_cam();
 
         gl.uniform_matrix4f(
             &self.pos_from_wld_to_clp_loc,
@@ -146,22 +161,18 @@ impl Renderer {
         };
 
         gl.bind_buffer(gl::ARRAY_BUFFER, &vb);
-        gl.buffer_data(
+        gl.buffer_reserve(
             gl::ARRAY_BUFFER,
-            &world.model.mesh.positions,
+            std::mem::size_of_val(&world.model.mesh.positions[..])
+                + std::mem::size_of_val(&world.model.mesh.texcoords[..]),
             gl::STATIC_DRAW,
         );
-
-        let vs_ver_pos_loc = gl
-            .get_attrib_location(&program, gl::static_cstr!("vs_ver_pos"))
-            .expect("Could not find attribute location.");
-        const STRIDE: usize = 3 * mem::size_of::<f32>();
-        gl.vertex_attrib_pointer(&vs_ver_pos_loc, 3, gl::FLOAT, gl::FALSE, STRIDE, 0);
-        gl.enable_vertex_attrib_array(&vs_ver_pos_loc);
-
-        let pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]> = gl
-            .get_uniform_location(&program, gl::static_cstr!("pos_from_wld_to_clp"))
-            .expect("Could not find uniform location.");
+        gl.buffer_sub_data(gl::ARRAY_BUFFER, 0, &world.model.mesh.positions);
+        gl.buffer_sub_data(
+            gl::ARRAY_BUFFER,
+            std::mem::size_of_val(&world.model.mesh.positions[..]),
+            &world.model.mesh.texcoords,
+        );
 
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &eb);
         gl.buffer_data(
@@ -170,14 +181,102 @@ impl Renderer {
             gl::STATIC_DRAW,
         );
 
+        // AOS layout.
+
+        let vs_ver_pos_loc = gl
+            .get_attrib_location(&program, gl::static_cstr!("vs_ver_pos"))
+            .expect("Could not find attribute location.");
+
+        let vs_tex_pos_loc = gl
+            .get_attrib_location(&program, gl::static_cstr!("vs_tex_pos"))
+            .expect("Could not find attribute location.");
+
+        gl.vertex_attrib_pointer(
+            &vs_ver_pos_loc,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            std::mem::size_of::<[f32; 3]>(),
+            0,
+        );
+
+        gl.vertex_attrib_pointer(
+            &vs_tex_pos_loc,
+            2,
+            gl::FLOAT,
+            gl::FALSE,
+            std::mem::size_of::<[f32; 2]>(),
+            std::mem::size_of_val(&world.model.mesh.positions[..]),
+        );
+
+        gl.enable_vertex_attrib_array(&vs_ver_pos_loc);
+        gl.enable_vertex_attrib_array(&vs_tex_pos_loc);
+
         gl.bind_vertex_array(&gl::Unbind);
         gl.bind_buffer(gl::ARRAY_BUFFER, &gl::Unbind);
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &gl::Unbind);
 
+        let pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]> = gl
+            .get_uniform_location(&program, gl::static_cstr!("pos_from_wld_to_clp"))
+            .expect("Could not find uniform location.");
+
+        let diffuse_sampler_loc = gl
+            .get_uniform_location(&program, gl::static_cstr!("diffuse_sampler"))
+            .expect("Could not find attribute location.");
+
+        // let normal_sampler_loc = gl
+        //     .get_uniform_location(&program, gl::static_cstr!("normal_sampler"))
+        //     .expect("Could not find attribute location.");
+
+        let (diffuse_texture, normal_texture) = {
+            let mut names: [Option<gl::TextureName>; 2] = std::mem::uninitialized();
+            gl.gen_textures(&mut names);
+            let [n0, n1] = names;
+            (n0.unwrap(), n1.unwrap())
+        };
+
+        {
+            let img = image::open("data/keyboard-diffuse.png").unwrap().flipv().to_rgba();
+            gl.bind_texture(gl::TEXTURE_2D, &diffuse_texture);
+            gl.tex_image_2d(
+                gl::TEXTURE_2D,
+                0,
+                gl::RGBA8,
+                img.width() as i32,
+                img.height() as i32,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                img.as_ptr() as *const std::os::raw::c_void,
+            );
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+        }
+
+        {
+            let img = image::open("data/keyboard-normals.png").unwrap().flipv().to_rgba();
+            gl.bind_texture(gl::TEXTURE_2D, &normal_texture);
+            gl.tex_image_2d(
+                gl::TEXTURE_2D,
+                0,
+                gl::RGBA8,
+                img.width() as i32,
+                img.height() as i32,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                img.as_ptr() as *const std::os::raw::c_void,
+            );
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+        }
+
         Renderer {
             program,
             pos_from_wld_to_clp_loc,
+            diffuse_sampler_loc,
+            // normal_sampler_loc,
             vao,
+            diffuse_texture,
+            normal_texture,
         }
     }
 }
