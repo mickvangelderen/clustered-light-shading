@@ -1,6 +1,3 @@
-Requires https://github.com/mickvangelderen/openvr-sys-rust as a sibling
-directory. Sorry didn't bother with setting up a cargo workspace.
-
 Requires SteamVR (installed through steam) and standard OpenGL development
 headers and libraries to be installed.
 
@@ -14,9 +11,19 @@ Run with steam-runtime, for example:
 ~/.steam/steam/ubuntu12_32/steam-runtime/run.sh lldb target/debug/vr-lab
 ```
 
-Probably missed something.
+## Dependencies
 
-I am really frustrated that things don't work right now.
+### Sibling repositories.
+
+`git clone git@github.com:mickvangelderen/gl-typed-rust`
+`git clone git@github.com:mickvangelderen/openvr-sys-rust --recursive`
+`git clone git@github.com:mickvangelderen/openvr-rust`
+
+### Steam needs QT5.
+
+Also OpenGL development headers are always nice to have.
+
+`sudo apt install qtbase5-dev mesa-common-dev`
 
 ## Troubleshooting
 
