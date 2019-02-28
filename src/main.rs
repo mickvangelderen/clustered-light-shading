@@ -271,7 +271,7 @@ fn main() {
                     framebuffer: &gl::DefaultFramebufferName,
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
-                    pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
+                    pos_from_cam_to_clp: pos_from_hmd_to_clp,
                 },
                 &world,
             );
