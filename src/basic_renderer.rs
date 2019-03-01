@@ -2,11 +2,13 @@ use super::World;
 use cgmath::*;
 use gl_typed as gl;
 use std::mem;
+use std::num::NonZeroU8;
 
 const VS_SRC: &'static [u8] = b"
 #version 400 core
 
 uniform mat4 pos_from_wld_to_clp;
+uniform float highlight;
 
 in vec3 vs_ver_pos;
 in vec2 vs_tex_pos;
@@ -17,7 +19,7 @@ void main() {
       1.0, 0.0, 0.0, 0.0,
       0.0, 1.0, 0.0, 0.0,
       0.0, 0.0, 1.0, 0.0,
-      0.0, 0.0, 0.0, 1.0
+      0.0, -0.02*highlight, 0.0, 1.0
     );
 
     gl_Position = pos_from_wld_to_clp*pos_from_obj_to_wld*vec4(vs_ver_pos, 1.0);
@@ -29,13 +31,14 @@ const FS_SRC: &'static [u8] = b"
 
 uniform sampler2D diffuse_sampler;
 // uniform sampler2D normal_sampler;
+uniform float highlight;
 
 in vec2 fs_tex_pos;
 out vec4 frag_color;
 
 void main() {
     vec4 d = texture(diffuse_sampler, fs_tex_pos);
-    frag_color = vec4(d);
+    frag_color = vec4(mix(d.rgb, vec3(1.0, 1.0, 1.0), highlight), d.a);
 }
 \0";
 
@@ -57,14 +60,21 @@ unsafe fn recompile_shader(
 
 pub struct Renderer {
     program: gl::ProgramName,
-    vao: gl::VertexArrayName,
     pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]>,
+    highlight_loc: gl::UniformLocation<f32>,
     diffuse_sampler_loc: gl::UniformLocation<i32>,
     // #[allow(unused)]
     // normal_sampler_loc: gl::UniformLocation<i32>,
     diffuse_texture: gl::TextureName,
     #[allow(unused)]
     normal_texture: gl::TextureName,
+    vaos: Vec<gl::VertexArrayName>,
+    #[allow(unused)]
+    vbs: Vec<gl::BufferName>,
+    #[allow(unused)]
+    ebs: Vec<gl::BufferName>,
+    element_counts: Vec<usize>,
+    keyboard_indices: Vec<Option<NonZeroU8>>,
 }
 
 pub struct Parameters<'a, N: 'a>
@@ -97,7 +107,6 @@ impl Renderer {
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
         gl.use_program(&self.program);
-        gl.bind_vertex_array(&self.vao);
 
         gl.active_texture(gl::TEXTURE0);
         gl.bind_texture(gl::TEXTURE_2D, &self.diffuse_texture);
@@ -115,12 +124,17 @@ impl Renderer {
             pos_from_wld_to_clp.as_ref(),
         );
 
-        gl.draw_elements(
-            gl::TRIANGLES,
-            world.model.mesh.indices.len(),
-            gl::UNSIGNED_INT,
-            0,
-        );
+        for i in 0..self.vaos.len() {
+            let highlight: f32 = self.keyboard_indices[i]
+                .map(|i| world.keyboard_model.pressure(i))
+                .unwrap_or(0.0);
+            gl.uniform_1f(&self.highlight_loc, highlight);
+
+            gl.bind_vertex_array(&self.vaos[i]);
+            gl.draw_elements(gl::TRIANGLES, self.element_counts[i], gl::UNSIGNED_INT, 0);
+        }
+
+        gl.bind_vertex_array(&gl::Unbind);
 
         gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
     }
@@ -142,82 +156,149 @@ impl Renderer {
         gl.link_program(&mut program);
         gl.use_program(&program);
 
-        let vao = {
-            let mut names: [Option<gl::VertexArrayName>; 1] = mem::uninitialized();
+        let vaos = {
+            assert_eq!(
+                mem::size_of::<Option<gl::VertexArrayName>>(),
+                mem::size_of::<gl::VertexArrayName>()
+            );
+            // Create uninitialized memory.
+            let mut names: Vec<Option<gl::VertexArrayName>> =
+                Vec::with_capacity(world.models.len());
+            names.set_len(world.models.len());
             gl.gen_vertex_arrays(&mut names);
-            let [name] = names;
-            name.expect("Failed to acquire vertex array name.")
+            // Assert that all names != 0.
+            for name in names.iter() {
+                if let None = name {
+                    panic!("Failed to acquire vertex array name.");
+                }
+            }
+            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
+            mem::forget(names);
+            Vec::from_raw_parts(ptr as *mut gl::VertexArrayName, len, cap)
         };
-        gl.bind_vertex_array(&vao);
 
-        let (vb, eb) = {
-            let mut names: [Option<gl::BufferName>; 2] = mem::uninitialized();
+        let vbs = {
+            assert_eq!(
+                mem::size_of::<Option<gl::BufferName>>(),
+                mem::size_of::<gl::BufferName>()
+            );
+            // Create uninitialized memory.
+            let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
+            names.set_len(world.models.len());
             gl.gen_buffers(&mut names);
-            let [vb, eb] = names;
-            (
-                vb.expect("Failed to acquire buffer name."),
-                eb.expect("Failed to acquire buffer name."),
-            )
+            // Assert that all names != 0.
+            for name in names.iter() {
+                if let None = name {
+                    panic!("Failed to acquire buffer name.");
+                }
+            }
+            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
+            mem::forget(names);
+            Vec::from_raw_parts(ptr as *mut gl::BufferName, len, cap)
         };
 
-        gl.bind_buffer(gl::ARRAY_BUFFER, &vb);
-        gl.buffer_reserve(
-            gl::ARRAY_BUFFER,
-            std::mem::size_of_val(&world.model.mesh.positions[..])
-                + std::mem::size_of_val(&world.model.mesh.texcoords[..]),
-            gl::STATIC_DRAW,
-        );
-        gl.buffer_sub_data(gl::ARRAY_BUFFER, 0, &world.model.mesh.positions);
-        gl.buffer_sub_data(
-            gl::ARRAY_BUFFER,
-            std::mem::size_of_val(&world.model.mesh.positions[..]),
-            &world.model.mesh.texcoords,
-        );
+        let ebs = {
+            assert_eq!(
+                mem::size_of::<Option<gl::BufferName>>(),
+                mem::size_of::<gl::BufferName>()
+            );
+            // Create uninitialized memory.
+            let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
+            names.set_len(world.models.len());
+            gl.gen_buffers(&mut names);
+            // Assert that all names != 0.
+            for name in names.iter() {
+                if let None = name {
+                    panic!("Failed to acquire buffer name.");
+                }
+            }
+            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
+            mem::forget(names);
+            Vec::from_raw_parts(ptr as *mut gl::BufferName, len, cap)
+        };
 
-        gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &eb);
-        gl.buffer_data(
-            gl::ELEMENT_ARRAY_BUFFER,
-            &world.model.mesh.indices,
-            gl::STATIC_DRAW,
-        );
+        let element_counts: Vec<usize> = world
+            .models
+            .iter()
+            .map(|model| model.mesh.indices.len())
+            .collect();
 
-        // AOS layout.
+        let keyboard_indices: Vec<Option<NonZeroU8>> = world
+            .models
+            .iter()
+            .map(|model| model_name_to_keyboard_index(&model.name))
+            .collect();
 
-        let vs_ver_pos_loc = gl
-            .get_attrib_location(&program, gl::static_cstr!("vs_ver_pos"))
-            .expect("Could not find attribute location.");
+        for (i, model) in world.models.iter().enumerate() {
+            let vao = &vaos[i];
+            let vb = &vbs[i];
+            let eb = &ebs[i];
 
-        let vs_tex_pos_loc = gl
-            .get_attrib_location(&program, gl::static_cstr!("vs_tex_pos"))
-            .expect("Could not find attribute location.");
+            let ver_pos_size = mem::size_of_val(&model.mesh.positions[..]);
+            let tex_pos_size = mem::size_of_val(&model.mesh.texcoords[..]);
 
-        gl.vertex_attrib_pointer(
-            &vs_ver_pos_loc,
-            3,
-            gl::FLOAT,
-            gl::FALSE,
-            std::mem::size_of::<[f32; 3]>(),
-            0,
-        );
+            let ver_pos_offset = 0;
+            let tex_pos_offset = ver_pos_size;
 
-        gl.vertex_attrib_pointer(
-            &vs_tex_pos_loc,
-            2,
-            gl::FLOAT,
-            gl::FALSE,
-            std::mem::size_of::<[f32; 2]>(),
-            std::mem::size_of_val(&world.model.mesh.positions[..]),
-        );
+            gl.bind_vertex_array(vao);
+            gl.bind_buffer(gl::ARRAY_BUFFER, vb);
+            gl.buffer_reserve(
+                gl::ARRAY_BUFFER,
+                ver_pos_size + tex_pos_size,
+                gl::STATIC_DRAW,
+            );
+            gl.buffer_sub_data(gl::ARRAY_BUFFER, ver_pos_offset, &model.mesh.positions[..]);
+            gl.buffer_sub_data(gl::ARRAY_BUFFER, tex_pos_offset, &model.mesh.texcoords[..]);
 
-        gl.enable_vertex_attrib_array(&vs_ver_pos_loc);
-        gl.enable_vertex_attrib_array(&vs_tex_pos_loc);
+            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
+            gl.buffer_data(
+                gl::ELEMENT_ARRAY_BUFFER,
+                &model.mesh.indices,
+                gl::STATIC_DRAW,
+            );
 
-        gl.bind_vertex_array(&gl::Unbind);
-        gl.bind_buffer(gl::ARRAY_BUFFER, &gl::Unbind);
-        gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &gl::Unbind);
+            // AOS layout.
+
+            let vs_ver_pos_loc = gl
+                .get_attrib_location(&program, gl::static_cstr!("vs_ver_pos"))
+                .expect("Could not find attribute location.");
+
+            let vs_tex_pos_loc = gl
+                .get_attrib_location(&program, gl::static_cstr!("vs_tex_pos"))
+                .expect("Could not find attribute location.");
+
+            gl.vertex_attrib_pointer(
+                &vs_ver_pos_loc,
+                3,
+                gl::FLOAT,
+                gl::FALSE,
+                mem::size_of::<[f32; 3]>(),
+                ver_pos_offset,
+            );
+
+            gl.vertex_attrib_pointer(
+                &vs_tex_pos_loc,
+                2,
+                gl::FLOAT,
+                gl::FALSE,
+                mem::size_of::<[f32; 2]>(),
+                tex_pos_offset,
+            );
+
+            gl.enable_vertex_attrib_array(&vs_ver_pos_loc);
+            gl.enable_vertex_attrib_array(&vs_tex_pos_loc);
+
+            gl.bind_vertex_array(&gl::Unbind);
+            gl.bind_buffer(gl::ARRAY_BUFFER, &gl::Unbind);
+            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &gl::Unbind);
+        }
 
         let pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]> = gl
             .get_uniform_location(&program, gl::static_cstr!("pos_from_wld_to_clp"))
+            .expect("Could not find uniform location.");
+
+        let highlight_loc: gl::UniformLocation<f32> = gl
+            .get_uniform_location(&program, gl::static_cstr!("highlight"))
             .expect("Could not find uniform location.");
 
         let diffuse_sampler_loc = gl
@@ -229,14 +310,17 @@ impl Renderer {
         //     .expect("Could not find attribute location.");
 
         let (diffuse_texture, normal_texture) = {
-            let mut names: [Option<gl::TextureName>; 2] = std::mem::uninitialized();
+            let mut names: [Option<gl::TextureName>; 2] = mem::uninitialized();
             gl.gen_textures(&mut names);
             let [n0, n1] = names;
             (n0.unwrap(), n1.unwrap())
         };
 
         {
-            let img = image::open("data/keyboard-diffuse.png").unwrap().flipv().to_rgba();
+            let img = image::open("data/keyboard-diffuse.png")
+                .unwrap()
+                .flipv()
+                .to_rgba();
             gl.bind_texture(gl::TEXTURE_2D, &diffuse_texture);
             gl.tex_image_2d(
                 gl::TEXTURE_2D,
@@ -253,7 +337,10 @@ impl Renderer {
         }
 
         {
-            let img = image::open("data/keyboard-normals.png").unwrap().flipv().to_rgba();
+            let img = image::open("data/keyboard-normals.png")
+                .unwrap()
+                .flipv()
+                .to_rgba();
             gl.bind_texture(gl::TEXTURE_2D, &normal_texture);
             gl.tex_image_2d(
                 gl::TEXTURE_2D,
@@ -272,11 +359,203 @@ impl Renderer {
         Renderer {
             program,
             pos_from_wld_to_clp_loc,
+            highlight_loc,
             diffuse_sampler_loc,
             // normal_sampler_loc,
-            vao,
             diffuse_texture,
             normal_texture,
+            vaos,
+            vbs,
+            ebs,
+            element_counts,
+            keyboard_indices,
         }
+    }
+}
+
+fn model_name_to_keyboard_index(name: &str) -> Option<NonZeroU8> {
+    use super::keyboard_model::KeyboardModel;
+
+    match name {
+        "Key_RIGHT_CONTROL_Key_LP.008" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::LControl,
+        )),
+        "Key_MENU_Key_LP.009" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Apps)),
+        "Key_RIGHT_SUPER_Key_LP.010" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::RWin))
+        }
+        "Key_RIGHT_ALT_Key_LP.011" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::RAlt))
+        }
+        "Key_ESCAPE_Key_LP.012" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Escape))
+        }
+        "Key_LEFT_CONTROL_Key_LP.013" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::LControl,
+        )),
+        "Key_SUPER_Key_LP.014" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::LWin)),
+        "Key_ALT_Key_LP.015" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::LAlt)),
+        "Key_SPACE_Key_LP.003" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Space)),
+        "Key_LEFT_SHIFT_Key_LP.004" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::LShift))
+        }
+        "Key_CAPSLOCK_Key_LP.016" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Capital,
+        )),
+        "Key_TAB_Key_LP.017" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Tab)),
+        "Key_RSHIFT_Key_LP.005" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::RShift))
+        }
+        "Key_ENTER_Key_LP.018" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Return))
+        }
+        "Key_\\_Key_LP.019" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Backslash,
+        )),
+        "Key_BACKSPACE_Key_LP.020" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Back))
+        }
+        "Key_NUM_ENTER_Key_LP.021" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::NumpadEnter,
+        )),
+        "Key_NUM_ADD_Key_LP.006" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Add)),
+        "Key_NUM_MIN_Key_LP.022" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Subtract,
+        )),
+        "Key_NUM_0_Key_LP.007" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad0,
+        )),
+        "Key_NUM_DOT_Key_LP.023" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::NumpadComma,
+        )),
+        "Key_NUM_3_Key_LP.024" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad3,
+        )),
+        "Key_NUM_2_Key_LP.025" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad2,
+        )),
+        "Key_NUM_1_Key_LP.026" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad1,
+        )),
+        "Key_NUM_4_Key_LP.027" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad4,
+        )),
+        "Key_NUM_5_Key_LP.028" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad5,
+        )),
+        "Key_NUM_6_Key_LP.029" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad6,
+        )),
+        "Key_NUM_9_Key_LP.030" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad9,
+        )),
+        "Key_NUM_8_Key_LP.031" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad8,
+        )),
+        "Key_NUM_7_Key_LP.032" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numpad7,
+        )),
+        "Key_NUM_LCK_Key_LP.033" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Numlock,
+        )),
+        "Key_NUM_DIV_Key_LP.034" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Divide))
+        }
+        "Key_NUM_MUL_Key_LP.035" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Multiply,
+        )),
+        "Key_T4_Key_LP.036" => None, // TODO
+        "Key_T3_Key_LP.037" => None, // TODO
+        "Key_T2_Key_LP.038" => None, // TODO
+        "Key_T1_Key_LP.039" => None, // TODO
+        "Key_Up_Key_LP.040" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Up)),
+        "Key_Left_Key_LP.041" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Left)),
+        "Key_Down_Key_LP.042" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Down)),
+        "Key_Left.001_Key_LP.043" => {
+            Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Left))
+        }
+        "Key_PGDN_Key_LP.044" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::PageDown,
+        )),
+        "Key_END_Key_LP.045" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::End)),
+        "Key_DEL_Key_LP.046" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Delete)),
+        "Key_INS_Key_LP.047" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Insert)),
+        "Key_Home_Key_LP.048" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Home)),
+        "Key_PGUP_Key_LP.049" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::PageUp)),
+        "Key_PAUSE_Key_LP.050" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Pause)),
+        "Key_SCRL_Key_LP.051" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Scroll)),
+        "Key_PRNT_Key_LP.052" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Snapshot,
+        )),
+        "Key_F12_Key_LP.053" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F11)),
+        "Key_F12.001_Key_LP.054" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F12)),
+        "Key_F10_Key_LP.055" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F10)),
+        "Key_F9_Key_LP.056" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F9)),
+        "Key_F8_Key_LP.057" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F8)),
+        "Key_F7_Key_LP.058" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F7)),
+        "Key_F6_Key_LP.059" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F6)),
+        "Key_F5_Key_LP.060" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F5)),
+        "Key_F4_Key_LP.061" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F4)),
+        "Key_F3_Key_LP.062" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F3)),
+        "Key_F2_Key_LP.063" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F2)),
+        "Key_F1_Key_LP.064" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F1)),
+        "Key_=_Key_LP.065" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Equals)),
+        "Key_-_Key_LP.066" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Minus)),
+        "Key_0_Key_LP.067" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key0)),
+        "Key_9_Key_LP.068" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key9)),
+        "Key_8_Key_LP.069" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key8)),
+        "Key_7_Key_LP.070" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key7)),
+        "Key_6_Key_LP.071" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key6)),
+        "Key_5_Key_LP.072" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key5)),
+        "Key_4_Key_LP.073" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key4)),
+        "Key_3_Key_LP.074" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key3)),
+        "Key_2_Key_LP.075" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key2)),
+        "Key_`_Key_LP.076" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Apostrophe,
+        )),
+        "Key_1_Key_LP.077" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Key1)),
+        "Key_/_Key_LP.002" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Slash)),
+        "Key_._Key_LP.001" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Period)),
+        "Key_,_Key_LP.078" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Comma)),
+        "Key_M_Key_LP.079" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::M)),
+        "Key_N_Key_LP.080" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::N)),
+        "Key_B_Key_LP.081" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::B)),
+        "Key_V_Key_LP.082" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::V)),
+        "Key_C_Key_LP.083" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::C)),
+        "Key_X_Key_LP.084" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::X)),
+        "Key_Z_Key_LP.085" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Z)),
+        "Key_'_Key_LP.086" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Apostrophe,
+        )),
+        "Key_;_Key_LP.087" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::Semicolon,
+        )),
+        "Key_L_Key_LP.088" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::L)),
+        "Key_K_Key_LP.089" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::K)),
+        "Key_J_Key_LP.090" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::J)),
+        "Key_H_Key_LP.091" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::H)),
+        "Key_G_Key_LP.092" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::G)),
+        "Key_F_Key_LP.093" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::F)),
+        "Key_D_Key_LP.094" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::D)),
+        "Key_S_Key_LP.095" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::S)),
+        "Key_A_Key_LP.096" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::A)),
+        "Key_]_Key_LP.097" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::RBracket,
+        )),
+        "Key_[_Key_LP.098" => Some(KeyboardModel::code_to_index(
+            glutin::VirtualKeyCode::LBracket,
+        )),
+        "Key_P_Key_LP.099" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::P)),
+        "Key_O_Key_LP.100" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::O)),
+        "Key_I_Key_LP.101" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::I)),
+        "Key_U_Key_LP.102" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::U)),
+        "Key_Y_Key_LP.103" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Y)),
+        "Key_T_Key_LP.104" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::T)),
+        "Key_R_Key_LP.105" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::R)),
+        "Key_E_Key_LP.106" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::E)),
+        "Key_W_Key_LP.107" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::W)),
+        "Key_Q_Key_LP" => Some(KeyboardModel::code_to_index(glutin::VirtualKeyCode::Q)),
+        "Base_Cube.001" => None,
+        _ => None, // Unknown model in obj file.
     }
 }
