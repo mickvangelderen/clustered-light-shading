@@ -1,6 +1,8 @@
+#![cfg_attr(feature = "profile", feature(custom_inner_attributes))]
 #![allow(non_snake_case)]
 
 mod basic_renderer;
+mod keyboard_model;
 mod camera;
 mod convert;
 mod frustrum;
@@ -34,18 +36,21 @@ pub struct World {
     clear_color: [f32; 3],
     camera: camera::Camera,
     pos_from_cam_to_hmd: cgmath::Matrix4<f32>,
-    model: tobj::Model,
+    models: Vec<tobj::Model>,
+    #[allow(unused)]
+    materials: Vec<tobj::Material>,
+    keyboard_model: keyboard_model::KeyboardModel,
 }
 
 fn main() {
+    flame::start("initialize");
     let obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
-    let (models, _materials) = obj.unwrap();
-    let model = models.into_iter().next().unwrap();
+    let (models, materials) = obj.unwrap();
 
     let mut world = World {
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::Camera {
-            position: Vector3::new(0.0, 0.0, 5.0),
+            position: Vector3::new(0.0, 0.5, 1.0),
             yaw: Rad(0.0),
             pitch: Rad(0.0),
             fovy: Deg(90.0).into(),
@@ -54,7 +59,9 @@ fn main() {
             zoom_velocity: 1.0,
         },
         pos_from_cam_to_hmd: Matrix4::from_translation(Vector3::zero()),
-        model,
+        models,
+        materials,
+        keyboard_model: keyboard_model::KeyboardModel::new(),
     };
 
     let mut events_loop = glutin::EventsLoop::new();
@@ -117,8 +124,12 @@ fn main() {
     let mut input_up = glutin::ElementState::Released;
     let mut input_down = glutin::ElementState::Released;
 
+    flame::end("initialize");
+
     let mut running = true;
     while running {
+        flame::start("loop");
+        flame::start("update");
         let mut mouse_dx = 0.0;
         let mut mouse_dy = 0.0;
         let mut mouse_dscroll = 0.0;
@@ -144,6 +155,8 @@ fn main() {
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
                             if let Some(vk) = keyboard_input.virtual_keycode {
+                                world.keyboard_model.process_event(vk, keyboard_input.state);
+
                                 use glutin::VirtualKeyCode;
                                 match vk {
                                     VirtualKeyCode::W => input_forward = keyboard_input.state,
@@ -176,8 +189,10 @@ fn main() {
 
         use glutin::ElementState;
 
+        let delta_time = 1.0 / DESIRED_UPS as f32;
+
         world.camera.update(&camera::CameraUpdate {
-            delta_time: 1.0 / DESIRED_UPS as f32,
+            delta_time,
             delta_position: Vector3 {
                 x: match input_left {
                     ElementState::Pressed => -1.0,
@@ -206,7 +221,12 @@ fn main() {
             delta_scroll: mouse_dscroll as f32,
         });
 
+        world.keyboard_model.simulate(delta_time);
+
+        flame::end("update");
+
         // === VR ===
+        flame::start("update vr");
         if let Some(ref vr_resources) = vr_resources {
             while let Some(event) = vr_resources.system().poll_next_event() {
                 println!("{:?}", &event);
@@ -236,10 +256,12 @@ fn main() {
                 world.pos_from_cam_to_hmd = Matrix4::from_translation(Vector3::zero());
             }
         }
+        flame::end("update vr");
         // --- VR ---
 
         // draw everything here
         unsafe {
+            flame::start("render mono");
             let physical_size = win_size.to_physical(win_dpi);
 
             let frustrum = {
@@ -275,11 +297,13 @@ fn main() {
                 },
                 &world,
             );
+            flame::end("render mono");
         }
 
         // === VR ===
         if let Some(ref vr_resources) = vr_resources {
             unsafe {
+                flame::start("render stereo left");
                 renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
@@ -291,7 +315,9 @@ fn main() {
                     },
                     &world,
                 );
+                flame::end("render stereo left");
 
+                flame::start("render stereo right");
                 renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
@@ -303,9 +329,11 @@ fn main() {
                     },
                     &world,
                 );
+                flame::end("render stereo right");
 
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
                 {
+                    flame::start("submit stereo left");
                     let mut texture_t = vr_resources.eye_left.gen_texture_t();
                     vr_resources
                         .compositor()
@@ -321,8 +349,10 @@ fn main() {
                                 vr::CompositorError::from_unchecked(error).unwrap()
                             );
                         });
+                    flame::end("submit stereo left");
                 }
                 {
+                    flame::start("submit stereo right");
                     let mut texture_t = vr_resources.eye_right.gen_texture_t();
                     vr_resources
                         .compositor()
@@ -338,15 +368,22 @@ fn main() {
                                 vr::CompositorError::from_unchecked(error).unwrap()
                             );
                         });
+                    flame::end("submit stereo right");
                 }
             }
         }
         // --- VR ---
 
+        flame::start("swap");
         gl_window.swap_buffers().unwrap();
+        flame::end("swap");
 
         // std::thread::sleep(std::time::Duration::from_millis(17));
+        flame::end("loop");
     }
+
+    #[cfg(feature = "profile")]
+    flame::dump_html(&mut std::fs::File::create("log/flame-graph.html").unwrap()).unwrap();
 }
 
 struct VrResources {
