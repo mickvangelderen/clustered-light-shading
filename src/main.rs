@@ -1,4 +1,3 @@
-#![cfg_attr(feature = "profile", feature(custom_inner_attributes))]
 #![allow(non_snake_case)]
 
 mod basic_renderer;
@@ -43,7 +42,6 @@ pub struct World {
 }
 
 fn main() {
-    flame::start("initialize");
     let obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
     let (models, materials) = obj.unwrap();
 
@@ -124,12 +122,9 @@ fn main() {
     let mut input_up = glutin::ElementState::Released;
     let mut input_down = glutin::ElementState::Released;
 
-    flame::end("initialize");
 
     let mut running = true;
     while running {
-        flame::start("loop");
-        flame::start("update");
         let mut mouse_dx = 0.0;
         let mut mouse_dy = 0.0;
         let mut mouse_dscroll = 0.0;
@@ -223,10 +218,7 @@ fn main() {
 
         world.keyboard_model.simulate(delta_time);
 
-        flame::end("update");
-
         // === VR ===
-        flame::start("update vr");
         if let Some(ref vr_resources) = vr_resources {
             while let Some(event) = vr_resources.system().poll_next_event() {
                 println!("{:?}", &event);
@@ -256,12 +248,10 @@ fn main() {
                 world.pos_from_cam_to_hmd = Matrix4::from_translation(Vector3::zero());
             }
         }
-        flame::end("update vr");
         // --- VR ---
 
         // draw everything here
         unsafe {
-            flame::start("render mono");
             let physical_size = win_size.to_physical(win_dpi);
 
             let frustrum = {
@@ -297,13 +287,11 @@ fn main() {
                 },
                 &world,
             );
-            flame::end("render mono");
         }
 
         // === VR ===
         if let Some(ref vr_resources) = vr_resources {
             unsafe {
-                flame::start("render stereo left");
                 renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
@@ -315,9 +303,7 @@ fn main() {
                     },
                     &world,
                 );
-                flame::end("render stereo left");
 
-                flame::start("render stereo right");
                 renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
@@ -329,11 +315,9 @@ fn main() {
                     },
                     &world,
                 );
-                flame::end("render stereo right");
 
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
                 {
-                    flame::start("submit stereo left");
                     let mut texture_t = vr_resources.eye_left.gen_texture_t();
                     vr_resources
                         .compositor()
@@ -349,10 +333,8 @@ fn main() {
                                 vr::CompositorError::from_unchecked(error).unwrap()
                             );
                         });
-                    flame::end("submit stereo left");
                 }
                 {
-                    flame::start("submit stereo right");
                     let mut texture_t = vr_resources.eye_right.gen_texture_t();
                     vr_resources
                         .compositor()
@@ -368,22 +350,15 @@ fn main() {
                                 vr::CompositorError::from_unchecked(error).unwrap()
                             );
                         });
-                    flame::end("submit stereo right");
                 }
             }
         }
         // --- VR ---
 
-        flame::start("swap");
         gl_window.swap_buffers().unwrap();
-        flame::end("swap");
 
         // std::thread::sleep(std::time::Duration::from_millis(17));
-        flame::end("loop");
     }
-
-    #[cfg(feature = "profile")]
-    flame::dump_html(&mut std::fs::File::create("log/flame-graph.html").unwrap()).unwrap();
 }
 
 struct VrResources {
