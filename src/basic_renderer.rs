@@ -1,8 +1,8 @@
+use super::keyboard_model;
 use super::World;
 use cgmath::*;
 use gl_typed as gl;
 use std::mem;
-use std::num::NonZeroU8;
 
 const VS_SRC: &'static [u8] = b"
 #version 400 core
@@ -74,7 +74,7 @@ pub struct Renderer {
     #[allow(unused)]
     ebs: Vec<gl::BufferName>,
     element_counts: Vec<usize>,
-    keyboard_indices: Vec<Option<NonZeroU8>>,
+    key_indices: Vec<keyboard_model::UncheckedIndex>,
 }
 
 pub struct Parameters<'a, N: 'a>
@@ -125,7 +125,7 @@ impl Renderer {
         );
 
         for i in 0..self.vaos.len() {
-            let highlight: f32 = self.keyboard_indices[i]
+            let highlight: f32 = keyboard_model::Index::new(self.key_indices[i])
                 .map(|i| world.keyboard_model.pressure(i))
                 .unwrap_or(0.0);
             gl.uniform_1f(&self.highlight_loc, highlight);
@@ -223,7 +223,7 @@ impl Renderer {
             .map(|model| model.mesh.indices.len())
             .collect();
 
-        let keyboard_indices: Vec<Option<NonZeroU8>> = world
+        let key_indices: Vec<keyboard_model::UncheckedIndex> = world
             .models
             .iter()
             .map(|model| model_name_to_keyboard_index(&model.name))
@@ -368,12 +368,12 @@ impl Renderer {
             vbs,
             ebs,
             element_counts,
-            keyboard_indices,
+            key_indices,
         }
     }
 }
 
-fn model_name_to_keyboard_index(name: &str) -> Option<NonZeroU8> {
+fn model_name_to_keyboard_index(name: &str) -> keyboard_model::UncheckedIndex {
     let code = match name {
         "Key_RIGHT_CONTROL_Key_LP.008" => Some(glutin::VirtualKeyCode::LControl),
         "Key_MENU_Key_LP.009" => Some(glutin::VirtualKeyCode::Apps),
@@ -487,5 +487,8 @@ fn model_name_to_keyboard_index(name: &str) -> Option<NonZeroU8> {
         _ => None, // Unknown model in obj file.
     };
 
-    code.map(super::keyboard_model::KeyboardModel::code_to_index)
+    match code {
+        Some(code) => keyboard_model::Index::from_code(code).into(),
+        None => keyboard_model::Index::INVALID,
+    }
 }
