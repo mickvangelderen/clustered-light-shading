@@ -23,13 +23,13 @@ impl KeyboardModel {
         for (s, h) in self.soft_states.iter_mut().zip(self.hard_states.iter()) {
             match h {
                 ElementState::Pressed => {
-                    *s += 20.0*delta_time;
+                    *s += 40.0 * delta_time;
                     if *s > 1.0 {
                         *s = 1.0;
                     }
                 },
                 ElementState::Released => {
-                    *s -= 5.0*delta_time;
+                    *s -= 15.0 * delta_time;
                     if *s < 0.0 {
                         *s = 0.0;
                     }
