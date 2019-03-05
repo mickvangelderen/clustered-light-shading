@@ -11,6 +11,10 @@ Run with steam-runtime, for example:
 ~/.steam/steam/ubuntu12_32/steam-runtime/run.sh lldb target/debug/vr-lab
 ```
 
+Disable vsync in the driver if you're using vr. This prevents the buffer swap
+from blocking and thus render at your display's frequency which is probably 60Hz
+while we need to render to the HDM at 90Hz.
+
 ## Dependencies
 
 ### Sibling repositories.
