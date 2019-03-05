@@ -1,6 +1,6 @@
 [package]
 name = "vr-lab"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Mick van Gelderen <mickvangelderen@gmail.com>"]
 edition = "2018"
 publish = false
@@ -14,7 +14,7 @@ tobj = "0.1.6"
 cgmath = "0.17.0"
 image = "0.21.0"
 openvr = { git = "https://github.com/mickvangelderen/openvr-rust", tag = "0.1.0" }
-gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", tag = "0.1.1" }
+gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", tag = "0.1.2" }
  
 [patch."https://github.com/mickvangelderen/openvr-sys-rust"]
 openvr-sys = { path = "../openvr-sys-rust" }
