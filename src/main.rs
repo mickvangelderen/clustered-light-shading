@@ -71,7 +71,13 @@ fn main() {
             .with_dimensions(glutin::dpi::LogicalSize::new(1024.0, 768.0)),
         glutin::ContextBuilder::new()
             .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
-            .with_gl_profile(glutin::GlProfile::Core),
+            .with_gl_profile(glutin::GlProfile::Core)
+            // We do not wan't vsync since it will cause our loop to sync to the
+            // desktop display frequency which is probably lower than the HMD's
+            // 90Hz.
+            .with_multisampling(4)
+            .with_vsync(false)
+            .with_double_buffer(Some(true)),
         &events_loop,
     )
     .unwrap();
