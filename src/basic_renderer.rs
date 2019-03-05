@@ -65,9 +65,7 @@ pub struct Renderer {
     diffuse_sampler_loc: gl::UniformLocation<i32>,
     // #[allow(unused)]
     // normal_sampler_loc: gl::UniformLocation<i32>,
-    diffuse_texture: gl::TextureName,
-    #[allow(unused)]
-    normal_texture: gl::TextureName,
+    diffuse_textures: Vec<gl::TextureName>,
     vaos: Vec<gl::VertexArrayName>,
     #[allow(unused)]
     vbs: Vec<gl::BufferName>,
@@ -109,7 +107,6 @@ impl Renderer {
         gl.use_program(&self.program);
 
         gl.active_texture(gl::TEXTURE0);
-        gl.bind_texture(gl::TEXTURE_2D, &self.diffuse_texture);
         gl.uniform_1i(&self.diffuse_sampler_loc, 0);
 
         // gl.active_texture(gl::TEXTURE1);
@@ -124,7 +121,18 @@ impl Renderer {
             pos_from_wld_to_clp.as_ref(),
         );
 
+        // Cache texture binding.
+        let mut bound_diffuse_texture: u32 = 0;
+
         for i in 0..self.vaos.len() {
+            if let Some(material_id) = world.models[i].mesh.material_id {
+                let diffuse_texture = &self.diffuse_textures[material_id];
+                if diffuse_texture.as_u32() != bound_diffuse_texture {
+                    gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
+                    bound_diffuse_texture = diffuse_texture.as_u32();
+                }
+            }
+
             let highlight: f32 = keyboard_model::Index::new(self.key_indices[i])
                 .map(|i| world.keyboard_model.pressure(i))
                 .unwrap_or(0.0);
@@ -309,51 +317,69 @@ impl Renderer {
         //     .get_uniform_location(&program, gl::static_cstr!("normal_sampler"))
         //     .expect("Could not find attribute location.");
 
-        let (diffuse_texture, normal_texture) = {
-            let mut names: [Option<gl::TextureName>; 2] = mem::uninitialized();
-            gl.gen_textures(&mut names);
-            let [n0, n1] = names;
-            (n0.unwrap(), n1.unwrap())
+
+        let ebs = {
+            assert_eq!(
+                mem::size_of::<Option<gl::BufferName>>(),
+                mem::size_of::<gl::BufferName>()
+            );
+            // Create uninitialized memory.
+            let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
+            names.set_len(world.models.len());
+            gl.gen_buffers(&mut names);
+            // Assert that all names != 0.
+            for name in names.iter() {
+                if let None = name {
+                    panic!("Failed to acquire buffer name.");
+                }
+            }
+            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
+            mem::forget(names);
+            Vec::from_raw_parts(ptr as *mut gl::BufferName, len, cap)
         };
 
-        {
-            let img = image::open("data/keyboard-diffuse.png")
-                .unwrap()
-                .flipv()
-                .to_rgba();
-            gl.bind_texture(gl::TEXTURE_2D, &diffuse_texture);
-            gl.tex_image_2d(
-                gl::TEXTURE_2D,
-                0,
-                gl::RGBA8,
-                img.width() as i32,
-                img.height() as i32,
-                gl::RGBA,
-                gl::UNSIGNED_BYTE,
-                img.as_ptr() as *const std::os::raw::c_void,
+        let diffuse_textures = {
+            assert_eq!(
+                mem::size_of::<Option<gl::TextureName>>(),
+                mem::size_of::<gl::TextureName>(),
             );
-            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
-            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
-        }
+            let mut names: Vec<Option<gl::TextureName>> = Vec::with_capacity(world.materials.len());
+            names.set_len(world.materials.len());
+            gl.gen_textures(&mut names);
+            // Assert that all names != 0.
+            for name in names.iter() {
+                if let None = name {
+                    panic!("Failed to acquire texture name.");
+                }
+            }
+            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
+            mem::forget(names);
+            Vec::from_raw_parts(ptr as *mut gl::TextureName, len, cap)
+        };
 
-        {
-            let img = image::open("data/keyboard-normals.png")
-                .unwrap()
-                .flipv()
-                .to_rgba();
-            gl.bind_texture(gl::TEXTURE_2D, &normal_texture);
-            gl.tex_image_2d(
-                gl::TEXTURE_2D,
-                0,
-                gl::RGBA8,
-                img.width() as i32,
-                img.height() as i32,
-                gl::RGBA,
-                gl::UNSIGNED_BYTE,
-                img.as_ptr() as *const std::os::raw::c_void,
-            );
-            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
-            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+        for (i, material) in world.materials.iter().enumerate() {
+            let path: std::path::PathBuf = ["data", material.diffuse_texture.as_ref()].iter().collect();
+
+            {
+                let img = image::open(path)
+                    .unwrap()
+                    .flipv()
+                    .to_rgba();
+                gl.bind_texture(gl::TEXTURE_2D, &diffuse_textures[i]);
+                gl.tex_image_2d(
+                    gl::TEXTURE_2D,
+                    0,
+                    gl::RGBA8,
+                    img.width() as i32,
+                    img.height() as i32,
+                    gl::RGBA,
+                    gl::UNSIGNED_BYTE,
+                    img.as_ptr() as *const std::os::raw::c_void,
+                );
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+            }
+
         }
 
         Renderer {
@@ -362,8 +388,7 @@ impl Renderer {
             highlight_loc,
             diffuse_sampler_loc,
             // normal_sampler_loc,
-            diffuse_texture,
-            normal_texture,
+            diffuse_textures,
             vaos,
             vbs,
             ebs,

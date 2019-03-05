@@ -44,8 +44,29 @@ pub struct World {
 }
 
 fn main() {
-    let obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
-    let (models, materials) = obj.unwrap();
+    let room_obj = tobj::load_obj(&std::path::Path::new("data/room.obj"));
+    let (mut room_models, mut room_materials) = room_obj.unwrap();
+
+    let keyboard_obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
+    let (mut keyboard_models, mut keyboard_materials) = keyboard_obj.unwrap();
+
+    for model in keyboard_models.iter_mut() {
+        // Offset keyboard model material ids.
+        if let Some(ref mut id) = model.mesh.material_id {
+            *id += room_materials.len();
+        }
+    }
+
+    let mut models: Vec<tobj::Model> =
+        Vec::with_capacity(room_models.len() + keyboard_models.len());
+
+    models.append(&mut room_models);
+    models.append(&mut keyboard_models);
+
+    let mut materials: Vec<tobj::Material> =
+        Vec::with_capacity(room_materials.len() + keyboard_materials.len());
+    materials.append(&mut room_materials);
+    materials.append(&mut keyboard_materials);
 
     let mut world = World {
         clear_color: [0.0, 0.0, 0.0],
