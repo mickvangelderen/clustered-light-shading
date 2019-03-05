@@ -49,3 +49,20 @@ Also OpenGL development headers are always nice to have.
 Reducing render-to-photons latency: http://media.steampowered.com/apps/valve/2015/Alex_Vlachos_Advanced_VR_Rendering_GDC2015.pdf
 
 
+### Scheduling simlution and rendering
+
+Connection between some OpenVR calls and time.
+https://github.com/ValveSoftware/openvr/issues/434
+
+Information and methods on how why dropping frames is bad, how to minimize the
+chance of dropping frames, and what options there are when you do drop a frame.
+Has a focus on stereoscopic rendering but most ideas apply to monoscopic
+rendering as well.
+https://www.gdcvault.com/play/1023522/Advanced-VR-Rendering
+
+Analysing frame timing when using SteamVR.
+https://developer.valvesoftware.com/wiki/SteamVR/Frame_Timing
+
+TODO: Watch
+https://www.gdcvault.com/play/1021771/Advanced-VR
+
