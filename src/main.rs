@@ -1,10 +1,11 @@
 #![allow(non_snake_case)]
 
 mod basic_renderer;
-mod keyboard_model;
 mod camera;
 mod convert;
+mod filters;
 mod frustrum;
+mod keyboard_model;
 
 use openvr as vr;
 use openvr::enums::Enum;
@@ -18,6 +19,7 @@ use std::os::raw::c_void;
 use std::ptr;
 
 const DESIRED_UPS: f32 = 90.0;
+const DESIRED_FPS: f32 = 90.0;
 
 /// Print out all loaded properties of some models and associated materials
 pub fn print_model_info(models: &[tobj::Model], materials: &[tobj::Material]) {
@@ -122,6 +124,8 @@ fn main() {
     let mut input_up = glutin::ElementState::Released;
     let mut input_down = glutin::ElementState::Released;
 
+    let mut fps_average = filters::MovingAverageF32::new(DESIRED_FPS);
+    let mut last_frame_start = std::time::Instant::now();
 
     let mut running = true;
     while running {
@@ -358,6 +362,22 @@ fn main() {
         gl_window.swap_buffers().unwrap();
 
         // std::thread::sleep(std::time::Duration::from_millis(17));
+
+        {
+            let duration = {
+                let now = std::time::Instant::now();
+                let duration = now.duration_since(last_frame_start);
+                last_frame_start = now;
+                duration
+            };
+            const NANOS_PER_SEC: f32 = 1_000_000_000.0;
+            let fps = NANOS_PER_SEC
+                / (duration.as_secs() as f32 * NANOS_PER_SEC + duration.subsec_nanos() as f32);
+            fps_average.submit(fps);
+            gl_window
+                .window()
+                .set_title(&format!("VR Lab - {:02.1} FPS", fps_average.compute()));
+        }
     }
 }
 
@@ -411,7 +431,10 @@ impl EyeResources {
             let mut names: [Option<gl::TextureName>; 2] = mem::uninitialized();
             gl.gen_textures(&mut names);
             let [n0, n1] = names;
-            (n0.expect("Failed to acquire texture name."), n1.expect("Failed to acquire texture name."))
+            (
+                n0.expect("Failed to acquire texture name."),
+                n1.expect("Failed to acquire texture name."),
+            )
         };
 
         gl.bind_texture(gl::TEXTURE_2D, &color_texture);
