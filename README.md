@@ -1,7 +1,9 @@
+![Typing Simulator](typing-simulator.jpg)
+
 Requires SteamVR (installed through steam) and standard OpenGL development
 headers and libraries to be installed.
 
-Requires rust (nigtly probably)
+Requires rust (nightly probably)
 
 Probably only works on unixies.
 
@@ -27,7 +29,7 @@ while we need to render to the HDM at 90Hz.
 
 Also OpenGL development headers are always nice to have.
 
-`sudo apt install qtbase5-dev mesa-common-dev`
+`sudo apt install qtbase5-dev mesa-common-dev libqt5multimedia5`
 
 ## Troubleshooting
 
@@ -60,7 +62,7 @@ Has a focus on stereoscopic rendering but most ideas apply to monoscopic
 rendering as well.
 https://www.gdcvault.com/play/1023522/Advanced-VR-Rendering
 
-Analysing frame timing when using SteamVR.
+Analyzing frame timing when using SteamVR.
 https://developer.valvesoftware.com/wiki/SteamVR/Frame_Timing
 
 TODO: Watch
