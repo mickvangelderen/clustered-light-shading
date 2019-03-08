@@ -311,7 +311,7 @@ fn main() {
             renderer.render(
                 &gl,
                 &basic_renderer::Parameters {
-                    framebuffer: &gl::DefaultFramebufferName,
+                    framebuffer: None,
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     pos_from_cam_to_clp: pos_from_hmd_to_clp,
@@ -326,7 +326,7 @@ fn main() {
                 renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
-                        framebuffer: &vr_resources.eye_left.framebuffer,
+                        framebuffer: Some(vr_resources.eye_left.framebuffer),
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
                         pos_from_cam_to_clp: vr_resources.eye_left.pos_from_hmd_to_clp
@@ -338,7 +338,7 @@ fn main() {
                 renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
-                        framebuffer: &vr_resources.eye_right.framebuffer,
+                        framebuffer: Some(vr_resources.eye_right.framebuffer),
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
                         pos_from_cam_to_clp: vr_resources.eye_right.pos_from_hmd_to_clp
@@ -464,7 +464,7 @@ impl EyeResources {
             )
         };
 
-        gl.bind_texture(gl::TEXTURE_2D, &color_texture);
+        gl.bind_texture(gl::TEXTURE_2D, color_texture);
         {
             gl.tex_image_2d(
                 gl::TEXTURE_2D,
@@ -480,7 +480,7 @@ impl EyeResources {
             gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
         }
 
-        gl.bind_texture(gl::TEXTURE_2D, &depth_texture);
+        gl.bind_texture(gl::TEXTURE_2D, depth_texture);
         {
             gl.tex_image_2d(
                 gl::TEXTURE_2D,
@@ -496,15 +496,15 @@ impl EyeResources {
             gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
         }
 
-        gl.bind_texture(gl::TEXTURE_2D, &gl::Unbind);
+        gl.unbind_texture(gl::TEXTURE_2D);
 
-        gl.bind_framebuffer(gl::FRAMEBUFFER, &framebuffer);
+        gl.bind_framebuffer(gl::FRAMEBUFFER, Some(framebuffer));
         {
             gl.framebuffer_texture_2d(
                 gl::FRAMEBUFFER,
                 gl::COLOR_ATTACHMENT0,
                 gl::TEXTURE_2D,
-                &color_texture,
+                color_texture,
                 0,
             );
 
@@ -512,7 +512,7 @@ impl EyeResources {
                 gl::FRAMEBUFFER,
                 gl::DEPTH_STENCIL_ATTACHMENT,
                 gl::TEXTURE_2D,
-                &depth_texture,
+                depth_texture,
                 0,
             );
 
@@ -520,7 +520,8 @@ impl EyeResources {
                 gl.check_framebuffer_status(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE.into()
             );
         }
-        gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
+
+        gl.bind_framebuffer(gl::FRAMEBUFFER, None);
 
         EyeResources {
             eye,
@@ -535,7 +536,7 @@ impl EyeResources {
         // NOTE(mickvangelderen): The handle is not actually a pointer in
         // OpenGL's case, it's just the texture name.
         vr::sys::Texture_t {
-            handle: self.color_texture.as_u32() as usize as *const c_void as *mut c_void,
+            handle: self.color_texture.into_u32() as usize as *const c_void as *mut c_void,
             eType: vr::sys::ETextureType_TextureType_OpenGL,
             eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
         }
