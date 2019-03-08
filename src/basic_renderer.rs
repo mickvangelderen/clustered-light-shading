@@ -44,7 +44,7 @@ void main() {
 
 unsafe fn recompile_shader(
     gl: &gl::Gl,
-    name: &mut gl::ShaderName,
+    name: gl::ShaderName,
     source: &[u8],
 ) -> Result<(), String> {
     gl.shader_source(name, &[source]);
@@ -53,16 +53,16 @@ unsafe fn recompile_shader(
     if status == gl::ShaderCompileStatus::Compiled.into() {
         Ok(())
     } else {
-        let log = gl.get_shader_info_log_move(&name);
+        let log = gl.get_shader_info_log_move(name);
         Err(String::from_utf8(log).unwrap())
     }
 }
 
 pub struct Renderer {
     program: gl::ProgramName,
-    pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]>,
-    highlight_loc: gl::UniformLocation<f32>,
-    diffuse_sampler_loc: gl::UniformLocation<i32>,
+    pos_from_wld_to_clp_loc: gl::UniformLocation,
+    highlight_loc: gl::UniformLocation,
+    diffuse_sampler_loc: gl::UniformLocation,
     // #[allow(unused)]
     // normal_sampler_loc: gl::UniformLocation<i32>,
     diffuse_textures: Vec<gl::TextureName>,
@@ -75,21 +75,15 @@ pub struct Renderer {
     key_indices: Vec<keyboard_model::UncheckedIndex>,
 }
 
-pub struct Parameters<'a, N: 'a>
-where
-    N: gl::MaybeDefaultFramebufferName,
-{
-    pub framebuffer: &'a N,
+pub struct Parameters {
+    pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
     pub pos_from_cam_to_clp: Matrix4<f32>,
 }
 
 impl Renderer {
-    pub unsafe fn render<'a, N>(&self, gl: &gl::Gl, params: &Parameters<'a, N>, world: &World)
-    where
-        N: gl::MaybeDefaultFramebufferName,
-    {
+    pub unsafe fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World) {
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -104,10 +98,10 @@ impl Renderer {
         );
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
-        gl.use_program(&self.program);
+        gl.use_program(self.program);
 
         gl.active_texture(gl::TEXTURE0);
-        gl.uniform_1i(&self.diffuse_sampler_loc, 0);
+        gl.uniform_1i(self.diffuse_sampler_loc, 0);
 
         // gl.active_texture(gl::TEXTURE1);
         // gl.bind_texture(gl::TEXTURE_2D, &self.normal_texture);
@@ -116,7 +110,7 @@ impl Renderer {
         let pos_from_wld_to_clp = params.pos_from_cam_to_clp * world.camera.pos_from_wld_to_cam();
 
         gl.uniform_matrix4f(
-            &self.pos_from_wld_to_clp_loc,
+            self.pos_from_wld_to_clp_loc,
             gl::MajorAxis::Column,
             pos_from_wld_to_clp.as_ref(),
         );
@@ -126,43 +120,43 @@ impl Renderer {
 
         for i in 0..self.vaos.len() {
             if let Some(material_id) = world.models[i].mesh.material_id {
-                let diffuse_texture = &self.diffuse_textures[material_id];
-                if diffuse_texture.as_u32() != bound_diffuse_texture {
+                let diffuse_texture = self.diffuse_textures[material_id];
+                if diffuse_texture.into_u32() != bound_diffuse_texture {
                     gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
-                    bound_diffuse_texture = diffuse_texture.as_u32();
+                    bound_diffuse_texture = diffuse_texture.into_u32();
                 }
             }
 
             let highlight: f32 = keyboard_model::Index::new(self.key_indices[i])
                 .map(|i| world.keyboard_model.pressure(i))
                 .unwrap_or(0.0);
-            gl.uniform_1f(&self.highlight_loc, highlight);
+            gl.uniform_1f(self.highlight_loc, highlight);
 
-            gl.bind_vertex_array(&self.vaos[i]);
+            gl.bind_vertex_array(self.vaos[i]);
             gl.draw_elements(gl::TRIANGLES, self.element_counts[i], gl::UNSIGNED_INT, 0);
         }
 
-        gl.bind_vertex_array(&gl::Unbind);
+        gl.unbind_vertex_array();
 
-        gl.bind_framebuffer(gl::FRAMEBUFFER, &gl::DefaultFramebufferName);
+        gl.bind_framebuffer(gl::FRAMEBUFFER, None);
     }
 
     pub unsafe fn new(gl: &gl::Gl, world: &World) -> Self {
-        let mut vs = gl
+        let vs = gl
             .create_shader(gl::VERTEX_SHADER)
             .expect("Failed to create shader.");
-        recompile_shader(&gl, &mut vs, VS_SRC).unwrap_or_else(|e| panic!("{}", e));
+        recompile_shader(&gl, vs, VS_SRC).unwrap_or_else(|e| panic!("{}", e));
 
-        let mut fs = gl
+        let fs = gl
             .create_shader(gl::FRAGMENT_SHADER)
             .expect("Failed to create shader.");
-        recompile_shader(&gl, &mut fs, FS_SRC).unwrap_or_else(|e| panic!("{}", e));
+        recompile_shader(&gl, fs, FS_SRC).unwrap_or_else(|e| panic!("{}", e));
 
-        let mut program = gl.create_program().expect("Failed to create program.");
-        gl.attach_shader(&mut program, &vs);
-        gl.attach_shader(&mut program, &fs);
-        gl.link_program(&mut program);
-        gl.use_program(&program);
+        let program = gl.create_program().expect("Failed to create program.");
+        gl.attach_shader(program, vs);
+        gl.attach_shader(program, fs);
+        gl.link_program(program);
+        gl.use_program(program);
 
         let vaos = {
             assert_eq!(
@@ -238,9 +232,9 @@ impl Renderer {
             .collect();
 
         for (i, model) in world.models.iter().enumerate() {
-            let vao = &vaos[i];
-            let vb = &vbs[i];
-            let eb = &ebs[i];
+            let vao = vaos[i];
+            let vb = vbs[i];
+            let eb = ebs[i];
 
             let ver_pos_size = mem::size_of_val(&model.mesh.positions[..]);
             let tex_pos_size = mem::size_of_val(&model.mesh.texcoords[..]);
@@ -268,15 +262,15 @@ impl Renderer {
             // AOS layout.
 
             let vs_ver_pos_loc = gl
-                .get_attrib_location(&program, gl::static_cstr!("vs_ver_pos"))
+                .get_attrib_location(program, gl::static_cstr!("vs_ver_pos"))
                 .expect("Could not find attribute location.");
 
             let vs_tex_pos_loc = gl
-                .get_attrib_location(&program, gl::static_cstr!("vs_tex_pos"))
+                .get_attrib_location(program, gl::static_cstr!("vs_tex_pos"))
                 .expect("Could not find attribute location.");
 
             gl.vertex_attrib_pointer(
-                &vs_ver_pos_loc,
+                vs_ver_pos_loc,
                 3,
                 gl::FLOAT,
                 gl::FALSE,
@@ -285,7 +279,7 @@ impl Renderer {
             );
 
             gl.vertex_attrib_pointer(
-                &vs_tex_pos_loc,
+                vs_tex_pos_loc,
                 2,
                 gl::FLOAT,
                 gl::FALSE,
@@ -293,68 +287,41 @@ impl Renderer {
                 tex_pos_offset,
             );
 
-            gl.enable_vertex_attrib_array(&vs_ver_pos_loc);
-            gl.enable_vertex_attrib_array(&vs_tex_pos_loc);
+            gl.enable_vertex_attrib_array(vs_ver_pos_loc);
+            gl.enable_vertex_attrib_array(vs_tex_pos_loc);
 
-            gl.bind_vertex_array(&gl::Unbind);
-            gl.bind_buffer(gl::ARRAY_BUFFER, &gl::Unbind);
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, &gl::Unbind);
+            gl.unbind_vertex_array();
+            gl.unbind_buffer(gl::ARRAY_BUFFER);
+            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
         }
 
-        let pos_from_wld_to_clp_loc: gl::UniformLocation<[[f32; 4]; 4]> = gl
-            .get_uniform_location(&program, gl::static_cstr!("pos_from_wld_to_clp"))
+        let pos_from_wld_to_clp_loc = gl
+            .get_uniform_location(program, gl::static_cstr!("pos_from_wld_to_clp"))
+            .into_option()
             .expect("Could not find uniform location.");
 
-        let highlight_loc: gl::UniformLocation<f32> = gl
-            .get_uniform_location(&program, gl::static_cstr!("highlight"))
+        let highlight_loc = gl
+            .get_uniform_location(program, gl::static_cstr!("highlight"))
+            .into_option()
             .expect("Could not find uniform location.");
 
         let diffuse_sampler_loc = gl
-            .get_uniform_location(&program, gl::static_cstr!("diffuse_sampler"))
+            .get_uniform_location(program, gl::static_cstr!("diffuse_sampler"))
+            .into_option()
             .expect("Could not find attribute location.");
 
-        // let normal_sampler_loc = gl
-        //     .get_uniform_location(&program, gl::static_cstr!("normal_sampler"))
-        //     .expect("Could not find attribute location.");
-
-
         let ebs = {
-            assert_eq!(
-                mem::size_of::<Option<gl::BufferName>>(),
-                mem::size_of::<gl::BufferName>()
-            );
-            // Create uninitialized memory.
             let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
             names.set_len(world.models.len());
             gl.gen_buffers(&mut names);
-            // Assert that all names != 0.
-            for name in names.iter() {
-                if let None = name {
-                    panic!("Failed to acquire buffer name.");
-                }
-            }
-            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
-            mem::forget(names);
-            Vec::from_raw_parts(ptr as *mut gl::BufferName, len, cap)
+            gl::UnwrapAll::unwrap_all(names).expect("Failed to acquire enough buffer names.")
         };
 
         let diffuse_textures = {
-            assert_eq!(
-                mem::size_of::<Option<gl::TextureName>>(),
-                mem::size_of::<gl::TextureName>(),
-            );
             let mut names: Vec<Option<gl::TextureName>> = Vec::with_capacity(world.materials.len());
             names.set_len(world.materials.len());
             gl.gen_textures(&mut names);
-            // Assert that all names != 0.
-            for name in names.iter() {
-                if let None = name {
-                    panic!("Failed to acquire texture name.");
-                }
-            }
-            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
-            mem::forget(names);
-            Vec::from_raw_parts(ptr as *mut gl::TextureName, len, cap)
+            gl::UnwrapAll::unwrap_all(names).expect("Failed to acquire enough texture names.")
         };
 
         for (i, material) in world.materials.iter().enumerate() {
@@ -365,7 +332,7 @@ impl Renderer {
                     .unwrap()
                     .flipv()
                     .to_rgba();
-                gl.bind_texture(gl::TEXTURE_2D, &diffuse_textures[i]);
+                gl.bind_texture(gl::TEXTURE_2D, diffuse_textures[i]);
                 gl.tex_image_2d(
                     gl::TEXTURE_2D,
                     0,
@@ -379,7 +346,6 @@ impl Renderer {
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
             }
-
         }
 
         Renderer {
