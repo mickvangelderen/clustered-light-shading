@@ -3,6 +3,7 @@ use super::World;
 use cgmath::*;
 use gl_typed as gl;
 use std::mem;
+use gl_typed::convert::*;
 
 const VS_SRC: &'static [u8] = b"
 #version 400 core
@@ -159,64 +160,24 @@ impl Renderer {
         gl.use_program(program);
 
         let vaos = {
-            assert_eq!(
-                mem::size_of::<Option<gl::VertexArrayName>>(),
-                mem::size_of::<gl::VertexArrayName>()
-            );
-            // Create uninitialized memory.
-            let mut names: Vec<Option<gl::VertexArrayName>> =
-                Vec::with_capacity(world.models.len());
+            let mut names = Vec::with_capacity(world.models.len());
             names.set_len(world.models.len());
             gl.gen_vertex_arrays(&mut names);
-            // Assert that all names != 0.
-            for name in names.iter() {
-                if let None = name {
-                    panic!("Failed to acquire vertex array name.");
-                }
-            }
-            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
-            mem::forget(names);
-            Vec::from_raw_parts(ptr as *mut gl::VertexArrayName, len, cap)
+            names.try_transmute_each().unwrap()
         };
 
         let vbs = {
-            assert_eq!(
-                mem::size_of::<Option<gl::BufferName>>(),
-                mem::size_of::<gl::BufferName>()
-            );
-            // Create uninitialized memory.
-            let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
+            let mut names = Vec::with_capacity(world.models.len());
             names.set_len(world.models.len());
             gl.gen_buffers(&mut names);
-            // Assert that all names != 0.
-            for name in names.iter() {
-                if let None = name {
-                    panic!("Failed to acquire buffer name.");
-                }
-            }
-            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
-            mem::forget(names);
-            Vec::from_raw_parts(ptr as *mut gl::BufferName, len, cap)
+            names.try_transmute_each().unwrap()
         };
 
         let ebs = {
-            assert_eq!(
-                mem::size_of::<Option<gl::BufferName>>(),
-                mem::size_of::<gl::BufferName>()
-            );
-            // Create uninitialized memory.
-            let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
+            let mut names = Vec::with_capacity(world.models.len());
             names.set_len(world.models.len());
             gl.gen_buffers(&mut names);
-            // Assert that all names != 0.
-            for name in names.iter() {
-                if let None = name {
-                    panic!("Failed to acquire buffer name.");
-                }
-            }
-            let (ptr, len, cap) = (names.as_mut_ptr(), names.len(), names.capacity());
-            mem::forget(names);
-            Vec::from_raw_parts(ptr as *mut gl::BufferName, len, cap)
+            names.try_transmute_each().unwrap()
         };
 
         let element_counts: Vec<usize> = world
@@ -311,17 +272,17 @@ impl Renderer {
             .expect("Could not find attribute location.");
 
         let ebs = {
-            let mut names: Vec<Option<gl::BufferName>> = Vec::with_capacity(world.models.len());
+            let mut names = Vec::with_capacity(world.models.len());
             names.set_len(world.models.len());
             gl.gen_buffers(&mut names);
-            gl::UnwrapAll::unwrap_all(names).expect("Failed to acquire enough buffer names.")
+            names.try_transmute_each().unwrap()
         };
 
         let diffuse_textures = {
-            let mut names: Vec<Option<gl::TextureName>> = Vec::with_capacity(world.materials.len());
+            let mut names = Vec::with_capacity(world.materials.len());
             names.set_len(world.materials.len());
             gl.gen_textures(&mut names);
-            gl::UnwrapAll::unwrap_all(names).expect("Failed to acquire enough texture names.")
+            names.try_transmute_each().unwrap()
         };
 
         for (i, material) in world.materials.iter().enumerate() {
