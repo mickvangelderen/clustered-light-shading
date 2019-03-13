@@ -43,7 +43,31 @@ pub struct World {
     keyboard_model: keyboard_model::KeyboardModel,
 }
 
+use std::sync::mpsc;
+use std::thread;
+
 fn main() {
+    let start_instant = std::time::Instant::now();
+
+    let (tx_log, rx_log) = mpsc::channel::<log::Entry>();
+
+    let timing_thread = thread::Builder::new()
+        .name("log".to_string())
+        .spawn(move || {
+            use std::fs;
+            use std::io;
+            use std::io::Write;
+
+            let mut file = io::BufWriter::new(fs::File::create("log.bin").unwrap());
+
+            for entry in rx_log.iter() {
+                file.write_all(&entry.into_ne_bytes()).unwrap();
+            }
+
+            file.flush().unwrap();
+        })
+        .unwrap();
+
     let room_obj = tobj::load_obj(&std::path::Path::new("data/room.obj"));
     let (mut room_models, mut room_materials) = room_obj.unwrap();
 
@@ -156,6 +180,8 @@ fn main() {
 
     let mut running = true;
     while running {
+        let simulation_start_nanos = start_instant.elapsed().as_nanos() as u64;
+
         let mut mouse_dx = 0.0;
         let mut mouse_dy = 0.0;
         let mut mouse_dscroll = 0.0;
@@ -249,6 +275,8 @@ fn main() {
 
         world.keyboard_model.simulate(delta_time);
 
+        let simulation_end_pose_start_nanos = start_instant.elapsed().as_nanos() as u64;
+
         // === VR ===
         if let Some(ref vr_resources) = vr_resources {
             while let Some(event) = vr_resources.system().poll_next_event() {
@@ -280,6 +308,8 @@ fn main() {
             }
         }
         // --- VR ---
+
+        let pose_end_render_start_nanos = start_instant.elapsed().as_nanos() as u64;
 
         // draw everything here
         unsafe {
@@ -386,9 +416,18 @@ fn main() {
         }
         // --- VR ---
 
+        let render_end_nanos = start_instant.elapsed().as_nanos() as u64;
+
         gl_window.swap_buffers().unwrap();
 
         // std::thread::sleep(std::time::Duration::from_millis(17));
+
+        tx_log.send(log::Entry {
+            simulation_start_nanos,
+            simulation_end_pose_start_nanos,
+            pose_end_render_start_nanos,
+            render_end_nanos,
+        }).unwrap();
 
         {
             let duration = {
@@ -406,6 +445,10 @@ fn main() {
                 .set_title(&format!("VR Lab - {:02.1} FPS", fps_average.compute()));
         }
     }
+
+    drop(tx_log);
+
+    timing_thread.join().unwrap();
 }
 
 struct VrResources {
