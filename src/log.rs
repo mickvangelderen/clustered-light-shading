@@ -35,15 +35,11 @@ impl Entry {
     }
 
     pub fn from_ne_bytes(bytes: [u8; std::mem::size_of::<Entry>()]) -> Self {
-        unsafe {
-            std::mem::transmute(bytes)
-        }
+        unsafe { std::mem::transmute(bytes) }
     }
 
     pub fn into_ne_bytes(self) -> [u8; std::mem::size_of::<Entry>()] {
-        unsafe {
-            std::mem::transmute(self)
-        }
+        unsafe { std::mem::transmute(self) }
     }
 }
 

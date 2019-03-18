@@ -58,7 +58,7 @@ fn main() {
             use std::io;
             use std::io::Write;
 
-            let mut file = io::BufWriter::new(fs::File::create("log.bin").unwrap());
+            let mut file = io::BufWriter::new(fs::File::create("log/log.bin").unwrap());
 
             for entry in rx_log.iter() {
                 file.write_all(&entry.into_ne_bytes()).unwrap();
@@ -422,12 +422,14 @@ fn main() {
 
         // std::thread::sleep(std::time::Duration::from_millis(17));
 
-        tx_log.send(log::Entry {
-            simulation_start_nanos,
-            simulation_end_pose_start_nanos,
-            pose_end_render_start_nanos,
-            render_end_nanos,
-        }).unwrap();
+        tx_log
+            .send(log::Entry {
+                simulation_start_nanos,
+                simulation_end_pose_start_nanos,
+                pose_end_render_start_nanos,
+                render_end_nanos,
+            })
+            .unwrap();
 
         {
             let duration = {
