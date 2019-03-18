@@ -28,6 +28,6 @@ impl MovingAverageF32 {
     pub fn compute(&self) -> f32 {
         let sum: f32 = self.samples.iter().sum();
         let count = self.samples.len() as f32;
-        sum/count
+        sum / count
     }
 }

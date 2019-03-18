@@ -1,48 +1,38 @@
 use log;
 use std::fs;
-use std::io::{self, prelude::*};
+use std::io;
 
 fn main() -> io::Result<()> {
-    let mut file = io::BufReader::new(fs::File::open("log.bin")?);
+    let mut entries: Vec<u8> = fs::read("log/log.bin")?;
 
-    let mut buf = [0u8; std::mem::size_of::<log::Entry>()];
-
-    if let Err(error) = file.read_exact(&mut buf) {
-        match error.kind() {
-            io::ErrorKind::UnexpectedEof => panic!("Log requires at least 1 entry."),
-            _ => return Err(error),
-        }
+    if entries.len() % std::mem::size_of::<log::Entry>() != 0 {
+        panic!("Unexpected number of bytes read.");
     }
 
-    let mut frame: u64 = 1;
-    let mut entry = log::Entry::from_ne_bytes(buf);
-    let first_simulation_start_nanos: u64 = entry.simulation_start_nanos;
-    let mut sim: u64 = 0;
-    let mut pos: u64 = 0;
-    let mut ren: u64 = 0;
+    let entries: Vec<log::Entry> = unsafe {
+        let out = Vec::from_raw_parts(
+            entries.as_mut_ptr() as *mut log::Entry,
+            entries.len() / std::mem::size_of::<log::Entry>(),
+            entries.capacity(),
+        );
+        std::mem::forget(entries);
+        out
+    };
 
-    loop {
-        let mut buf = [0u8; std::mem::size_of::<log::Entry>()];
+    let frame = entries.len() as u64;
+    let sim = entries
+        .iter()
+        .map(log::Entry::simulation_duration_nanos)
+        .sum();
+    let pos = entries.iter().map(log::Entry::pose_duration_nanos).sum();
+    let ren = entries.iter().map(log::Entry::render_duration_nanos).sum();
 
-        if let Err(error) = file.read_exact(&mut buf) {
-            match error.kind() {
-                io::ErrorKind::UnexpectedEof => break,
-                _ => return Err(error),
-            }
-        }
-
-        frame += 1;
-        entry = log::Entry::from_ne_bytes(buf);
-        sim = sim.checked_add(entry.simulation_duration_nanos()).unwrap();
-        pos = pos.checked_add(entry.pose_duration_nanos()).unwrap();
-        ren = ren.checked_add(entry.render_duration_nanos()).unwrap();
-    }
-
+    let total = entries.last().unwrap().simulation_start_nanos
+        - entries.first().unwrap().simulation_start_nanos;
     println!(
         "frame count: {}, fps: {}",
         frame,
-        1_000_000_000.0
-            / ((entry.simulation_start_nanos - first_simulation_start_nanos) / frame) as f64
+        1_000_000_000.0 / total as f64
     );
 
     fn ms(a: u64, b: u64) -> f64 {

@@ -9,7 +9,10 @@ pub trait HmdInto<T> {
     fn hmd_into(self) -> T;
 }
 
-impl<T, U> HmdInto<U> for T where U: FromHmd<T> {
+impl<T, U> HmdInto<U> for T
+where
+    U: FromHmd<T>,
+{
     #[inline]
     fn hmd_into(self) -> U {
         U::from_hmd(self)

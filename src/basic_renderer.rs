@@ -2,8 +2,8 @@ use super::keyboard_model;
 use super::World;
 use cgmath::*;
 use gl_typed as gl;
-use std::mem;
 use gl_typed::convert::*;
+use std::mem;
 
 const VS_SRC: &'static [u8] = b"
 #version 400 core
@@ -43,11 +43,7 @@ void main() {
 }
 \0";
 
-unsafe fn recompile_shader(
-    gl: &gl::Gl,
-    name: gl::ShaderName,
-    source: &[u8],
-) -> Result<(), String> {
+unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
     gl.shader_source(name, &[source]);
     gl.compile_shader(name);
     let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
@@ -286,13 +282,11 @@ impl Renderer {
         };
 
         for (i, material) in world.materials.iter().enumerate() {
-            let path: std::path::PathBuf = ["data", material.diffuse_texture.as_ref()].iter().collect();
+            let path: std::path::PathBuf =
+                ["data", material.diffuse_texture.as_ref()].iter().collect();
 
             {
-                let img = image::open(path)
-                    .unwrap()
-                    .flipv()
-                    .to_rgba();
+                let img = image::open(path).unwrap().flipv().to_rgba();
                 gl.bind_texture(gl::TEXTURE_2D, diffuse_textures[i]);
                 gl.tex_image_2d(
                     gl::TEXTURE_2D,

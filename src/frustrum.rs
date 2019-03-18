@@ -9,17 +9,12 @@ pub struct Frustrum {
 }
 
 unsafe fn reinterpret<A, B>(a: &A) -> &B {
-    assert_eq!(
-        ::std::mem::size_of::<A>(),
-        ::std::mem::size_of::<B>(),
-    );
+    assert_eq!(::std::mem::size_of::<A>(), ::std::mem::size_of::<B>(),);
     &*(a as *const A as *const B)
 }
 
 impl AsRef<[f32; 6]> for Frustrum {
     fn as_ref(&self) -> &[f32; 6] {
-        unsafe {
-            reinterpret(self)
-        }
+        unsafe { reinterpret(self) }
     }
 }
