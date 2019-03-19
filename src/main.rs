@@ -178,8 +178,10 @@ fn main() {
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
                             if let Some(vk) = keyboard_input.virtual_keycode {
+                                // This has to update regardless of focus.
+                                world.keyboard_model.process_event(vk, keyboard_input.state);
+
                                 if focus {
-                                    world.keyboard_model.process_event(vk, keyboard_input.state);
                                     use glutin::VirtualKeyCode;
                                     match vk {
                                         VirtualKeyCode::W => input_forward = keyboard_input.state,
