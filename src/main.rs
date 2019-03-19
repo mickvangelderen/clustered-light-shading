@@ -6,6 +6,7 @@ mod convert;
 mod filters;
 mod frustrum;
 mod keyboard_model;
+mod world;
 
 use openvr as vr;
 use openvr::enums::Enum;
@@ -17,29 +18,15 @@ use glutin::GlContext;
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
+use world::Assets;
 
 const DESIRED_UPS: f32 = 90.0;
 const DESIRED_FPS: f32 = 90.0;
-
-/// Print out all loaded properties of some models and associated materials
-pub fn print_model_info(models: &[tobj::Model], materials: &[tobj::Material]) {
-    println!("# of models: {}", models.len());
-    println!("# of materials: {}", materials.len());
-    for m in models.iter() {
-        dbg!(&m.name);
-        dbg!(m.mesh.material_id);
-        assert_eq!(dbg!(m.mesh.positions.len()) % 3, 0);
-        assert_eq!(dbg!(m.mesh.indices.len()) % 3, 0);
-    }
-}
 
 pub struct World {
     clear_color: [f32; 3],
     camera: camera::Camera,
     pos_from_cam_to_hmd: cgmath::Matrix4<f32>,
-    models: Vec<tobj::Model>,
-    #[allow(unused)]
-    materials: Vec<tobj::Material>,
     keyboard_model: keyboard_model::KeyboardModel,
 }
 
@@ -68,30 +55,6 @@ fn main() {
         })
         .unwrap();
 
-    let room_obj = tobj::load_obj(&std::path::Path::new("data/room.obj"));
-    let (mut room_models, mut room_materials) = room_obj.unwrap();
-
-    let keyboard_obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
-    let (mut keyboard_models, mut keyboard_materials) = keyboard_obj.unwrap();
-
-    for model in keyboard_models.iter_mut() {
-        // Offset keyboard model material ids.
-        if let Some(ref mut id) = model.mesh.material_id {
-            *id += room_materials.len();
-        }
-    }
-
-    let mut models: Vec<tobj::Model> =
-        Vec::with_capacity(room_models.len() + keyboard_models.len());
-
-    models.append(&mut room_models);
-    models.append(&mut keyboard_models);
-
-    let mut materials: Vec<tobj::Material> =
-        Vec::with_capacity(room_materials.len() + keyboard_materials.len());
-    materials.append(&mut room_materials);
-    materials.append(&mut keyboard_materials);
-
     let mut world = World {
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::Camera {
@@ -104,8 +67,6 @@ fn main() {
             zoom_velocity: 1.0,
         },
         pos_from_cam_to_hmd: Matrix4::from_translation(Vector3::zero()),
-        models,
-        materials,
         keyboard_model: keyboard_model::KeyboardModel::new(),
     };
 
@@ -138,6 +99,22 @@ fn main() {
         println!("OpenGL version {}", gl.get_string(gl::VERSION));
     }
 
+    let mut renderer = unsafe {
+        let mut renderer = basic_renderer::Renderer::new(&gl, &world);
+        let vs_bytes = std::fs::read("data/basic_renderer.vert").unwrap();
+        let fs_bytes = std::fs::read("data/basic_renderer.frag").unwrap();
+        renderer.update(
+            &gl,
+            basic_renderer::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        renderer
+    };
+
+    let mut assets = Assets::new(&gl, &renderer);
+
     // === VR ===
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
         Ok(context) => unsafe {
@@ -163,10 +140,6 @@ fn main() {
     };
 
     // --- VR ---
-
-    unsafe { gl_window.make_current().unwrap() };
-
-    let renderer = unsafe { basic_renderer::Renderer::new(&gl, &world) };
 
     let mut input_forward = glutin::ElementState::Released;
     let mut input_backward = glutin::ElementState::Released;
@@ -347,6 +320,7 @@ fn main() {
                     pos_from_cam_to_clp: pos_from_hmd_to_clp,
                 },
                 &world,
+                &assets,
             );
         }
 
@@ -363,6 +337,7 @@ fn main() {
                             * world.pos_from_cam_to_hmd,
                     },
                     &world,
+                    &assets,
                 );
 
                 renderer.render(
@@ -375,6 +350,7 @@ fn main() {
                             * world.pos_from_cam_to_hmd,
                     },
                     &world,
+                    &assets,
                 );
 
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
