@@ -15,8 +15,11 @@ use cgmath::*;
 use convert::*;
 use gl_typed as gl;
 use glutin::GlContext;
+use notify::Watcher;
 use std::mem;
 use std::os::raw::c_void;
+use std::path::Path;
+use std::path::PathBuf;
 use std::ptr;
 use world::Assets;
 
@@ -34,6 +37,24 @@ use std::sync::mpsc;
 use std::thread;
 
 fn main() {
+    let current_dir = std::env::current_dir().unwrap();
+
+    let basic_renderer_vs_path: PathBuf = [
+        current_dir.as_ref(),
+        Path::new("data"),
+        Path::new("basic_renderer.vert"),
+    ]
+    .into_iter()
+    .collect();
+
+    let basic_renderer_fs_path: PathBuf = [
+        current_dir.as_ref(),
+        Path::new("data"),
+        Path::new("basic_renderer.frag"),
+    ]
+    .into_iter()
+    .collect();
+
     let start_instant = std::time::Instant::now();
 
     let (tx_log, rx_log) = mpsc::channel::<log::Entry>();
@@ -53,6 +74,14 @@ fn main() {
 
             file.flush().unwrap();
         })
+        .unwrap();
+
+    let (tx_fs, rx_fs) = mpsc::channel();
+
+    let mut watcher = notify::raw_watcher(tx_fs).unwrap();
+
+    watcher
+        .watch("data", notify::RecursiveMode::Recursive)
         .unwrap();
 
     let mut world = World {
@@ -101,8 +130,8 @@ fn main() {
 
     let mut renderer = unsafe {
         let mut renderer = basic_renderer::Renderer::new(&gl, &world);
-        let vs_bytes = std::fs::read("data/basic_renderer.vert").unwrap();
-        let fs_bytes = std::fs::read("data/basic_renderer.frag").unwrap();
+        let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&basic_renderer_fs_path).unwrap();
         renderer.update(
             &gl,
             basic_renderer::Update {
@@ -154,6 +183,35 @@ fn main() {
 
     let mut running = true;
     while running {
+        // File watch events.
+        for event in rx_fs.try_iter() {
+            if let Some(ref path) = event.path {
+                match path {
+                    path if path == &basic_renderer_vs_path => unsafe {
+                        let vs_bytes = std::fs::read(&path).unwrap();
+                        renderer.update(
+                            &gl,
+                            basic_renderer::Update {
+                                vertex_shader: Some(&vs_bytes),
+                                fragment_shader: None,
+                            },
+                        );
+                    },
+                    path if path == &basic_renderer_fs_path => unsafe {
+                        let fs_bytes = std::fs::read(&path).unwrap();
+                        renderer.update(
+                            &gl,
+                            basic_renderer::Update {
+                                vertex_shader: None,
+                                fragment_shader: Some(&fs_bytes),
+                            },
+                        );
+                    },
+                    _ => {}
+                }
+            }
+        }
+
         let simulation_start_nanos = start_instant.elapsed().as_nanos() as u64;
 
         let mut mouse_dx = 0.0;

@@ -12,12 +12,13 @@ default-run = "vr-lab"
 default = []
 
 [dependencies]
-glutin = "0.19.0"
-tobj = "0.1.6"
 cgmath = "0.17.0"
-image = "0.21.0"
-openvr = { git = "https://github.com/mickvangelderen/openvr-rust", tag = "0.1.0" }
 gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", tag = "0.3.0" }
+glutin = "0.19.0"
+image = "0.21.0"
+notify = "4.0.10"
+openvr = { git = "https://github.com/mickvangelderen/openvr-rust", tag = "0.1.0" }
+tobj = "0.1.6"
  
 [patch."https://github.com/mickvangelderen/openvr-sys-rust"]
 openvr-sys = { path = "../openvr-sys-rust" }
