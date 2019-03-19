@@ -141,6 +141,7 @@ fn main() {
 
     // --- VR ---
 
+    let mut focus = false;
     let mut input_forward = glutin::ElementState::Released;
     let mut input_backward = glutin::ElementState::Released;
     let mut input_left = glutin::ElementState::Released;
@@ -166,12 +167,9 @@ fn main() {
                     use glutin::WindowEvent;
                     match event {
                         WindowEvent::CloseRequested => running = false,
-                        WindowEvent::HiDpiFactorChanged(x) => {
-                            win_dpi = x;
-                        }
-                        WindowEvent::Resized(x) => {
-                            win_size = x;
-                        }
+                        WindowEvent::HiDpiFactorChanged(val) => win_dpi = val,
+                        WindowEvent::Focused(val) => focus = val,
+                        WindowEvent::Resized(val) => win_size = val,
                         _ => (),
                     }
                 }
@@ -180,30 +178,31 @@ fn main() {
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
                             if let Some(vk) = keyboard_input.virtual_keycode {
-                                world.keyboard_model.process_event(vk, keyboard_input.state);
-
-                                use glutin::VirtualKeyCode;
-                                match vk {
-                                    VirtualKeyCode::W => input_forward = keyboard_input.state,
-                                    VirtualKeyCode::S => input_backward = keyboard_input.state,
-                                    VirtualKeyCode::A => input_left = keyboard_input.state,
-                                    VirtualKeyCode::D => input_right = keyboard_input.state,
-                                    VirtualKeyCode::Q => input_up = keyboard_input.state,
-                                    VirtualKeyCode::Z => input_down = keyboard_input.state,
-                                    VirtualKeyCode::Escape => running = false,
-                                    _ => (),
+                                if focus {
+                                    world.keyboard_model.process_event(vk, keyboard_input.state);
+                                    use glutin::VirtualKeyCode;
+                                    match vk {
+                                        VirtualKeyCode::W => input_forward = keyboard_input.state,
+                                        VirtualKeyCode::S => input_backward = keyboard_input.state,
+                                        VirtualKeyCode::A => input_left = keyboard_input.state,
+                                        VirtualKeyCode::D => input_right = keyboard_input.state,
+                                        VirtualKeyCode::Q => input_up = keyboard_input.state,
+                                        VirtualKeyCode::Z => input_down = keyboard_input.state,
+                                        VirtualKeyCode::Escape => running = false,
+                                        _ => (),
+                                    }
                                 }
                             }
                         }
                         DeviceEvent::Motion { axis, value } => {
-                            // if window_has_focus {
-                            match axis {
-                                0 => mouse_dx += value,
-                                1 => mouse_dy += value,
-                                3 => mouse_dscroll += value,
-                                _ => (),
+                            if focus {
+                                match axis {
+                                    0 => mouse_dx += value,
+                                    1 => mouse_dy += value,
+                                    3 => mouse_dscroll += value,
+                                    _ => (),
+                                }
                             }
-                            // }
                         }
                         _ => (),
                     }
