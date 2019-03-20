@@ -1,4 +1,4 @@
-![Typing Simulator](typing-simulator.jpg)
+![Hot Reloading](hot-reloading.gif)
 
 Requires SteamVR (installed through steam) and standard OpenGL development
 headers and libraries to be installed.
@@ -67,4 +67,27 @@ https://developer.valvesoftware.com/wiki/SteamVR/Frame_Timing
 
 TODO: Watch
 https://www.gdcvault.com/play/1021771/Advanced-VR
+
+## Media
+
+### First working version
+
+To celebrate the first working VR version of this project I modeled my keyboard.
+The keys come from a single .obj file but are rendered separately. I had to map
+each keyboard scancode to the name of each key. Then a virtual keyboard
+simulates the key pressure which is transfered through a uniform and used to
+translate the key and brighten its color.
+
+![Typing Simulator](typing-simulator.jpg)
+
+### Hot reloading
+
+I wanted my shaders to be recompiled while the application is running as soon as
+their source files change. This lets me correct small mistakes in them very
+quickly. The vertex layout and everything is static so there is only so much you
+can do without recompiling. Pretty neat though.
+
+![Hot Reloading](hot-reloading.gif)
+
+
 
