@@ -5,6 +5,7 @@ mod camera;
 mod convert;
 mod filters;
 mod frustrum;
+mod geometry;
 mod keyboard_model;
 mod world;
 
@@ -36,7 +37,30 @@ pub struct World {
 use std::sync::mpsc;
 use std::thread;
 
+fn write_g(name: &str, geo: (Vec<Vector3<f32>>, Vec<[u32; 3]>, Vec<u32>)) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut bufwriter = std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
+    let f = &mut bufwriter;
+
+    for p in geo.0.iter() {
+        writeln!(f, "v {} {} {}", p[0], p[1], p[2])?;
+    }
+
+    for subdivision in 0..(geo.2.len() - 1) {
+        writeln!(f, "o {}_{}", name, subdivision)?;
+        let triangles_start = geo.2[subdivision] as usize;
+        let triangles_end = geo.2[subdivision + 1] as usize;
+        for t in geo.1[triangles_start..triangles_end].iter() {
+            writeln!(f, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn main() {
+    write_g("sphere", geometry::generate_iso_sphere(1.0, 4)).unwrap();
+
     let current_dir = std::env::current_dir().unwrap();
 
     let basic_renderer_vs_path: PathBuf = [
