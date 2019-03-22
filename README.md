@@ -129,3 +129,5 @@ subdivision projected on a sphere and it might be *exactly* that.
 
 [Commit](https://github.com/mickvangelderen/vr-lab/commit/5051017792ff93a013b3e6a5510b5d9a96f16713)
 
+![Sphere at 7 subdivisions](media/spheres/sphere_7.jpg)
+
