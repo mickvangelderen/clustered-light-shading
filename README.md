@@ -89,5 +89,43 @@ can do without recompiling. Pretty neat though.
 
 ![Hot Reloading](hot-reloading.gif)
 
+### Sphere generation
 
+So I wanted to render a sphere. Then I wanted to generate a sphere. I did not
+understand why blender doesn't let me generate a sphere from its smallest
+representation with a volume: the tetrahedron. Decided that it would be a good
+idea to take a tetrahedron and divide each triangle into 3 new triangles joined
+at the barycenter of the original vertices.
+
+[Commit](https://github.com/mickvangelderen/vr-lab/commit/42118e32d058836fa58fdbd1224750c05514af20)
+
+The top row in this image shows the results of that approach:
+
+![Spheres](media/spheres/spheres.jpg)
+
+Obviously I had been naive. The triangles get thin and there are dents
+everywhere. Perhaps if we join triangles that have the same normals into quads,
+and then subdivide the quads instead we will get nice results. That technique
+yields the middle row of spheres. It breaks down after a couple of subdivisions
+and we're back at the start.
+
+[Commit](https://github.com/mickvangelderen/vr-lab/commit/29f355ce63516bd215546d28169bb7d190399a0d)
+
+We need a better method. After going through a number of criteria and
+implementations I arrived at the following rule. For each pair of different
+triangles, determine if they share an edge. If they share an edge, compute the
+barycenter of each triangle, project it onto the sphere. I'll call and edge
+between these projected barycenters the cross edge. Now determine if the center
+of the cross edge is further away than that of the shared edge. If so, we would
+benefit from merging the two triangles because it will prevent use from creating
+dents.
+
+However, there are too many candidates. So we only merge the two triangles who
+have the largest difference between the cross edge center and the shared edge
+center.
+
+This method yields the spheres in the last row. It looks a lot like a cubic
+subdivision projected on a sphere and it might be *exactly* that.
+
+[Commit](https://github.com/mickvangelderen/vr-lab/commit/5051017792ff93a013b3e6a5510b5d9a96f16713)
 
