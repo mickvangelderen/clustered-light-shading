@@ -1,5 +1,21 @@
 use cgmath::*;
 
+#[derive(Debug)]
+enum Poly {
+    None,
+    Quad([u32; 4]),
+    Tri([u32; 3]),
+}
+
+impl Poly {
+    pub fn is_tri(&self) -> bool {
+        match self {
+            Poly::Tri(_) => true,
+            _ => false,
+        }
+    }
+}
+
 pub fn generate_iso_sphere(
     scale: f32,
     subdivisions: u32,
@@ -19,6 +35,7 @@ pub fn generate_iso_sphere(
         ),
     ];
 
+    // Upper bound.
     let mut triangles: Vec<[u32; 3]> = Vec::with_capacity(4 * 3usize.pow(subdivisions + 1));
     triangles.extend([[0, 1, 2], [2, 3, 0], [0, 3, 1], [1, 3, 2]].into_iter());
 
@@ -29,63 +46,81 @@ pub fn generate_iso_sphere(
         let triangle_start = objects[subdivision as usize] as usize;
         let triangle_end = objects[subdivision as usize + 1] as usize;
 
-        let mut shared_normal = false;
+        println!("triangles {}..{}", triangle_start, triangle_end);
+        for i in triangle_start..triangle_end {
+            println!("{:02}: {:?}", i, triangles[i]);
+        }
 
         for t1_idx in triangle_start..triangle_end {
             let t1 = triangles[t1_idx];
-            let t1_p0 = positions[t1[0] as usize];
-            let t1_p1 = positions[t1[1] as usize];
-            let t1_p2 = positions[t1[2] as usize];
-            let t1_n = (t1_p1 - t1_p0).cross(t1_p2 - t1_p1);
+            let t1_center =
+                (positions[t1[0] as usize] + positions[t1[1] as usize] + positions[t1[2] as usize])
+                    .normalize_to(scale);
+
+            let mut poly = Poly::Tri(t1);
+
+            let mut largest_diff = 0.0;
 
             for t2_idx in triangle_start..triangle_end {
-                if t1_idx == t2_idx { continue; }
+                if t1_idx == t2_idx {
+                    continue;
+                }
                 let t2 = triangles[t2_idx];
-                let t2_p0 = positions[t2[0] as usize];
-                let t2_p1 = positions[t2[1] as usize];
-                let t2_p2 = positions[t2[2] as usize];
-                let t2_n = (t2_p1 - t2_p0).cross(t2_p2 - t2_p1);
+                let t2_center = (positions[t2[0] as usize]
+                    + positions[t2[1] as usize]
+                    + positions[t2[2] as usize])
+                    .normalize_to(scale);
 
-
-                if cgmath::ulps_eq!(t1_n, t2_n, max_ulps = 14) {
-                    println!("{:?}", t1_n - t2_n);
-                    println!("shared normal {}, {}", t1_idx, t2_idx);
-                    shared_normal = true;
-                    // Faces share the same normal.
-                    let v_center = positions.len() as u32;
-                    positions.push((t1_p0 + t1_p1 + t1_p2 + t2_p0 + t2_p1 + t2_p2).normalize_to(scale));
-
-                    for i in 0..3 {
-                        let next_i = (i + 1) % 3;
-                        // Figure out if (i, next_i) is shared.
-                        let mut shared_edge = false;
-                        for j in 0..3 {
-                            let next_j = (j + 2) % 3; // (j - 1) % 3 -> (j - 1 + 3) % 3 -> (j + 2) % 3.
-                            if t1[i] == t2[j] && t1[next_i] == t2[next_j] {
-                                println!("shared edge {:?}, {:?}", (t1[i], t1[next_i]), (t2[j], t2[next_j]));
-                                shared_edge = true;
-                                break;
+                for i in 0..3 {
+                    let next_i = (i + 1) % 3;
+                    for j in 0..3 {
+                        let next_j = (j + 1) % 3;
+                        if t1[i] == t2[next_j] && t1[next_i] == t2[j] {
+                            let shared_center =
+                                positions[t1[i] as usize] + positions[t1[next_i] as usize];
+                            let cross_center = t1_center + t2_center;
+                            let diff = cross_center.magnitude2() - shared_center.magnitude2();
+                            if diff > largest_diff {
+                                largest_diff = diff;
+                                let prev_i = (i + 2) % 3;
+                                let prev_j = (j + 2) % 3;
+                                if t1_idx < t2_idx {
+                                    poly = Poly::Quad([t1[prev_i], t1[i], t2[prev_j], t2[j]]);
+                                } else {
+                                    poly = Poly::None;
+                                }
                             }
-                        }
-
-                        // Only emit triangles for edges that are not shared.
-                        if !shared_edge {
-                            triangles.push([t1[i], t1[next_i], v_center]);
                         }
                     }
                 }
             }
 
-            if !shared_normal {
-                // Get the new position index.
-                let v_center = positions.len() as u32;
-                // Add the new position at the averaged position with a magnitude of
-                // scale.
-                positions.push((t1_p0 + t1_p1 + t1_p2).normalize_to(scale));
-                // Add two more.
-                triangles.push([t1[0], t1[1], v_center]);
-                triangles.push([t1[1], t1[2], v_center]);
-                triangles.push([t1[2], t1[0], v_center]);
+            match poly {
+                Poly::None => {}
+                Poly::Tri([a, b, c]) => {
+                    let d = positions.len() as u32;
+                    positions.push(
+                        (positions[a as usize] + positions[b as usize] + positions[c as usize])
+                            .normalize_to(scale),
+                    );
+                    triangles.push([a, b, d]);
+                    triangles.push([b, c, d]);
+                    triangles.push([c, a, d]);
+                }
+                Poly::Quad([a, b, c, d]) => {
+                    let e = positions.len() as u32;
+                    positions.push(
+                        (positions[a as usize]
+                            + positions[b as usize]
+                            + positions[c as usize]
+                            + positions[d as usize])
+                            .normalize_to(scale),
+                    );
+                    triangles.push([a, b, e]);
+                    triangles.push([b, c, e]);
+                    triangles.push([c, d, e]);
+                    triangles.push([d, a, e]);
+                }
             }
         }
 
