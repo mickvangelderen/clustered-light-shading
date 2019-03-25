@@ -132,3 +132,99 @@ pub fn generate_iso_sphere(
 
     (positions, triangles, objects)
 }
+
+trait FindOrPushGetIndex<T> {
+    fn find_or_push_get_index(&mut self, value: T) -> usize;
+}
+
+impl<T: Copy + PartialEq> FindOrPushGetIndex<T> for Vec<T> {
+    fn find_or_push_get_index(&mut self, value: T) -> usize {
+        self.iter()
+            .position(|&item| item == value)
+            .unwrap_or_else(|| {
+                let position = self.len();
+                self.push(value);
+                position
+            })
+    }
+}
+
+trait PushGetIndex<T> {
+    fn push_get_index(&mut self, value: T) -> usize;
+}
+
+impl<T> PushGetIndex<T> for Vec<T> {
+    fn push_get_index(&mut self, value: T) -> usize {
+        let index = self.len();
+        self.push(value);
+        index
+    }
+}
+
+pub fn generate_cubic_sphere(
+    radius: f32,
+    subdivisions: u32,
+) -> (Vec<Vector3<f32>>, Vec<Quad>, Vec<u32>) {
+    let s = (radius as f64 * f64::sqrt(1.0/3.0)) as f32;
+
+    let mut positions = vec![
+        Vector3::new(-s, -s, -s),
+        Vector3::new(s, -s, -s),
+        Vector3::new(-s, s, -s),
+        Vector3::new(s, s, -s),
+        Vector3::new(-s, -s, s),
+        Vector3::new(s, -s, s),
+        Vector3::new(-s, s, s),
+        Vector3::new(s, s, s),
+    ];
+
+    let mut quads = vec![
+        [5, 7, 6, 4],
+        [5, 1, 3, 7],
+        [5, 4, 0, 1],
+        [2, 3, 1, 0],
+        [2, 6, 7, 3],
+        [2, 0, 4, 6],
+    ];
+
+    let mut objects = vec![0, quads.len() as u32];
+
+    for subdivision in 0..subdivisions {
+        let start = objects[subdivision as usize];
+        let end = objects[(subdivision + 1) as usize];
+        for qi in start..end {
+            let q = quads[qi as usize];
+
+            let i_a = q[0];
+            let i_b = q[1];
+            let i_c = q[2];
+            let i_d = q[3];
+
+            let v_a = positions[i_a as usize];
+            let v_b = positions[i_b as usize];
+            let v_c = positions[i_c as usize];
+            let v_d = positions[i_d as usize];
+
+            // Vertices on the side might have already been added.
+            let i_ab = positions.find_or_push_get_index((v_a + v_b).normalize_to(radius)) as u32;
+            let i_bc = positions.find_or_push_get_index((v_b + v_c).normalize_to(radius)) as u32;
+            let i_cd = positions.find_or_push_get_index((v_c + v_d).normalize_to(radius)) as u32;
+            let i_da = positions.find_or_push_get_index((v_d + v_a).normalize_to(radius)) as u32;
+
+            // Vertex in the center only connect to the new quads.
+            let i_abcd = positions.push_get_index((v_a + v_b + v_c + v_d).normalize_to(radius)) as u32;
+
+            quads.extend([
+                [i_abcd, i_da, i_a, i_ab],
+                [i_abcd, i_ab, i_b, i_bc],
+                [i_abcd, i_bc, i_c, i_cd],
+                [i_abcd, i_cd, i_d, i_da],
+            ].into_iter());
+        }
+
+        objects.push(quads.len() as u32);
+    }
+
+    (positions, quads, objects)
+}
+
