@@ -1,10 +1,13 @@
 use cgmath::*;
 
+type Quad = [u32; 4];
+type Tri = [u32; 3];
+
 #[derive(Debug)]
 enum Poly {
     None,
-    Quad([u32; 4]),
-    Tri([u32; 3]),
+    Quad(Quad),
+    Tri(Tri),
 }
 
 impl Poly {
@@ -19,7 +22,7 @@ impl Poly {
 pub fn generate_iso_sphere(
     scale: f32,
     subdivisions: u32,
-) -> (Vec<Vector3<f32>>, Vec<[u32; 3]>, Vec<u32>) {
+) -> (Vec<Vector3<f32>>, Vec<Tri>, Vec<u32>) {
     let mut positions = vec![
         Vector3::new(0.0, scale, 0.0),
         Vector3::new(0.0, -(1.0 / 3.0) * scale, f32::sqrt(8.0 / 9.0) * scale),
@@ -36,7 +39,7 @@ pub fn generate_iso_sphere(
     ];
 
     // Upper bound.
-    let mut triangles: Vec<[u32; 3]> = Vec::with_capacity(4 * 3usize.pow(subdivisions + 1));
+    let mut triangles: Vec<Tri> = Vec::with_capacity(4 * 3usize.pow(subdivisions + 1));
     triangles.extend([[0, 1, 2], [2, 3, 0], [0, 3, 1], [1, 3, 2]].into_iter());
 
     let mut objects: Vec<u32> = Vec::with_capacity(subdivisions as usize + 2);
