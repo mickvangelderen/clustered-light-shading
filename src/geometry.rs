@@ -3,6 +3,359 @@ use cgmath::*;
 type Quad = [u32; 4];
 type Tri = [u32; 3];
 
+// Corners (8):
+// 000
+// 00n
+// 0n0
+// 0nn
+// n00
+// n0n
+// nn0
+// nnn
+// Edges along X (4*n):
+// 00x
+// 0nx
+// n0x
+// nnx
+// Edges along Y (4*n):
+// 0y0
+// 0yn
+// ny0
+// nyn
+// Edges along Z (4*n):
+// z00
+// z0n
+// zn0
+// znn
+// Faces with normal X (2*n*n):
+// zy0
+// zyn
+// Faces with normal Y (2*n*n):
+// z0x
+// znx
+// Faces with normal Z (2*n*n):
+// 0yx
+// nyx
+
+#[derive(Debug, Copy, Clone)]
+#[repr(u32)]
+enum Face {
+    Negative = 0,
+    Positive = 1,
+}
+
+impl Face {
+    #[inline]
+    fn to_f32(self) -> f32 {
+        match self {
+            Face::Negative => -1.0,
+            Face::Positive => 1.0,
+        }
+    }
+}
+
+const FACES: [Face; 2] = [Face::Negative, Face::Positive];
+
+// Corners are indexed by (face, face, face)
+#[inline]
+fn corner_index(z: Face, y: Face, x: Face) -> u32 {
+    ((z as u32) * 2 + y as u32) * 2 + x as u32
+}
+
+// Edges are indexed by (face, face, n)
+#[inline]
+fn x_edge_index(n: u32, z: Face, y: Face, x: u32) -> u32 {
+    8 + (2 * 2 * n) * 0 + ((z as u32) * 2 + y as u32) * n + (x - 1)
+}
+
+#[inline]
+fn y_edge_index(n: u32, z: Face, y: u32, x: Face) -> u32 {
+    8 + (2 * 2 * n) * 1 + ((z as u32) * 2 + x as u32) * n + (y - 1)
+}
+
+#[inline]
+fn z_edge_index(n: u32, z: u32, y: Face, x: Face) -> u32 {
+    8 + (2 * 2 * n) * 2 + ((y as u32) * 2 + x as u32) * n + (z - 1)
+}
+
+// Faces are indexed by (n, n, face)
+#[inline]
+fn x_face_index(n: u32, z: u32, y: u32, x: Face) -> u32 {
+    8 + (2 * 2 * n) * 3 + (n * n * 2) * 0 + (((z - 1) * n) + (y - 1)) * 2 + x as u32
+}
+
+#[inline]
+fn y_face_index(n: u32, z: u32, y: Face, x: u32) -> u32 {
+    8 + (2 * 2 * n) * 3 + (n * n * 2) * 1 + (((z - 1) * n) + (x - 1)) * 2 + y as u32
+}
+
+#[inline]
+fn z_face_index(n: u32, z: Face, y: u32, x: u32) -> u32 {
+    8 + (2 * 2 * n) * 3 + (n * n * 2) * 2 + (((y - 1) * n) + (x - 1)) * 2 + z as u32
+}
+
+#[inline]
+fn index_to_f32(n: u32, i: u32) -> f32 {
+    (i as i32 * 2 - (n + 1) as i32) as f32 / (n + 1) as f32
+}
+
+#[inline]
+fn to_face(n: u32, i: u32) -> Result<Face, u32> {
+    if i == 0 {
+        Ok(Face::Negative)
+    } else if i < (n + 1) {
+        Err(i)
+    } else if i == (n + 1) {
+        Ok(Face::Positive)
+    } else {
+        debug_assert!(false, "Index {} out of bounds [0, {}].", i, n + 1);
+        unsafe { std::hint::unreachable_unchecked() }
+    }
+}
+
+// Planes.
+#[inline]
+fn x_plane_index(n: u32, z: u32, y: u32, x: Face) -> u32 {
+    match to_face(n, z) {
+        Ok(z) => match to_face(n, y) {
+            Ok(y) => corner_index(z, y, x),
+            Err(y) => y_edge_index(n, z, y, x),
+        },
+        Err(z) => match to_face(n, y) {
+            Ok(y) => z_edge_index(n, z, y, x),
+            Err(y) => x_face_index(n, z, y, x),
+        },
+    }
+}
+
+#[inline]
+fn y_plane_index(n: u32, z: u32, y: Face, x: u32) -> u32 {
+    match to_face(n, z) {
+        Ok(z) => match to_face(n, x) {
+            Ok(x) => corner_index(z, y, x),
+            Err(x) => x_edge_index(n, z, y, x),
+        },
+        Err(z) => match to_face(n, x) {
+            Ok(x) => z_edge_index(n, z, y, x),
+            Err(x) => y_face_index(n, z, y, x),
+        },
+    }
+}
+
+#[inline]
+fn z_plane_index(n: u32, z: Face, y: u32, x: u32) -> u32 {
+    match to_face(n, y) {
+        Ok(y) => match to_face(n, x) {
+            Ok(x) => corner_index(z, y, x),
+            Err(x) => x_edge_index(n, z, y, x),
+        },
+        Err(y) => match to_face(n, x) {
+            Ok(x) => y_edge_index(n, z, y, x),
+            Err(x) => z_face_index(n, z, y, x),
+        },
+    }
+}
+
+pub fn generate_cubic_sphere(
+    radius: f32,
+    subdivisions: u32,
+) -> (Vec<Vector3<f32>>, Vec<Quad>, Vec<u32>) {
+    let s = (radius as f64 * f64::sqrt(1.0 / 3.0)) as f32;
+
+    let n = subdivisions;
+
+    let mut positions = Vec::with_capacity((8 + 12 * n + 6 * n * n) as usize);
+    // unsafe {
+    //     positions.set_len(positions.capacity());
+    // }
+
+    // Corners.
+    for &zf in FACES.into_iter() {
+        let z = zf.to_f32() * s;
+        for &yf in FACES.into_iter() {
+            let y = yf.to_f32() * s;
+            for &xf in FACES.into_iter() {
+                let x = xf.to_f32() * s;
+                debug_assert_eq!(positions.len(), corner_index(zf, yf, xf) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+
+    // Edges along x.
+    for &zf in FACES.into_iter() {
+        let z = zf.to_f32() * s;
+        for &yf in FACES.into_iter() {
+            let y = yf.to_f32() * s;
+            for xi in 1..=n {
+                let x = index_to_f32(n, xi) * s;
+                debug_assert_eq!(positions.len(), x_edge_index(n, zf, yf, xi) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+
+    // Edges along y.
+    for &zf in FACES.into_iter() {
+        let z = zf.to_f32() * s;
+        for &xf in FACES.into_iter() {
+            let x = xf.to_f32() * s;
+            for yi in 1..=n {
+                let y = index_to_f32(n, yi) * s;
+                debug_assert_eq!(positions.len(), y_edge_index(n, zf, yi, xf) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+    // Edges along z.
+    for &yf in FACES.into_iter() {
+        let y = yf.to_f32() * s;
+        for &xf in FACES.into_iter() {
+            let x = xf.to_f32() * s;
+            for zi in 1..=n {
+                let z = index_to_f32(n, zi) * s;
+                debug_assert_eq!(positions.len(), z_edge_index(n, zi, yf, xf) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+
+    // Faces with normal x.
+    for zi in 1..=n {
+        let z = index_to_f32(n, zi) * s;
+        for yi in 1..=n {
+            let y = index_to_f32(n, yi) * s;
+            for &xf in FACES.into_iter() {
+                let x = xf.to_f32() * s;
+                debug_assert_eq!(positions.len(), x_face_index(n, zi, yi, xf) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+
+    // Faces with normal y.
+    for zi in 1..=n {
+        let z = index_to_f32(n, zi) * s;
+        for xi in 1..=n {
+            let x = index_to_f32(n, xi) * s;
+            for &yf in FACES.into_iter() {
+                let y = yf.to_f32() * s;
+                debug_assert_eq!(positions.len(), y_face_index(n, zi, yf, xi) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+
+    // Faces with normal z.
+    for yi in 1..=n {
+        let y = index_to_f32(n, yi) * s;
+        for xi in 1..=n {
+            let x = index_to_f32(n, xi) * s;
+            for &zf in FACES.into_iter() {
+                let z = zf.to_f32() * s;
+                debug_assert_eq!(positions.len(), z_face_index(n, zf, yi, xi) as usize);
+                positions.push(Vector3::new(x, y, z));
+            }
+        }
+    }
+
+    let mut faces: Vec<Quad> = Vec::with_capacity((6 * (n + 1) * (n + 1)) as usize);
+
+    // -X
+    {
+        let xf = Face::Negative;
+        for zi in 0..(n + 1) {
+            for yi in 0..(n + 1) {
+                faces.push([
+                    x_plane_index(n, zi, yi, xf),
+                    x_plane_index(n, zi + 1, yi, xf),
+                    x_plane_index(n, zi + 1, yi + 1, xf),
+                    x_plane_index(n, zi, yi + 1, xf),
+                ])
+            }
+        }
+    }
+
+    // +X
+    {
+        let xf = Face::Positive;
+        for zi in 0..(n + 1) {
+            for yi in 0..(n + 1) {
+                faces.push([
+                    x_plane_index(n, zi, yi, xf),
+                    x_plane_index(n, zi, yi + 1, xf),
+                    x_plane_index(n, zi + 1, yi + 1, xf),
+                    x_plane_index(n, zi + 1, yi, xf),
+                ])
+            }
+        }
+    }
+
+    // -Y
+    {
+        let yf = Face::Negative;
+        for zi in 0..(n + 1) {
+            for xi in 0..(n + 1) {
+                faces.push([
+                    y_plane_index(n, zi, yf, xi),
+                    y_plane_index(n, zi, yf, xi + 1),
+                    y_plane_index(n, zi + 1, yf, xi + 1),
+                    y_plane_index(n, zi + 1, yf, xi),
+                ])
+            }
+        }
+    }
+
+    // +Y
+    {
+        let yf = Face::Positive;
+        for zi in 0..(n + 1) {
+            for xi in 0..(n + 1) {
+                faces.push([
+                    y_plane_index(n, zi, yf, xi),
+                    y_plane_index(n, zi + 1, yf, xi),
+                    y_plane_index(n, zi + 1, yf, xi + 1),
+                    y_plane_index(n, zi, yf, xi + 1),
+                ])
+            }
+        }
+    }
+
+    // -Z
+    {
+        let zf = Face::Negative;
+        for yi in 0..(n + 1) {
+            for xi in 0..(n + 1) {
+                faces.push([
+                    z_plane_index(n, zf, yi, xi),
+                    z_plane_index(n, zf, yi + 1, xi),
+                    z_plane_index(n, zf, yi + 1, xi + 1),
+                    z_plane_index(n, zf, yi, xi + 1),
+                ])
+            }
+        }
+    }
+
+    // +Z
+    {
+        let zf = Face::Positive;
+        for yi in 0..(n + 1) {
+            for xi in 0..(n + 1) {
+                faces.push([
+                    z_plane_index(n, zf, yi, xi),
+                    z_plane_index(n, zf, yi, xi + 1),
+                    z_plane_index(n, zf, yi + 1, xi + 1),
+                    z_plane_index(n, zf, yi + 1, xi),
+                ])
+            }
+        }
+    }
+
+    let objects = vec![0, faces.len() as u32];
+
+    (positions, faces, objects)
+}
+
 #[derive(Debug)]
 enum Poly {
     None,
@@ -10,12 +363,31 @@ enum Poly {
     Tri(Tri),
 }
 
-impl Poly {
-    pub fn is_tri(&self) -> bool {
-        match self {
-            Poly::Tri(_) => true,
-            _ => false,
-        }
+trait FindOrPushGetIndex<T> {
+    fn find_or_push_get_index(&mut self, value: T) -> usize;
+}
+
+impl<T: Copy + PartialEq> FindOrPushGetIndex<T> for Vec<T> {
+    fn find_or_push_get_index(&mut self, value: T) -> usize {
+        self.iter()
+            .position(|&item| item == value)
+            .unwrap_or_else(|| {
+                let position = self.len();
+                self.push(value);
+                position
+            })
+    }
+}
+
+trait PushGetIndex<T> {
+    fn push_get_index(&mut self, value: T) -> usize;
+}
+
+impl<T> PushGetIndex<T> for Vec<T> {
+    fn push_get_index(&mut self, value: T) -> usize {
+        let index = self.len();
+        self.push(value);
+        index
     }
 }
 
@@ -132,99 +504,3 @@ pub fn generate_iso_sphere(
 
     (positions, triangles, objects)
 }
-
-trait FindOrPushGetIndex<T> {
-    fn find_or_push_get_index(&mut self, value: T) -> usize;
-}
-
-impl<T: Copy + PartialEq> FindOrPushGetIndex<T> for Vec<T> {
-    fn find_or_push_get_index(&mut self, value: T) -> usize {
-        self.iter()
-            .position(|&item| item == value)
-            .unwrap_or_else(|| {
-                let position = self.len();
-                self.push(value);
-                position
-            })
-    }
-}
-
-trait PushGetIndex<T> {
-    fn push_get_index(&mut self, value: T) -> usize;
-}
-
-impl<T> PushGetIndex<T> for Vec<T> {
-    fn push_get_index(&mut self, value: T) -> usize {
-        let index = self.len();
-        self.push(value);
-        index
-    }
-}
-
-pub fn generate_cubic_sphere(
-    radius: f32,
-    subdivisions: u32,
-) -> (Vec<Vector3<f32>>, Vec<Quad>, Vec<u32>) {
-    let s = (radius as f64 * f64::sqrt(1.0/3.0)) as f32;
-
-    let mut positions = vec![
-        Vector3::new(-s, -s, -s),
-        Vector3::new(s, -s, -s),
-        Vector3::new(-s, s, -s),
-        Vector3::new(s, s, -s),
-        Vector3::new(-s, -s, s),
-        Vector3::new(s, -s, s),
-        Vector3::new(-s, s, s),
-        Vector3::new(s, s, s),
-    ];
-
-    let mut quads = vec![
-        [5, 7, 6, 4],
-        [5, 1, 3, 7],
-        [5, 4, 0, 1],
-        [2, 3, 1, 0],
-        [2, 6, 7, 3],
-        [2, 0, 4, 6],
-    ];
-
-    let mut objects = vec![0, quads.len() as u32];
-
-    for subdivision in 0..subdivisions {
-        let start = objects[subdivision as usize];
-        let end = objects[(subdivision + 1) as usize];
-        for qi in start..end {
-            let q = quads[qi as usize];
-
-            let i_a = q[0];
-            let i_b = q[1];
-            let i_c = q[2];
-            let i_d = q[3];
-
-            let v_a = positions[i_a as usize];
-            let v_b = positions[i_b as usize];
-            let v_c = positions[i_c as usize];
-            let v_d = positions[i_d as usize];
-
-            // Vertices on the side might have already been added.
-            let i_ab = positions.find_or_push_get_index((v_a + v_b).normalize_to(radius)) as u32;
-            let i_bc = positions.find_or_push_get_index((v_b + v_c).normalize_to(radius)) as u32;
-            let i_cd = positions.find_or_push_get_index((v_c + v_d).normalize_to(radius)) as u32;
-            let i_da = positions.find_or_push_get_index((v_d + v_a).normalize_to(radius)) as u32;
-
-            // Vertex in the center only connect to the new quads.
-            let i_abcd = positions.push_get_index((v_a + v_b + v_c + v_d).normalize_to(radius)) as u32;
-
-            quads.extend([
-                [i_abcd, i_da, i_a, i_ab],
-                [i_abcd, i_ab, i_b, i_bc],
-                [i_abcd, i_bc, i_c, i_cd],
-                [i_abcd, i_cd, i_d, i_da],
-            ].into_iter());
-        }
-
-        objects.push(quads.len() as u32);
-    }
-
-    (positions, quads, objects)
-}
-

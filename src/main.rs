@@ -80,8 +80,12 @@ fn write_obj_quads(name: &str, geo: (Vec<Vector3<f32>>, Vec<[u32; 4]>, Vec<u32>)
 }
 
 fn main() {
-    write_g("sphere", geometry::generate_iso_sphere(1.0, 4)).unwrap();
-    write_obj_quads("sphere_cubic", geometry::generate_cubic_sphere(1.0, 4)).unwrap();
+    // write_g("sphere", geometry::generate_iso_sphere(1.0, 4)).unwrap();
+    write_obj_quads("sphere_cubic_0", geometry::generate_cubic_sphere(1.0, 0)).unwrap();
+    write_obj_quads("sphere_cubic_1", geometry::generate_cubic_sphere(1.0, 1)).unwrap();
+    write_obj_quads("sphere_cubic_2", geometry::generate_cubic_sphere(1.0, 2)).unwrap();
+    write_obj_quads("sphere_cubic_3", geometry::generate_cubic_sphere(1.0, 3)).unwrap();
+    write_obj_quads("sphere_cubic_4", geometry::generate_cubic_sphere(1.0, 4)).unwrap();
 
     let current_dir = std::env::current_dir().unwrap();
 
