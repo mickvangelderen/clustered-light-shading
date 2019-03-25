@@ -49,10 +49,10 @@ pub fn generate_iso_sphere(
         let triangle_start = objects[subdivision as usize] as usize;
         let triangle_end = objects[subdivision as usize + 1] as usize;
 
-        println!("triangles {}..{}", triangle_start, triangle_end);
-        for i in triangle_start..triangle_end {
-            println!("{:02}: {:?}", i, triangles[i]);
-        }
+        // println!("triangles {}..{}", triangle_start, triangle_end);
+        // for i in triangle_start..triangle_end {
+        //     println!("{:02}: {:?}", i, triangles[i]);
+        // }
 
         for t1_idx in triangle_start..triangle_end {
             let t1 = triangles[t1_idx];
