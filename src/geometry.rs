@@ -197,7 +197,7 @@ pub fn generate_cubic_sphere(
         for &yf in FACES.into_iter() {
             let y = yf.to_f32();
             for xi in 1..=n {
-                let angle = index_to_f32(n, xi)*acos_frac_1_3/2.0;
+                let angle = index_to_f32(n, xi) * acos_frac_1_3 / 2.0;
                 debug_assert_eq!(positions.len(), x_edge_index(n, zf, yf, xi) as usize);
                 positions.push(Vector3::new(
                     radius * f32::sin(angle),
@@ -214,7 +214,7 @@ pub fn generate_cubic_sphere(
         for &xf in FACES.into_iter() {
             let x = xf.to_f32();
             for yi in 1..=n {
-                let angle = index_to_f32(n, yi)*acos_frac_1_3/2.0;
+                let angle = index_to_f32(n, yi) * acos_frac_1_3 / 2.0;
                 debug_assert_eq!(positions.len(), y_edge_index(n, zf, yi, xf) as usize);
                 positions.push(Vector3::new(
                     x * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
@@ -231,7 +231,7 @@ pub fn generate_cubic_sphere(
         for &xf in FACES.into_iter() {
             let x = xf.to_f32();
             for zi in 1..=n {
-                let angle = index_to_f32(n, zi)*acos_frac_1_3/2.0;
+                let angle = index_to_f32(n, zi) * acos_frac_1_3 / 2.0;
                 debug_assert_eq!(positions.len(), z_edge_index(n, zi, yf, xf) as usize);
                 positions.push(Vector3::new(
                     x * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
@@ -244,39 +244,48 @@ pub fn generate_cubic_sphere(
 
     // Faces with normal x.
     for zi in 1..=n {
-        let z = index_to_f32(n, zi) * s;
+        let beta = index_to_f32(n, zi) * std::f32::consts::FRAC_PI_4;
         for yi in 1..=n {
-            let y = index_to_f32(n, yi) * s;
+            let alpha = index_to_f32(n, yi) * std::f32::consts::FRAC_PI_4;
             for &xf in FACES.into_iter() {
-                let x = xf.to_f32() * s;
                 debug_assert_eq!(positions.len(), x_face_index(n, zi, yi, xf) as usize);
-                positions.push(Vector3::new(x, y, z));
+                positions.push(Vector3::new(
+                    xf.to_f32() * radius * f32::cos(beta) * f32::cos(alpha),
+                    radius * f32::cos(beta) * f32::sin(alpha),
+                    radius * f32::sin(beta),
+                ));
             }
         }
     }
 
     // Faces with normal y.
     for zi in 1..=n {
-        let z = index_to_f32(n, zi) * s;
+        let alpha = index_to_f32(n, zi) * std::f32::consts::FRAC_PI_4;
         for xi in 1..=n {
-            let x = index_to_f32(n, xi) * s;
+            let beta = index_to_f32(n, xi) * std::f32::consts::FRAC_PI_4;
             for &yf in FACES.into_iter() {
-                let y = yf.to_f32() * s;
                 debug_assert_eq!(positions.len(), y_face_index(n, zi, yf, xi) as usize);
-                positions.push(Vector3::new(x, y, z));
+                positions.push(Vector3::new(
+                    radius * f32::sin(beta),
+                    yf.to_f32() * radius * f32::cos(beta) * f32::cos(alpha),
+                    radius * f32::cos(beta) * f32::sin(alpha),
+                ));
             }
         }
     }
 
     // Faces with normal z.
     for yi in 1..=n {
-        let y = index_to_f32(n, yi) * s;
+        let beta = index_to_f32(n, yi) * std::f32::consts::FRAC_PI_4;
         for xi in 1..=n {
-            let x = index_to_f32(n, xi) * s;
+            let alpha = index_to_f32(n, xi) * std::f32::consts::FRAC_PI_4;
             for &zf in FACES.into_iter() {
-                let z = zf.to_f32() * s;
                 debug_assert_eq!(positions.len(), z_face_index(n, zf, yi, xi) as usize);
-                positions.push(Vector3::new(x, y, z));
+                positions.push(Vector3::new(
+                    radius * f32::cos(beta) * f32::sin(alpha),
+                    radius * f32::sin(beta),
+                    zf.to_f32() * radius * f32::cos(beta) * f32::cos(alpha),
+                ));
             }
         }
     }
