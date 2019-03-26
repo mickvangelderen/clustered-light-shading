@@ -94,6 +94,13 @@ fn z_face_index(n: u32, z: Face, y: u32, x: u32) -> u32 {
     8 + (2 * 2 * n) * 3 + (n * n * 2) * 2 + (((y - 1) * n) + (x - 1)) * 2 + z as u32
 }
 
+fn lerp_index_around_0(x: u32, x1: u32, y_range: f32) -> f32 {
+    // (x/x1 - 0.5)*y_range
+    // (x - 0.5x1)/x1*y_range
+    // (2*x - x1)/(2*x1)*y_range
+    ((2 * x as i32 - x1 as i32) as f32 / (2 * x1) as f32) * y_range
+}
+
 #[inline]
 fn index_to_f32(n: u32, i: u32) -> f32 {
     (i as i32 * 2 - (n + 1) as i32) as f32 / (n + 1) as f32
@@ -160,7 +167,9 @@ pub fn generate_cubic_sphere(
     radius: f32,
     subdivisions: u32,
 ) -> (Vec<Vector3<f32>>, Vec<Quad>, Vec<u32>) {
-    let s = (radius as f64 * f64::sqrt(1.0 / 3.0)) as f32;
+    let sqrt_frac_1_3 = f32::sqrt(1.0 / 3.0);
+    let acos_frac_1_3 = f32::acos(1.0 / 3.0);
+    let s = sqrt_frac_1_3 * radius;
 
     let n = subdivisions;
 
@@ -171,11 +180,11 @@ pub fn generate_cubic_sphere(
 
     // Corners.
     for &zf in FACES.into_iter() {
-        let z = zf.to_f32() * s;
+        let z = zf.to_f32() * sqrt_frac_1_3 * radius;
         for &yf in FACES.into_iter() {
-            let y = yf.to_f32() * s;
+            let y = yf.to_f32() * sqrt_frac_1_3 * radius;
             for &xf in FACES.into_iter() {
-                let x = xf.to_f32() * s;
+                let x = xf.to_f32() * sqrt_frac_1_3 * radius;
                 debug_assert_eq!(positions.len(), corner_index(zf, yf, xf) as usize);
                 positions.push(Vector3::new(x, y, z));
             }
@@ -184,38 +193,51 @@ pub fn generate_cubic_sphere(
 
     // Edges along x.
     for &zf in FACES.into_iter() {
-        let z = zf.to_f32() * s;
+        let z = zf.to_f32();
         for &yf in FACES.into_iter() {
-            let y = yf.to_f32() * s;
+            let y = yf.to_f32();
             for xi in 1..=n {
-                let x = index_to_f32(n, xi) * s;
+                let angle = index_to_f32(n, xi)*acos_frac_1_3/2.0;
                 debug_assert_eq!(positions.len(), x_edge_index(n, zf, yf, xi) as usize);
-                positions.push(Vector3::new(x, y, z));
+                positions.push(Vector3::new(
+                    radius * f32::sin(angle),
+                    y * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
+                    z * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
+                ));
             }
         }
     }
 
     // Edges along y.
     for &zf in FACES.into_iter() {
-        let z = zf.to_f32() * s;
+        let z = zf.to_f32();
         for &xf in FACES.into_iter() {
-            let x = xf.to_f32() * s;
+            let x = xf.to_f32();
             for yi in 1..=n {
-                let y = index_to_f32(n, yi) * s;
+                let angle = index_to_f32(n, yi)*acos_frac_1_3/2.0;
                 debug_assert_eq!(positions.len(), y_edge_index(n, zf, yi, xf) as usize);
-                positions.push(Vector3::new(x, y, z));
+                positions.push(Vector3::new(
+                    x * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
+                    radius * f32::sin(angle),
+                    z * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
+                ));
             }
         }
     }
+
     // Edges along z.
     for &yf in FACES.into_iter() {
-        let y = yf.to_f32() * s;
+        let y = yf.to_f32();
         for &xf in FACES.into_iter() {
-            let x = xf.to_f32() * s;
+            let x = xf.to_f32();
             for zi in 1..=n {
-                let z = index_to_f32(n, zi) * s;
+                let angle = index_to_f32(n, zi)*acos_frac_1_3/2.0;
                 debug_assert_eq!(positions.len(), z_edge_index(n, zi, yf, xf) as usize);
-                positions.push(Vector3::new(x, y, z));
+                positions.push(Vector3::new(
+                    x * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
+                    y * std::f32::consts::FRAC_1_SQRT_2 * radius * f32::cos(angle),
+                    radius * f32::sin(angle),
+                ));
             }
         }
     }
