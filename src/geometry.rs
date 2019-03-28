@@ -311,15 +311,22 @@ pub fn generate_cubic_sphere_vertices(radius: f32, n: u32) -> Vec<[f32; 3]> {
                     debug_assert_eq!(vertices.len(), face_index(n, basis, i3, i2, i1) as usize);
                     let a2 = lerp_u32_f32(i2, (0, n + 1), face_range);
                     let a3 = lerp_u32_f32(i3, (0, n + 1), face_range);
+                    let ca2 = f32::cos(a2);
+                    let sa2 = f32::sin(a2);
+                    let ca3 = f32::cos(a3);
+                    let sa3 = f32::sin(a3);
+                    let s = radius / f32::sqrt(ca2.powi(2) * sa3.powi(2) + ca3.powi(2));
                     vertices.push(basis.to_xyz([
-                        i1.to_f32() * f32::cos(a2) * f32::cos(a3) * radius,
-                        f32::sin(a2) * radius,
-                        f32::cos(a2) * f32::sin(a3) * radius,
+                        s * ca2 * ca3 * i1.to_f32(),
+                        s * sa2 * ca3,
+                        s * ca2 * sa3,
                     ]))
                 }
             }
         }
     }
+
+    debug_assert_eq!(vertices.len(), (8 + 12 * n + 6 * n * n) as usize);
 
     vertices
 }
