@@ -131,3 +131,53 @@ subdivision projected on a sphere and it might be *exactly* that.
 
 ![Sphere at 7 subdivisions](media/spheres/sphere_7.jpg)
 
+#### Generating positions and faces without lookups
+
+As it turns out, there exist only 5 shapes of which each face has the same shape
+and the normal of each face intersects with the center. This makes me happy
+because that means there are only so many shapes you can reasonably generate a
+sphere from through subdivision. These shapes are called the platonic solids.
+
+In my previous sphere generation attempts I had to lookup if vertices already
+existed. The subdivision also happened recursively so I could only create
+subdivisions of powers of 2. I wanted to tackle both of these non-niceties. I
+just needed to decide on which platonic solid to try it on. The tetrahedron is
+the simplest one but it's vertices aren't nicely inline with an orthogonal 3D
+basis. The cube is pretty simple.
+
+It turns out that if you take a cube and subdivide it so that each edge has n +
+2 vertices, you will have 8 corners, 12 * n vertices between the corners and 6 *
+n ^ 2 verices on the faces between the edges. We can create an indexing scheme
+for these three parts so we don't have to lookup vertices, we can simply find
+its index by its 3D position.
+
+The challenge in implementing all this was finding the right equations to
+compute the vertices. You can do multiple things. The simplest one is generating
+a subdivided cube, then taking each vertex and projecting it onto the sphere.
+The resulting faces vary in size quite a bit. We would rather interpolate over
+arc length instead of the edge length.
+
+It turns out you can do this fairly easily. It took me a good two days to get to
+the point where I understood exactly how. First I was looking into spherical
+interpolation which didn't turn out to be that useful. Then I used polar
+coordinates which kind of looked alright for a small number of subdivisions but
+wasn't actually correct. 
+
+Finally I got the equations right by finding the intersection of XZ rotated by
+a, XY rotated by b, and a sphere with radius r. Here a and b are linearly
+interpolated from -PI/4 to PI/4. In effect you perform two rotations on the unit
+X vector but its nicer to find the direct equations for the resulting point.
+
+The equation involves this term: sqrt(cos^2(a) * sin^2(b) + cos^2(b)). I failed
+to simplify it and so did wolframalpha. I haven't spent a lot of time
+understanding it geometrically but it corrects the magnitude of the
+intersection. I find it interesting how it isn't symmetric, unlike the rest of
+the equations.
+
+Here is a comparison between the cube projected vertices and the spherical
+vertices.
+
+![Sphere at 5 subdivisions](media/spheres/cubic_sphere.jpg)
+
+[Code](https://github.com/mickvangelderen/vr-lab/releases/tag/cubic-sphere-generation)
+
