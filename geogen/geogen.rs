@@ -265,8 +265,6 @@ pub fn generate_cube_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
 
 pub fn generate_cubic_sphere_vertices(radius: f32, n: u32) -> Vec<[f32; 3]> {
     let frac_1_sqrt_3 = f32::sqrt(1.0 / 3.0);
-    let frac_acos_frac_1_3_2 = f32::acos(1.0 / 3.0) / 2.0;
-    let edge_range = (-frac_acos_frac_1_3_2, frac_acos_frac_1_3_2);
     let face_range = (-FRAC_PI_4, FRAC_PI_4);
 
     let mut vertices = Vec::with_capacity((8 + 12 * n + 6 * n * n) as usize);
@@ -291,12 +289,15 @@ pub fn generate_cubic_sphere_vertices(radius: f32, n: u32) -> Vec<[f32; 3]> {
             for &i2 in FACES.into_iter() {
                 for i1 in 1..=n {
                     debug_assert_eq!(vertices.len(), edge_index(n, basis, i3, i2, i1) as usize);
-                    let a1 = lerp_u32_f32(i1, (0, n + 1), edge_range);
+                    let a1 = lerp_u32_f32(i1, (0, n + 1), face_range);
+                    let ca1 = f32::cos(a1);
+                    let sa1 = f32::sin(a1);
+                    let s = radius / f32::sqrt(1.0 + ca1.powi(2));
                     vertices.push(basis.to_xyz([
-                        f32::sin(a1) * radius,
-                        i2.to_f32() * f32::cos(a1) * radius * FRAC_1_SQRT_2,
-                        i3.to_f32() * f32::cos(a1) * radius * FRAC_1_SQRT_2,
-                    ]));
+                        s * sa1,
+                        s * ca1 * i2.to_f32(),
+                        s * ca1 * i3.to_f32(),
+                    ]))
                 }
             }
         }
