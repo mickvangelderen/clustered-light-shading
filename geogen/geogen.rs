@@ -1,7 +1,7 @@
 use std::f32::consts::*;
 
 type Quad = [u32; 4];
-type Tri = [u32; 3];
+// type Tri = [u32; 3];
 
 #[derive(Debug, Clone, Copy)]
 enum Basis {
@@ -330,40 +330,40 @@ pub fn generate_cubic_sphere_vertices(radius: f32, n: u32) -> Vec<[f32; 3]> {
     vertices
 }
 
-#[derive(Debug)]
-enum Poly {
-    None,
-    Quad(Quad),
-    Tri(Tri),
-}
+// #[derive(Debug)]
+// enum Poly {
+//     None,
+//     Quad(Quad),
+//     Tri(Tri),
+// }
 
-trait FindOrPushGetIndex<T> {
-    fn find_or_push_get_index(&mut self, value: T) -> usize;
-}
+// trait FindOrPushGetIndex<T> {
+//     fn find_or_push_get_index(&mut self, value: T) -> usize;
+// }
 
-impl<T: Copy + PartialEq> FindOrPushGetIndex<T> for Vec<T> {
-    fn find_or_push_get_index(&mut self, value: T) -> usize {
-        self.iter()
-            .position(|&item| item == value)
-            .unwrap_or_else(|| {
-                let position = self.len();
-                self.push(value);
-                position
-            })
-    }
-}
+// impl<T: Copy + PartialEq> FindOrPushGetIndex<T> for Vec<T> {
+//     fn find_or_push_get_index(&mut self, value: T) -> usize {
+//         self.iter()
+//             .position(|&item| item == value)
+//             .unwrap_or_else(|| {
+//                 let position = self.len();
+//                 self.push(value);
+//                 position
+//             })
+//     }
+// }
 
-trait PushGetIndex<T> {
-    fn push_get_index(&mut self, value: T) -> usize;
-}
+// trait PushGetIndex<T> {
+//     fn push_get_index(&mut self, value: T) -> usize;
+// }
 
-impl<T> PushGetIndex<T> for Vec<T> {
-    fn push_get_index(&mut self, value: T) -> usize {
-        let index = self.len();
-        self.push(value);
-        index
-    }
-}
+// impl<T> PushGetIndex<T> for Vec<T> {
+//     fn push_get_index(&mut self, value: T) -> usize {
+//         let index = self.len();
+//         self.push(value);
+//         index
+//     }
+// }
 
 // pub fn generate_tetra_sphere(
 //     scale: f32,
