@@ -181,3 +181,18 @@ vertices.
 
 [Code](https://github.com/mickvangelderen/vr-lab/releases/tag/cubic-sphere-generation)
 
+#### Jarring change in curvature of face vertices versus edge vertices
+
+I noticed something was off that bothered me. If you look closely at the arcs
+that the lines on the cube faces make, you'll notice that the vertices on the
+edges aren't actually on the arc. I used to calculate the vertices by
+interpolating over the angle between the triangle (center, corner 1, corner 2).
+This angle theta can be computed easily by taking two corners as vectors:
+cos(theta) = dot([1, 1, 1], [1, 1, -1]).
+
+This yields a different result from the intersecting planes equation, fixing one
+of the angles to PI/4 changes the sphere to look like the one on the right.
+
+![Sphere at 5 subdivision with edges spherical](media/spheres/cubic_sphere_fix_edge.jpg)
+
+[Code](https://github.com/mickvangelderen/vr-lab/releases/tag/cubic-sphere-generation-fix-edge)
