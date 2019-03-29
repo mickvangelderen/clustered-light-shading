@@ -1,0 +1,17 @@
+[package]
+name = "geogen"
+version = "0.1.0"
+authors = ["Mick van Gelderen <mickvangelderen@gmail.com>"]
+edition = "2018"
+
+[lib]
+path = "geogen.rs"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.2.10"
+
+[[bench]]
+name = "geogen"
+harness = false
