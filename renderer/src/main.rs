@@ -5,13 +5,12 @@ mod camera;
 mod convert;
 mod filters;
 mod frustrum;
-mod geometry;
 mod keyboard_model;
 mod world;
 
 use openvr as vr;
 use openvr::enums::Enum;
-
+use renderer as log;
 use cgmath::*;
 use convert::*;
 use gl_typed as gl;
@@ -67,7 +66,7 @@ fn write_obj_quads(name: &str, vertices: &[[f32; 3]], quads: &[[u32; 4]]) -> std
         writeln!(f, "v {} {} {}", p[0], p[1], p[2])?;
     }
 
-    writeln!(f, "o {}", name);
+    writeln!(f, "o {}", name)?;
     for q in quads.iter() {
         writeln!(f, "f {} {} {} {}", q[0] + 1, q[1] + 1, q[2] + 1, q[3] + 1)?;
     }
@@ -76,18 +75,18 @@ fn write_obj_quads(name: &str, vertices: &[[f32; 3]], quads: &[[u32; 4]]) -> std
 }
 
 fn main() {
-    // write_g("sphere", geometry::generate_iso_sphere(1.0, 4)).unwrap();
+    // write_g("sphere", geogen::generate_iso_sphere(1.0, 4)).unwrap();
 
     let radius = 1.0;
     for subdivisions in 0..=4 {
-        let spherical = geometry::generate_cubic_sphere_vertices(radius, subdivisions);
-        let mut projected = geometry::generate_cube_vertices(radius, subdivisions);
+        let spherical = geogen::generate_cubic_sphere_vertices(radius, subdivisions);
+        let mut projected = geogen::generate_cube_vertices(radius, subdivisions);
         for vertex in projected.iter_mut() {
             *vertex = Vector3::from(*vertex).normalize_to(radius).into();
         }
-        let quads = geometry::generate_cube_quads(subdivisions);
-        write_obj_quads(&format!("cubic_sphere_{}", subdivisions), &spherical, &quads);
-        write_obj_quads(&format!("cube_projected_onto_sphere_{}", subdivisions), &projected, &quads);
+        let quads = geogen::generate_cube_quads(subdivisions);
+        write_obj_quads(&format!("cubic_sphere_{}", subdivisions), &spherical, &quads).unwrap();
+        write_obj_quads(&format!("cube_projected_onto_sphere_{}", subdivisions), &projected, &quads).unwrap();
     }
 
     let current_dir = std::env::current_dir().unwrap();

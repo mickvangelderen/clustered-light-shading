@@ -1,24 +1,17 @@
 cargo-features = ["default-run"]
 
-[package]
-name = "vr-lab"
-version = "0.1.1"
-authors = ["Mick van Gelderen <mickvangelderen@gmail.com>"]
-edition = "2018"
-publish = false
-default-run = "vr-lab"
+[workspace]
+members = [
+    "geogen",
+    "renderer",
+    "log-viewer",
+]
 
-[features]
-default = []
+[profile.dev]
+opt-level = 3
 
-[dependencies]
-cgmath = "0.17.0"
-gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", tag = "0.3.0" }
-glutin = "0.19.0"
-image = "0.21.0"
-notify = "4.0.10"
-openvr = { git = "https://github.com/mickvangelderen/openvr-rust", tag = "0.1.0" }
-tobj = "0.1.6"
+[profile.test]
+opt-level = 3
  
 [patch."https://github.com/mickvangelderen/openvr-sys-rust"]
 openvr-sys = { path = "../openvr-sys-rust" }
@@ -28,13 +21,3 @@ openvr = { path = "../openvr-rust" }
 
 [patch."https://github.com/mickvangelderen/gl-typed-rust"]
 gl-typed = { path = "../gl-typed-rust" }
-
-[profile.dev]
-opt-level = 3
-
-[profile.test]
-opt-level = 3
-
-[lib]
-name = "log"
-path = "src/log.rs"

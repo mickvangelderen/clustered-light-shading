@@ -1,4 +1,4 @@
-use log;
+use renderer as log;
 use std::fs;
 use std::io;
 
