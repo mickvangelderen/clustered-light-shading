@@ -184,7 +184,7 @@ fn main() {
     }
 
     let mut renderer = unsafe {
-        let mut renderer = basic_renderer::Renderer::new(&gl, &world);
+        let mut renderer = basic_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
         let fs_bytes = std::fs::read(&basic_renderer_fs_path).unwrap();
         renderer.update(

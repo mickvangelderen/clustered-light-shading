@@ -156,7 +156,7 @@ impl Renderer {
         }
     }
 
-    pub unsafe fn new(gl: &gl::Gl, world: &World) -> Self {
+    pub unsafe fn new(gl: &gl::Gl) -> Self {
         let vertex_shader_name = gl
             .create_shader(gl::VERTEX_SHADER)
             .expect("Failed to create shader.");
