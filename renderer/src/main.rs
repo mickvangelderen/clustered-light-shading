@@ -8,14 +8,14 @@ mod frustrum;
 mod keyboard_model;
 mod world;
 
-use openvr as vr;
-use openvr::enums::Enum;
-use renderer as log;
 use cgmath::*;
 use convert::*;
 use gl_typed as gl;
 use glutin::GlContext;
 use notify::Watcher;
+use openvr as vr;
+use openvr::enums::Enum;
+use renderer::log;
 use std::mem;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -38,7 +38,8 @@ use std::thread;
 
 fn write_g(name: &str, geo: (Vec<Vector3<f32>>, Vec<[u32; 3]>, Vec<u32>)) -> std::io::Result<()> {
     use std::io::Write;
-    let mut bufwriter = std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
+    let mut bufwriter =
+        std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
     let f = &mut bufwriter;
 
     for p in geo.0.iter() {
@@ -59,7 +60,8 @@ fn write_g(name: &str, geo: (Vec<Vector3<f32>>, Vec<[u32; 3]>, Vec<u32>)) -> std
 
 fn write_obj_quads(name: &str, vertices: &[[f32; 3]], quads: &[[u32; 4]]) -> std::io::Result<()> {
     use std::io::Write;
-    let mut bufwriter = std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
+    let mut bufwriter =
+        std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
     let f = &mut bufwriter;
 
     for p in vertices.iter() {
@@ -75,37 +77,39 @@ fn write_obj_quads(name: &str, vertices: &[[f32; 3]], quads: &[[u32; 4]]) -> std
 }
 
 fn main() {
-    // write_g("sphere", geogen::generate_iso_sphere(1.0, 4)).unwrap();
+    // write_g("sphere", polygen::generate_iso_sphere(1.0, 4)).unwrap();
 
     let radius = 1.0;
     for subdivisions in 0..=4 {
-        let spherical = geogen::generate_cubic_sphere_vertices(radius, subdivisions);
-        let mut projected = geogen::generate_cube_vertices(radius, subdivisions);
+        let spherical = polygen::generate_cubic_sphere_vertices(radius, subdivisions);
+        let mut projected = polygen::generate_cube_vertices(radius, subdivisions);
         for vertex in projected.iter_mut() {
             *vertex = Vector3::from(*vertex).normalize_to(radius).into();
         }
-        let quads = geogen::generate_cube_quads(subdivisions);
-        write_obj_quads(&format!("cubic_sphere_{}", subdivisions), &spherical, &quads).unwrap();
-        write_obj_quads(&format!("cube_projected_onto_sphere_{}", subdivisions), &projected, &quads).unwrap();
+        let quads = polygen::generate_cube_quads(subdivisions);
+        write_obj_quads(
+            &format!("cubic_sphere_{}", subdivisions),
+            &spherical,
+            &quads,
+        )
+        .unwrap();
+        write_obj_quads(
+            &format!("cube_projected_onto_sphere_{}", subdivisions),
+            &projected,
+            &quads,
+        )
+        .unwrap();
     }
 
     let current_dir = std::env::current_dir().unwrap();
-
-    let basic_renderer_vs_path: PathBuf = [
-        current_dir.as_ref(),
-        Path::new("data"),
-        Path::new("basic_renderer.vert"),
-    ]
-    .into_iter()
-    .collect();
-
-    let basic_renderer_fs_path: PathBuf = [
-        current_dir.as_ref(),
-        Path::new("data"),
-        Path::new("basic_renderer.frag"),
-    ]
-    .into_iter()
-    .collect();
+    let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")]
+        .into_iter()
+        .collect();
+    let log_dir: PathBuf = [current_dir.as_ref(), Path::new("logs")]
+        .into_iter()
+        .collect();
+    let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
+    let basic_renderer_fs_path: PathBuf = resource_dir.join("basic_renderer.frag");
 
     let start_instant = std::time::Instant::now();
 
@@ -118,7 +122,7 @@ fn main() {
             use std::io;
             use std::io::Write;
 
-            let mut file = io::BufWriter::new(fs::File::create("log/log.bin").unwrap());
+            let mut file = io::BufWriter::new(fs::File::create(log_dir.join("log.bin")).unwrap());
 
             for entry in rx_log.iter() {
                 file.write_all(&entry.into_ne_bytes()).unwrap();
@@ -133,7 +137,7 @@ fn main() {
     let mut watcher = notify::raw_watcher(tx_fs).unwrap();
 
     watcher
-        .watch("data", notify::RecursiveMode::Recursive)
+        .watch("resources", notify::RecursiveMode::Recursive)
         .unwrap();
 
     let mut world = World {
@@ -194,7 +198,7 @@ fn main() {
         renderer
     };
 
-    let mut assets = Assets::new(&gl, &renderer);
+    let assets = Assets::new(&gl, &resource_dir, &renderer);
 
     // === VR ===
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {

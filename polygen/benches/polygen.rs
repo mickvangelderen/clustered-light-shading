@@ -2,8 +2,7 @@
 extern crate criterion;
 
 use criterion::*;
-
-use geogen::*;
+use polygen::*;
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench(
@@ -16,9 +15,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                 10, 20, 30, 40, 50, 60, 70, 80, 90, //
                 100, 200, 300, 400, 500,
             ],
-        ).warm_up_time(std::time::Duration::from_secs(1))
+        )
+        .warm_up_time(std::time::Duration::from_secs(1))
         .measurement_time(std::time::Duration::from_secs(1))
-        .sample_size(20)
+        .sample_size(20),
     );
 }
 
