@@ -7,7 +7,7 @@ use std::mem;
 use std::path::Path;
 
 #[allow(unused)]
-pub struct Assets {
+pub struct Resources {
     pub models: Vec<tobj::Model>,
     pub materials: Vec<tobj::Material>,
     pub diffuse_textures: Vec<gl::TextureName>,
@@ -18,7 +18,7 @@ pub struct Assets {
     pub key_indices: Vec<keyboard_model::UncheckedIndex>,
 }
 
-impl Assets {
+impl Resources {
     pub fn new<P: AsRef<Path>>(
         gl: &gl::Gl,
         resource_dir: P,
@@ -180,7 +180,7 @@ impl Assets {
             }
         }
 
-        Assets {
+        Resources {
             models,
             materials,
             diffuse_textures,

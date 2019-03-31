@@ -6,7 +6,7 @@ mod convert;
 mod filters;
 mod frustrum;
 mod keyboard_model;
-mod world;
+mod resources;
 
 use cgmath::*;
 use convert::*;
@@ -21,7 +21,6 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
-use world::Assets;
 
 const DESIRED_UPS: f32 = 90.0;
 const DESIRED_FPS: f32 = 90.0;
@@ -198,7 +197,7 @@ fn main() {
         renderer
     };
 
-    let assets = Assets::new(&gl, &resource_dir, &renderer);
+    let resources = resources::Resources::new(&gl, &resource_dir, &renderer);
 
     // === VR ===
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
@@ -435,7 +434,7 @@ fn main() {
                     pos_from_cam_to_clp: pos_from_hmd_to_clp,
                 },
                 &world,
-                &assets,
+                &resources,
             );
         }
 
@@ -452,7 +451,7 @@ fn main() {
                             * world.pos_from_cam_to_hmd,
                     },
                     &world,
-                    &assets,
+                    &resources,
                 );
 
                 renderer.render(
@@ -465,7 +464,7 @@ fn main() {
                             * world.pos_from_cam_to_hmd,
                     },
                     &world,
-                    &assets,
+                    &resources,
                 );
 
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
