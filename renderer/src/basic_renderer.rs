@@ -1,6 +1,6 @@
 use crate::keyboard_model;
-use crate::World;
 use crate::resources::Resources;
+use crate::World;
 use cgmath::*;
 use gl_typed as gl;
 
@@ -41,7 +41,13 @@ pub struct Update<'a> {
 }
 
 impl Renderer {
-    pub unsafe fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, resources: &Resources) {
+    pub unsafe fn render(
+        &self,
+        gl: &gl::Gl,
+        params: &Parameters,
+        world: &World,
+        resources: &Resources,
+    ) {
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -90,7 +96,12 @@ impl Renderer {
             }
 
             gl.bind_vertex_array(resources.vaos[i]);
-            gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
+            gl.draw_elements(
+                gl::TRIANGLES,
+                resources.element_counts[i],
+                gl::UNSIGNED_INT,
+                0,
+            );
         }
 
         gl.unbind_vertex_array();

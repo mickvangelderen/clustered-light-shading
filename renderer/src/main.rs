@@ -21,6 +21,8 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::path::PathBuf;
 use std::ptr;
+use std::sync::mpsc;
+use std::thread;
 
 const DESIRED_UPS: f32 = 90.0;
 const DESIRED_FPS: f32 = 90.0;
@@ -32,74 +34,7 @@ pub struct World {
     keyboard_model: keyboard_model::KeyboardModel,
 }
 
-use std::sync::mpsc;
-use std::thread;
-
-fn write_g(name: &str, geo: (Vec<Vector3<f32>>, Vec<[u32; 3]>, Vec<u32>)) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut bufwriter =
-        std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
-    let f = &mut bufwriter;
-
-    for p in geo.0.iter() {
-        writeln!(f, "v {} {} {}", p[0], p[1], p[2])?;
-    }
-
-    for subdivision in 0..(geo.2.len() - 1) {
-        writeln!(f, "o {}_{}", name, subdivision)?;
-        let triangles_start = geo.2[subdivision] as usize;
-        let triangles_end = geo.2[subdivision + 1] as usize;
-        for t in geo.1[triangles_start..triangles_end].iter() {
-            writeln!(f, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn write_obj_quads(name: &str, vertices: &[[f32; 3]], quads: &[[u32; 4]]) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut bufwriter =
-        std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
-    let f = &mut bufwriter;
-
-    for p in vertices.iter() {
-        writeln!(f, "v {} {} {}", p[0], p[1], p[2])?;
-    }
-
-    writeln!(f, "o {}", name)?;
-    for q in quads.iter() {
-        writeln!(f, "f {} {} {} {}", q[0] + 1, q[1] + 1, q[2] + 1, q[3] + 1)?;
-    }
-
-    Ok(())
-}
-
 fn main() {
-    // write_g("sphere", polygen::generate_iso_sphere(1.0, 4)).unwrap();
-
-    let radius = 1.0;
-    for subdivisions in 0..=4 {
-        let spherical = polygen::generate_cubic_sphere_vertices(radius, subdivisions);
-        let mut projected = polygen::generate_cube_vertices(radius, subdivisions);
-        for vertex in projected.iter_mut() {
-            *vertex = Vector3::from(*vertex).normalize_to(radius).into();
-        }
-        let quads = polygen::generate_cube_quads(subdivisions);
-        write_obj_quads(
-            &format!("cubic_sphere_{}", subdivisions),
-            &spherical,
-            &quads,
-        )
-        .unwrap();
-        write_obj_quads(
-            &format!("cube_projected_onto_sphere_{}", subdivisions),
-            &projected,
-            &quads,
-        )
-        .unwrap();
-    }
-
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")]
         .into_iter()
