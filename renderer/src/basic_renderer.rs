@@ -1,6 +1,6 @@
-use super::keyboard_model;
-use super::World;
-use crate::world::Assets;
+use crate::keyboard_model;
+use crate::World;
+use crate::resources::Resources;
 use cgmath::*;
 use gl_typed as gl;
 
@@ -41,7 +41,7 @@ pub struct Update<'a> {
 }
 
 impl Renderer {
-    pub unsafe fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, assets: &Assets) {
+    pub unsafe fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, resources: &Resources) {
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -73,9 +73,9 @@ impl Renderer {
         // Cache texture binding.
         let mut bound_diffuse_texture: u32 = 0;
 
-        for i in 0..assets.vaos.len() {
-            if let Some(material_id) = assets.models[i].mesh.material_id {
-                let diffuse_texture = assets.diffuse_textures[material_id];
+        for i in 0..resources.vaos.len() {
+            if let Some(material_id) = resources.models[i].mesh.material_id {
+                let diffuse_texture = resources.diffuse_textures[material_id];
                 if diffuse_texture.into_u32() != bound_diffuse_texture {
                     gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
                     bound_diffuse_texture = diffuse_texture.into_u32();
@@ -83,14 +83,14 @@ impl Renderer {
             }
 
             if let Some(loc) = self.highlight_loc.into() {
-                let highlight: f32 = keyboard_model::Index::new(assets.key_indices[i])
+                let highlight: f32 = keyboard_model::Index::new(resources.key_indices[i])
                     .map(|i| world.keyboard_model.pressure(i))
                     .unwrap_or(0.0);
                 gl.uniform_1f(loc, highlight);
             }
 
-            gl.bind_vertex_array(assets.vaos[i]);
-            gl.draw_elements(gl::TRIANGLES, assets.element_counts[i], gl::UNSIGNED_INT, 0);
+            gl.bind_vertex_array(resources.vaos[i]);
+            gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
         }
 
         gl.unbind_vertex_array();
