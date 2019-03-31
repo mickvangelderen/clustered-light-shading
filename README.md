@@ -1,4 +1,4 @@
-![Hot Reloading](hot-reloading.gif)
+![Hot Reloading](media/hot-reloading.gif)
 
 Requires SteamVR (installed through steam) and standard OpenGL development
 headers and libraries to be installed.
@@ -78,7 +78,7 @@ each keyboard scancode to the name of each key. Then a virtual keyboard
 simulates the key pressure which is transfered through a uniform and used to
 translate the key and brighten its color.
 
-![Typing Simulator](typing-simulator.jpg)
+![Typing Simulator](media/typing-simulator.jpg)
 
 ### Hot reloading
 
@@ -87,7 +87,7 @@ their source files change. This lets me correct small mistakes in them very
 quickly. The vertex layout and everything is static so there is only so much you
 can do without recompiling. Pretty neat though.
 
-![Hot Reloading](hot-reloading.gif)
+![Hot Reloading](media/hot-reloading.gif)
 
 ### Sphere generation
 

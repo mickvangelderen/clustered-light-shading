@@ -4,6 +4,7 @@ use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 use std::mem;
+use std::path::Path;
 
 #[allow(unused)]
 pub struct Assets {
@@ -18,11 +19,17 @@ pub struct Assets {
 }
 
 impl Assets {
-    pub fn new(gl: &gl::Gl, renderer: &basic_renderer::Renderer) -> Self {
-        let room_obj = tobj::load_obj(&std::path::Path::new("data/room.obj"));
+    pub fn new<P: AsRef<Path>>(
+        gl: &gl::Gl,
+        resource_dir: P,
+        renderer: &basic_renderer::Renderer,
+    ) -> Self {
+        let resource_dir = resource_dir.as_ref();
+
+        let room_obj = tobj::load_obj(&resource_dir.join("room.obj"));
         let (mut room_models, mut room_materials) = room_obj.unwrap();
 
-        let keyboard_obj = tobj::load_obj(&std::path::Path::new("data/keyboard.obj"));
+        let keyboard_obj = tobj::load_obj(&resource_dir.join("keyboard.obj"));
         let (mut keyboard_models, mut keyboard_materials) = keyboard_obj.unwrap();
 
         for model in keyboard_models.iter_mut() {
@@ -151,8 +158,7 @@ impl Assets {
         };
 
         for (i, material) in materials.iter().enumerate() {
-            let path: std::path::PathBuf =
-                ["data", material.diffuse_texture.as_ref()].iter().collect();
+            let path = resource_dir.join(&material.diffuse_texture);
 
             {
                 let img = image::open(path).unwrap().flipv().to_rgba();

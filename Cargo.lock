@@ -453,13 +453,6 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "geogen"
-version = "0.1.0"
-dependencies = [
- "criterion 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "gif"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -969,6 +962,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "polygen"
+version = "0.1.0"
+dependencies = [
+ "criterion 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1161,12 +1161,12 @@ name = "renderer"
 version = "0.1.1"
 dependencies = [
  "cgmath 0.17.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "geogen 0.1.0",
  "gl-typed 0.3.0",
  "glutin 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "notify 4.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "openvr 0.1.0",
+ "polygen 0.1.0",
  "tobj 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

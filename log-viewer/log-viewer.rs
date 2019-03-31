@@ -3,7 +3,7 @@ use std::fs;
 use std::io;
 
 fn main() -> io::Result<()> {
-    let mut entries: Vec<u8> = fs::read("log/log.bin")?;
+    let mut entries: Vec<u8> = fs::read("logs/log.bin")?;
 
     if entries.len() % std::mem::size_of::<log::Entry>() != 0 {
         panic!("Unexpected number of bytes read.");
