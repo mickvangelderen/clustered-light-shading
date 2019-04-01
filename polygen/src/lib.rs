@@ -320,7 +320,8 @@ pub fn cube_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
     vertices
 }
 
-pub fn cubic_sphere_vertices(radius: f32, n: u32) -> Vec<[f32; 3]> {
+pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
+    let n = subdivisions;
     let frac_1_sqrt_3 = f32::sqrt(1.0 / 3.0);
     let face_range = (-FRAC_PI_4, FRAC_PI_4);
 
