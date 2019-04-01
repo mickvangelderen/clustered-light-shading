@@ -25,6 +25,7 @@ pub struct Renderer {
     pub highlight_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
     pub vs_ver_pos_loc: gl::OptionAttributeLocation,
+    pub vs_ver_nor_loc: gl::OptionAttributeLocation,
     pub vs_tex_pos_loc: gl::OptionAttributeLocation,
 }
 
@@ -161,6 +162,7 @@ impl Renderer {
             }
 
             self.vs_ver_pos_loc = get_attribute_location!(gl, self.program_name, "vs_ver_pos");
+            self.vs_ver_nor_loc = get_attribute_location!(gl, self.program_name, "vs_ver_nor");
             self.vs_tex_pos_loc = get_attribute_location!(gl, self.program_name, "vs_tex_pos");
 
             // FIXME: Have to update the vaos!
@@ -188,6 +190,7 @@ impl Renderer {
             highlight_loc: gl::OptionUniformLocation::NONE,
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
             vs_ver_pos_loc: gl::OptionAttributeLocation::NONE,
+            vs_ver_nor_loc: gl::OptionAttributeLocation::NONE,
             vs_tex_pos_loc: gl::OptionAttributeLocation::NONE,
         }
     }
