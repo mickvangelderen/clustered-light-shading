@@ -1,6 +1,8 @@
 // NOTE: A lot of things are private to this module because I want to retain
 // flexibility in the implementations.
 
+use cgmath::*;
+
 use std::f32::consts::*;
 
 type Quad = [u32; 4];
@@ -387,4 +389,25 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
     debug_assert_eq!(vertices.len(), (8 + 12 * n + 6 * n * n) as usize);
 
     vertices
+}
+
+pub fn compute_normals_tris(polygons: &[Tri], vertices: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    // Compute normal directions for each polygon.
+    let polygon_normal_directions: Vec<Vector3<f32>> = polygons.iter().map(|&p| {
+        let p0 = Vector3::from(vertices[p[0] as usize]);
+        let p1 = Vector3::from(vertices[p[1] as usize]);
+        let p2 = Vector3::from(vertices[p[2] as usize]);
+        ((p1 - p0).cross(p2 - p0))
+    }).collect();
+
+    // For each vertex, sum the normal directions of all polygons containing it, and normalize.
+    vertices.iter().enumerate().map(|(ni, _)| {
+        polygons.iter().enumerate().fold(Vector3::zero(), |sum, (pi, &p)| {
+            if p.iter().any(|&vi| vi as usize == ni) {
+                sum + polygon_normal_directions[pi]
+            } else {
+                sum
+            }
+        }).normalize().into()
+    }).collect()
 }
