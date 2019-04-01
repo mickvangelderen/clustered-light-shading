@@ -965,6 +965,7 @@ dependencies = [
 name = "polygen"
 version = "0.1.0"
 dependencies = [
+ "cgmath 0.17.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "criterion 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
