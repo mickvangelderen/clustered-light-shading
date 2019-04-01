@@ -1,6 +1,6 @@
 use crate::basic_renderer;
+use crate::convert::*;
 use crate::keyboard_model;
-use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 use std::mem;
@@ -81,6 +81,16 @@ impl Resources {
             .map(|model| model_name_to_keyboard_index(&model.name))
             .collect();
 
+        for model in models.iter_mut() {
+            if model.mesh.normals.len() == 0 {
+                model.mesh.normals = polygen::compute_normals_tris(
+                    (&model.mesh.indices[..]).unflatten(),
+                    (&model.mesh.positions[..]).unflatten(),
+                )
+                .flatten()
+            }
+        }
+
         for (i, model) in models.iter().enumerate() {
             let vao = vaos[i];
             let vb = vbs[i];
@@ -88,19 +98,22 @@ impl Resources {
 
             unsafe {
                 let ver_pos_size = mem::size_of_val(&model.mesh.positions[..]);
+                let ver_nor_size = mem::size_of_val(&model.mesh.normals[..]);
                 let tex_pos_size = mem::size_of_val(&model.mesh.texcoords[..]);
 
                 let ver_pos_offset = 0;
-                let tex_pos_offset = ver_pos_size;
+                let ver_nor_offset = ver_pos_offset + ver_pos_size;
+                let tex_pos_offset = ver_nor_offset + ver_nor_size;
 
                 gl.bind_vertex_array(vao);
                 gl.bind_buffer(gl::ARRAY_BUFFER, vb);
                 gl.buffer_reserve(
                     gl::ARRAY_BUFFER,
-                    ver_pos_size + tex_pos_size,
+                    ver_pos_size + ver_nor_size + tex_pos_size,
                     gl::STATIC_DRAW,
                 );
                 gl.buffer_sub_data(gl::ARRAY_BUFFER, ver_pos_offset, &model.mesh.positions[..]);
+                gl.buffer_sub_data(gl::ARRAY_BUFFER, ver_nor_offset, &model.mesh.normals[..]);
                 gl.buffer_sub_data(gl::ARRAY_BUFFER, tex_pos_offset, &model.mesh.texcoords[..]);
 
                 gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
@@ -119,6 +132,19 @@ impl Resources {
                         gl::FALSE,
                         mem::size_of::<[f32; 3]>(),
                         ver_pos_offset,
+                    );
+
+                    gl.enable_vertex_attrib_array(loc);
+                }
+
+                if let Some(loc) = renderer.vs_ver_nor_loc.into() {
+                    gl.vertex_attrib_pointer(
+                        loc,
+                        3,
+                        gl::FLOAT,
+                        gl::FALSE,
+                        mem::size_of::<[f32; 3]>(),
+                        ver_nor_offset,
                     );
 
                     gl.enable_vertex_attrib_array(loc);
