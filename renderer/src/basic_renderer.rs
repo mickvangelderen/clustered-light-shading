@@ -24,9 +24,10 @@ pub struct Renderer {
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
-    pub vs_ver_pos_loc: gl::OptionAttributeLocation,
-    pub vs_ver_nor_loc: gl::OptionAttributeLocation,
-    pub vs_tex_pos_loc: gl::OptionAttributeLocation,
+    pub vs_pos_in_obj_loc: gl::OptionAttributeLocation,
+    pub vs_pos_in_tex_loc: gl::OptionAttributeLocation,
+    pub vs_nor_in_obj_loc: gl::OptionAttributeLocation,
+    pub vs_tan_in_obj_loc: gl::OptionAttributeLocation,
 }
 
 pub struct Parameters {
@@ -81,8 +82,8 @@ impl Renderer {
         let mut bound_diffuse_texture: u32 = 0;
 
         for i in 0..resources.vaos.len() {
-            if let Some(material_id) = resources.models[i].mesh.material_id {
-                let diffuse_texture = resources.diffuse_textures[material_id];
+            if let Some(material_id) = resources.meshes[i].material_id {
+                let diffuse_texture = resources.diffuse_textures[material_id as usize];
                 if diffuse_texture.into_u32() != bound_diffuse_texture {
                     gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
                     bound_diffuse_texture = diffuse_texture.into_u32();
@@ -161,9 +162,10 @@ impl Renderer {
                 }};
             }
 
-            self.vs_ver_pos_loc = get_attribute_location!(gl, self.program_name, "vs_ver_pos");
-            self.vs_ver_nor_loc = get_attribute_location!(gl, self.program_name, "vs_ver_nor");
-            self.vs_tex_pos_loc = get_attribute_location!(gl, self.program_name, "vs_tex_pos");
+            self.vs_pos_in_obj_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_obj");
+            self.vs_pos_in_tex_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_tex");
+            self.vs_nor_in_obj_loc = get_attribute_location!(gl, self.program_name, "vs_nor_in_obj");
+            self.vs_tan_in_obj_loc = get_attribute_location!(gl, self.program_name, "vs_tan_in_obj");
 
             // FIXME: Have to update the vaos!
         }
@@ -189,9 +191,10 @@ impl Renderer {
             pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
             highlight_loc: gl::OptionUniformLocation::NONE,
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
-            vs_ver_pos_loc: gl::OptionAttributeLocation::NONE,
-            vs_ver_nor_loc: gl::OptionAttributeLocation::NONE,
-            vs_tex_pos_loc: gl::OptionAttributeLocation::NONE,
+            vs_pos_in_obj_loc: gl::OptionAttributeLocation::NONE,
+            vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
+            vs_nor_in_obj_loc: gl::OptionAttributeLocation::NONE,
+            vs_tan_in_obj_loc: gl::OptionAttributeLocation::NONE,
         }
     }
 }
