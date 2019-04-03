@@ -391,23 +391,77 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
     vertices
 }
 
-pub fn compute_normals_tris(polygons: &[Tri], vertices: &[[f32; 3]]) -> Vec<[f32; 3]> {
-    // Compute normal directions for each polygon.
-    let polygon_normal_directions: Vec<Vector3<f32>> = polygons.iter().map(|&p| {
-        let p0 = Vector3::from(vertices[p[0] as usize]);
-        let p1 = Vector3::from(vertices[p[1] as usize]);
-        let p2 = Vector3::from(vertices[p[2] as usize]);
-        ((p1 - p0).cross(p2 - p0))
-    }).collect();
+pub fn compute_normals(triangles: &[Tri], pos_in_obj: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    // Compute normal directions for each triangle.
+    let unnormalized_normals_per_triangle: Vec<Vector3<f32>> = triangles
+        .iter()
+        .map(|&tri| {
+            let p0 = Vector3::from(pos_in_obj[tri[0] as usize]);
+            let p1 = Vector3::from(pos_in_obj[tri[1] as usize]);
+            let p2 = Vector3::from(pos_in_obj[tri[2] as usize]);
+            ((p1 - p0).cross(p2 - p0))
+        })
+        .collect();
 
-    // For each vertex, sum the normal directions of all polygons containing it, and normalize.
-    vertices.iter().enumerate().map(|(ni, _)| {
-        polygons.iter().enumerate().fold(Vector3::zero(), |sum, (pi, &p)| {
-            if p.iter().any(|&vi| vi as usize == ni) {
-                sum + polygon_normal_directions[pi]
-            } else {
-                sum
-            }
-        }).normalize().into()
-    }).collect()
+    // For each vertex, sum the normal directions of all triangles containing it, and normalize.
+    pos_in_obj
+        .iter()
+        .enumerate()
+        .map(|(ni, _)| {
+            triangles
+                .iter()
+                .zip(unnormalized_normals_per_triangle.iter())
+                .fold(Vector3::zero(), |sum, (&tri, &nor)| {
+                    if tri.iter().any(|&vi| vi as usize == ni) {
+                        sum + nor
+                    } else {
+                        sum
+                    }
+                })
+                .normalize()
+                .into()
+        })
+        .collect()
+}
+
+pub fn compute_tangents(
+    triangles: &[Tri],
+    pos_in_obj: &[[f32; 3]],
+    pos_in_tex: &[[f32; 2]],
+) -> Vec<[f32; 3]> {
+    // Compute tangents per triangle.
+    let unnormalized_tangents_per_triangle: Vec<Vector3<f32>> = triangles
+        .iter()
+        .map(|&tri| {
+            let p0 = Vector3::from(pos_in_obj[tri[0] as usize]);
+            let p1 = Vector3::from(pos_in_obj[tri[1] as usize]);
+            let p2 = Vector3::from(pos_in_obj[tri[2] as usize]);
+
+            let t0 = Vector2::from(pos_in_tex[tri[0] as usize]);
+            let t1 = Vector2::from(pos_in_tex[tri[1] as usize]);
+            let t2 = Vector2::from(pos_in_tex[tri[2] as usize]);
+
+            (t1[1] - t2[1]) * p0 + (t2[1] - t0[1]) * p1 + (t0[1] - t1[1]) * p2
+        })
+        .collect();
+
+    // For each vertex, sum the tangents of all triangles containing it, and normalize.
+    pos_in_obj
+        .iter()
+        .enumerate()
+        .map(|(ni, _)| {
+            triangles
+                .iter()
+                .zip(unnormalized_tangents_per_triangle.iter())
+                .fold(Vector3::zero(), |sum, (&tri, &tan)| {
+                    if tri.iter().any(|&vi| vi as usize == ni) {
+                        sum + tan
+                    } else {
+                        sum
+                    }
+                })
+                .normalize()
+                .into()
+        })
+        .collect()
 }

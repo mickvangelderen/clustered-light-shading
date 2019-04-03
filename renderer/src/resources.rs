@@ -8,7 +8,7 @@ use std::path::Path;
 
 #[allow(unused)]
 pub struct Resources {
-    pub models: Vec<tobj::Model>,
+    pub meshes: Vec<Mesh>,
     pub materials: Vec<tobj::Material>,
     pub diffuse_textures: Vec<gl::TextureName>,
     pub vaos: Vec<gl::VertexArrayName>,
@@ -16,6 +16,27 @@ pub struct Resources {
     pub ebs: Vec<gl::BufferName>,
     pub element_counts: Vec<usize>,
     pub key_indices: Vec<keyboard_model::UncheckedIndex>,
+}
+
+pub struct Mesh {
+    pub name: String,
+    /// Triangle indices.
+    pub triangles: Vec<[u32; 3]>,
+
+    /// Position in object space.
+    pub pos_in_obj: Vec<[f32; 3]>,
+
+    /// Position in texture space.
+    pub pos_in_tex: Vec<[f32; 2]>,
+
+    /// Normal in object space.
+    pub nor_in_obj: Vec<[f32; 3]>,
+
+    /// Tangent in object space.
+    pub tan_in_obj: Vec<[f32; 3]>,
+
+    /// Material id.
+    pub material_id: Option<u32>,
 }
 
 impl Resources {
@@ -26,138 +47,187 @@ impl Resources {
     ) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        let room_obj = tobj::load_obj(&resource_dir.join("room.obj"));
-        let (mut room_models, mut room_materials) = room_obj.unwrap();
+        let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["room.obj", "keyboard.obj"]
+            .into_iter()
+            .map(|file_path| tobj::load_obj(&resource_dir.join(file_path)).unwrap())
+            .collect();
 
-        let keyboard_obj = tobj::load_obj(&resource_dir.join("keyboard.obj"));
-        let (mut keyboard_models, mut keyboard_materials) = keyboard_obj.unwrap();
+        let material_offsets: Vec<u32> = objs
+            .iter()
+            .scan(0, |sum, (_, ref materials)| {
+                let offset = *sum;
+                *sum += materials.len() as u32;
+                Some(offset)
+            })
+            .collect();
 
-        for model in keyboard_models.iter_mut() {
-            // Offset keyboard model material ids.
-            if let Some(ref mut id) = model.mesh.material_id {
-                *id += room_materials.len();
-            }
+        let mut meshes: Vec<Mesh> =
+            Vec::with_capacity(objs.iter().map(|(ref models, _)| models.len()).sum());
+        let mut materials: Vec<tobj::Material> =
+            Vec::with_capacity(objs.iter().map(|(_, ref materials)| materials.len()).sum());
+
+        for (i, (obj_models, obj_materials)) in objs.into_iter().enumerate() {
+            let material_offset = material_offsets[i];
+
+            meshes.extend(obj_models.into_iter().map(|model| {
+                let tobj::Model { mesh, name } = model;
+                let tobj::Mesh {
+                    positions,
+                    normals: _normals,
+                    texcoords,
+                    indices,
+                    material_id,
+                } = mesh;
+
+                let triangles: Vec<[u32; 3]> = indices.unflatten();
+                let pos_in_obj: Vec<[f32; 3]> = positions.unflatten();
+                let pos_in_tex: Vec<[f32; 2]> = texcoords.unflatten();
+                let nor_in_obj = polygen::compute_normals(&triangles, &pos_in_obj);
+                let tan_in_obj = polygen::compute_tangents(&triangles, &pos_in_obj, &pos_in_tex);
+                let material_id = material_id.map(|id| id as u32 + material_offset);
+
+                Mesh {
+                    name,
+                    triangles,
+                    pos_in_obj,
+                    pos_in_tex,
+                    nor_in_obj,
+                    tan_in_obj,
+                    material_id,
+                }
+            }));
+
+            materials.extend(obj_materials.into_iter());
         }
 
-        let mut models: Vec<tobj::Model> =
-            Vec::with_capacity(room_models.len() + keyboard_models.len());
-
-        models.append(&mut room_models);
-        models.append(&mut keyboard_models);
-
-        let mut materials: Vec<tobj::Material> =
-            Vec::with_capacity(room_materials.len() + keyboard_materials.len());
-        materials.append(&mut room_materials);
-        materials.append(&mut keyboard_materials);
-
         let vaos = unsafe {
-            let mut names = Vec::with_capacity(models.len());
-            names.set_len(models.len());
+            let mut names = Vec::with_capacity(meshes.len());
+            names.set_len(meshes.len());
             gl.gen_vertex_arrays(&mut names);
             names.try_transmute_each().unwrap()
         };
 
         let vbs = unsafe {
-            let mut names = Vec::with_capacity(models.len());
-            names.set_len(models.len());
+            let mut names = Vec::with_capacity(meshes.len());
+            names.set_len(meshes.len());
             gl.gen_buffers(&mut names);
             names.try_transmute_each().unwrap()
         };
 
         let ebs = unsafe {
-            let mut names = Vec::with_capacity(models.len());
-            names.set_len(models.len());
+            let mut names = Vec::with_capacity(meshes.len());
+            names.set_len(meshes.len());
             gl.gen_buffers(&mut names);
             names.try_transmute_each().unwrap()
         };
 
-        let element_counts: Vec<usize> = models
+        let element_counts: Vec<usize> = meshes.iter().map(|mesh| mesh.triangles.len() * 3).collect();
+
+        let key_indices: Vec<keyboard_model::UncheckedIndex> = meshes
             .iter()
-            .map(|model| model.mesh.indices.len())
+            .map(|mesh| model_name_to_keyboard_index(&mesh.name))
             .collect();
 
-        let key_indices: Vec<keyboard_model::UncheckedIndex> = models
-            .iter()
-            .map(|model| model_name_to_keyboard_index(&model.name))
-            .collect();
-
-        for model in models.iter_mut() {
-            if model.mesh.normals.len() == 0 {
-                model.mesh.normals = polygen::compute_normals_tris(
-                    (&model.mesh.indices[..]).unflatten(),
-                    (&model.mesh.positions[..]).unflatten(),
-                )
-                .flatten()
-            }
-        }
-
-        for (i, model) in models.iter().enumerate() {
+        for (i, mesh) in meshes.iter().enumerate() {
             let vao = vaos[i];
             let vb = vbs[i];
             let eb = ebs[i];
 
             unsafe {
-                let ver_pos_size = mem::size_of_val(&model.mesh.positions[..]);
-                let ver_nor_size = mem::size_of_val(&model.mesh.normals[..]);
-                let tex_pos_size = mem::size_of_val(&model.mesh.texcoords[..]);
+                let pos_in_obj_size = mem::size_of_val(&mesh.pos_in_obj[..]);
+                let pos_in_tex_size = mem::size_of_val(&mesh.pos_in_tex[..]);
+                let nor_in_obj_size = mem::size_of_val(&mesh.nor_in_obj[..]);
+                let tan_in_obj_size = mem::size_of_val(&mesh.tan_in_obj[..]);
 
-                let ver_pos_offset = 0;
-                let ver_nor_offset = ver_pos_offset + ver_pos_size;
-                let tex_pos_offset = ver_nor_offset + ver_nor_size;
+                let pos_in_obj_offset = 0;
+                let pos_in_tex_offset = pos_in_obj_offset + pos_in_obj_size;
+                let nor_in_obj_offset = pos_in_tex_offset + pos_in_tex_size;
+                let tan_in_obj_offset = nor_in_obj_offset + nor_in_obj_size;
+                let total_size = tan_in_obj_offset + tan_in_obj_size;
 
                 gl.bind_vertex_array(vao);
                 gl.bind_buffer(gl::ARRAY_BUFFER, vb);
                 gl.buffer_reserve(
                     gl::ARRAY_BUFFER,
-                    ver_pos_size + ver_nor_size + tex_pos_size,
+                    total_size,
                     gl::STATIC_DRAW,
                 );
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, ver_pos_offset, &model.mesh.positions[..]);
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, ver_nor_offset, &model.mesh.normals[..]);
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, tex_pos_offset, &model.mesh.texcoords[..]);
+                gl.buffer_sub_data(
+                    gl::ARRAY_BUFFER,
+                    pos_in_obj_offset,
+                    (&mesh.pos_in_obj[..]).flatten(),
+                );
+                gl.buffer_sub_data(
+                    gl::ARRAY_BUFFER,
+                    pos_in_tex_offset,
+                    (&mesh.pos_in_tex[..]).flatten(),
+                );
+                gl.buffer_sub_data(
+                    gl::ARRAY_BUFFER,
+                    nor_in_obj_offset,
+                    (&mesh.nor_in_obj[..]).flatten(),
+                );
+                gl.buffer_sub_data(
+                    gl::ARRAY_BUFFER,
+                    tan_in_obj_offset,
+                    (&mesh.tan_in_obj[..]).flatten(),
+                );
 
                 gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
                 gl.buffer_data(
                     gl::ELEMENT_ARRAY_BUFFER,
-                    &model.mesh.indices,
+                    (&mesh.triangles[..]).flatten(),
                     gl::STATIC_DRAW,
                 );
 
                 // AOS layout.
-                if let Some(loc) = renderer.vs_ver_pos_loc.into() {
+                if let Some(loc) = renderer.vs_pos_in_obj_loc.into() {
                     gl.vertex_attrib_pointer(
                         loc,
                         3,
                         gl::FLOAT,
                         gl::FALSE,
                         mem::size_of::<[f32; 3]>(),
-                        ver_pos_offset,
+                        pos_in_obj_offset,
                     );
 
                     gl.enable_vertex_attrib_array(loc);
                 }
 
-                if let Some(loc) = renderer.vs_ver_nor_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        ver_nor_offset,
-                    );
-
-                    gl.enable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_tex_pos_loc.into() {
+                if let Some(loc) = renderer.vs_pos_in_tex_loc.into() {
                     gl.vertex_attrib_pointer(
                         loc,
                         2,
                         gl::FLOAT,
                         gl::FALSE,
                         mem::size_of::<[f32; 2]>(),
-                        tex_pos_offset,
+                        pos_in_tex_offset,
+                    );
+
+                    gl.enable_vertex_attrib_array(loc);
+                }
+
+                if let Some(loc) = renderer.vs_nor_in_obj_loc.into() {
+                    gl.vertex_attrib_pointer(
+                        loc,
+                        3,
+                        gl::FLOAT,
+                        gl::FALSE,
+                        mem::size_of::<[f32; 3]>(),
+                        nor_in_obj_offset,
+                    );
+
+                    gl.enable_vertex_attrib_array(loc);
+                }
+
+                if let Some(loc) = renderer.vs_tan_in_obj_loc.into() {
+                    gl.vertex_attrib_pointer(
+                        loc,
+                        3,
+                        gl::FLOAT,
+                        gl::FALSE,
+                        mem::size_of::<[f32; 3]>(),
+                        tan_in_obj_offset,
                     );
 
                     gl.enable_vertex_attrib_array(loc);
@@ -170,8 +240,8 @@ impl Resources {
         }
 
         let ebs = unsafe {
-            let mut names = Vec::with_capacity(models.len());
-            names.set_len(models.len());
+            let mut names = Vec::with_capacity(meshes.len());
+            names.set_len(meshes.len());
             gl.gen_buffers(&mut names);
             names.try_transmute_each().unwrap()
         };
@@ -207,7 +277,7 @@ impl Resources {
         }
 
         Resources {
-            models,
+            meshes,
             materials,
             diffuse_textures,
             vaos,
