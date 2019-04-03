@@ -1,5 +1,3 @@
-cargo-features = ["default-run"]
-
 [workspace]
 members = [
     "polygen",
