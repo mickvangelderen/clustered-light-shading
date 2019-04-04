@@ -4,6 +4,9 @@ members = [
     "renderer",
     "log-viewer",
 ]
+exclude = [
+    "polygen/profiling"
+]
 
 [profile.dev]
 opt-level = 3
