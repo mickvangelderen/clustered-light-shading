@@ -13,6 +13,6 @@ out vec4 frag_color;
 
 void main() {
   vec4 d = texture(diffuse_sampler, fs_pos_in_tex);
-  // frag_color = vec4(mix(d.rgb, vec3(1.0, 1.0, 1.0), highlight), d.a);
-  frag_color = vec4((fs_tan_in_obj + vec3(1.0)) / 2.0, 1.0);
+  frag_color = vec4(mix(d.rgb, vec3(1.0, 1.0, 1.0), highlight), d.a);
+  // frag_color = vec4((fs_nor_in_obj + vec3(1.0)) / 2.0, 1.0);
 }
