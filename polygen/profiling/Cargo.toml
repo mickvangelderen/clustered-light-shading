@@ -1,0 +1,18 @@
+[package]
+name = "profiling"
+version = "0.1.0"
+authors = ["Mick van Gelderen <mickvangelderen@gmail.com>"]
+edition = "2018"
+
+# https://github.com/rust-lang/cargo/issues/6745
+[workspace]
+
+[[bin]]
+name = "compute_normals"
+path = "compute_normals.rs"
+
+[dependencies]
+polygen = { path = ".." }
+
+[profile.release]
+debug = true

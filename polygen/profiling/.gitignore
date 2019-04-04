@@ -1,0 +1,7 @@
+/target/
+*.data
+*.old
+*.svg
+*.folded
+
+
