@@ -406,20 +406,35 @@ pub fn compute_normals(triangles: &[Tri], pos_in_obj: &[[f32; 3]]) -> Vec<[f32; 
         })
         .collect();
 
+    // At this point we know all triangle position indices are less than pos_in_obj.len();
+
+    let mut vertex_to_triangles: Vec<Vec<usize>> = (0..pos_in_obj.len())
+        .into_iter()
+        .map(|_| Vec::with_capacity(8)) // I think 6 should be the average of a nice tri mesh.
+        .collect();
+
+    for (tri_idx, &tri) in triangles.iter().enumerate() {
+        unsafe {
+            vertex_to_triangles
+                .get_unchecked_mut(tri[0] as usize)
+                .push(tri_idx);
+            vertex_to_triangles
+                .get_unchecked_mut(tri[1] as usize)
+                .push(tri_idx);
+            vertex_to_triangles
+                .get_unchecked_mut(tri[2] as usize)
+                .push(tri_idx);
+        }
+    }
+
     // For each vertex, sum the normal directions of all triangles containing it, and normalize.
-    pos_in_obj
-        .iter()
-        .enumerate()
-        .map(|(ni, _)| {
-            triangles
-                .iter()
-                .zip(unnormalized_normals_per_triangle.iter())
-                .fold(Vector3::zero(), |sum, (&tri, &nor)| {
-                    if tri.iter().any(|&vi| vi as usize == ni) {
-                        sum + nor
-                    } else {
-                        sum
-                    }
+    vertex_to_triangles
+        .into_iter()
+        .map(|tri_idxs: Vec<usize>| {
+            tri_idxs
+                .into_iter()
+                .fold(Vector3::zero(), |sum, tri_idx: usize| unsafe {
+                    sum + *unnormalized_normals_per_triangle.get_unchecked(tri_idx)
                 })
                 .normalize()
                 .into()
@@ -448,20 +463,35 @@ pub fn compute_tangents(
         })
         .collect();
 
-    // For each vertex, sum the tangents of all triangles containing it, and normalize.
-    pos_in_obj
-        .iter()
-        .enumerate()
-        .map(|(ni, _)| {
-            triangles
-                .iter()
-                .zip(unnormalized_tangents_per_triangle.iter())
-                .fold(Vector3::zero(), |sum, (&tri, &tan)| {
-                    if tri.iter().any(|&vi| vi as usize == ni) {
-                        sum + tan
-                    } else {
-                        sum
-                    }
+    // At this point we know all triangle position indices are less than pos_in_obj.len();
+
+    let mut vertex_to_triangles: Vec<Vec<usize>> = (0..pos_in_obj.len())
+        .into_iter()
+        .map(|_| Vec::with_capacity(8)) // I think 6 should be the average of a nice tri mesh.
+        .collect();
+
+    for (tri_idx, &tri) in triangles.iter().enumerate() {
+        unsafe {
+            vertex_to_triangles
+                .get_unchecked_mut(tri[0] as usize)
+                .push(tri_idx);
+            vertex_to_triangles
+                .get_unchecked_mut(tri[1] as usize)
+                .push(tri_idx);
+            vertex_to_triangles
+                .get_unchecked_mut(tri[2] as usize)
+                .push(tri_idx);
+        }
+    }
+
+    // For each vertex, sum the normal directions of all triangles containing it, and normalize.
+    vertex_to_triangles
+        .into_iter()
+        .map(|tri_idxs: Vec<usize>| {
+            tri_idxs
+                .into_iter()
+                .fold(Vector3::zero(), |sum, tri_idx: usize| unsafe {
+                    sum + *unnormalized_tangents_per_triangle.get_unchecked(tri_idx)
                 })
                 .normalize()
                 .into()
