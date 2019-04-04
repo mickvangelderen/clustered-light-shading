@@ -451,15 +451,25 @@ pub fn compute_tangents(
     let unnormalized_tangents_per_triangle: Vec<Vector3<f32>> = triangles
         .iter()
         .map(|&tri| {
-            let p0 = Vector3::from(pos_in_obj[tri[0] as usize]);
-            let p1 = Vector3::from(pos_in_obj[tri[1] as usize]);
-            let p2 = Vector3::from(pos_in_obj[tri[2] as usize]);
+            let i0 = tri[0] as usize;
+            let i1 = tri[1] as usize;
+            let i2 = tri[2] as usize;
 
-            let t0 = Vector2::from(pos_in_tex[tri[0] as usize]);
-            let t1 = Vector2::from(pos_in_tex[tri[1] as usize]);
-            let t2 = Vector2::from(pos_in_tex[tri[2] as usize]);
+            let p0 = Vector3::from(pos_in_obj[i0]);
+            let p1 = Vector3::from(pos_in_obj[i1]);
+            let p2 = Vector3::from(pos_in_obj[i2]);
 
-            (t1[1] - t2[1]) * p0 + (t2[1] - t0[1]) * p1 + (t0[1] - t1[1]) * p2
+            // TODO: Think of the proper way to handle this. Should meshes be
+            // allowed to have partially specified texture coordinates?
+            if i0 < pos_in_tex.len() && i1 < pos_in_tex.len() && i2 < pos_in_tex.len() {
+                let t0 = Vector2::from(pos_in_tex[i0]);
+                let t1 = Vector2::from(pos_in_tex[i1]);
+                let t2 = Vector2::from(pos_in_tex[i2]);
+
+                (t1[1] - t2[1]) * p0 + (t2[1] - t0[1]) * p1 + (t0[1] - t1[1]) * p2
+            } else {
+                Vector3::zero()
+            }
         })
         .collect();
 
