@@ -225,32 +225,35 @@ impl<T: Copy> FromQuad<T> for [T; 3] {
     }
 }
 
-
 fn cube_polygons<P: FromQuad<u32> + Clone>(subdivisions: u32) -> Vec<P> {
     // Safe because we promise i3, i2 and i1 are always less than or equal to n + 1.
     unsafe {
         let n = subdivisions;
 
-        let mut faces: Vec<P> = Vec::with_capacity(P::Polygons::LENGTH * (6 * (n + 1) * (n + 1)) as usize);
+        let mut faces: Vec<P> =
+            Vec::with_capacity(P::Polygons::LENGTH * (6 * (n + 1) * (n + 1)) as usize);
 
         for &basis in BASES.into_iter() {
             for &i1 in FACES.into_iter() {
                 for i3 in 0..=n {
                     for i2 in 0..=n {
-                        faces.extend_from_slice(P::from_quad(match i1 {
-                            Face::Negative => [
-                                plane_index(n, basis, i3, i2, i1),
-                                plane_index(n, basis, i3 + 1, i2, i1),
-                                plane_index(n, basis, i3 + 1, i2 + 1, i1),
-                                plane_index(n, basis, i3, i2 + 1, i1),
-                            ],
-                            Face::Positive => [
-                                plane_index(n, basis, i3, i2, i1),
-                                plane_index(n, basis, i3, i2 + 1, i1),
-                                plane_index(n, basis, i3 + 1, i2 + 1, i1),
-                                plane_index(n, basis, i3 + 1, i2, i1),
-                            ],
-                        }).as_slice());
+                        faces.extend_from_slice(
+                            P::from_quad(match i1 {
+                                Face::Negative => [
+                                    plane_index(n, basis, i3, i2, i1),
+                                    plane_index(n, basis, i3 + 1, i2, i1),
+                                    plane_index(n, basis, i3 + 1, i2 + 1, i1),
+                                    plane_index(n, basis, i3, i2 + 1, i1),
+                                ],
+                                Face::Positive => [
+                                    plane_index(n, basis, i3, i2, i1),
+                                    plane_index(n, basis, i3, i2 + 1, i1),
+                                    plane_index(n, basis, i3 + 1, i2 + 1, i1),
+                                    plane_index(n, basis, i3 + 1, i2, i1),
+                                ],
+                            })
+                            .as_slice(),
+                        );
                     }
                 }
             }
