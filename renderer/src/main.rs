@@ -181,10 +181,10 @@ fn main() {
                 match path {
                     path if path == &basic_renderer_vs_path => {
                         basic_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                    },
+                    }
                     path if path == &basic_renderer_fs_path => {
                         basic_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -193,10 +193,7 @@ fn main() {
         if basic_renderer_update.should_update() {
             unsafe {
                 resources.disable_vao_pointers(&gl, &renderer);
-                renderer.update(
-                    &gl,
-                    basic_renderer_update
-                );
+                renderer.update(&gl, basic_renderer_update);
                 resources.enable_vao_pointers(&gl, &renderer);
             }
         }
