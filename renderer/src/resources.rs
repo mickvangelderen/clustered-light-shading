@@ -225,6 +225,13 @@ impl Resources {
                 );
 
                 gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
+                // NOTE: Add this to have renderdoc show the BufferData calls.
+                // See https://github.com/baldurk/renderdoc/issues/1307.
+                // gl.buffer_reserve(
+                //     gl::ELEMENT_ARRAY_BUFFER,
+                //     std::mem::size_of_val(&mesh.triangles[..]),
+                //     gl::STATIC_DRAW,
+                // );
                 gl.buffer_data(
                     gl::ELEMENT_ARRAY_BUFFER,
                     (&mesh.triangles[..]).flatten(),
