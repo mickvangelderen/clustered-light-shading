@@ -21,6 +21,11 @@ pub struct Renderer {
     pub vertex_shader_name: gl::ShaderName,
     pub fragment_shader_name: gl::ShaderName,
     //
+    pub diffuse_loc: gl::OptionUniformLocation,
+    pub ambient_loc: gl::OptionUniformLocation,
+    pub specular_loc: gl::OptionUniformLocation,
+    pub shininess_loc: gl::OptionUniformLocation,
+    pub pos_from_wld_to_cam_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
@@ -82,22 +87,47 @@ impl Renderer {
             gl.uniform_1i(loc, 0);
         };
 
-        if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-            let pos_from_wld_to_clp =
-                params.pos_from_cam_to_clp * world.camera.pos_from_wld_to_cam();
+        let pos_from_wld_to_cam = world.camera.pos_from_wld_to_cam();
 
+        if let Some(loc) = self.pos_from_wld_to_cam_loc.into() {
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_cam.as_ref());
+        }
+
+        if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
+            let pos_from_wld_to_clp = params.pos_from_cam_to_clp * pos_from_wld_to_cam;
             gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_clp.as_ref());
         }
 
         // Cache texture binding.
-        let mut bound_diffuse_texture: u32 = 0;
+        let mut bound_material = None;
 
         for i in 0..resources.vaos.len() {
-            if let Some(material_id) = resources.meshes[i].material_id {
-                let diffuse_texture = resources.diffuse_textures[material_id as usize];
-                if diffuse_texture.into_u32() != bound_diffuse_texture {
+            let maybe_material_id = resources.meshes[i].material_id;
+            if bound_material != maybe_material_id {
+                bound_material = maybe_material_id;
+                if let Some(material_id) = maybe_material_id {
+                    let material = &resources.materials[material_id as usize];
+                    let diffuse_texture = resources.diffuse_textures[material_id as usize];
+
                     gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
-                    bound_diffuse_texture = diffuse_texture.into_u32();
+
+                    if let Some(loc) = self.ambient_loc.into() {
+                        gl.uniform_3f(loc, material.ambient);
+                    }
+
+                    if let Some(loc) = self.diffuse_loc.into() {
+                        gl.uniform_3f(loc, material.diffuse);
+                    }
+
+                    if let Some(loc) = self.specular_loc.into() {
+                        gl.uniform_3f(loc, material.specular);
+                    }
+
+                    if let Some(loc) = self.shininess_loc.into() {
+                        gl.uniform_1f(loc, material.shininess);
+                    }
+                } else {
+                    // TODO: Do we want to do something when we have no material?
                 }
             }
 
@@ -151,6 +181,12 @@ impl Renderer {
                 }};
             }
 
+            self.diffuse_loc = get_uniform_location!(gl, self.program_name, "diffuse");
+            self.ambient_loc = get_uniform_location!(gl, self.program_name, "ambient");
+            self.specular_loc = get_uniform_location!(gl, self.program_name, "specular");
+            self.shininess_loc = get_uniform_location!(gl, self.program_name, "shininess");
+            self.pos_from_wld_to_cam_loc =
+                get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
             self.pos_from_wld_to_clp_loc =
                 get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
             self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
@@ -195,6 +231,11 @@ impl Renderer {
             program_name,
             vertex_shader_name,
             fragment_shader_name,
+            diffuse_loc: gl::OptionUniformLocation::NONE,
+            ambient_loc: gl::OptionUniformLocation::NONE,
+            specular_loc: gl::OptionUniformLocation::NONE,
+            shininess_loc: gl::OptionUniformLocation::NONE,
+            pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
             pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
             highlight_loc: gl::OptionUniformLocation::NONE,
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
