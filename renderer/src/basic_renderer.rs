@@ -37,9 +37,20 @@ pub struct Parameters {
     pub pos_from_cam_to_clp: Matrix4<f32>,
 }
 
-pub struct Update<'a> {
-    pub vertex_shader: Option<&'a [u8]>,
-    pub fragment_shader: Option<&'a [u8]>,
+#[derive(Default)]
+pub struct Update<B: AsRef<[u8]>> {
+    pub vertex_shader: Option<B>,
+    pub fragment_shader: Option<B>,
+}
+
+impl<B: AsRef<[u8]>> Update<B> {
+    pub fn should_update(&self) -> bool {
+        if self.vertex_shader.is_some() || self.fragment_shader.is_some() {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Renderer {
@@ -111,17 +122,17 @@ impl Renderer {
         gl.bind_framebuffer(gl::FRAMEBUFFER, None);
     }
 
-    pub unsafe fn update(&mut self, gl: &gl::Gl, update: Update) {
+    pub unsafe fn update<B: AsRef<[u8]>>(&mut self, gl: &gl::Gl, update: Update<B>) {
         let mut should_link = false;
 
         if let Some(bytes) = update.vertex_shader {
-            recompile_shader(gl, self.vertex_shader_name, bytes)
+            recompile_shader(gl, self.vertex_shader_name, bytes.as_ref())
                 .unwrap_or_else(|e| eprintln!("{}", e));
             should_link = true;
         }
 
         if let Some(bytes) = update.fragment_shader {
-            recompile_shader(gl, self.fragment_shader_name, bytes)
+            recompile_shader(gl, self.fragment_shader_name, bytes.as_ref())
                 .unwrap_or_else(|e| eprintln!("{}", e));
             should_link = true;
         }
@@ -135,7 +146,8 @@ impl Renderer {
                     let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
                     if loc.is_none() {
                         eprintln!(
-                            "basic_renderer.rs: Could not get uniform location {:?}.",
+                            "{}: Could not get uniform location {:?}.",
+                            file!(),
                             $s
                         );
                     }
@@ -154,7 +166,8 @@ impl Renderer {
                     let loc = $gl.get_attrib_location($program, gl::static_cstr!($s));
                     if loc.is_none() {
                         eprintln!(
-                            "basic_renderer.rs: Could not get attribute location {:?}.",
+                            "{}: Could not get attribute location {:?}.",
+                            file!(),
                             $s
                         );
                     }
@@ -162,12 +175,14 @@ impl Renderer {
                 }};
             }
 
-            self.vs_pos_in_obj_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_obj");
-            self.vs_pos_in_tex_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_tex");
-            self.vs_nor_in_obj_loc = get_attribute_location!(gl, self.program_name, "vs_nor_in_obj");
-            self.vs_tan_in_obj_loc = get_attribute_location!(gl, self.program_name, "vs_tan_in_obj");
-
-            // FIXME: Have to update the vaos!
+            self.vs_pos_in_obj_loc =
+                get_attribute_location!(gl, self.program_name, "vs_pos_in_obj");
+            self.vs_pos_in_tex_loc =
+                get_attribute_location!(gl, self.program_name, "vs_pos_in_tex");
+            self.vs_nor_in_obj_loc =
+                get_attribute_location!(gl, self.program_name, "vs_nor_in_obj");
+            self.vs_tan_in_obj_loc =
+                get_attribute_location!(gl, self.program_name, "vs_tan_in_obj");
         }
     }
 

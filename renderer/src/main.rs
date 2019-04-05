@@ -174,31 +174,30 @@ fn main() {
     let mut running = true;
     while running {
         // File watch events.
+        let mut basic_renderer_update = basic_renderer::Update::default();
+
         for event in rx_fs.try_iter() {
             if let Some(ref path) = event.path {
                 match path {
-                    path if path == &basic_renderer_vs_path => unsafe {
-                        let vs_bytes = std::fs::read(&path).unwrap();
-                        renderer.update(
-                            &gl,
-                            basic_renderer::Update {
-                                vertex_shader: Some(&vs_bytes),
-                                fragment_shader: None,
-                            },
-                        );
+                    path if path == &basic_renderer_vs_path => {
+                        basic_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     },
-                    path if path == &basic_renderer_fs_path => unsafe {
-                        let fs_bytes = std::fs::read(&path).unwrap();
-                        renderer.update(
-                            &gl,
-                            basic_renderer::Update {
-                                vertex_shader: None,
-                                fragment_shader: Some(&fs_bytes),
-                            },
-                        );
+                    path if path == &basic_renderer_fs_path => {
+                        basic_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     },
                     _ => {}
                 }
+            }
+        }
+
+        if basic_renderer_update.should_update() {
+            unsafe {
+                resources.disable_vao_pointers(&gl, &renderer);
+                renderer.update(
+                    &gl,
+                    basic_renderer_update
+                );
+                resources.enable_vao_pointers(&gl, &renderer);
             }
         }
 
