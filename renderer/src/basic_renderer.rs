@@ -87,7 +87,11 @@ impl Renderer {
             gl.uniform_1i(loc, 0);
         };
 
-        let pos_from_wld_to_cam = world.camera.pos_from_wld_to_cam();
+        let pos_from_wld_to_cam = if world.smooth_camera {
+            world.camera.smooth_pos_from_wld_to_cam()
+        } else {
+            world.camera.pos_from_wld_to_cam()
+        };
 
         if let Some(loc) = self.pos_from_wld_to_cam_loc.into() {
             gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_cam.as_ref());
