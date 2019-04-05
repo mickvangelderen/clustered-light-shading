@@ -25,7 +25,7 @@ trait Vector3f32 {
 
 impl Vector3f32 for [f32; 3] {
     fn dot(a: Self, b: Self) -> f32 {
-        a[0]*b[0] + a[1]*b[1] + a[2] * b[2]
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
     }
 
     fn magnitude_sq(self) -> f32 {
@@ -37,16 +37,12 @@ impl Vector3f32 for [f32; 3] {
     }
 
     fn scale(self, scale: f32) -> [f32; 3] {
-        [
-            self[0]*scale,
-            self[1]*scale,
-            self[2]*scale,
-        ]
+        [self[0] * scale, self[1] * scale, self[2] * scale]
     }
 }
 
 fn normalize_to(vector: [f32; 3], magnitude: f32) -> [f32; 3] {
-    vector.scale(magnitude/vector.magnitude())
+    vector.scale(magnitude / vector.magnitude())
 }
 
 fn main() {
