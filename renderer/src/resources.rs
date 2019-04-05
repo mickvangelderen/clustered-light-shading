@@ -320,7 +320,9 @@ impl Resources {
                         let img = img.flipv().to_rgba();
                         unsafe {
                             loop {
-                                if gl.get_error() == 0 { break; }
+                                if gl.get_error() == 0 {
+                                    break;
+                                }
                             }
 
                             gl.bind_texture(gl::TEXTURE_2D, diffuse_textures[i]);
@@ -344,7 +346,9 @@ impl Resources {
 
                             loop {
                                 let error = gl.get_error();
-                                if error == 0 { break; }
+                                if error == 0 {
+                                    break;
+                                }
                                 eprintln!("OpenGL error {}", error);
                             }
                         }
