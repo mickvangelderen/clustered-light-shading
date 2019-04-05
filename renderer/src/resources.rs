@@ -47,8 +47,7 @@ impl Resources {
     ) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["breakfast_room/breakfast_room.obj"]
-        // let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["bedroom/iscv2.obj"]
+        let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["sponza/sponza.obj", "bunny.obj"]
             .into_iter()
             .map(|file_path| {
                 let file_path = &resource_dir.join(file_path);
@@ -119,13 +118,7 @@ impl Resources {
                 } = mesh;
 
                 let triangles: Vec<[u32; 3]> = indices.unflatten();
-                // let pos_in_obj: Vec<[f32; 3]> = positions.unflatten();
-                let mut pos_in_obj: Vec<[f32; 3]> = positions.unflatten();
-                // Rotate axes.
-                for pos in pos_in_obj.iter_mut() {
-                    let scale = 0.1;
-                    *pos = [pos[1] * scale, pos[2] * scale, pos[0] * scale]
-                }
+                let pos_in_obj: Vec<[f32; 3]> = positions.unflatten();
 
                 let pos_in_tex: Vec<[f32; 2]> = texcoords.unflatten();
                 let nor_in_obj = polygen::compute_normals(&triangles, &pos_in_obj);
@@ -148,10 +141,6 @@ impl Resources {
             }));
 
             materials.extend(obj_materials.into_iter());
-        }
-
-        for mesh in meshes.iter() {
-            println!("{} mat {:?}", mesh.name, mesh.material_id);
         }
 
         let vaos = unsafe {

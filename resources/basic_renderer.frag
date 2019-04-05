@@ -44,4 +44,5 @@ void main() {
                         + specular * specular_weight,    //
                     1.0);
   // frag_color = vec4(diffuse, 1.0);
+  // frag_color = vec4((nor_in_cam + vec3(1.0)) / 2.0, 1.0);
 }
