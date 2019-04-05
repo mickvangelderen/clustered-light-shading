@@ -131,7 +131,23 @@ impl Renderer {
                         gl.uniform_1f(loc, material.shininess);
                     }
                 } else {
-                    // TODO: Do we want to do something when we have no material?
+                    gl.unbind_texture(gl::TEXTURE_2D);
+
+                    if let Some(loc) = self.ambient_loc.into() {
+                        gl.uniform_3f(loc, [1.0, 1.0, 1.0]);
+                    }
+
+                    if let Some(loc) = self.diffuse_loc.into() {
+                        gl.uniform_3f(loc, [1.0, 1.0, 1.0]);
+                    }
+
+                    if let Some(loc) = self.specular_loc.into() {
+                        gl.uniform_3f(loc, [1.0, 1.0, 1.0]);
+                    }
+
+                    if let Some(loc) = self.shininess_loc.into() {
+                        gl.uniform_1f(loc, 64.0);
+                    }
                 }
             }
 
