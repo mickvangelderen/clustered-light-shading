@@ -30,6 +30,7 @@ const DESIRED_FPS: f32 = 90.0;
 pub struct World {
     clear_color: [f32; 3],
     camera: camera::Camera,
+    smooth_camera: bool,
     pos_from_cam_to_hmd: cgmath::Matrix4<f32>,
     keyboard_model: keyboard_model::KeyboardModel,
 }
@@ -77,14 +78,19 @@ fn main() {
     let mut world = World {
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::Camera {
+            smooth_position: Vector3::new(0.0, 0.5, 1.0),
             position: Vector3::new(0.0, 0.5, 1.0),
+            smooth_yaw: Rad(0.0),
             yaw: Rad(0.0),
+            smooth_pitch: Rad(0.0),
             pitch: Rad(0.0),
+            smooth_fovy: Deg(90.0).into(),
             fovy: Deg(90.0).into(),
             positional_velocity: 2.0,
             angular_velocity: 0.8,
             zoom_velocity: 1.0,
         },
+        smooth_camera: true,
         pos_from_cam_to_hmd: Matrix4::from_translation(Vector3::zero()),
         keyboard_model: keyboard_model::KeyboardModel::new(),
     };
@@ -226,6 +232,7 @@ fn main() {
                                 world.keyboard_model.process_event(vk, keyboard_input.state);
 
                                 if focus {
+                                    use glutin::ElementState;
                                     use glutin::VirtualKeyCode;
                                     match vk {
                                         VirtualKeyCode::W => input_forward = keyboard_input.state,
@@ -234,6 +241,11 @@ fn main() {
                                         VirtualKeyCode::D => input_right = keyboard_input.state,
                                         VirtualKeyCode::Q => input_up = keyboard_input.state,
                                         VirtualKeyCode::Z => input_down = keyboard_input.state,
+                                        VirtualKeyCode::C => {
+                                            if keyboard_input.state == ElementState::Pressed {
+                                                world.smooth_camera = !world.smooth_camera;
+                                            }
+                                        }
                                         VirtualKeyCode::Escape => running = false,
                                         _ => (),
                                     }
