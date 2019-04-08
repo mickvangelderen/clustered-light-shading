@@ -28,6 +28,7 @@ const DESIRED_UPS: f32 = 90.0;
 const DESIRED_FPS: f32 = 90.0;
 
 pub struct World {
+    time: f32,
     clear_color: [f32; 3],
     camera: camera::Camera,
     smooth_camera: bool,
@@ -76,6 +77,7 @@ fn main() {
         .unwrap();
 
     let mut world = World {
+        time: 0.0,
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::Camera {
             smooth_position: Vector3::new(0.0, 0.5, 1.0),
@@ -304,6 +306,8 @@ fn main() {
         });
 
         world.keyboard_model.simulate(delta_time);
+
+        world.time += delta_time;
 
         let simulation_end_pose_start_nanos = start_instant.elapsed().as_nanos() as u64;
 
