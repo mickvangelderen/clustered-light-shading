@@ -232,7 +232,7 @@ fn main() {
                                 world.keyboard_model.process_event(vk, keyboard_input.state);
 
                                 if focus {
-                                    use glutin::ElementState;
+                                    // use glutin::ElementState;
                                     use glutin::VirtualKeyCode;
                                     match vk {
                                         VirtualKeyCode::W => input_forward = keyboard_input.state,
