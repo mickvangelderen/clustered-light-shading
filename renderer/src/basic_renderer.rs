@@ -51,11 +51,7 @@ pub struct Update<B: AsRef<[u8]>> {
 
 impl<B: AsRef<[u8]>> Update<B> {
     pub fn should_update(&self) -> bool {
-        if self.vertex_shader.is_some() || self.fragment_shader.is_some() {
-            true
-        } else {
-            false
-        }
+        self.vertex_shader.is_some() || self.fragment_shader.is_some()
     }
 }
 
