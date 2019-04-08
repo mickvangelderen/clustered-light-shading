@@ -21,6 +21,7 @@ pub struct Renderer {
     pub vertex_shader_name: gl::ShaderName,
     pub fragment_shader_name: gl::ShaderName,
     //
+    pub time_loc: gl::OptionUniformLocation,
     pub diffuse_loc: gl::OptionUniformLocation,
     pub ambient_loc: gl::OptionUniformLocation,
     pub specular_loc: gl::OptionUniformLocation,
@@ -81,6 +82,10 @@ impl Renderer {
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
         gl.use_program(self.program_name);
+
+        if let Some(loc) = self.time_loc.into() {
+            gl.uniform_1f(loc, world.time);
+        }
 
         if let Some(loc) = self.diffuse_sampler_loc.into() {
             gl.active_texture(gl::TEXTURE0);
@@ -201,6 +206,7 @@ impl Renderer {
                 }};
             }
 
+            self.time_loc = get_uniform_location!(gl, self.program_name, "time");
             self.diffuse_loc = get_uniform_location!(gl, self.program_name, "diffuse");
             self.ambient_loc = get_uniform_location!(gl, self.program_name, "ambient");
             self.specular_loc = get_uniform_location!(gl, self.program_name, "specular");
@@ -251,6 +257,7 @@ impl Renderer {
             program_name,
             vertex_shader_name,
             fragment_shader_name,
+            time_loc: gl::OptionUniformLocation::NONE,
             diffuse_loc: gl::OptionUniformLocation::NONE,
             ambient_loc: gl::OptionUniformLocation::NONE,
             specular_loc: gl::OptionUniformLocation::NONE,

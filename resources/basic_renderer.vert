@@ -1,5 +1,6 @@
 #version 400 core
 
+uniform float time;
 uniform vec3 ambient;
 uniform vec3 diffuse;
 uniform vec3 specular;
@@ -29,7 +30,9 @@ void main() {
       transpose(inverse(mat3(pos_from_wld_to_cam) * mat3(pos_from_obj_to_wld)));
 
   gl_Position =
-      pos_from_wld_to_clp * pos_from_obj_to_wld * vec4(vs_pos_in_obj, 1.0);
+      pos_from_wld_to_clp * pos_from_obj_to_wld *
+      vec4(vs_pos_in_obj + vs_nor_in_obj * (sin(time * 3.1415f) * 0.01 + 0.01),
+           1.0);
 
   fs_pos_in_cam = vec3(pos_from_wld_to_cam * pos_from_obj_to_wld *
                        vec4(vs_pos_in_obj, 1.0));
