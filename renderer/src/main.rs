@@ -6,11 +6,13 @@ mod convert;
 mod filters;
 mod frustrum;
 mod keyboard_model;
+mod post_renderer;
 mod resources;
 
 use cgmath::*;
 use convert::*;
 use gl_typed as gl;
+use gl_typed::convert::*;
 use glutin::GlContext;
 use notify::Watcher;
 use openvr as vr;
@@ -36,6 +38,139 @@ pub struct World {
     keyboard_model: keyboard_model::KeyboardModel,
 }
 
+pub struct Framebuffer {
+    framebuffer_name: gl::FramebufferName,
+    color_texture_name: gl::TextureName,
+    depth_texture_name: gl::TextureName,
+}
+
+impl Framebuffer {
+    pub fn framebuffer_name(&self) -> gl::FramebufferName {
+        self.framebuffer_name
+    }
+
+    pub fn color_texture_name(&self) -> gl::TextureName {
+        self.color_texture_name
+    }
+
+    pub fn depth_texture_name(&self) -> gl::TextureName {
+        self.depth_texture_name
+    }
+
+    pub fn create(gl: &gl::Gl, width: i32, height: i32) -> Self {
+        unsafe {
+            let [framebuffer_name]: [gl::FramebufferName; 1] = {
+                let mut names: [Option<gl::FramebufferName>; 1] = mem::uninitialized();
+                gl.gen_framebuffers(&mut names);
+                names.try_transmute_each().unwrap()
+            };
+
+            let [color_texture_name, depth_texture_name]: [gl::TextureName; 2] = {
+                let mut names: [Option<gl::TextureName>; 2] = mem::uninitialized();
+                gl.gen_textures(&mut names);
+                names.try_transmute_each().unwrap()
+            };
+
+            let framebuffer = Framebuffer {
+                framebuffer_name,
+                color_texture_name,
+                depth_texture_name,
+            };
+
+            gl.bind_texture(gl::TEXTURE_2D, color_texture_name);
+            {
+                framebuffer.allocate_color_texture(gl, width, height);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+            }
+
+            gl.bind_texture(gl::TEXTURE_2D, depth_texture_name);
+            {
+                framebuffer.allocate_depth_texture(gl, width, height);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+            }
+
+            gl.unbind_texture(gl::TEXTURE_2D);
+
+            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(framebuffer_name));
+            {
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT0,
+                    gl::TEXTURE_2D,
+                    color_texture_name,
+                    0,
+                );
+
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::TEXTURE_2D,
+                    depth_texture_name,
+                    0,
+                );
+
+                assert!(
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE.into()
+                );
+            }
+            framebuffer
+        }
+    }
+
+    pub fn resize(&self, gl: &gl::Gl, width: i32, height: i32) {
+        unsafe {
+            gl.bind_texture(gl::TEXTURE_2D, self.color_texture_name);
+            self.allocate_color_texture(gl, width, height);
+            gl.bind_texture(gl::TEXTURE_2D, self.depth_texture_name);
+            self.allocate_depth_texture(gl, width, height);
+            gl.unbind_texture(gl::TEXTURE_2D);
+        }
+    }
+
+    pub unsafe fn destroy(&self, gl: &gl::Gl) {
+        {
+            // FIXME: MUT
+            let mut names = [Some(self.color_texture_name), Some(self.depth_texture_name)];
+            gl.delete_textures(&mut names[..]);
+        }
+        {
+            // FIXME: MUT
+            let mut names: [Option<gl::FramebufferName>; 1] = [self.framebuffer_name].transmute_each();
+            gl.delete_framebuffers(&mut names[..]);
+        }
+    }
+
+    #[inline]
+    unsafe fn allocate_color_texture(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.tex_image_2d(
+            gl::TEXTURE_2D,
+            0,
+            gl::RGBA8,
+            width,
+            height,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            ptr::null(),
+        );
+    }
+
+    #[inline]
+    unsafe fn allocate_depth_texture(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.tex_image_2d(
+            gl::TEXTURE_2D,
+            0,
+            gl::DEPTH24_STENCIL8,
+            width,
+            height,
+            gl::DEPTH_STENCIL,
+            gl::UNSIGNED_INT_24_8,
+            ptr::null(),
+        );
+    }
+}
+
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")]
@@ -45,7 +180,9 @@ fn main() {
         .into_iter()
         .collect();
     let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
-    let basic_renderer_fs_path: PathBuf = resource_dir.join("basic_renderer.frag");
+    let basic_renderer_fs_path = resource_dir.join("basic_renderer.frag");
+    let post_renderer_vs_path = resource_dir.join("post_renderer.vert");
+    let post_renderer_fs_path = resource_dir.join("post_renderer.frag");
 
     let start_instant = std::time::Instant::now();
 
@@ -126,21 +263,40 @@ fn main() {
         println!("OpenGL version {}", gl.get_string(gl::VERSION));
     }
 
-    let mut renderer = unsafe {
-        let mut renderer = basic_renderer::Renderer::new(&gl);
+    let main_framebuffer = {
+        let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
+        Framebuffer::create(&gl, width as i32, height as i32)
+    };
+
+    let mut basic_renderer = unsafe {
+        let mut basic_renderer = basic_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
         let fs_bytes = std::fs::read(&basic_renderer_fs_path).unwrap();
-        renderer.update(
+        basic_renderer.update(
             &gl,
             basic_renderer::Update {
                 vertex_shader: Some(&vs_bytes),
                 fragment_shader: Some(&fs_bytes),
             },
         );
-        renderer
+        basic_renderer
     };
 
-    let resources = resources::Resources::new(&gl, &resource_dir, &renderer);
+    let mut post_renderer = unsafe {
+        let mut post_renderer = post_renderer::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&post_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&post_renderer_fs_path).unwrap();
+        post_renderer.update(
+            &gl,
+            post_renderer::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        post_renderer
+    };
+
+    let resources = resources::Resources::new(&gl, &resource_dir, &basic_renderer);
 
     // === VR ===
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
@@ -183,6 +339,7 @@ fn main() {
     while running {
         // File watch events.
         let mut basic_renderer_update = basic_renderer::Update::default();
+        let mut post_renderer_update = post_renderer::Update::default();
 
         for event in rx_fs.try_iter() {
             if let Some(ref path) = event.path {
@@ -193,6 +350,12 @@ fn main() {
                     path if path == &basic_renderer_fs_path => {
                         basic_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
+                    path if path == &post_renderer_vs_path => {
+                        post_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &post_renderer_fs_path => {
+                        post_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
+                    }
                     _ => {}
                 }
             }
@@ -200,9 +363,15 @@ fn main() {
 
         if basic_renderer_update.should_update() {
             unsafe {
-                resources.disable_vao_pointers(&gl, &renderer);
-                renderer.update(&gl, basic_renderer_update);
-                resources.enable_vao_pointers(&gl, &renderer);
+                resources.disable_vao_pointers(&gl, &basic_renderer);
+                basic_renderer.update(&gl, basic_renderer_update);
+                resources.enable_vao_pointers(&gl, &basic_renderer);
+            }
+        }
+
+        if post_renderer_update.should_update() {
+            unsafe {
+                post_renderer.update(&gl, post_renderer_update);
             }
         }
 
@@ -211,6 +380,7 @@ fn main() {
         let mut mouse_dx = 0.0;
         let mut mouse_dy = 0.0;
         let mut mouse_dscroll = 0.0;
+        let mut should_resize = false;
 
         events_loop.poll_events(|event| {
             use glutin::Event;
@@ -219,9 +389,15 @@ fn main() {
                     use glutin::WindowEvent;
                     match event {
                         WindowEvent::CloseRequested => running = false,
-                        WindowEvent::HiDpiFactorChanged(val) => win_dpi = val,
+                        WindowEvent::HiDpiFactorChanged(val) => {
+                            win_dpi = val;
+                            should_resize = true;
+                        }
                         WindowEvent::Focused(val) => focus = val,
-                        WindowEvent::Resized(val) => win_size = val,
+                        WindowEvent::Resized(val) => {
+                            win_size = val;
+                            should_resize = true;
+                        }
                         _ => (),
                     }
                 }
@@ -270,6 +446,11 @@ fn main() {
                 _ => (),
             }
         });
+
+        if should_resize {
+            let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
+            main_framebuffer.resize(&gl, width as i32, height as i32);
+        }
 
         use glutin::ElementState;
 
@@ -350,7 +531,7 @@ fn main() {
             let physical_size = win_size.to_physical(win_dpi);
 
             let frustrum = {
-                let z0 = 0.2;
+                let z0 = 0.5;
                 let dy = z0 * Rad::tan(Rad::from(world.camera.fovy) / 2.0);
                 let dx = dy * physical_size.width as f32 / physical_size.height as f32;
                 frustrum::Frustrum {
@@ -372,10 +553,10 @@ fn main() {
                 far: frustrum.z1,
             });
 
-            renderer.render(
+            basic_renderer.render(
                 &gl,
                 &basic_renderer::Parameters {
-                    framebuffer: None,
+                    framebuffer: Some(main_framebuffer.framebuffer_name()),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     pos_from_cam_to_clp: pos_from_hmd_to_clp,
@@ -383,12 +564,25 @@ fn main() {
                 &world,
                 &resources,
             );
+
+            post_renderer.render(
+                &gl,
+                &post_renderer::Parameters {
+                    framebuffer: None,
+                    width: physical_size.width as i32,
+                    height: physical_size.height as i32,
+                    color_texture_name: main_framebuffer.color_texture_name(),
+                    depth_texture_name: main_framebuffer.depth_texture_name(),
+                    frustrum: frustrum,
+                },
+                &world,
+            );
         }
 
         // === VR ===
         if let Some(ref vr_resources) = vr_resources {
             unsafe {
-                renderer.render(
+                basic_renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
                         framebuffer: Some(vr_resources.eye_left.framebuffer),
@@ -401,7 +595,7 @@ fn main() {
                     &resources,
                 );
 
-                renderer.render(
+                basic_renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
                         framebuffer: Some(vr_resources.eye_right.framebuffer),
