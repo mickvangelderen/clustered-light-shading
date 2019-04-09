@@ -11,6 +11,7 @@ uniform float z0;
 uniform float z1;
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
+uniform usampler2D nor_in_cam_sampler;
 
 in vec2 fs_pos_in_tex;
 
@@ -35,24 +36,42 @@ vec3 sample_pos_in_cam(vec2 pos_in_tex) {
                       1.0);
 }
 
-void main() {
+vec4 sample_nor_in_cam(vec2 pos_in_tex) {
+  uvec2 sam = texture(nor_in_cam_sampler, pos_in_tex).xy;
+  float x = float(sam.x & 127) / 63.5 - 1.0;
+  float y = float(sam.y) / 127.5 - 1.0;
+  float z_sign = float((sam.x >> 6) & 2) - 1.0;
+  float z = z_sign * sqrt(1.0 - x * x - y * y);
+  return vec4(x, y, z_sign, z);
+}
+
+vec3 compute_nor_in_cam() {
   float pixel_dx = 1.0 / width;
   float pixel_dy = 1.0 / height;
 
   vec3 c_in_cam = sample_pos_in_cam(fs_pos_in_tex);
-  vec3 b_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(-pixel_dy, 0.0));
-  vec3 t_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(pixel_dy, 0.0));
   vec3 l_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(-pixel_dx, 0.0));
   vec3 r_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(pixel_dx, 0.0));
+  vec3 b_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(0.0, -pixel_dy));
+  vec3 t_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(0.0, pixel_dy));
 
   vec3 db_in_cam = b_in_cam - c_in_cam;
   vec3 dt_in_cam = t_in_cam - c_in_cam;
   vec3 dl_in_cam = l_in_cam - c_in_cam;
   vec3 dr_in_cam = r_in_cam - c_in_cam;
 
-  vec3 n_in_cam =
-      normalize(cross(db_in_cam, dl_in_cam) + cross(dl_in_cam, dt_in_cam) +
-                cross(dt_in_cam, dr_in_cam) + cross(dr_in_cam, db_in_cam));
+  // TODO: Don't know why we need the z-coordinate flip but don't care to find
+  // out.
+  return vec3(1.0, 1.0, -1.0) *
+         normalize(cross(db_in_cam, dl_in_cam) + cross(dl_in_cam, dt_in_cam) +
+                   cross(dt_in_cam, dr_in_cam) + cross(dr_in_cam, db_in_cam));
+}
 
-  frag_color = vec4(n_in_cam * 2.0 - vec3(1.0), 1.0);
+void main() {
+  vec4 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
+  if ((int(gl_FragCoord.x) / 128 + int(gl_FragCoord.y) / 128) % 2 == 0) {
+    frag_color = vec4((nor_in_cam.rgb + vec3(1.0)) / 2.0, 1.0);
+  } else {
+    frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  }
 }

@@ -59,7 +59,7 @@ impl Camera {
             self.fovy + Rad(update.delta_scroll) * self.zoom_velocity * update.delta_time;
 
         // NOTE: We interpolate per simulation update, we can't scale these by delta_time.
-        let smooth_weight = 0.9;
+        let smooth_weight = 0.8;
         let actual_weight = 1.0 - smooth_weight;
 
         // Apply updates.
@@ -76,7 +76,7 @@ impl Camera {
         self.pitch = new_pitch.clamp(min_pitch, max_pitch);
 
         let min_fovy = Rad::from(Deg(10.0));
-        let max_fovy = Rad::from(Deg(80.0));
+        let max_fovy = Rad::from(Deg(120.0));
         self.smooth_fovy = (self.smooth_fovy * smooth_weight + new_fovy * actual_weight).clamp(min_fovy, max_fovy);
         self.fovy = new_fovy.clamp(min_fovy, max_fovy);
     }
