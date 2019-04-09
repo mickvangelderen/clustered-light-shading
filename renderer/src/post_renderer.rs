@@ -38,6 +38,7 @@ pub struct Renderer {
     pub z1_loc: gl::OptionUniformLocation,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
+    pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
     pub vs_pos_in_qua_loc: gl::OptionAttributeLocation,
 }
 
@@ -47,6 +48,7 @@ pub struct Parameters {
     pub height: i32,
     pub color_texture_name: gl::TextureName,
     pub depth_texture_name: gl::TextureName,
+    pub nor_in_cam_texture_name: gl::TextureName,
     pub frustrum: Frustrum,
 }
 
@@ -69,6 +71,7 @@ impl Renderer {
         gl.cull_face(gl::BACK);
         gl.viewport(0, 0, params.width, params.height);
         gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
+        gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
         gl.use_program(self.program_name);
 
@@ -109,17 +112,21 @@ impl Renderer {
         }
 
         if let Some(loc) = self.color_sampler_loc.into() {
-            gl.active_texture(gl::TEXTURE0);
-            // gl.enable(gl::TEXTURE_2D);
-            gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
             gl.uniform_1i(loc, 0);
+            gl.active_texture(gl::TEXTURE0);
+            gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
         };
 
         if let Some(loc) = self.depth_sampler_loc.into() {
-            gl.active_texture(gl::TEXTURE1);
-            // gl.enable(gl::TEXTURE_2D);
-            gl.bind_texture(gl::TEXTURE_2D, params.depth_texture_name);
             gl.uniform_1i(loc, 1);
+            gl.active_texture(gl::TEXTURE1);
+            gl.bind_texture(gl::TEXTURE_2D, params.depth_texture_name);
+        };
+
+        if let Some(loc) = self.nor_in_cam_sampler_loc.into() {
+            gl.uniform_1i(loc, 2);
+            gl.active_texture(gl::TEXTURE2);
+            gl.bind_texture(gl::TEXTURE_2D, params.nor_in_cam_texture_name);
         };
 
         gl.bind_vertex_array(self.vertex_array_name);
@@ -171,6 +178,7 @@ impl Renderer {
             self.z1_loc = get_uniform_location!(gl, self.program_name, "z1");
             self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
             self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
+            self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
 
             macro_rules! get_attribute_location {
                 ($gl: ident, $program: expr, $s: expr) => {{
@@ -264,6 +272,7 @@ impl Renderer {
             z1_loc: gl::OptionUniformLocation::NONE,
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             depth_sampler_loc: gl::OptionUniformLocation::NONE,
+            nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
             vs_pos_in_qua_loc: gl::OptionAttributeLocation::NONE,
         }
     }

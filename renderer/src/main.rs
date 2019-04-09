@@ -42,6 +42,7 @@ pub struct Framebuffer {
     framebuffer_name: gl::FramebufferName,
     color_texture_name: gl::TextureName,
     depth_texture_name: gl::TextureName,
+    nor_in_cam_texture_name: gl::TextureName,
 }
 
 impl Framebuffer {
@@ -57,6 +58,10 @@ impl Framebuffer {
         self.depth_texture_name
     }
 
+    pub fn nor_in_cam_texture_name(&self) -> gl::TextureName {
+        self.nor_in_cam_texture_name
+    }
+
     pub fn create(gl: &gl::Gl, width: i32, height: i32) -> Self {
         unsafe {
             let [framebuffer_name]: [gl::FramebufferName; 1] = {
@@ -65,8 +70,8 @@ impl Framebuffer {
                 names.try_transmute_each().unwrap()
             };
 
-            let [color_texture_name, depth_texture_name]: [gl::TextureName; 2] = {
-                let mut names: [Option<gl::TextureName>; 2] = mem::uninitialized();
+            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name]: [gl::TextureName; 3] = {
+                let mut names: [Option<gl::TextureName>; 3] = mem::uninitialized();
                 gl.gen_textures(&mut names);
                 names.try_transmute_each().unwrap()
             };
@@ -75,21 +80,30 @@ impl Framebuffer {
                 framebuffer_name,
                 color_texture_name,
                 depth_texture_name,
+                nor_in_cam_texture_name,
             };
 
             gl.bind_texture(gl::TEXTURE_2D, color_texture_name);
             {
                 framebuffer.allocate_color_texture(gl, width, height);
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
             }
 
             gl.bind_texture(gl::TEXTURE_2D, depth_texture_name);
             {
                 framebuffer.allocate_depth_texture(gl, width, height);
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
             }
+
+            gl.bind_texture(gl::TEXTURE_2D, nor_in_cam_texture_name);
+            {
+                framebuffer.allocate_nor_in_cam_texture(gl, width, height);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+            }
+
 
             gl.unbind_texture(gl::TEXTURE_2D);
 
@@ -111,8 +125,16 @@ impl Framebuffer {
                     0,
                 );
 
-                assert!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER) == gl::FRAMEBUFFER_COMPLETE.into()
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT1,
+                    gl::TEXTURE_2D,
+                    nor_in_cam_texture_name,
+                    0,
+                );
+
+                assert_eq!(
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER), gl::FRAMEBUFFER_COMPLETE.into()
                 );
             }
             framebuffer
@@ -125,6 +147,8 @@ impl Framebuffer {
             self.allocate_color_texture(gl, width, height);
             gl.bind_texture(gl::TEXTURE_2D, self.depth_texture_name);
             self.allocate_depth_texture(gl, width, height);
+            gl.bind_texture(gl::TEXTURE_2D, self.nor_in_cam_texture_name);
+            self.allocate_nor_in_cam_texture(gl, width, height);
             gl.unbind_texture(gl::TEXTURE_2D);
         }
     }
@@ -132,7 +156,7 @@ impl Framebuffer {
     pub unsafe fn destroy(&self, gl: &gl::Gl) {
         {
             // FIXME: MUT
-            let mut names = [Some(self.color_texture_name), Some(self.depth_texture_name)];
+            let mut names = [Some(self.color_texture_name), Some(self.depth_texture_name), Some(self.nor_in_cam_texture_name)];
             gl.delete_textures(&mut names[..]);
         }
         {
@@ -166,6 +190,20 @@ impl Framebuffer {
             height,
             gl::DEPTH_STENCIL,
             gl::UNSIGNED_INT_24_8,
+            ptr::null(),
+        );
+    }
+
+    #[inline]
+    unsafe fn allocate_nor_in_cam_texture(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.tex_image_2d(
+            gl::TEXTURE_2D,
+            0,
+            gl::RG8UI,
+            width,
+            height,
+            gl::RG_INTEGER,
+            gl::UNSIGNED_BYTE,
             ptr::null(),
         );
     }
@@ -226,7 +264,7 @@ fn main() {
             smooth_fovy: Deg(90.0).into(),
             fovy: Deg(90.0).into(),
             positional_velocity: 2.0,
-            angular_velocity: 0.8,
+            angular_velocity: 0.4,
             zoom_velocity: 1.0,
         },
         smooth_camera: true,
@@ -573,6 +611,7 @@ fn main() {
                     height: physical_size.height as i32,
                     color_texture_name: main_framebuffer.color_texture_name(),
                     depth_texture_name: main_framebuffer.depth_texture_name(),
+                    nor_in_cam_texture_name: main_framebuffer.nor_in_cam_texture_name(),
                     frustrum: frustrum,
                 },
                 &world,

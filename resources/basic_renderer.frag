@@ -13,7 +13,8 @@ in vec2 fs_pos_in_tex;
 in vec3 fs_nor_in_cam;
 in vec3 fs_tan_in_cam;
 
-out vec4 frag_color;
+layout(location = 0) out vec4 frag_color;
+layout(location = 1) out uvec2 frag_nor_in_cam;
 
 void main() {
   vec3 light_pos_in_cam = vec3(0.0);
@@ -39,10 +40,23 @@ void main() {
     diffuse_color = diffuse;
   }
 
-  frag_color = vec4(ambient * ambient_weight             //
-                        + diffuse_color * diffuse_weight //
-                        + specular * specular_weight,    //
-                    1.0);
+  // frag_color = vec4(ambient * ambient_weight             //
+  //                       + diffuse_color * diffuse_weight //
+  //                       + specular * specular_weight,    //
+  //                   1.0);
   // frag_color = vec4(diffuse, 1.0);
-  // frag_color = vec4((nor_in_cam + vec3(1.0)) / 2.0, 1.0);
+  float cx = nor_in_cam.x;
+  float cy = nor_in_cam.y;
+  float cz_sign = sign(nor_in_cam.z);
+  float cz = cz_sign * sqrt(1 - cx * cx - cy * cy);
+
+  frag_color = vec4((vec3(cx, cy, cz_sign) + vec3(1.0)) / 2.0, 1.0);
+
+  // 7 bits for x.
+  uint x = min(uint(nor_in_cam.x * 64.0 + 64), 127);
+  // 1 bit for z-direction.
+  uint z = uint(sign(nor_in_cam.z) * 0.5 + 0.5) << 7;
+  // 8 bits for y.
+  uint y = min(uint(nor_in_cam.y * 128.0 + 128.0), 255);
+  frag_nor_in_cam = uvec2(x | z, y);
 }
