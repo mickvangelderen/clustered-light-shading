@@ -70,7 +70,8 @@ impl Framebuffer {
                 names.try_transmute_each().unwrap()
             };
 
-            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name]: [gl::TextureName; 3] = {
+            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name]: [gl::TextureName;
+                3] = {
                 let mut names: [Option<gl::TextureName>; 3] = mem::uninitialized();
                 gl.gen_textures(&mut names);
                 names.try_transmute_each().unwrap()
@@ -104,7 +105,6 @@ impl Framebuffer {
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
             }
 
-
             gl.unbind_texture(gl::TEXTURE_2D);
 
             gl.bind_framebuffer(gl::FRAMEBUFFER, Some(framebuffer_name));
@@ -134,7 +134,8 @@ impl Framebuffer {
                 );
 
                 assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER), gl::FRAMEBUFFER_COMPLETE.into()
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
                 );
             }
             framebuffer
@@ -156,12 +157,17 @@ impl Framebuffer {
     pub unsafe fn destroy(&self, gl: &gl::Gl) {
         {
             // FIXME: MUT
-            let mut names = [Some(self.color_texture_name), Some(self.depth_texture_name), Some(self.nor_in_cam_texture_name)];
+            let mut names = [
+                Some(self.color_texture_name),
+                Some(self.depth_texture_name),
+                Some(self.nor_in_cam_texture_name),
+            ];
             gl.delete_textures(&mut names[..]);
         }
         {
             // FIXME: MUT
-            let mut names: [Option<gl::FramebufferName>; 1] = [self.framebuffer_name].transmute_each();
+            let mut names: [Option<gl::FramebufferName>; 1] =
+                [self.framebuffer_name].transmute_each();
             gl.delete_framebuffers(&mut names[..]);
         }
     }
