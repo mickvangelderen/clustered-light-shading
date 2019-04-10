@@ -286,13 +286,6 @@ impl Resources {
             }
         }
 
-        let ebs = unsafe {
-            let mut names = Vec::with_capacity(meshes.len());
-            names.set_len(meshes.len());
-            gl.gen_buffers(&mut names);
-            names.try_transmute_each().unwrap()
-        };
-
         let diffuse_textures = unsafe {
             let mut names = Vec::with_capacity(materials.len());
             names.set_len(materials.len());
