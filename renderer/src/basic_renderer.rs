@@ -162,6 +162,8 @@ impl Renderer {
             }
 
             gl.bind_vertex_array(resources.vaos[i]);
+            // // NOTE: Help renderdoc.
+            // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, resources.ebs[i]);
             gl.draw_elements(
                 gl::TRIANGLES,
                 resources.element_counts[i],
