@@ -85,7 +85,6 @@ impl Renderer {
         }
 
         if let Some(loc) = self.diffuse_sampler_loc.into() {
-            gl.active_texture(gl::TEXTURE0);
             gl.uniform_1i(loc, 0);
         };
 
@@ -115,6 +114,7 @@ impl Renderer {
                     let material = &resources.materials[material_id as usize];
                     let diffuse_texture = resources.diffuse_textures[material_id as usize];
 
+                    gl.active_texture(gl::TEXTURE0);
                     gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
 
                     if let Some(loc) = self.ambient_loc.into() {
@@ -133,6 +133,7 @@ impl Renderer {
                         gl.uniform_1f(loc, material.shininess);
                     }
                 } else {
+                    gl.active_texture(gl::TEXTURE0);
                     gl.unbind_texture(gl::TEXTURE_2D);
 
                     if let Some(loc) = self.ambient_loc.into() {
