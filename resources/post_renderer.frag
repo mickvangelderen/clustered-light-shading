@@ -11,7 +11,7 @@ uniform float z0;
 uniform float z1;
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
-uniform usampler2D nor_in_cam_sampler;
+uniform sampler2D nor_in_cam_sampler;
 
 in vec2 fs_pos_in_tex;
 
@@ -37,13 +37,8 @@ vec3 sample_pos_in_cam(vec2 pos_in_tex) {
 }
 
 vec3 sample_nor_in_cam(vec2 pos_in_tex) {
-  uvec2 sam = texture(nor_in_cam_sampler, pos_in_tex).xy;
-  float x = float(sam.x & 127) * (2.0 / 127.0) - 1.0;
-  float y = float(sam.y & 255) * (2.0 / 255.0) - 1.0;
-  float z_sign = float(int((sam.x & 128) >> 6) - 1);
-  float z_mag = sqrt(max(1 - x * x - y * y, 0.0));
-  float z = z_sign * z_mag;
-  return vec3(x, y, z);
+  vec3 sam = texture(nor_in_cam_sampler, pos_in_tex).xyz;
+  return sam * 2.0 - vec3(1.0);
 }
 
 vec3 compute_nor_in_cam() {

@@ -14,7 +14,7 @@ in vec3 fs_nor_in_cam;
 in vec3 fs_tan_in_cam;
 
 layout(location = 0) out vec4 frag_color;
-layout(location = 1) out uvec2 frag_nor_in_cam;
+layout(location = 1) out vec3 frag_nor_in_cam;
 
 void main() {
   vec3 light_pos_in_cam = vec3(0.0);
@@ -46,21 +46,6 @@ void main() {
   //                   1.0);
   // frag_color = vec4(diffuse, 1.0);
 
-  // Reconstruct z from x, y and sign.
-  // float cx = nor_in_cam.x;
-  // float cy = nor_in_cam.y;
-  // float cz_sign = sign(nor_in_cam.z);
-  // float cz_mag = sqrt(1.0 - cx * cx - cy * cy);
-  // float cz = cz_sign * cz_mag;
-  // frag_color = (vec4(cx, cy, cz, cz_sign) + vec4(1.0)) / 2.0;
-
   frag_color = (vec4(nor_in_cam, 1.0) + vec4(1.0)) / 2.0;
-
-  // 7 bits for x.
-  uint x = min(uint(nor_in_cam.x * (127.0 / 2.0) + (127.0 / 2.0)), 127);
-  // 1 bit for z-direction.
-  uint z_sign = uint(sign(nor_in_cam.z) * 0.5 + 0.5) << 7;
-  // 8 bits for y.
-  uint y = min(uint(nor_in_cam.y * (255.0 / 2.0) + (255.0 / 2.0)), 255);
-  frag_nor_in_cam = uvec2(x | z_sign, y);
+  frag_nor_in_cam = nor_in_cam / 2.0 + vec3(0.5);
 }
