@@ -182,6 +182,16 @@ impl Renderer {
             self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
             self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
 
+            // Disable old locations.
+            gl.bind_vertex_array(self.vertex_array_name);
+
+            if let Some(loc) = self.vs_pos_in_qua_loc.into() {
+                gl.disable_vertex_attrib_array(loc);
+            }
+
+            gl.unbind_vertex_array();
+
+            // Obtain new locations.
             macro_rules! get_attribute_location {
                 ($gl: ident, $program: expr, $s: expr) => {{
                     let loc = $gl.get_attrib_location($program, gl::static_cstr!($s));
@@ -192,16 +202,13 @@ impl Renderer {
                 }};
             }
 
-            gl.bind_vertex_array(self.vertex_array_name);
-            gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
-
-            if let Some(loc) = self.vs_pos_in_qua_loc.into() {
-                gl.disable_vertex_attrib_array(loc);
-            }
-
             self.vs_pos_in_qua_loc =
                 get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
+
+            // Set up attributes.
+
+            gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
+            gl.bind_vertex_array(self.vertex_array_name);
 
             if let Some(loc) = self.vs_pos_in_qua_loc.into() {
                 gl.vertex_attrib_pointer(
@@ -218,7 +225,6 @@ impl Renderer {
 
             gl.unbind_vertex_array();
             gl.unbind_buffer(gl::ARRAY_BUFFER);
-            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
 
             gl.unuse_program();
         }
