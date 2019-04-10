@@ -205,11 +205,11 @@ impl Framebuffer {
         gl.tex_image_2d(
             gl::TEXTURE_2D,
             0,
-            gl::RG8UI,
+            gl::R11F_G11F_B10F,
             width,
             height,
-            gl::RG_INTEGER,
-            gl::UNSIGNED_BYTE,
+            gl::RGB,
+            gl::FLOAT,
             ptr::null(),
         );
     }
