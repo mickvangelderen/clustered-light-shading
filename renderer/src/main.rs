@@ -289,6 +289,7 @@ fn main() {
             // We do not wan't vsync since it will cause our loop to sync to the
             // desktop display frequency which is probably lower than the HMD's
             // 90Hz.
+            .with_gl_debug_flag(cfg!(debug_assertions))
             .with_multisampling(4)
             .with_vsync(false)
             .with_double_buffer(Some(true)),
@@ -304,7 +305,12 @@ fn main() {
     let gl = unsafe { gl::Gl::load_with(|s| gl_window.context().get_proc_address(s) as *const _) };
 
     unsafe {
-        println!("OpenGL version {}", gl.get_string(gl::VERSION));
+        println!("OpenGL version {}.", gl.get_string(gl::VERSION));
+        let flags = gl.get_context_flags();
+        if flags.contains(gl::ContextFlags::CONTEXT_FLAG_DEBUG_BIT) {
+            println!("OpenGL debugging enabled.");
+            gl.enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
+        }
     }
 
     let main_framebuffer = {
