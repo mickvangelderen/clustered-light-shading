@@ -36,14 +36,14 @@ vec3 sample_pos_in_cam(vec2 pos_in_tex) {
                       1.0);
 }
 
-vec4 sample_nor_in_cam(vec2 pos_in_tex) {
+vec3 sample_nor_in_cam(vec2 pos_in_tex) {
   uvec2 sam = texture(nor_in_cam_sampler, pos_in_tex).xy;
   float x = float(sam.x & 127) * (2.0 / 127.0) - 1.0;
   float y = float(sam.y & 255) * (2.0 / 255.0) - 1.0;
   float z_sign = float(int((sam.x & 128) >> 6) - 1);
   float z_mag = sqrt(max(1 - x * x - y * y, 0.0));
   float z = z_sign * z_mag;
-  return vec4(x, y, z, z_sign);
+  return vec3(x, y, z);
 }
 
 vec3 compute_nor_in_cam() {
@@ -69,9 +69,9 @@ vec3 compute_nor_in_cam() {
 }
 
 void main() {
-  vec4 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
+  vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
   if ((int(gl_FragCoord.x) / 128 + int(gl_FragCoord.y) / 128) % 2 == 0) {
-    frag_color = vec4((nor_in_cam.rgb + vec3(1.0)) / 2.0, 1.0);
+    frag_color = vec4((nor_in_cam + vec3(1.0)) / 2.0, 1.0);
   } else {
     frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
   }
