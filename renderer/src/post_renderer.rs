@@ -130,6 +130,8 @@ impl Renderer {
         };
 
         gl.bind_vertex_array(self.vertex_array_name);
+        // // NOTE: Help renderdoc
+        // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
 
         gl.draw_elements(gl::TRIANGLES, INDICES.len() * 3, gl::UNSIGNED_INT, 0);
 
