@@ -173,6 +173,7 @@ impl Renderer {
         gl.unbind_vertex_array();
 
         gl.bind_framebuffer(gl::FRAMEBUFFER, None);
+        gl.unuse_program();
     }
 
     pub unsafe fn update<B: AsRef<[u8]>>(&mut self, gl: &gl::Gl, update: Update<B>) {
@@ -235,6 +236,8 @@ impl Renderer {
                 get_attribute_location!(gl, self.program_name, "vs_nor_in_obj");
             self.vs_tan_in_obj_loc =
                 get_attribute_location!(gl, self.program_name, "vs_tan_in_obj");
+
+            gl.unuse_program();
         }
     }
 

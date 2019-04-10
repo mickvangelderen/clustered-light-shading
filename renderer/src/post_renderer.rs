@@ -136,6 +136,8 @@ impl Renderer {
         gl.unbind_vertex_array();
 
         gl.bind_framebuffer(gl::FRAMEBUFFER, None);
+
+        gl.unuse_program();
     }
 
     pub unsafe fn update<B: AsRef<[u8]>>(&mut self, gl: &gl::Gl, update: Update<B>) {
@@ -217,6 +219,8 @@ impl Renderer {
             gl.unbind_vertex_array();
             gl.unbind_buffer(gl::ARRAY_BUFFER);
             gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
+
+            gl.unuse_program();
         }
     }
 
