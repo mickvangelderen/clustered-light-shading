@@ -27,19 +27,19 @@ float lerp(float x, float x0, float x1, float y0, float y1) {
   return ((x - x0) * y1 + (x1 - x) * y0) / (x1 - x0);
 }
 
-float sample_z_ndc(vec2 pos) {
-  return texture(depth_sampler, pos).r * 2.0 - 1.0;
+float sample_z_ndc(vec2 pos_in_tex) {
+  return texture(depth_sampler, pos_in_tex).r * 2.0 - 1.0;
 }
 
+// Reverse projection matrix.
 float z_from_ndc_to_cam(float z_ndc) {
   return (2.0 * z0 * z1) / (z_ndc * (z1 - z0) - (z0 + z1));
 }
 
 vec3 sample_pos_in_cam(vec2 pos_in_tex) {
   float z_cam = z_from_ndc_to_cam(sample_z_ndc(pos_in_tex));
-  return z_cam * vec3(lerp(pos_in_tex.x, 0.0, 1.0, x0, x1), //
-                      lerp(pos_in_tex.y, 0.0, 1.0, y0, y1), //
-                      1.0);
+  return vec3(z_cam / -z0 * mix(x0, x1, pos_in_tex.x),
+              z_cam / -z0 * mix(y0, y1, pos_in_tex.y), z_cam);
 }
 
 vec3 sample_nor_in_cam(vec2 pos_in_tex) {
@@ -75,9 +75,11 @@ void main() {
   int occlude_count = 0;
   int visible_count = 0;
   for (int i = 0; i < 64; i += 1) {
-    vec3 sample_pos_in_cam = pos_in_cam + hbao_kernel[i].xyz;
-    vec2 sample_pos_in_tex = vec2(lerp(sample_pos_in_cam.x, x0, x1, 0.0, 1.0),
-                                  lerp(sample_pos_in_cam.y, y0, y1, 0.0, 1.0));
+    vec3 sample_pos_in_cam = pos_in_cam + hbao_kernel[i].xyz * 0.5;
+    vec2 sample_pos_in_tex = vec2(
+        lerp(-z0 / sample_pos_in_cam.z * sample_pos_in_cam.x, x0, x1, 0.0, 1.0),
+        lerp(-z0 / sample_pos_in_cam.z * sample_pos_in_cam.y, y0, y1, 0.0,
+             1.0));
     float hit_z_in_ndc = sample_z_ndc(sample_pos_in_tex);
     float hit_z_in_cam = z_from_ndc_to_cam(hit_z_in_ndc);
     // FIXME: Don't ignore faraway
@@ -92,9 +94,15 @@ void main() {
                         float(visible_count + occlude_count) * vec3(1.0),
                     1.0);
 
-  // vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
-  // if ((int(gl_FragCoord.x) / 128 + int(gl_FragCoord.y) / 128) % 2 == 0) {
-  //   frag_color = vec4((nor_in_cam + vec3(1.0)) / 2.0, 1.0);
+  // if (pos_in_cam.x < 0.5) {
+  //   frag_color = vec4(1.0, 1.0, 0.0, 1.0);
+  // } else {
+  //   frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  // }
+  // if (fs_pos_in_tex.x < 0.5) {
+  //   // frag_color =
+  //   //     vec4((pos_in_cam.z - hit_z_in_cam) * vec3(0.5) +
+  //   vec3(0.5), 1.0);
   // } else {
   //   frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
   // }
