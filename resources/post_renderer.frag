@@ -80,16 +80,22 @@ void main() {
         lerp(-z0 / sample_pos_in_cam.z * sample_pos_in_cam.x, x0, x1, 0.0, 1.0),
         lerp(-z0 / sample_pos_in_cam.z * sample_pos_in_cam.y, y0, y1, 0.0,
              1.0));
-    float hit_z_in_ndc = sample_z_ndc(sample_pos_in_tex);
-    float hit_z_in_cam = z_from_ndc_to_cam(hit_z_in_ndc);
-    // FIXME: Don't ignore faraway
-    if (hit_z_in_cam < sample_pos_in_cam.z) {
-      visible_count += 1;
+    float hit_z_in_cam = z_from_ndc_to_cam(sample_z_ndc(sample_pos_in_tex));
+    vec3 hit_ray = vec3(sample_pos_in_cam.xy, hit_z_in_cam) - pos_in_cam;
+    if (dot(hit_ray, hit_ray) > 0.5 * 0.5) {
+      // Do nothing.
     } else {
-      occlude_count += 1;
+      if (hit_z_in_cam < sample_pos_in_cam.z) {
+        visible_count += 1;
+      } else {
+        occlude_count += 1;
+      }
     }
   }
 
+  // frag_color =
+  //     vec4(float(visible_count) / 64.0, float(occlude_count) / 64.0,
+  //     0.0, 1.0);
   frag_color = vec4(float(visible_count) /
                         float(visible_count + occlude_count) * vec3(1.0),
                     1.0);
