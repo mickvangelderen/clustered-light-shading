@@ -1,8 +1,9 @@
 use crate::convert::*;
+use crate::frustrum::Frustrum;
+use crate::hbao_kernel;
 use crate::World;
 use gl_typed as gl;
 use gl_typed::convert::*;
-use crate::frustrum::Frustrum;
 
 static VERTICES: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
 
@@ -182,7 +183,8 @@ impl Renderer {
             self.z1_loc = get_uniform_location!(gl, self.program_name, "z1");
             self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
             self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
-            self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
+            self.nor_in_cam_sampler_loc =
+                get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
 
             // Disable old locations.
             gl.bind_vertex_array(self.vertex_array_name);
@@ -251,17 +253,36 @@ impl Renderer {
             names.try_transmute_each().unwrap()
         };
 
-        let [vertex_buffer_name, element_buffer_name]: [gl::BufferName; 2] = {
-            let mut names: [Option<gl::BufferName>; 2] = std::mem::uninitialized();
+        let [vertex_buffer_name, element_buffer_name, hbao_kernel_buffer_name]: [gl::BufferName;
+            3] = {
+            let mut names: [Option<gl::BufferName>; 3] = std::mem::uninitialized();
             gl.gen_buffers(&mut names);
             names.try_transmute_each().unwrap()
         };
+
+        gl.bind_buffer(gl::UNIFORM_BUFFER, hbao_kernel_buffer_name);
+        gl.buffer_data(
+            gl::UNIFORM_BUFFER,
+            hbao_kernel::hbao_kernel_ref(),
+            gl::STATIC_DRAW,
+        );
+        gl.unbind_buffer(gl::UNIFORM_BUFFER);
+        const HBAO_KERNEL_BUFFER_BINDING: u32 = 0;
+        gl.bind_buffer_base(
+            gl::UNIFORM_BUFFER,
+            HBAO_KERNEL_BUFFER_BINDING,
+            hbao_kernel_buffer_name,
+        );
 
         gl.bind_vertex_array(vertex_array_name);
         gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
         gl.buffer_data(gl::ARRAY_BUFFER, (&VERTICES[..]).flatten(), gl::STATIC_DRAW);
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
-        gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, (&INDICES[..]).flatten(), gl::STATIC_DRAW);
+        gl.buffer_data(
+            gl::ELEMENT_ARRAY_BUFFER,
+            (&INDICES[..]).flatten(),
+            gl::STATIC_DRAW,
+        );
         gl.unbind_vertex_array();
         gl.unbind_buffer(gl::ARRAY_BUFFER);
         gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);

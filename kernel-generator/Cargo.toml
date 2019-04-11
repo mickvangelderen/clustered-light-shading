@@ -1,0 +1,13 @@
+[package]
+name = "kernel-generator"
+version = "0.1.0"
+authors = ["Mick van Gelderen <mickvangelderen@gmail.com>"]
+edition = "2018"
+
+[lib]
+name = "kernel_generator"
+path = "kernel_generator.rs"
+
+[dependencies]
+rand = "0.6.5"
+
