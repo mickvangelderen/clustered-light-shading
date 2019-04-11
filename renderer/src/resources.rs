@@ -47,7 +47,7 @@ impl Resources {
     ) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["two_planes.obj"]
+        let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["sponza/sponza.obj", "keyboard.obj"]
             .into_iter()
             .map(|file_path| {
                 let file_path = &resource_dir.join(file_path);

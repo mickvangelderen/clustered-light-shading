@@ -15,7 +15,7 @@ fn main() {
 
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
-    let samples = generate_hbao_kernel(64);
+    let samples = generate_hbao_kernel(1.0, 256);
     std::fs::write(out_dir.join("hbao_kernel.bin"), slice_to_bytes(&samples[..])).unwrap();
 //     std::fs::write(out_dir.join("hbao_kernel.rs"), br#"""
 //     pub const HBAO_KERNEL: &'static [[f32; 3]; 64] = unsafe {
