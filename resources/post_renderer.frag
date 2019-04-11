@@ -1,4 +1,4 @@
-#version 400
+#version 420
 
 uniform float time;
 uniform int width;
@@ -12,6 +12,12 @@ uniform float z1;
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;
+
+#define HBAO_KERNEL_BINDING 0
+
+layout(std140, binding = HBAO_KERNEL_BINDING) uniform HBAO_Kernel {
+  vec4 hbao_kernel[64];
+};
 
 in vec2 fs_pos_in_tex;
 
@@ -64,10 +70,32 @@ vec3 compute_nor_in_cam() {
 }
 
 void main() {
-  vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
-  if ((int(gl_FragCoord.x) / 128 + int(gl_FragCoord.y) / 128) % 2 == 0) {
-    frag_color = vec4((nor_in_cam + vec3(1.0)) / 2.0, 1.0);
-  } else {
-    frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  vec3 pos_in_cam = sample_pos_in_cam(fs_pos_in_tex);
+
+  int occlude_count = 0;
+  int visible_count = 0;
+  for (int i = 0; i < 64; i += 1) {
+    vec3 sample_pos_in_cam = pos_in_cam + hbao_kernel[i].xyz;
+    vec2 sample_pos_in_tex = vec2(lerp(sample_pos_in_cam.x, x0, x1, 0.0, 1.0),
+                                  lerp(sample_pos_in_cam.y, y0, y1, 0.0, 1.0));
+    float hit_z_in_ndc = sample_z_ndc(sample_pos_in_tex);
+    float hit_z_in_cam = z_from_ndc_to_cam(hit_z_in_ndc);
+    // FIXME: Don't ignore faraway
+    if (hit_z_in_cam < sample_pos_in_cam.z) {
+      visible_count += 1;
+    } else {
+      occlude_count += 1;
+    }
   }
+
+  frag_color = vec4(float(visible_count) /
+                        float(visible_count + occlude_count) * vec3(1.0),
+                    1.0);
+
+  // vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
+  // if ((int(gl_FragCoord.x) / 128 + int(gl_FragCoord.y) / 128) % 2 == 0) {
+  //   frag_color = vec4((nor_in_cam + vec3(1.0)) / 2.0, 1.0);
+  // } else {
+  //   frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  // }
 }

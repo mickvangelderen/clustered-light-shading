@@ -3,9 +3,10 @@ members = [
     "polygen",
     "renderer",
     "log-viewer",
+    "kernel-generator",
 ]
 exclude = [
-    "polygen/profiling"
+    "polygen/profiling",
 ]
 
 [profile.dev]

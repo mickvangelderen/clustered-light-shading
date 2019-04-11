@@ -8,6 +8,7 @@ mod frustrum;
 mod keyboard_model;
 mod post_renderer;
 mod resources;
+mod hbao_kernel;
 
 use cgmath::*;
 use convert::*;
