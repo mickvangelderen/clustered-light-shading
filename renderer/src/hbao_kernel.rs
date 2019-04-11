@@ -1,8 +1,11 @@
-const HBAO_KERNEL: &'static [u8; 64*4*4] = include_bytes!(concat!(env!("OUT_DIR"), "/hbao_kernel.bin"));
+type Bytes = [u8; 256 * std::mem::size_of::<[f32; 4]>()];
+type Floats = [[f32; 4]; 256];
 
-pub fn hbao_kernel_ref() -> &'static [[f32; 4]; 64] {
+const HBAO_KERNEL: &'static Bytes = include_bytes!(concat!(env!("OUT_DIR"), "/hbao_kernel.bin"));
+
+pub fn hbao_kernel_ref() -> &'static Floats {
     unsafe {
-        assert_eq!(std::mem::size_of::<[[f32; 4]; 64]>(), std::mem::size_of::<[u8; 64*4*4]>());
-        &*(HBAO_KERNEL.as_ptr() as *const [[f32; 4]; 64])
+        assert_eq!(std::mem::size_of::<Bytes>(), std::mem::size_of::<Floats>(),);
+        &*(HBAO_KERNEL.as_ptr() as *const [[f32; 4]; 256])
     }
 }

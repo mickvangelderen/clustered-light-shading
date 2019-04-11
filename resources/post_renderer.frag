@@ -16,7 +16,7 @@ uniform sampler2D nor_in_cam_sampler;
 #define HBAO_KERNEL_BINDING 0
 
 layout(std140, binding = HBAO_KERNEL_BINDING) uniform HBAO_Kernel {
-  vec4 hbao_kernel[64];
+  vec4 hbao_kernel[256];
 };
 
 in vec2 fs_pos_in_tex;
@@ -71,11 +71,18 @@ vec3 compute_nor_in_cam() {
 
 void main() {
   vec3 pos_in_cam = sample_pos_in_cam(fs_pos_in_tex);
+  vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
+  // FIXME: WATCH OUT SINGULARITY
+  // FIXME: GRAHM SCHMIDT instead?
+  vec3 tan_in_cam = cross(vec3(0.0, 0.0, 1.0), nor_in_cam);
+  vec3 bitan_in_cam = cross(nor_in_cam, tan_in_cam);
+  mat3 kernel_from_tan_to_cam = mat3(tan_in_cam, bitan_in_cam, nor_in_cam);
 
   int occlude_count = 0;
   int visible_count = 0;
-  for (int i = 0; i < 64; i += 1) {
-    vec3 sample_pos_in_cam = pos_in_cam + hbao_kernel[i].xyz * 0.5;
+  for (int i = 0; i < 256; i += 1) {
+    vec3 sample_pos_in_cam =
+        pos_in_cam + kernel_from_tan_to_cam * hbao_kernel[i].xyz * 0.2;
     vec2 sample_pos_in_tex = vec2(
         lerp(-z0 / sample_pos_in_cam.z * sample_pos_in_cam.x, x0, x1, 0.0, 1.0),
         lerp(-z0 / sample_pos_in_cam.z * sample_pos_in_cam.y, y0, y1, 0.0,
@@ -94,7 +101,7 @@ void main() {
   }
 
   // frag_color =
-  //     vec4(float(visible_count) / 64.0, float(occlude_count) / 64.0,
+  //     vec4(float(visible_count) / 256.0, float(occlude_count) / 256.0,
   //     0.0, 1.0);
   frag_color = vec4(float(visible_count) /
                         float(visible_count + occlude_count) * vec3(1.0),
