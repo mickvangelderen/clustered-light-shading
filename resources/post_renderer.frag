@@ -64,13 +64,43 @@ vec3 sample_nor_in_cam(vec2 pos_in_tex) {
 void main() {
   vec3 pos_in_cam = sample_pos_in_cam(fs_pos_in_tex);
   vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
-  uvec2 ao = sample_ao(fs_pos_in_tex);
 
-  float ambient_occlusion = float(ao.x) / float(ao.x + ao.y);
+  float dx = 1.0 / width;
+  float dy = 1.0 / width;
 
-  frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb,
-                        vec3(ambient_occlusion), 0.8),
-                    1.0);
+  vec2 filtered_ao = vec2(0.0);
+
+  float ao_r = 0.5;
+  float ao_r_sq = ao_r * ao_r;
+
+  float sum = 0.0;
+  for (int iy = -9; iy <= 9; iy += 1) {
+    for (int ix = -9; ix <= 9; ix += 1) {
+      // Weigh by position discrepancy.
+      vec2 sam_pos_in_tex = fs_pos_in_tex + vec2(iy * dy, ix * dx);
+      vec3 frag_to_sam_in_cam = sample_pos_in_cam(sam_pos_in_tex) - pos_in_cam;
+      float depth_weight =
+          max(1.0 - dot(frag_to_sam_in_cam, frag_to_sam_in_cam) / ao_r_sq, 0.0);
+
+      // Weigh by normal discrepancy.
+      vec3 sam_nor_in_cam = sample_nor_in_cam(sam_pos_in_tex);
+      float normal_weight = max(dot(sam_nor_in_cam, nor_in_cam), 0.0);
+
+      // Combine weights.
+      filtered_ao += (depth_weight + normal_weight) * sample_ao(sam_pos_in_tex);
+    }
+  }
+
+  float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
+  // frag_color =
+  //     vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(ao_weight),
+  //     0.6),
+  //          1.0);
+  // frag_color =
+  //     vec4(mix(vec3(0.0), texture(color_sampler, fs_pos_in_tex).rgb,
+  //     ao_weight),
+  //          1.0);
+  frag_color = vec4(vec3(ao_weight), 1.0);
 
   // frag_color = vec4((nor_in_cam + 1.0) / 2.0, 1.0);
   // frag_color = vec4(float(visible_count) /
