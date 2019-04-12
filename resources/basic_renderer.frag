@@ -32,19 +32,19 @@ void main() {
           0.0);
   float specular_weight = pow(specular_angle, shininess);
 
-  vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
-  vec3 diffuse_color;
-  if (diffuse_sample != vec4(0.0, 0.0, 0.0, 1.0)) {
-    diffuse_color = diffuse_sample.rgb;
-  } else {
-    diffuse_color = diffuse;
-  }
+  vec3 diffuse_color = texture(diffuse_sampler, fs_pos_in_tex).rgb;
+  // vec3 diffuse_color;
+  // if (diffuse_sample != vec4(0.0, 0.0, 0.0, 1.0)) {
+  //   diffuse_color = diffuse_sample.rgb;
+  // } else {
+  //   diffuse_color = diffuse;
+  // }
 
   frag_color = vec4(ambient * ambient_weight             //
                         + diffuse_color * diffuse_weight //
                         + specular * specular_weight,    //
                     1.0);
-  // frag_color = vec4(diffuse, 1.0);
+  // frag_color = vec4(diffuse_color, 1.0);
   // frag_color = (vec4(nor_in_cam, 1.0) + vec4(1.0)) / 2.0;
   frag_nor_in_cam = nor_in_cam * 0.5 + vec3(0.5);
 }

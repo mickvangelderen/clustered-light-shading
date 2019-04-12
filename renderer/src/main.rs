@@ -331,8 +331,8 @@ fn main() {
         time: 0.0,
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::Camera {
-            smooth_position: Vector3::new(0.0, 0.5, 1.0),
-            position: Vector3::new(0.0, 0.5, 1.0),
+            smooth_position: Vector3::new(0.0, 1.0, 1.5),
+            position: Vector3::new(0.0, 1.0, 1.5),
             smooth_yaw: Rad(0.0),
             yaw: Rad(0.0),
             smooth_pitch: Rad(0.0),

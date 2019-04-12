@@ -1,6 +1,7 @@
 use crate::basic_renderer;
 use crate::convert::*;
 use crate::keyboard_model;
+use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 use std::mem;
@@ -35,6 +36,9 @@ pub struct Mesh {
     /// Tangent in object space.
     pub tan_in_obj: Vec<[f32; 3]>,
 
+    /// Derpiederp.
+    pub translate: Vector3<f32>,
+
     /// Material id.
     pub material_id: Option<u32>,
 }
@@ -47,52 +51,55 @@ impl Resources {
     ) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        let objs: Vec<(Vec<tobj::Model>, Vec<tobj::Material>)> = ["sponza/sponza.obj", "keyboard.obj"]
-            .into_iter()
-            .map(|file_path| {
-                let file_path = &resource_dir.join(file_path);
-                println!("Loading {:?}.", file_path.display());
-                let mut obj = tobj::load_obj(&file_path).unwrap();
-                let vertex_count: usize = obj.0.iter().map(|model| model.mesh.indices.len()).sum();
-                println!(
-                    "Loaded {:?} with {} vertices.",
-                    file_path.display(),
-                    vertex_count
-                );
-                let file_dir = file_path.parent().unwrap();
-                for material in obj.1.iter_mut() {
-                    if !material.ambient_texture.is_empty() {
-                        material.ambient_texture = String::from(
-                            file_dir.join(&material.ambient_texture).to_string_lossy(),
-                        );
+        let objs: Vec<(String, Vec<tobj::Model>, Vec<tobj::Material>)> =
+            ["sponza/sponza.obj", "keyboard.obj"]
+                .into_iter()
+                .map(|&rel_file_path| {
+                    let file_path = &resource_dir.join(rel_file_path);
+                    println!("Loading {:?}.", file_path.display());
+                    let mut obj = tobj::load_obj(&file_path).unwrap();
+                    let vertex_count: usize =
+                        obj.0.iter().map(|model| model.mesh.indices.len()).sum();
+                    println!(
+                        "Loaded {:?} with {} vertices.",
+                        file_path.display(),
+                        vertex_count
+                    );
+                    let file_dir = file_path.parent().unwrap();
+                    for material in obj.1.iter_mut() {
+                        if !material.ambient_texture.is_empty() {
+                            material.ambient_texture = String::from(
+                                file_dir.join(&material.ambient_texture).to_string_lossy(),
+                            );
+                        }
+                        if !material.diffuse_texture.is_empty() {
+                            material.diffuse_texture = String::from(
+                                file_dir.join(&material.diffuse_texture).to_string_lossy(),
+                            );
+                        }
+                        if !material.specular_texture.is_empty() {
+                            material.specular_texture = String::from(
+                                file_dir.join(&material.specular_texture).to_string_lossy(),
+                            );
+                        }
+                        if !material.normal_texture.is_empty() {
+                            material.normal_texture = String::from(
+                                file_dir.join(&material.normal_texture).to_string_lossy(),
+                            );
+                        }
+                        if !material.dissolve_texture.is_empty() {
+                            material.dissolve_texture = String::from(
+                                file_dir.join(&material.dissolve_texture).to_string_lossy(),
+                            );
+                        }
                     }
-                    if !material.diffuse_texture.is_empty() {
-                        material.diffuse_texture = String::from(
-                            file_dir.join(&material.diffuse_texture).to_string_lossy(),
-                        );
-                    }
-                    if !material.specular_texture.is_empty() {
-                        material.specular_texture = String::from(
-                            file_dir.join(&material.specular_texture).to_string_lossy(),
-                        );
-                    }
-                    if !material.normal_texture.is_empty() {
-                        material.normal_texture =
-                            String::from(file_dir.join(&material.normal_texture).to_string_lossy());
-                    }
-                    if !material.dissolve_texture.is_empty() {
-                        material.dissolve_texture = String::from(
-                            file_dir.join(&material.dissolve_texture).to_string_lossy(),
-                        );
-                    }
-                }
-                obj
-            })
-            .collect();
+                    (String::from(rel_file_path), obj.0, obj.1)
+                })
+                .collect();
 
         let material_offsets: Vec<u32> = objs
             .iter()
-            .scan(0, |sum, (_, ref materials)| {
+            .scan(0, |sum, (_, _, ref materials)| {
                 let offset = *sum;
                 *sum += materials.len() as u32;
                 Some(offset)
@@ -100,11 +107,11 @@ impl Resources {
             .collect();
 
         let mut meshes: Vec<Mesh> =
-            Vec::with_capacity(objs.iter().map(|(ref models, _)| models.len()).sum());
+            Vec::with_capacity(objs.iter().map(|(_, ref models, _)| models.len()).sum());
         let mut materials: Vec<tobj::Material> =
-            Vec::with_capacity(objs.iter().map(|(_, ref materials)| materials.len()).sum());
+            Vec::with_capacity(objs.iter().map(|(_, _, ref materials)| materials.len()).sum());
 
-        for (i, (obj_models, obj_materials)) in objs.into_iter().enumerate() {
+        for (i, (obj_path, obj_models, obj_materials)) in objs.into_iter().enumerate() {
             let material_offset = material_offsets[i];
 
             meshes.extend(obj_models.into_iter().map(|model| {
@@ -136,6 +143,11 @@ impl Resources {
                     pos_in_tex,
                     nor_in_obj,
                     tan_in_obj,
+                    translate: if obj_path == "keyboard.obj" {
+                        Vector3::new(0.0, 0.3, 0.0)
+                    } else {
+                        Vector3::zero()
+                    },
                     material_id,
                 }
             }));
