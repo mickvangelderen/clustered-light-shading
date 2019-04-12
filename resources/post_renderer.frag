@@ -91,32 +91,24 @@ void main() {
     }
   }
 
+  // NORMALS
+  // frag_color = vec4(nor_in_cam * 0.5 + vec3(0.5), 1.0);
+
+  // NO AO
+  // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+
+  // APPLIED AO
   float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
-  // frag_color =
-  //     vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(ao_weight),
-  //     0.6),
-  //          1.0);
-  // frag_color =
-  //     vec4(mix(vec3(0.0), texture(color_sampler, fs_pos_in_tex).rgb,
-  //     ao_weight),
-  //          1.0);
-  frag_color = vec4(vec3(ao_weight), 1.0);
+  frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
+                        (cos(time * 10) + 1.0) * (1.0 - ao_weight)),
+                    1.0);
 
-  // frag_color = vec4((nor_in_cam + 1.0) / 2.0, 1.0);
-  // frag_color = vec4(float(visible_count) /
-  //                       float(visible_count + occlude_count) * vec3(1.0),
-  //                   1.0);
+  // FILTERED AO
+  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
+  // frag_color = vec4(vec3(ao_weight), 1.0);
 
-  // if (pos_in_cam.x < 0.5) {
-  //   frag_color = vec4(1.0, 1.0, 0.0, 1.0);
-  // } else {
-  //   frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
-  // }
-  // if (fs_pos_in_tex.x < 0.5) {
-  //   // frag_color =
-  //   //     vec4((pos_in_cam.z - hit_z_in_cam) * vec3(0.5) +
-  //   vec3(0.5), 1.0);
-  // } else {
-  //   frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
-  // }
+  // UNFILTERED AO
+  // uvec2 ao = sample_ao(fs_pos_in_tex);
+  // float ao_weight = float(ao.x) / float(ao.x + ao.y);
+  // frag_color = vec4(vec3(ao_weight), 1.0);
 }

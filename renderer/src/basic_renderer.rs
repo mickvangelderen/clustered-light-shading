@@ -26,6 +26,7 @@ pub struct Renderer {
     pub ambient_loc: gl::OptionUniformLocation,
     pub specular_loc: gl::OptionUniformLocation,
     pub shininess_loc: gl::OptionUniformLocation,
+    pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_cam_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
@@ -154,6 +155,15 @@ impl Renderer {
                 }
             }
 
+            if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
+                let pos_from_obj_to_wld = Matrix4::from_translation(
+                    resources.meshes[i].translate
+                );
+
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
+            }
+
+
             if let Some(loc) = self.highlight_loc.into() {
                 let highlight: f32 = keyboard_model::Index::new(resources.key_indices[i])
                     .map(|i| world.keyboard_model.pressure(i))
@@ -212,6 +222,8 @@ impl Renderer {
             self.ambient_loc = get_uniform_location!(gl, self.program_name, "ambient");
             self.specular_loc = get_uniform_location!(gl, self.program_name, "specular");
             self.shininess_loc = get_uniform_location!(gl, self.program_name, "shininess");
+            self.pos_from_obj_to_wld_loc =
+                get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
             self.pos_from_wld_to_cam_loc =
                 get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
             self.pos_from_wld_to_clp_loc =
@@ -265,6 +277,7 @@ impl Renderer {
             ambient_loc: gl::OptionUniformLocation::NONE,
             specular_loc: gl::OptionUniformLocation::NONE,
             shininess_loc: gl::OptionUniformLocation::NONE,
+            pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
             pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
             pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
             highlight_loc: gl::OptionUniformLocation::NONE,
