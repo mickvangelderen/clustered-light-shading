@@ -68,6 +68,7 @@ void main() {
   vec3 kernel_reflect = hbao_kernel[reflect_index].xyz;
 
   for (int i = 0; i < 8; i += 1) {
+    // vec3 kernel_sample = hbao_kernel[kernel_offset + i].xyz;
     vec3 kernel_sample =
         reflect(hbao_kernel[kernel_offset + i].xyz, kernel_reflect);
 

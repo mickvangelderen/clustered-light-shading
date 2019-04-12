@@ -26,8 +26,8 @@ pub fn generate_hbao_kernel(out: &mut [[f32; 4]], radius: f32) {
             }
             let mut z;
             loop {
-                z = (dist.sample(&mut rng) as f32).abs();
-                if z > radius {
+                z = dist.sample(&mut rng) as f32;
+                if z > radius || z < - radius {
                     continue;
                 }
                 break;

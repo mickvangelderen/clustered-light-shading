@@ -98,14 +98,20 @@ void main() {
   // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // APPLIED AO
-  float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
-  frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
-                        (cos(time * 10) + 1.0) * (1.0 - ao_weight)),
-                    1.0);
+  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
+  // frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
+  //                       1.0 - ao_weight),
+  //                   1.0);
+
+  // ANIMATED APPLIED AO
+  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
+  // frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
+  //                       (cos(time * 10) + 1.0) * (1.0 - ao_weight)),
+  //                   1.0);
 
   // FILTERED AO
-  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
-  // frag_color = vec4(vec3(ao_weight), 1.0);
+  float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
+  frag_color = vec4(vec3(ao_weight), 1.0);
 
   // UNFILTERED AO
   // uvec2 ao = sample_ao(fs_pos_in_tex);
