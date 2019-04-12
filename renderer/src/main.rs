@@ -1,14 +1,15 @@
 #![allow(non_snake_case)]
 
+mod ao_renderer;
 mod basic_renderer;
 mod camera;
 mod convert;
 mod filters;
 mod frustrum;
+mod hbao_kernel;
 mod keyboard_model;
 mod post_renderer;
 mod resources;
-mod hbao_kernel;
 
 use cgmath::*;
 use convert::*;
@@ -41,14 +42,20 @@ pub struct World {
 
 pub struct Framebuffer {
     framebuffer_name: gl::FramebufferName,
+    ao_framebuffer_name: gl::FramebufferName,
     color_texture_name: gl::TextureName,
     depth_texture_name: gl::TextureName,
     nor_in_cam_texture_name: gl::TextureName,
+    ao_texture_name: gl::TextureName,
 }
 
 impl Framebuffer {
     pub fn framebuffer_name(&self) -> gl::FramebufferName {
         self.framebuffer_name
+    }
+
+    pub fn ao_framebuffer_name(&self) -> gl::FramebufferName {
+        self.ao_framebuffer_name
     }
 
     pub fn color_texture_name(&self) -> gl::TextureName {
@@ -63,26 +70,32 @@ impl Framebuffer {
         self.nor_in_cam_texture_name
     }
 
+    pub fn ao_texture_name(&self) -> gl::TextureName {
+        self.ao_texture_name
+    }
+
     pub fn create(gl: &gl::Gl, width: i32, height: i32) -> Self {
         unsafe {
-            let [framebuffer_name]: [gl::FramebufferName; 1] = {
-                let mut names: [Option<gl::FramebufferName>; 1] = mem::uninitialized();
+            let [framebuffer_name, ao_framebuffer_name]: [gl::FramebufferName; 2] = {
+                let mut names: [Option<gl::FramebufferName>; 2] = mem::uninitialized();
                 gl.gen_framebuffers(&mut names);
                 names.try_transmute_each().unwrap()
             };
 
-            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name]: [gl::TextureName;
-                3] = {
-                let mut names: [Option<gl::TextureName>; 3] = mem::uninitialized();
+            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name, ao_texture_name]: [gl::TextureName;
+                4] = {
+                let mut names: [Option<gl::TextureName>; 4] = mem::uninitialized();
                 gl.gen_textures(&mut names);
                 names.try_transmute_each().unwrap()
             };
 
             let framebuffer = Framebuffer {
                 framebuffer_name,
+                ao_framebuffer_name,
                 color_texture_name,
                 depth_texture_name,
                 nor_in_cam_texture_name,
+                ao_texture_name,
             };
 
             gl.bind_texture(gl::TEXTURE_2D, color_texture_name);
@@ -106,6 +119,15 @@ impl Framebuffer {
             gl.bind_texture(gl::TEXTURE_2D, nor_in_cam_texture_name);
             {
                 framebuffer.allocate_nor_in_cam_texture(gl, width, height);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
+            }
+
+            gl.bind_texture(gl::TEXTURE_2D, ao_texture_name);
+            {
+                framebuffer.allocate_ao_texture(gl, width, height);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
@@ -145,6 +167,31 @@ impl Framebuffer {
                     gl::FRAMEBUFFER_COMPLETE.into()
                 );
             }
+
+            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(ao_framebuffer_name));
+            {
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT0,
+                    gl::TEXTURE_2D,
+                    ao_texture_name,
+                    0,
+                );
+
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::TEXTURE_2D,
+                    depth_texture_name,
+                    0,
+                );
+
+                assert_eq!(
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+            }
+
             framebuffer
         }
     }
@@ -220,6 +267,20 @@ impl Framebuffer {
             ptr::null(),
         );
     }
+
+    #[inline]
+    unsafe fn allocate_ao_texture(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.tex_image_2d(
+            gl::TEXTURE_2D,
+            0,
+            gl::RG8UI,
+            width,
+            height,
+            gl::RG_INTEGER,
+            gl::UNSIGNED_BYTE,
+            ptr::null(),
+        );
+    }
 }
 
 fn main() {
@@ -232,6 +293,8 @@ fn main() {
         .collect();
     let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
     let basic_renderer_fs_path = resource_dir.join("basic_renderer.frag");
+    let ao_renderer_vs_path = resource_dir.join("ao_renderer.vert");
+    let ao_renderer_fs_path = resource_dir.join("ao_renderer.frag");
     let post_renderer_vs_path = resource_dir.join("post_renderer.vert");
     let post_renderer_fs_path = resource_dir.join("post_renderer.frag");
 
@@ -339,6 +402,20 @@ fn main() {
         basic_renderer
     };
 
+    let mut ao_renderer = unsafe {
+        let mut ao_renderer = ao_renderer::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&ao_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&ao_renderer_fs_path).unwrap();
+        ao_renderer.update(
+            &gl,
+            ao_renderer::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        ao_renderer
+    };
+
     let mut post_renderer = unsafe {
         let mut post_renderer = post_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&post_renderer_vs_path).unwrap();
@@ -396,6 +473,7 @@ fn main() {
     while running {
         // File watch events.
         let mut basic_renderer_update = basic_renderer::Update::default();
+        let mut ao_renderer_update = ao_renderer::Update::default();
         let mut post_renderer_update = post_renderer::Update::default();
 
         for event in rx_fs.try_iter() {
@@ -406,6 +484,12 @@ fn main() {
                     }
                     path if path == &basic_renderer_fs_path => {
                         basic_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &ao_renderer_vs_path => {
+                        ao_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &ao_renderer_fs_path => {
+                        ao_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &post_renderer_vs_path => {
                         post_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
@@ -423,6 +507,12 @@ fn main() {
                 resources.disable_vao_pointers(&gl, &basic_renderer);
                 basic_renderer.update(&gl, basic_renderer_update);
                 resources.enable_vao_pointers(&gl, &basic_renderer);
+            }
+        }
+
+        if ao_renderer_update.should_update() {
+            unsafe {
+                ao_renderer.update(&gl, ao_renderer_update);
             }
         }
 
@@ -622,6 +712,20 @@ fn main() {
                 &resources,
             );
 
+            ao_renderer.render(
+                &gl,
+                &ao_renderer::Parameters {
+                    framebuffer: Some(main_framebuffer.ao_framebuffer_name()),
+                    width: physical_size.width as i32,
+                    height: physical_size.height as i32,
+                    color_texture_name: main_framebuffer.color_texture_name(),
+                    depth_texture_name: main_framebuffer.depth_texture_name(),
+                    nor_in_cam_texture_name: main_framebuffer.nor_in_cam_texture_name(),
+                    frustrum: &frustrum,
+                },
+                &world,
+            );
+
             post_renderer.render(
                 &gl,
                 &post_renderer::Parameters {
@@ -631,7 +735,8 @@ fn main() {
                     color_texture_name: main_framebuffer.color_texture_name(),
                     depth_texture_name: main_framebuffer.depth_texture_name(),
                     nor_in_cam_texture_name: main_framebuffer.nor_in_cam_texture_name(),
-                    frustrum: frustrum,
+                    ao_texture_name: main_framebuffer.ao_texture_name(),
+                    frustrum: &frustrum,
                 },
                 &world,
             );

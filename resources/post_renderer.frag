@@ -12,6 +12,7 @@ uniform float z1;
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;
+uniform usampler2D ao_sampler;
 
 #define HBAO_KERNEL_BINDING 0
 
@@ -53,81 +54,19 @@ vec3 sample_pos_in_cam(vec2 pos_in_tex) {
               s * -z0);
 }
 
+uvec2 sample_ao(vec2 pos_in_tex) { return texture(ao_sampler, pos_in_tex).xy; }
+
 vec3 sample_nor_in_cam(vec2 pos_in_tex) {
   vec3 sam = texture(nor_in_cam_sampler, pos_in_tex).xyz;
   return sam * 2.0 - vec3(1.0);
 }
 
-vec3 compute_nor_in_cam() {
-  float pixel_dx = 1.0 / width;
-  float pixel_dy = 1.0 / height;
-
-  vec3 c_in_cam = sample_pos_in_cam(fs_pos_in_tex);
-  vec3 l_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(-pixel_dx, 0.0));
-  vec3 r_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(pixel_dx, 0.0));
-  vec3 b_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(0.0, -pixel_dy));
-  vec3 t_in_cam = sample_pos_in_cam(fs_pos_in_tex + vec2(0.0, pixel_dy));
-
-  vec3 db_in_cam = b_in_cam - c_in_cam;
-  vec3 dt_in_cam = t_in_cam - c_in_cam;
-  vec3 dl_in_cam = l_in_cam - c_in_cam;
-  vec3 dr_in_cam = r_in_cam - c_in_cam;
-
-  // TODO: Don't know why we need the z-coordinate flip but don't care to find
-  // out.
-  return vec3(1.0, 1.0, -1.0) *
-         normalize(cross(db_in_cam, dl_in_cam) + cross(dl_in_cam, dt_in_cam) +
-                   cross(dt_in_cam, dr_in_cam) + cross(dr_in_cam, db_in_cam));
-}
-
 void main() {
   vec3 pos_in_cam = sample_pos_in_cam(fs_pos_in_tex);
   vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
+  uvec2 ao = sample_ao(fs_pos_in_tex);
 
-  int occlude_count = 0;
-  int visible_count = 0;
-
-  uint ix = uint(gl_FragCoord.x);
-  uint iy = uint(gl_FragCoord.y);
-  uint kernel_offset = ((iy % 8) * 8 + (ix % 8)) * 8;
-  uint reflect_index = 512 + (((iy / 8) % 16) * 32 + ((ix / 8) % 32));
-  vec3 kernel_reflect = hbao_kernel[reflect_index].xyz;
-
-  for (int i = 0; i < 8; i += 1) {
-    vec3 kernel_sample =
-        reflect(hbao_kernel[kernel_offset + i].xyz, kernel_reflect);
-
-    // k/dot(nor_in_cam, nor_in_cam) = k is the signed distance from
-    // kernel_sample to the plane defined by nor_in_cam.
-    float k = dot(nor_in_cam, kernel_sample);
-    // Mirror kernel_sample across (0, 0, 0) to move it to the positive
-    // hemisphere.
-    vec3 sam_pos_in_cam =
-        pos_in_cam + (k < 0.0 ? -kernel_sample : kernel_sample);
-    vec2 sam_pos_in_tex = pos_from_cam_to_tex(sam_pos_in_cam);
-    vec3 hit_pos_in_cam = sample_pos_in_cam(sam_pos_in_tex);
-    vec3 hit_ray = hit_pos_in_cam - pos_in_cam;
-
-    // NOTE: z are negative!!!
-    if (hit_pos_in_cam.z > sam_pos_in_cam.z) {
-      // Sample is occluded, but the occluder might not be in range of the
-      // hemisphere.
-      if ((dot(hit_ray, hit_ray) < 0.5 * 0.5) &&
-          (dot(hit_ray, nor_in_cam) >= 0.0)) {
-        // Hit is within positive hemisphere.
-        occlude_count += 1;
-      } else {
-        // Hit is not within positive hemisphere.
-        // Sample is not trustworthy.
-      }
-    } else {
-      // Sample must be visible.
-      visible_count += 1;
-    }
-  }
-
-  float ambient_occlusion =
-      float(visible_count) / float(visible_count + occlude_count);
+  float ambient_occlusion = float(ao.x) / float(ao.x + ao.y);
 
   frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb,
                         vec3(ambient_occlusion), 0.8),
