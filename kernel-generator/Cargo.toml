@@ -8,6 +8,10 @@ edition = "2018"
 name = "kernel_generator"
 path = "kernel_generator.rs"
 
+[[bin]]
+name = "kernel_generator"
+path = "src/bin/kernel_generator.rs"
+
 [dependencies]
 rand = "0.6.5"
 

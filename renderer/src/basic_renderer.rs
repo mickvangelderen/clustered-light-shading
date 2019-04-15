@@ -156,13 +156,10 @@ impl Renderer {
             }
 
             if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                let pos_from_obj_to_wld = Matrix4::from_translation(
-                    resources.meshes[i].translate
-                );
+                let pos_from_obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
 
                 gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
             }
-
 
             if let Some(loc) = self.highlight_loc.into() {
                 let highlight: f32 = keyboard_model::Index::new(resources.key_indices[i])

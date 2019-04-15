@@ -6,11 +6,14 @@ mod camera;
 mod convert;
 mod filters;
 mod frustrum;
-mod hbao_kernel;
+mod gl_ext;
 mod keyboard_model;
 mod post_renderer;
+mod random_unit_sphere_surface;
+mod random_unit_sphere_volume;
 mod resources;
 
+use crate::gl_ext::*;
 use cgmath::*;
 use convert::*;
 use gl_typed as gl;
@@ -204,6 +207,8 @@ impl Framebuffer {
             self.allocate_depth_texture(gl, width, height);
             gl.bind_texture(gl::TEXTURE_2D, self.nor_in_cam_texture_name);
             self.allocate_nor_in_cam_texture(gl, width, height);
+            gl.bind_texture(gl::TEXTURE_2D, self.ao_texture_name);
+            self.allocate_ao_texture(gl, width, height);
             gl.unbind_texture(gl::TEXTURE_2D);
         }
     }
@@ -215,13 +220,14 @@ impl Framebuffer {
                 Some(self.color_texture_name),
                 Some(self.depth_texture_name),
                 Some(self.nor_in_cam_texture_name),
+                Some(self.ao_texture_name),
             ];
             gl.delete_textures(&mut names[..]);
         }
         {
             // FIXME: MUT
-            let mut names: [Option<gl::FramebufferName>; 1] =
-                [self.framebuffer_name].transmute_each();
+            let mut names: [Option<gl::FramebufferName>; 2] =
+                [Some(self.framebuffer_name), Some(self.ao_framebuffer_name)];
             gl.delete_framebuffers(&mut names[..]);
         }
     }
@@ -383,10 +389,27 @@ fn main() {
         }
     }
 
-    let main_framebuffer = {
-        let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
-        Framebuffer::create(&gl, width as i32, height as i32)
-    };
+    let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
+
+    let main_framebuffer = { Framebuffer::create(&gl, width as i32, height as i32) };
+
+    let random_unit_sphere_surface_texture_name =
+        <gl::TextureName as TextureName2DExt>::new(&gl).unwrap();
+    random_unit_sphere_surface_texture_name.update(
+        &gl,
+        Texture2DUpdate::new()
+            .data(
+                TextureFormat::RGB8,
+                random_unit_sphere_surface::WIDTH,
+                random_unit_sphere_surface::HEIGHT,
+                Some(random_unit_sphere_surface::get().flatten()),
+            )
+            .max_level(0)
+            .min_filter(gl::NEAREST.into())
+            .mag_filter(gl::NEAREST.into())
+            .wrap_s(gl::REPEAT.into())
+            .wrap_t(gl::REPEAT.into()),
+    );
 
     let mut basic_renderer = unsafe {
         let mut basic_renderer = basic_renderer::Renderer::new(&gl);
@@ -721,6 +744,8 @@ fn main() {
                     color_texture_name: main_framebuffer.color_texture_name(),
                     depth_texture_name: main_framebuffer.depth_texture_name(),
                     nor_in_cam_texture_name: main_framebuffer.nor_in_cam_texture_name(),
+                    random_unit_sphere_surface_texture_name:
+                        random_unit_sphere_surface_texture_name,
                     frustrum: &frustrum,
                 },
                 &world,

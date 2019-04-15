@@ -108,8 +108,11 @@ impl Resources {
 
         let mut meshes: Vec<Mesh> =
             Vec::with_capacity(objs.iter().map(|(_, ref models, _)| models.len()).sum());
-        let mut materials: Vec<tobj::Material> =
-            Vec::with_capacity(objs.iter().map(|(_, _, ref materials)| materials.len()).sum());
+        let mut materials: Vec<tobj::Material> = Vec::with_capacity(
+            objs.iter()
+                .map(|(_, _, ref materials)| materials.len())
+                .sum(),
+        );
 
         for (i, (obj_path, obj_models, obj_materials)) in objs.into_iter().enumerate() {
             let material_offset = material_offsets[i];

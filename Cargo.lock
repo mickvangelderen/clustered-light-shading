@@ -1176,6 +1176,7 @@ dependencies = [
  "notify 4.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "openvr 0.1.0",
  "polygen 0.1.0",
+ "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "tobj 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
