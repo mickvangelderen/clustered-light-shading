@@ -1,59 +1,107 @@
+pub use rand;
+
 use rand::prelude::*;
 
-pub fn generate_hbao_kernel(out: &mut [[f32; 4]], radius: f32) {
-    let mut rng = rand::rngs::StdRng::from_seed(*b"thisismy32byteseedanditneedsalot");
+#[derive(Clone, Copy, Debug)]
+pub struct UnitSphereVolume;
 
-    // Chopped off at radius.
-    let dist = rand::distributions::Normal::new(0.0, radius as f64/2.0);
+impl UnitSphereVolume {
+    /// Construct a new `UnitSphereVolume` distribution.
+    #[inline]
+    pub fn new() -> UnitSphereVolume {
+        UnitSphereVolume
+    }
+}
 
-    for v in out.iter_mut() {
+impl Distribution<[f64; 3]> for UnitSphereVolume {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> [f64; 3] {
+        let uniform = rand::distributions::Uniform::new(-1., 1.);
         loop {
-            let mut x;
-            loop {
-                x = dist.sample(&mut rng) as f32;
-                if x > radius || x < -radius {
-                    continue;
-                }
-                break;
+            let p = [
+                uniform.sample(rng),
+                uniform.sample(rng),
+                uniform.sample(rng),
+            ];
+            let [x, y, z] = p;
+            if x * x + y * y + z * z >= 1. {
+                continue;
             }
-            let mut y;
-            loop {
-                y = dist.sample(&mut rng) as f32;
-                if y > radius || y < -radius {
-                    continue;
-                }
-                break;
-            }
-            let mut z;
-            loop {
-                z = dist.sample(&mut rng) as f32;
-                if z > radius || z < - radius {
-                    continue;
-                }
-                break;
-            }
-            if x * x + y * y + z * z < radius * radius {
-                *v = [x, y, z, 0.0];
-                break;
-            }
+            return p;
         }
     }
 }
 
-pub fn generate_unit_vectors(out: &mut [[f32; 4]]) {
-    let mut rng = rand::rngs::StdRng::from_seed(*b"anotheronebitesthedust-ahhhhhhhh");
-    let dist = rand::distributions::Uniform::new_inclusive(-1.0f64, 1.0f64);
+#[derive(Clone, Copy, Debug)]
+pub struct HitCircle;
 
-    for v in out.iter_mut() {
+impl HitCircle {
+    /// Construct a new `HitCircle` distribution.
+    #[inline]
+    pub fn new() -> HitCircle {
+        HitCircle
+    }
+}
+
+impl Distribution<f64> for HitCircle {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+        let uniform = rand::distributions::Uniform::new(-1.0, 1.0);
         loop {
-            let x = dist.sample(&mut rng);
-            let y = dist.sample(&mut rng);
-            let z = dist.sample(&mut rng);
-            let r = (x*x + y*y + z*z).sqrt();
-            if r > 0.1 && r <= 1.0 {
-                *v = [(x/r) as f32, (y/r) as f32, (z/r) as f32, 0.0];
-                break;
+            let [x, y] = [uniform.sample(rng), uniform.sample(rng)];
+            if x * x + y * y >= 1.0 {
+                continue;
             }
+            return x;
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Quadr;
+
+impl Quadr {
+    /// Construct a new `Quadr` distribution.
+    #[inline]
+    pub fn new() -> Quadr {
+        Quadr
+    }
+}
+
+impl Distribution<f64> for Quadr {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+        let n1p1 = rand::distributions::Uniform::new(-1.0, 1.0);
+        let z0p1 = rand::distributions::Uniform::new(0.0, 1.0);
+        loop {
+            let [x, y] = [n1p1.sample(rng), z0p1.sample(rng)];
+            if x * x >= y {
+                continue;
+            }
+            return x;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct UnitSphereDense;
+
+impl UnitSphereDense {
+    /// Construct a new `UnitSphereDense` distribution.
+    #[inline]
+    pub fn new() -> UnitSphereDense {
+        UnitSphereDense
+    }
+}
+
+impl Distribution<[f64; 3]> for UnitSphereDense {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> [f64; 3] {
+        let pdist = UnitSphereVolume::new();
+        let mdist = HitCircle::new();
+
+        let [x, y, z] = pdist.sample(rng);
+        let m = mdist.sample(rng);
+        return [m * x, m * y, m * z];
     }
 }

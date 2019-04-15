@@ -1,6 +1,5 @@
 use crate::convert::*;
 use crate::frustrum::Frustrum;
-use crate::hbao_kernel;
 use crate::World;
 use gl_typed as gl;
 use gl_typed::convert::*;
@@ -40,6 +39,7 @@ pub struct Renderer {
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
     pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
+    pub random_unit_sphere_surface_sampler_loc: gl::OptionUniformLocation,
     pub vs_pos_in_qua_loc: gl::OptionAttributeLocation,
 }
 
@@ -50,6 +50,7 @@ pub struct Parameters<'a> {
     pub color_texture_name: gl::TextureName,
     pub depth_texture_name: gl::TextureName,
     pub nor_in_cam_texture_name: gl::TextureName,
+    pub random_unit_sphere_surface_texture_name: gl::TextureName,
     pub frustrum: &'a Frustrum,
 }
 
@@ -130,6 +131,15 @@ impl Renderer {
             gl.bind_texture(gl::TEXTURE_2D, params.nor_in_cam_texture_name);
         };
 
+        if let Some(loc) = self.random_unit_sphere_surface_sampler_loc.into() {
+            gl.uniform_1i(loc, 3);
+            gl.active_texture(gl::TEXTURE3);
+            gl.bind_texture(
+                gl::TEXTURE_2D,
+                params.random_unit_sphere_surface_texture_name,
+            );
+        };
+
         gl.bind_vertex_array(self.vertex_array_name);
         // // NOTE: Help renderdoc
         // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
@@ -185,6 +195,8 @@ impl Renderer {
             self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
             self.nor_in_cam_sampler_loc =
                 get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
+            self.random_unit_sphere_surface_sampler_loc =
+                get_uniform_location!(gl, self.program_name, "random_unit_sphere_surface_sampler");
 
             // Disable old locations.
             gl.bind_vertex_array(self.vertex_array_name);
@@ -263,7 +275,7 @@ impl Renderer {
         gl.bind_buffer(gl::UNIFORM_BUFFER, hbao_kernel_buffer_name);
         gl.buffer_data(
             gl::UNIFORM_BUFFER,
-            hbao_kernel::hbao_kernel_ref(),
+            crate::random_unit_sphere_volume::get(),
             gl::STATIC_DRAW,
         );
         gl.unbind_buffer(gl::UNIFORM_BUFFER);
@@ -306,6 +318,7 @@ impl Renderer {
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             depth_sampler_loc: gl::OptionUniformLocation::NONE,
             nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
+            random_unit_sphere_surface_sampler_loc: gl::OptionUniformLocation::NONE,
             vs_pos_in_qua_loc: gl::OptionAttributeLocation::NONE,
         }
     }

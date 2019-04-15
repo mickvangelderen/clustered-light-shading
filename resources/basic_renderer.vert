@@ -30,10 +30,12 @@ void main() {
   mat4 pos_from_obj_to_clp_mat4 =
       pos_from_wld_to_clp * pos_from_obj_to_wld * pos_from_ver_to_obj;
 
-  gl_Position =
-      pos_from_obj_to_clp_mat4 *
-      vec4(vs_pos_in_obj + vs_nor_in_obj * (sin(time * 3.1415f) * 0.01 + 0.01),
-           1.0);
+  // ANIMATED VERTICES
+  // gl_Position =
+  //   pos_from_obj_to_clp_mat4 *
+  //   vec4(vs_pos_in_obj + vs_nor_in_obj * (sin(time * 3.1415f) * 0.01 + 0.01),
+  //        1.0);
+  gl_Position = pos_from_obj_to_clp_mat4 * vec4(vs_pos_in_obj, 1.0);
 
   mat4 pos_from_obj_to_cam_mat4 =
       pos_from_wld_to_cam * pos_from_obj_to_wld * pos_from_ver_to_obj;

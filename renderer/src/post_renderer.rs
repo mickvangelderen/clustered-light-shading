@@ -1,6 +1,5 @@
 use crate::convert::*;
 use crate::frustrum::Frustrum;
-use crate::hbao_kernel;
 use crate::World;
 use gl_typed as gl;
 use gl_typed::convert::*;
@@ -272,7 +271,7 @@ impl Renderer {
         gl.bind_buffer(gl::UNIFORM_BUFFER, hbao_kernel_buffer_name);
         gl.buffer_data(
             gl::UNIFORM_BUFFER,
-            hbao_kernel::hbao_kernel_ref(),
+            crate::random_unit_sphere_volume::get(),
             gl::STATIC_DRAW,
         );
         gl.unbind_buffer(gl::UNIFORM_BUFFER);

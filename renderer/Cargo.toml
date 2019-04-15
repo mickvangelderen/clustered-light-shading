@@ -17,3 +17,4 @@ tobj = "0.1.6"
 
 [build-dependencies]
 kernel-generator = { path = "../kernel-generator" }
+rand = "0.6.5"
