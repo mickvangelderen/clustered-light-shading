@@ -34,6 +34,8 @@ use std::thread;
 const DESIRED_UPS: f32 = 90.0;
 const DESIRED_FPS: f32 = 90.0;
 
+const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
+
 pub struct World {
     time: f32,
     clear_color: [f32; 3],
@@ -460,8 +462,8 @@ fn main() {
         Ok(context) => unsafe {
             let dims = context.system().get_recommended_render_target_size();
             println!("Recommender render target size: {:?}", dims);
-            let eye_left = EyeResources::new(&gl, &context, vr::Eye::Left, dims);
-            let eye_right = EyeResources::new(&gl, &context, vr::Eye::Right, dims);
+            let eye_left = EyeResources::new(&gl, dims);
+            let eye_right = EyeResources::new(&gl, dims);
 
             Some(VrResources {
                 context,
@@ -701,27 +703,23 @@ fn main() {
             let physical_size = win_size.to_physical(win_dpi);
 
             let frustrum = {
-                let z0 = 0.5;
-                let dy = z0 * Rad::tan(Rad::from(world.camera.fovy) / 2.0);
-                let dx = dy * physical_size.width as f32 / physical_size.height as f32;
-                frustrum::Frustrum {
+                let z0 = -0.1;
+                let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.fovy).0 as f64) / 2.0);
+                let dx = dy * physical_size.width as f64 / physical_size.height as f64;
+                frustrum::Frustrum::<f64> {
                     x0: -dx,
                     x1: dx,
                     y0: -dy,
                     y1: dy,
                     z0,
-                    z1: 100.0,
+                    z1: -100.0,
                 }
             };
 
-            let pos_from_hmd_to_clp = Matrix4::from(Perspective {
-                left: frustrum.x0,
-                right: frustrum.x1,
-                bottom: frustrum.y0,
-                top: frustrum.y1,
-                near: frustrum.z0,
-                far: frustrum.z1,
-            });
+            // Do math in f64 precision.
+            let pos_from_hmd_to_clp: Matrix4<f32> =
+                frustrum.perspective_infinite_far().cast().unwrap();
+            let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
 
             basic_renderer.render(
                 &gl,
@@ -730,6 +728,7 @@ fn main() {
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     pos_from_cam_to_clp: pos_from_hmd_to_clp,
+                    frustrum: &frustrum,
                 },
                 &world,
                 &resources,
@@ -769,68 +768,61 @@ fn main() {
 
         // === VR ===
         if let Some(ref vr_resources) = vr_resources {
-            unsafe {
-                basic_renderer.render(
-                    &gl,
-                    &basic_renderer::Parameters {
-                        framebuffer: Some(vr_resources.eye_left.framebuffer),
-                        width: vr_resources.dims.width as i32,
-                        height: vr_resources.dims.height as i32,
-                        pos_from_cam_to_clp: vr_resources.eye_left.pos_from_hmd_to_clp
-                            * world.pos_from_cam_to_hmd,
-                    },
-                    &world,
-                    &resources,
-                );
+            for &eye in EYES.into_iter() {
+                let frustrum = {
+                    // These are the tangents.
+                    let [l, r, t, b] = vr_resources
+                        .context
+                        .system()
+                        .get_projection_raw(eye);
+                    let z0 = -0.1;
+                    let z1 = -100.0;
+                    frustrum::Frustrum::<f64> {
+                        x0: -z0 * l as f64,
+                        x1: -z0 * r as f64,
+                        y0: -z0 * b as f64,
+                        y1: -z0 * t as f64,
+                        z0,
+                        z1,
+                    }
+                };
 
-                basic_renderer.render(
-                    &gl,
-                    &basic_renderer::Parameters {
-                        framebuffer: Some(vr_resources.eye_right.framebuffer),
-                        width: vr_resources.dims.width as i32,
-                        height: vr_resources.dims.height as i32,
-                        pos_from_cam_to_clp: vr_resources.eye_right.pos_from_hmd_to_clp
-                            * world.pos_from_cam_to_hmd,
-                    },
-                    &world,
-                    &resources,
-                );
+                let pos_from_eye_to_clp: Matrix4<f32> =
+                    frustrum.perspective_infinite_far().cast().unwrap();
+                let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
+                let pos_from_eye_to_hmd: Matrix4<f32> =
+                    vr_resources.context.system().get_eye_to_head_transform(eye).hmd_into();
+                let pos_from_hmd_to_clp =
+                    pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
 
+                unsafe {
+                    basic_renderer.render(
+                        &gl,
+                        &basic_renderer::Parameters {
+                            framebuffer: Some(vr_resources[eye].framebuffer),
+                            width: vr_resources.dims.width as i32,
+                            height: vr_resources.dims.height as i32,
+                            pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
+                            frustrum: &frustrum,
+                        },
+                        &world,
+                        &resources,
+                    );
+                }
+            }
+
+            for &eye in EYES.into_iter() {
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
-                {
-                    let mut texture_t = vr_resources.eye_left.gen_texture_t();
-                    vr_resources
-                        .compositor()
-                        .submit(
-                            vr_resources.eye_left.eye,
-                            &mut texture_t,
-                            None,
-                            vr::SubmitFlag::Default,
-                        )
-                        .unwrap_or_else(|error| {
-                            panic!(
-                                "failed to submit texture: {:?}",
-                                vr::CompositorError::from_unchecked(error).unwrap()
-                            );
-                        });
-                }
-                {
-                    let mut texture_t = vr_resources.eye_right.gen_texture_t();
-                    vr_resources
-                        .compositor()
-                        .submit(
-                            vr_resources.eye_right.eye,
-                            &mut texture_t,
-                            None,
-                            vr::SubmitFlag::Default,
-                        )
-                        .unwrap_or_else(|error| {
-                            panic!(
-                                "failed to submit texture: {:?}",
-                                vr::CompositorError::from_unchecked(error).unwrap()
-                            );
-                        });
-                }
+                let mut texture_t = vr_resources[eye].gen_texture_t();
+                vr_resources
+                    .compositor()
+                    .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "failed to submit texture: {:?}",
+                            vr::CompositorError::from_unchecked(error).unwrap()
+                        );
+                    });
             }
         }
         // --- VR ---
@@ -891,9 +883,29 @@ impl VrResources {
     }
 }
 
+impl std::ops::Index<vr::Eye> for VrResources {
+    type Output = EyeResources;
+
+    #[inline]
+    fn index(&self, eye: vr::Eye) -> &Self::Output {
+        match eye {
+            vr::Eye::Left => &self.eye_left,
+            vr::Eye::Right => &self.eye_right,
+        }
+    }
+}
+
+impl std::ops::IndexMut<vr::Eye> for VrResources {
+    #[inline]
+    fn index_mut(&mut self, eye: vr::Eye) -> &mut Self::Output {
+        match eye {
+            vr::Eye::Left => &mut self.eye_left,
+            vr::Eye::Right => &mut self.eye_right,
+        }
+    }
+}
+
 struct EyeResources {
-    eye: vr::Eye,
-    pos_from_hmd_to_clp: Matrix4<f32>,
     framebuffer: gl::FramebufferName,
     color_texture: gl::TextureName,
     #[allow(unused)]
@@ -901,16 +913,7 @@ struct EyeResources {
 }
 
 impl EyeResources {
-    unsafe fn new(gl: &gl::Gl, vr: &vr::Context, eye: vr::Eye, dims: vr::Dimensions) -> Self {
-        // VR.
-        let pos_from_eye_to_clp: Matrix4<f32> = vr
-            .system()
-            .get_projection_matrix(eye, 0.2, 200.0)
-            .hmd_into();
-        let pos_from_eye_to_hmd: Matrix4<f32> =
-            vr.system().get_eye_to_head_transform(eye).hmd_into();
-        let pos_from_hmd_to_clp = pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
-
+    unsafe fn new(gl: &gl::Gl, dims: vr::Dimensions) -> Self {
         // OpenGL.
         let framebuffer = {
             let mut names: [Option<gl::FramebufferName>; 1] = mem::uninitialized();
@@ -988,8 +991,6 @@ impl EyeResources {
         gl.bind_framebuffer(gl::FRAMEBUFFER, None);
 
         EyeResources {
-            eye,
-            pos_from_hmd_to_clp,
             framebuffer,
             color_texture,
             depth_texture,

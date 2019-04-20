@@ -14,6 +14,7 @@ image = "0.21.0"
 notify = "4.0.10"
 openvr = { git = "https://github.com/mickvangelderen/openvr-rust", tag = "0.1.0" }
 tobj = "0.1.6"
+num-traits = "0.2.6"
 
 [build-dependencies]
 kernel-generator = { path = "../kernel-generator" }

@@ -51,7 +51,7 @@ pub struct Parameters<'a> {
     pub depth_texture_name: gl::TextureName,
     pub nor_in_cam_texture_name: gl::TextureName,
     pub random_unit_sphere_surface_texture_name: gl::TextureName,
-    pub frustrum: &'a Frustrum,
+    pub frustrum: &'a Frustrum<f32>,
 }
 
 #[derive(Default)]
