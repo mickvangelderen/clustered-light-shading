@@ -36,22 +36,25 @@ vec2 pos_from_cam_to_tex(vec3 pos_in_cam) {
   float x = pos_in_cam.x;
   float y = pos_in_cam.y;
   float z = pos_in_cam.z;
-  float s = -z0 / z;
+  float s = z0 / z;
 
   return vec2((s * x - x0) / (x1 - x0), (s * y - y0) / (y1 - y0));
 }
 
 // Reverse projection matrix.
-float z_from_ndc_to_cam(float z_ndc) {
-  return (2.0 * z0 * z1) / (z_ndc * (z1 - z0) - (z0 + z1));
-}
+// float z_from_ndc_to_cam(float z_ndc) {
+//   return (2.0 * z0 * z1) / (z_ndc * (z1 - z0) + z0 + z1);
+// }
+
+// Reverse infinite far perspective projection matrix.
+float z_from_ndc_to_cam(float z_ndc) { return 2.0 * z0 / (1.0 - z_ndc); }
 
 vec3 sample_pos_in_cam(vec2 pos_in_tex) {
   float z_ndc = sample_z_ndc(pos_in_tex);
-  // This is z_from_ndc_to_cam(z_ndc) / -z0
-  float s = (-2.0 * z1) / (z_ndc * (z1 - z0) - (z0 + z1));
+  // This is z_from_ndc_to_cam(z_ndc) / z0
+  float s = 2.0 / (1.0 - z_ndc);
   return vec3(s * mix(x0, x1, pos_in_tex.x), s * mix(y0, y1, pos_in_tex.y),
-              s * -z0);
+              s * z0);
 }
 
 uvec2 sample_ao(vec2 pos_in_tex) { return texture(ao_sampler, pos_in_tex).xy; }

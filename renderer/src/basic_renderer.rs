@@ -1,6 +1,7 @@
 use crate::keyboard_model;
 use crate::resources::Resources;
 use crate::World;
+use crate::frustrum::Frustrum;
 use cgmath::*;
 use gl_typed as gl;
 
@@ -37,11 +38,12 @@ pub struct Renderer {
     pub vs_tan_in_obj_loc: gl::OptionAttributeLocation,
 }
 
-pub struct Parameters {
+pub struct Parameters<'a> {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
     pub pos_from_cam_to_clp: Matrix4<f32>,
+    pub frustrum: &'a Frustrum<f32>,
 }
 
 #[derive(Default)]
@@ -57,10 +59,10 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub unsafe fn render(
+    pub unsafe fn render<'a>(
         &self,
         gl: &gl::Gl,
-        params: &Parameters,
+        params: &Parameters<'a>,
         world: &World,
         resources: &Resources,
     ) {
@@ -77,6 +79,8 @@ impl Renderer {
             world.clear_color[2],
             1.0,
         );
+        // Infinite far perspective projection.
+        gl.clear_depth(1.0 - params.frustrum.z0 as f64/params.frustrum.z1 as f64);
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
         gl.use_program(self.program_name);
