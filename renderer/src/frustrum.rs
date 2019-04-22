@@ -49,6 +49,32 @@ impl<S: Float> Frustrum<S> {
             Vector4::new(z, z, b, z),
         )
     }
+
+    #[inline]
+    pub fn orthographic(self) -> Matrix4<S> {
+        let p2 = S::from(2.0f64).unwrap();
+        let z = S::zero();
+        let o = S::one();
+
+        let dx = self.x1 - self.x0;
+        let dy = self.y1 - self.y0;
+        let dz = self.z1 - self.z0;
+
+        let c = p2 / dx;
+        let d = p2 / dy;
+        let e = p2 / dz;
+
+        let i = -(self.x0 + self.x1) / dx;
+        let j = -(self.y0 + self.y1) / dy;
+        let k = -(self.z0 + self.z1) / dz;
+
+        Matrix4::from_cols(
+            Vector4::new(c, z, z, z),
+            Vector4::new(z, d, z, z),
+            Vector4::new(z, z, e, z),
+            Vector4::new(i, j, k, o),
+        )
+    }
 }
 
 impl<S: ToPrimitive> Frustrum<S> {

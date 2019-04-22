@@ -12,6 +12,8 @@ mod post_renderer;
 mod random_unit_sphere_surface;
 mod random_unit_sphere_volume;
 mod resources;
+mod shader_defines;
+mod shadow_renderer;
 
 use crate::gl_ext::*;
 use cgmath::*;
@@ -34,12 +36,17 @@ use std::thread;
 const DESIRED_UPS: f32 = 90.0;
 const DESIRED_FPS: f32 = 90.0;
 
+const SHADOW_W: i32 = 1024;
+const SHADOW_H: i32 = 1024;
+
 const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
 
 pub struct World {
     time: f32,
     clear_color: [f32; 3],
     camera: camera::Camera,
+    sun_pos: Vector3<f32>,
+    sun_rot: Rad<f32>,
     smooth_camera: bool,
     pos_from_cam_to_hmd: cgmath::Matrix4<f32>,
     keyboard_model: keyboard_model::KeyboardModel,
@@ -48,10 +55,14 @@ pub struct World {
 pub struct Framebuffer {
     framebuffer_name: gl::FramebufferName,
     ao_framebuffer_name: gl::FramebufferName,
+    shadow_framebuffer_name: gl::FramebufferName,
+    ao_depth_renderbuffer_name: gl::RenderbufferName,
+    shadow_depth_renderbuffer_name: gl::RenderbufferName,
     color_texture_name: gl::TextureName,
     depth_texture_name: gl::TextureName,
     nor_in_cam_texture_name: gl::TextureName,
     ao_texture_name: gl::TextureName,
+    shadow_texture_name: gl::TextureName,
 }
 
 impl Framebuffer {
@@ -61,6 +72,10 @@ impl Framebuffer {
 
     pub fn ao_framebuffer_name(&self) -> gl::FramebufferName {
         self.ao_framebuffer_name
+    }
+
+    pub fn shadow_framebuffer_name(&self) -> gl::FramebufferName {
+        self.shadow_framebuffer_name
     }
 
     pub fn color_texture_name(&self) -> gl::TextureName {
@@ -79,17 +94,28 @@ impl Framebuffer {
         self.ao_texture_name
     }
 
+    pub fn shadow_texture_name(&self) -> gl::TextureName {
+        self.shadow_texture_name
+    }
+
     pub fn create(gl: &gl::Gl, width: i32, height: i32) -> Self {
         unsafe {
-            let [framebuffer_name, ao_framebuffer_name]: [gl::FramebufferName; 2] = {
-                let mut names: [Option<gl::FramebufferName>; 2] = mem::uninitialized();
+            let [framebuffer_name, ao_framebuffer_name, shadow_framebuffer_name]: [gl::FramebufferName; 3] = {
+                let mut names: [Option<gl::FramebufferName>; 3] = mem::uninitialized();
                 gl.gen_framebuffers(&mut names);
                 names.try_transmute_each().unwrap()
             };
 
-            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name, ao_texture_name]: [gl::TextureName;
-                4] = {
-                let mut names: [Option<gl::TextureName>; 4] = mem::uninitialized();
+            let [ao_depth_renderbuffer_name, shadow_depth_renderbuffer_name]: [gl::RenderbufferName;
+                2] = {
+                let mut names: [Option<gl::RenderbufferName>; 2] = mem::uninitialized();
+                gl.gen_renderbuffers(&mut names);
+                names.try_transmute_each().unwrap()
+            };
+
+            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name, ao_texture_name, shadow_texture_name]: [gl::TextureName;
+                5] = {
+                let mut names: [Option<gl::TextureName>; 5] = mem::uninitialized();
                 gl.gen_textures(&mut names);
                 names.try_transmute_each().unwrap()
             };
@@ -97,16 +123,27 @@ impl Framebuffer {
             let framebuffer = Framebuffer {
                 framebuffer_name,
                 ao_framebuffer_name,
+                shadow_framebuffer_name,
+                ao_depth_renderbuffer_name,
+                shadow_depth_renderbuffer_name,
                 color_texture_name,
                 depth_texture_name,
                 nor_in_cam_texture_name,
                 ao_texture_name,
+                shadow_texture_name,
             };
+
+            gl.bind_renderbuffer(gl::RENDERBUFFER, ao_depth_renderbuffer_name);
+            framebuffer.allocate_ao_depth_renderbuffer(gl, width, height);
+            gl.bind_renderbuffer(gl::RENDERBUFFER, shadow_depth_renderbuffer_name);
+            framebuffer.allocate_shadow_depth_renderbuffer(gl, SHADOW_W, SHADOW_H);
+            gl.unbind_renderbuffer(gl::RENDERBUFFER);
 
             gl.bind_texture(gl::TEXTURE_2D, color_texture_name);
             {
                 framebuffer.allocate_color_texture(gl, width, height);
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
@@ -116,6 +153,7 @@ impl Framebuffer {
             {
                 framebuffer.allocate_depth_texture(gl, width, height);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
@@ -125,6 +163,7 @@ impl Framebuffer {
             {
                 framebuffer.allocate_nor_in_cam_texture(gl, width, height);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
@@ -134,6 +173,17 @@ impl Framebuffer {
             {
                 framebuffer.allocate_ao_texture(gl, width, height);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
+            }
+
+            gl.bind_texture(gl::TEXTURE_2D, shadow_texture_name);
+            {
+                framebuffer.allocate_shadow_texture(gl, SHADOW_W, SHADOW_H);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
@@ -183,12 +233,34 @@ impl Framebuffer {
                     0,
                 );
 
-                gl.framebuffer_texture_2d(
+                gl.framebuffer_renderbuffer(
                     gl::FRAMEBUFFER,
                     gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::RENDERBUFFER,
+                    ao_depth_renderbuffer_name,
+                );
+
+                assert_eq!(
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+            }
+
+            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(shadow_framebuffer_name));
+            {
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT0,
                     gl::TEXTURE_2D,
-                    depth_texture_name,
+                    shadow_texture_name,
                     0,
+                );
+
+                gl.framebuffer_renderbuffer(
+                    gl::FRAMEBUFFER,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::RENDERBUFFER,
+                    shadow_depth_renderbuffer_name,
                 );
 
                 assert_eq!(
@@ -203,6 +275,12 @@ impl Framebuffer {
 
     pub fn resize(&self, gl: &gl::Gl, width: i32, height: i32) {
         unsafe {
+            gl.bind_renderbuffer(gl::RENDERBUFFER, self.ao_depth_renderbuffer_name);
+            self.allocate_ao_depth_renderbuffer(gl, width, height);
+            // gl.bind_renderbuffer(gl::RENDERBUFFER, self.shadow_depth_renderbuffer_name);
+            // self.allocate_shadow_depth_renderbuffer(gl, SHADOW_W, SHADOW_H);
+            gl.unbind_renderbuffer(gl::RENDERBUFFER);
+
             gl.bind_texture(gl::TEXTURE_2D, self.color_texture_name);
             self.allocate_color_texture(gl, width, height);
             gl.bind_texture(gl::TEXTURE_2D, self.depth_texture_name);
@@ -211,6 +289,8 @@ impl Framebuffer {
             self.allocate_nor_in_cam_texture(gl, width, height);
             gl.bind_texture(gl::TEXTURE_2D, self.ao_texture_name);
             self.allocate_ao_texture(gl, width, height);
+            // gl.bind_texture(gl::TEXTURE_2D, self.shadow_texture_name);
+            // self.allocate_shadow_texture(gl, SHADOW_W, SHADOW_H);
             gl.unbind_texture(gl::TEXTURE_2D);
         }
     }
@@ -219,19 +299,41 @@ impl Framebuffer {
         {
             // FIXME: MUT
             let mut names = [
+                Some(self.framebuffer_name),
+                Some(self.ao_framebuffer_name),
+                Some(self.shadow_framebuffer_name),
+            ];
+            gl.delete_framebuffers(&mut names[..]);
+        }
+        {
+            // FIXME: MUT
+            let mut names = [
+                Some(self.ao_depth_renderbuffer_name),
+                Some(self.shadow_depth_renderbuffer_name),
+            ];
+            gl.delete_renderbuffers(&mut names[..]);
+        }
+        {
+            // FIXME: MUT
+            let mut names = [
                 Some(self.color_texture_name),
                 Some(self.depth_texture_name),
                 Some(self.nor_in_cam_texture_name),
                 Some(self.ao_texture_name),
+                Some(self.shadow_texture_name),
             ];
             gl.delete_textures(&mut names[..]);
         }
-        {
-            // FIXME: MUT
-            let mut names: [Option<gl::FramebufferName>; 2] =
-                [Some(self.framebuffer_name), Some(self.ao_framebuffer_name)];
-            gl.delete_framebuffers(&mut names[..]);
-        }
+    }
+
+    #[inline]
+    unsafe fn allocate_ao_depth_renderbuffer(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, width, height);
+    }
+
+    #[inline]
+    unsafe fn allocate_shadow_depth_renderbuffer(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, width, height);
     }
 
     #[inline]
@@ -289,6 +391,20 @@ impl Framebuffer {
             ptr::null(),
         );
     }
+
+    #[inline]
+    unsafe fn allocate_shadow_texture(&self, gl: &gl::Gl, width: i32, height: i32) {
+        gl.tex_image_2d(
+            gl::TEXTURE_2D,
+            0,
+            gl::RG32F,
+            width,
+            height,
+            gl::RG,
+            gl::FLOAT,
+            ptr::null(),
+        );
+    }
 }
 
 fn main() {
@@ -299,6 +415,8 @@ fn main() {
     let log_dir: PathBuf = [current_dir.as_ref(), Path::new("logs")]
         .into_iter()
         .collect();
+    let shadow_renderer_vs_path = resource_dir.join("shadow_renderer.vert");
+    let shadow_renderer_fs_path = resource_dir.join("shadow_renderer.frag");
     let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
     let basic_renderer_fs_path = resource_dir.join("basic_renderer.frag");
     let ao_renderer_vs_path = resource_dir.join("ao_renderer.vert");
@@ -351,6 +469,8 @@ fn main() {
             angular_velocity: 0.4,
             zoom_velocity: 1.0,
         },
+        sun_pos: Vector3::new(0.0, 0.0, 0.0),
+        sun_rot: Deg(85.2).into(),
         smooth_camera: true,
         pos_from_cam_to_hmd: Matrix4::from_translation(Vector3::zero()),
         keyboard_model: keyboard_model::KeyboardModel::new(),
@@ -413,6 +533,20 @@ fn main() {
             .wrap_t(gl::REPEAT.into()),
     );
 
+    let mut shadow_renderer = {
+        let mut shadow_renderer = shadow_renderer::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&shadow_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&shadow_renderer_fs_path).unwrap();
+        shadow_renderer.update(
+            &gl,
+            shadow_renderer::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        shadow_renderer
+    };
+
     let mut basic_renderer = unsafe {
         let mut basic_renderer = basic_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
@@ -455,7 +589,7 @@ fn main() {
         post_renderer
     };
 
-    let resources = resources::Resources::new(&gl, &resource_dir, &basic_renderer);
+    let resources = resources::Resources::new(&gl, &resource_dir);
 
     // === VR ===
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
@@ -497,6 +631,7 @@ fn main() {
     let mut running = true;
     while running {
         // File watch events.
+        let mut shadow_renderer_update = shadow_renderer::Update::default();
         let mut basic_renderer_update = basic_renderer::Update::default();
         let mut ao_renderer_update = ao_renderer::Update::default();
         let mut post_renderer_update = post_renderer::Update::default();
@@ -504,6 +639,13 @@ fn main() {
         for event in rx_fs.try_iter() {
             if let Some(ref path) = event.path {
                 match path {
+                    path if path == &shadow_renderer_vs_path => {
+                        shadow_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &shadow_renderer_fs_path => {
+                        shadow_renderer_update.fragment_shader =
+                            Some(std::fs::read(&path).unwrap());
+                    }
                     path if path == &basic_renderer_vs_path => {
                         basic_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     }
@@ -527,11 +669,13 @@ fn main() {
             }
         }
 
+        if shadow_renderer_update.should_update() {
+            shadow_renderer.update(&gl, shadow_renderer_update);
+        }
+
         if basic_renderer_update.should_update() {
             unsafe {
-                resources.disable_vao_pointers(&gl, &basic_renderer);
                 basic_renderer.update(&gl, basic_renderer_update);
-                resources.enable_vao_pointers(&gl, &basic_renderer);
             }
         }
 
@@ -658,6 +802,8 @@ fn main() {
             delta_scroll: mouse_dscroll as f32,
         });
 
+        // world.sun_rot += Rad(0.5) * delta_time;
+
         world.keyboard_model.simulate(delta_time);
 
         world.time += delta_time;
@@ -702,6 +848,33 @@ fn main() {
         unsafe {
             let physical_size = win_size.to_physical(win_dpi);
 
+            let frustrum = frustrum::Frustrum {
+                x0: -5.0,
+                x1: 5.0,
+                y0: -5.0,
+                y1: 5.0,
+                z0: 5.0,
+                z1: -5.0,
+            };
+
+            let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
+            let sun_pos_in_sun = sun_ori*world.sun_pos;
+            let pos_from_lgt_to_clp = frustrum.orthographic();
+            let pos_from_wld_to_lgt =
+                Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
+
+            shadow_renderer.render(
+                &gl,
+                &shadow_renderer::Parameters {
+                    framebuffer: Some(main_framebuffer.shadow_framebuffer_name()),
+                    width: SHADOW_W,
+                    height: SHADOW_H,
+                    pos_from_wld_to_clp: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
+                    frustrum: &frustrum,
+                },
+                &resources,
+            );
+
             let frustrum = {
                 let z0 = -0.1;
                 let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.fovy).0 as f64) / 2.0);
@@ -728,6 +901,8 @@ fn main() {
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     pos_from_cam_to_clp: pos_from_hmd_to_clp,
+                    pos_from_wld_to_lgt: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
+                    shadow_texture_name: main_framebuffer.shadow_texture_name(),
                     frustrum: &frustrum,
                 },
                 &world,
@@ -771,10 +946,7 @@ fn main() {
             for &eye in EYES.into_iter() {
                 let frustrum = {
                     // These are the tangents.
-                    let [l, r, t, b] = vr_resources
-                        .context
-                        .system()
-                        .get_projection_raw(eye);
+                    let [l, r, t, b] = vr_resources.context.system().get_projection_raw(eye);
                     let z0 = -0.1;
                     let z1 = -100.0;
                     frustrum::Frustrum::<f64> {
@@ -790,24 +962,28 @@ fn main() {
                 let pos_from_eye_to_clp: Matrix4<f32> =
                     frustrum.perspective_infinite_far().cast().unwrap();
                 let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
-                let pos_from_eye_to_hmd: Matrix4<f32> =
-                    vr_resources.context.system().get_eye_to_head_transform(eye).hmd_into();
+                let pos_from_eye_to_hmd: Matrix4<f32> = vr_resources
+                    .context
+                    .system()
+                    .get_eye_to_head_transform(eye)
+                    .hmd_into();
                 let pos_from_hmd_to_clp =
                     pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
 
                 unsafe {
-                    basic_renderer.render(
-                        &gl,
-                        &basic_renderer::Parameters {
-                            framebuffer: Some(vr_resources[eye].framebuffer),
-                            width: vr_resources.dims.width as i32,
-                            height: vr_resources.dims.height as i32,
-                            pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
-                            frustrum: &frustrum,
-                        },
-                        &world,
-                        &resources,
-                    );
+                    // basic_renderer.render(
+                    //     &gl,
+                    //     &basic_renderer::Parameters {
+                    //         framebuffer: Some(vr_resources[eye].framebuffer),
+                    //         width: vr_resources.dims.width as i32,
+                    //         height: vr_resources.dims.height as i32,
+                    //         pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
+                    //         pos_from_wld_to_lgt: pos_from
+                    //         frustrum: &frustrum,
+                    //     },
+                    //     &world,
+                    //     &resources,
+                    // );
                 }
             }
 

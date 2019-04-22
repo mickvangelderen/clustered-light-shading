@@ -1,6 +1,6 @@
-use crate::basic_renderer;
 use crate::convert::*;
 use crate::keyboard_model;
+use crate::shader_defines;
 use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
@@ -47,12 +47,12 @@ impl Resources {
     pub fn new<P: AsRef<Path>>(
         gl: &gl::Gl,
         resource_dir: P,
-        renderer: &basic_renderer::Renderer,
     ) -> Self {
         let resource_dir = resource_dir.as_ref();
 
         let objs: Vec<(String, Vec<tobj::Model>, Vec<tobj::Material>)> =
-            ["sponza/sponza.obj", "keyboard.obj"]
+            ["two_planes.obj", "bunny.obj"]
+            // ["sponza/sponza.obj", "keyboard.obj"]
                 .into_iter()
                 .map(|&rel_file_path| {
                     let file_path = &resource_dir.join(rel_file_path);
@@ -243,57 +243,49 @@ impl Resources {
                 );
 
                 // AOS layout.
-                if let Some(loc) = renderer.vs_pos_in_obj_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        pos_in_obj_offset,
-                    );
+                gl.vertex_attrib_pointer(
+                    shader_defines::VS_POS_IN_OBJ_LOC,
+                    3,
+                    gl::FLOAT,
+                    gl::FALSE,
+                    mem::size_of::<[f32; 3]>(),
+                    pos_in_obj_offset,
+                );
 
-                    gl.enable_vertex_attrib_array(loc);
-                }
+                gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
 
-                if let Some(loc) = renderer.vs_pos_in_tex_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        2,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 2]>(),
-                        pos_in_tex_offset,
-                    );
+                gl.vertex_attrib_pointer(
+                    shader_defines::VS_POS_IN_TEX_LOC,
+                    2,
+                    gl::FLOAT,
+                    gl::FALSE,
+                    mem::size_of::<[f32; 2]>(),
+                    pos_in_tex_offset,
+                );
 
-                    gl.enable_vertex_attrib_array(loc);
-                }
+                gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_TEX_LOC);
 
-                if let Some(loc) = renderer.vs_nor_in_obj_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        nor_in_obj_offset,
-                    );
+                gl.vertex_attrib_pointer(
+                    shader_defines::VS_NOR_IN_OBJ_LOC,
+                    3,
+                    gl::FLOAT,
+                    gl::FALSE,
+                    mem::size_of::<[f32; 3]>(),
+                    nor_in_obj_offset,
+                );
 
-                    gl.enable_vertex_attrib_array(loc);
-                }
+                gl.enable_vertex_attrib_array(shader_defines::VS_NOR_IN_OBJ_LOC);
 
-                if let Some(loc) = renderer.vs_tan_in_obj_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        tan_in_obj_offset,
-                    );
+                gl.vertex_attrib_pointer(
+                    shader_defines::VS_TAN_IN_OBJ_LOC,
+                    3,
+                    gl::FLOAT,
+                    gl::FALSE,
+                    mem::size_of::<[f32; 3]>(),
+                    tan_in_obj_offset,
+                );
 
-                    gl.enable_vertex_attrib_array(loc);
-                }
+                gl.enable_vertex_attrib_array(shader_defines::VS_TAN_IN_OBJ_LOC);
 
                 gl.unbind_vertex_array();
                 gl.unbind_buffer(gl::ARRAY_BUFFER);
@@ -367,106 +359,6 @@ impl Resources {
             ebs,
             element_counts,
             key_indices,
-        }
-    }
-
-    pub fn disable_vao_pointers(&self, gl: &gl::Gl, renderer: &basic_renderer::Renderer) {
-        for &vao in self.vaos.iter() {
-            unsafe {
-                gl.bind_vertex_array(vao);
-                if let Some(loc) = renderer.vs_pos_in_obj_loc.into() {
-                    gl.disable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_pos_in_tex_loc.into() {
-                    gl.disable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_nor_in_obj_loc.into() {
-                    gl.disable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_tan_in_obj_loc.into() {
-                    gl.disable_vertex_attrib_array(loc);
-                }
-                gl.unbind_vertex_array();
-            }
-        }
-    }
-
-    pub fn enable_vao_pointers(&self, gl: &gl::Gl, renderer: &basic_renderer::Renderer) {
-        for (i, mesh) in self.meshes.iter().enumerate() {
-            let vao = self.vaos[i];
-            let vb = self.vbs[i];
-
-            unsafe {
-                let pos_in_obj_size = mem::size_of_val(&mesh.pos_in_obj[..]);
-                let pos_in_tex_size = mem::size_of_val(&mesh.pos_in_tex[..]);
-                let nor_in_obj_size = mem::size_of_val(&mesh.nor_in_obj[..]);
-
-                let pos_in_obj_offset = 0;
-                let pos_in_tex_offset = pos_in_obj_offset + pos_in_obj_size;
-                let nor_in_obj_offset = pos_in_tex_offset + pos_in_tex_size;
-                let tan_in_obj_offset = nor_in_obj_offset + nor_in_obj_size;
-
-                gl.bind_vertex_array(vao);
-                gl.bind_buffer(gl::ARRAY_BUFFER, vb);
-
-                if let Some(loc) = renderer.vs_pos_in_obj_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        pos_in_obj_offset,
-                    );
-
-                    gl.enable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_pos_in_tex_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        2,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 2]>(),
-                        pos_in_tex_offset,
-                    );
-
-                    gl.enable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_nor_in_obj_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        nor_in_obj_offset,
-                    );
-
-                    gl.enable_vertex_attrib_array(loc);
-                }
-
-                if let Some(loc) = renderer.vs_tan_in_obj_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        3,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        mem::size_of::<[f32; 3]>(),
-                        tan_in_obj_offset,
-                    );
-
-                    gl.enable_vertex_attrib_array(loc);
-                }
-
-                gl.unbind_vertex_array();
-                gl.unbind_buffer(gl::ARRAY_BUFFER);
-            }
         }
     }
 }

@@ -2,11 +2,12 @@ use crate::keyboard_model;
 use crate::resources::Resources;
 use crate::World;
 use crate::frustrum::Frustrum;
+use crate::shader_defines;
 use cgmath::*;
 use gl_typed as gl;
 
 unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(name, &[source]);
+    gl.shader_source(name, &[shader_defines::VERSION, shader_defines::DEFINES, source]);
     gl.compile_shader(name);
     let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
     if status == gl::ShaderCompileStatus::Compiled.into() {
@@ -30,12 +31,10 @@ pub struct Renderer {
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_cam_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
+    pub pos_from_wld_to_lgt_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
-    pub vs_pos_in_obj_loc: gl::OptionAttributeLocation,
-    pub vs_pos_in_tex_loc: gl::OptionAttributeLocation,
-    pub vs_nor_in_obj_loc: gl::OptionAttributeLocation,
-    pub vs_tan_in_obj_loc: gl::OptionAttributeLocation,
+    pub shadow_sampler_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters<'a> {
@@ -43,6 +42,8 @@ pub struct Parameters<'a> {
     pub width: i32,
     pub height: i32,
     pub pos_from_cam_to_clp: Matrix4<f32>,
+    pub pos_from_wld_to_lgt: Matrix4<f32>,
+    pub shadow_texture_name: gl::TextureName,
     pub frustrum: &'a Frustrum<f32>,
 }
 
@@ -93,6 +94,12 @@ impl Renderer {
             gl.uniform_1i(loc, 0);
         };
 
+        if let Some(loc) = self.shadow_sampler_loc.into() {
+            gl.uniform_1i(loc, 1);
+            gl.active_texture(gl::TEXTURE1);
+            gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
+        };
+
         let pos_from_wld_to_cam = if world.smooth_camera {
             world.camera.smooth_pos_from_wld_to_cam()
         } else {
@@ -106,6 +113,10 @@ impl Renderer {
         if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
             let pos_from_wld_to_clp = params.pos_from_cam_to_clp * pos_from_wld_to_cam;
             gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_clp.as_ref());
+        }
+
+        if let Some(loc) = self.pos_from_wld_to_lgt_loc.into() {
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_wld_to_lgt.as_ref());
         }
 
         // Cache texture binding.
@@ -229,28 +240,13 @@ impl Renderer {
                 get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
             self.pos_from_wld_to_clp_loc =
                 get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+            self.pos_from_wld_to_lgt_loc =
+                get_uniform_location!(gl, self.program_name, "pos_from_wld_to_lgt");
             self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
             self.diffuse_sampler_loc =
-                get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
-
-            macro_rules! get_attribute_location {
-                ($gl: ident, $program: expr, $s: expr) => {{
-                    let loc = $gl.get_attrib_location($program, gl::static_cstr!($s));
-                    if loc.is_none() {
-                        eprintln!("{}: Could not get attribute location {:?}.", file!(), $s);
-                    }
-                    loc
-                }};
-            }
-
-            self.vs_pos_in_obj_loc =
-                get_attribute_location!(gl, self.program_name, "vs_pos_in_obj");
-            self.vs_pos_in_tex_loc =
-                get_attribute_location!(gl, self.program_name, "vs_pos_in_tex");
-            self.vs_nor_in_obj_loc =
-                get_attribute_location!(gl, self.program_name, "vs_nor_in_obj");
-            self.vs_tan_in_obj_loc =
-                get_attribute_location!(gl, self.program_name, "vs_tan_in_obj");
+                get_uniform_location!(gl, self.program_name, "diffuse_sampler");
+            self.shadow_sampler_loc =
+                get_uniform_location!(gl, self.program_name, "shadow_sampler");
 
             gl.unuse_program();
         }
@@ -281,12 +277,10 @@ impl Renderer {
             pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
             pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
             pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
+            pos_from_wld_to_lgt_loc: gl::OptionUniformLocation::NONE,
             highlight_loc: gl::OptionUniformLocation::NONE,
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
-            vs_pos_in_obj_loc: gl::OptionAttributeLocation::NONE,
-            vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
-            vs_nor_in_obj_loc: gl::OptionAttributeLocation::NONE,
-            vs_tan_in_obj_loc: gl::OptionAttributeLocation::NONE,
+            shadow_sampler_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }
