@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 mod ao_renderer;
+mod vsm_filter;
 mod basic_renderer;
 mod camera;
 mod convert;
@@ -56,6 +57,7 @@ pub struct Framebuffer {
     framebuffer_name: gl::FramebufferName,
     ao_framebuffer_name: gl::FramebufferName,
     shadow_framebuffer_name: gl::FramebufferName,
+    shadow_2_framebuffer_name: gl::FramebufferName,
     ao_depth_renderbuffer_name: gl::RenderbufferName,
     shadow_depth_renderbuffer_name: gl::RenderbufferName,
     color_texture_name: gl::TextureName,
@@ -63,6 +65,7 @@ pub struct Framebuffer {
     nor_in_cam_texture_name: gl::TextureName,
     ao_texture_name: gl::TextureName,
     shadow_texture_name: gl::TextureName,
+    shadow_2_texture_name: gl::TextureName,
 }
 
 impl Framebuffer {
@@ -76,6 +79,10 @@ impl Framebuffer {
 
     pub fn shadow_framebuffer_name(&self) -> gl::FramebufferName {
         self.shadow_framebuffer_name
+    }
+
+    pub fn shadow_2_framebuffer_name(&self) -> gl::FramebufferName {
+        self.shadow_2_framebuffer_name
     }
 
     pub fn color_texture_name(&self) -> gl::TextureName {
@@ -98,10 +105,14 @@ impl Framebuffer {
         self.shadow_texture_name
     }
 
+    pub fn shadow_2_texture_name(&self) -> gl::TextureName {
+        self.shadow_2_texture_name
+    }
+
     pub fn create(gl: &gl::Gl, width: i32, height: i32) -> Self {
         unsafe {
-            let [framebuffer_name, ao_framebuffer_name, shadow_framebuffer_name]: [gl::FramebufferName; 3] = {
-                let mut names: [Option<gl::FramebufferName>; 3] = mem::uninitialized();
+            let [framebuffer_name, ao_framebuffer_name, shadow_framebuffer_name, shadow_2_framebuffer_name]: [gl::FramebufferName; 4] = {
+                let mut names: [Option<gl::FramebufferName>; 4] = mem::uninitialized();
                 gl.gen_framebuffers(&mut names);
                 names.try_transmute_each().unwrap()
             };
@@ -113,9 +124,9 @@ impl Framebuffer {
                 names.try_transmute_each().unwrap()
             };
 
-            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name, ao_texture_name, shadow_texture_name]: [gl::TextureName;
-                5] = {
-                let mut names: [Option<gl::TextureName>; 5] = mem::uninitialized();
+            let [color_texture_name, depth_texture_name, nor_in_cam_texture_name, ao_texture_name, shadow_texture_name, shadow_2_texture_name]: [gl::TextureName;
+                6] = {
+                let mut names: [Option<gl::TextureName>; 6] = mem::uninitialized();
                 gl.gen_textures(&mut names);
                 names.try_transmute_each().unwrap()
             };
@@ -124,6 +135,7 @@ impl Framebuffer {
                 framebuffer_name,
                 ao_framebuffer_name,
                 shadow_framebuffer_name,
+                shadow_2_framebuffer_name,
                 ao_depth_renderbuffer_name,
                 shadow_depth_renderbuffer_name,
                 color_texture_name,
@@ -131,6 +143,7 @@ impl Framebuffer {
                 nor_in_cam_texture_name,
                 ao_texture_name,
                 shadow_texture_name,
+                shadow_2_texture_name,
             };
 
             gl.bind_renderbuffer(gl::RENDERBUFFER, ao_depth_renderbuffer_name);
@@ -180,6 +193,16 @@ impl Framebuffer {
             }
 
             gl.bind_texture(gl::TEXTURE_2D, shadow_texture_name);
+            {
+                framebuffer.allocate_shadow_texture(gl, SHADOW_W, SHADOW_H);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
+            }
+
+            gl.bind_texture(gl::TEXTURE_2D, shadow_2_texture_name);
             {
                 framebuffer.allocate_shadow_texture(gl, SHADOW_W, SHADOW_H);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
@@ -269,6 +292,29 @@ impl Framebuffer {
                 );
             }
 
+            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(shadow_2_framebuffer_name));
+            {
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT0,
+                    gl::TEXTURE_2D,
+                    shadow_2_texture_name,
+                    0,
+                );
+
+                gl.framebuffer_renderbuffer(
+                    gl::FRAMEBUFFER,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::RENDERBUFFER,
+                    shadow_depth_renderbuffer_name,
+                );
+
+                assert_eq!(
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+            }
+
             framebuffer
         }
     }
@@ -302,6 +348,7 @@ impl Framebuffer {
                 Some(self.framebuffer_name),
                 Some(self.ao_framebuffer_name),
                 Some(self.shadow_framebuffer_name),
+                Some(self.shadow_2_framebuffer_name),
             ];
             gl.delete_framebuffers(&mut names[..]);
         }
@@ -321,6 +368,7 @@ impl Framebuffer {
                 Some(self.nor_in_cam_texture_name),
                 Some(self.ao_texture_name),
                 Some(self.shadow_texture_name),
+                Some(self.shadow_2_texture_name),
             ];
             gl.delete_textures(&mut names[..]);
         }
@@ -417,6 +465,8 @@ fn main() {
         .collect();
     let shadow_renderer_vs_path = resource_dir.join("shadow_renderer.vert");
     let shadow_renderer_fs_path = resource_dir.join("shadow_renderer.frag");
+    let vsm_filter_vs_path = resource_dir.join("vsm_filter.vert");
+    let vsm_filter_fs_path = resource_dir.join("vsm_filter.frag");
     let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
     let basic_renderer_fs_path = resource_dir.join("basic_renderer.frag");
     let ao_renderer_vs_path = resource_dir.join("ao_renderer.vert");
@@ -547,6 +597,21 @@ fn main() {
         shadow_renderer
     };
 
+    let mut vsm_filter = {
+        let mut vsm_filter = vsm_filter::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&vsm_filter_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&vsm_filter_fs_path).unwrap();
+        vsm_filter.update(
+            &gl,
+            vsm_filter::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        vsm_filter
+    };
+
+
     let mut basic_renderer = unsafe {
         let mut basic_renderer = basic_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
@@ -632,6 +697,7 @@ fn main() {
     while running {
         // File watch events.
         let mut shadow_renderer_update = shadow_renderer::Update::default();
+        let mut vsm_filter_update = vsm_filter::Update::default();
         let mut basic_renderer_update = basic_renderer::Update::default();
         let mut ao_renderer_update = ao_renderer::Update::default();
         let mut post_renderer_update = post_renderer::Update::default();
@@ -644,6 +710,13 @@ fn main() {
                     }
                     path if path == &shadow_renderer_fs_path => {
                         shadow_renderer_update.fragment_shader =
+                            Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &vsm_filter_vs_path => {
+                        vsm_filter_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &vsm_filter_fs_path => {
+                        vsm_filter_update.fragment_shader =
                             Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &basic_renderer_vs_path => {
@@ -671,6 +744,10 @@ fn main() {
 
         if shadow_renderer_update.should_update() {
             shadow_renderer.update(&gl, shadow_renderer_update);
+        }
+
+        if vsm_filter_update.should_update() {
+            vsm_filter.update(&gl, vsm_filter_update);
         }
 
         if basic_renderer_update.should_update() {
@@ -873,6 +950,18 @@ fn main() {
                     frustrum: &frustrum,
                 },
                 &resources,
+            );
+
+            vsm_filter.render(
+                &gl,
+                &vsm_filter::Parameters {
+                    width: SHADOW_W,
+                    height: SHADOW_H,
+                    framebuffer_x: main_framebuffer.shadow_2_framebuffer_name(),
+                    framebuffer_xy: main_framebuffer.shadow_framebuffer_name(),
+                    color: main_framebuffer.shadow_texture_name(),
+                    color_x: main_framebuffer.shadow_2_texture_name(),
+                }
             );
 
             let frustrum = {
