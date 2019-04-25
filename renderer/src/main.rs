@@ -152,11 +152,13 @@ impl Framebuffer {
             framebuffer.allocate_shadow_depth_renderbuffer(gl, SHADOW_W, SHADOW_H);
             gl.unbind_renderbuffer(gl::RENDERBUFFER);
 
+            let max_anisotropy = gl.get_max_texture_max_anisotropy();
+
             gl.bind_texture(gl::TEXTURE_2D, color_texture_name);
             {
                 framebuffer.allocate_color_texture(gl, width, height);
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
@@ -197,9 +199,9 @@ impl Framebuffer {
                 framebuffer.allocate_shadow_texture(gl, SHADOW_W, SHADOW_H);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, 0);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE);
                 gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE);
+                gl.tex_parameter_f(gl::TEXTURE_2D, gl::TEXTURE_MAX_ANISOTROPY, max_anisotropy);
             }
 
             gl.bind_texture(gl::TEXTURE_2D, shadow_2_texture_name);
@@ -879,7 +881,7 @@ fn main() {
             delta_scroll: mouse_dscroll as f32,
         });
 
-        // world.sun_rot += Rad(0.5) * delta_time;
+        world.sun_rot += Rad(0.5) * delta_time;
 
         world.keyboard_model.simulate(delta_time);
 
@@ -926,12 +928,12 @@ fn main() {
             let physical_size = win_size.to_physical(win_dpi);
 
             let frustrum = frustrum::Frustrum {
-                x0: -5.0,
-                x1: 5.0,
-                y0: -5.0,
-                y1: 5.0,
-                z0: 5.0,
-                z1: -5.0,
+                x0: -10.0,
+                x1: 10.0,
+                y0: -10.0,
+                y1: 10.0,
+                z0: 10.0,
+                z1: -10.0,
             };
 
             let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
