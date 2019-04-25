@@ -102,6 +102,9 @@ impl Renderer {
             gl.bind_framebuffer(gl::FRAMEBUFFER, None);
             gl.unbind_vertex_array();
             gl.unuse_program();
+
+            gl.bind_texture(gl::TEXTURE_2D, params.color);
+            gl.generate_mipmap(gl::TEXTURE_2D);
         }
     }
 

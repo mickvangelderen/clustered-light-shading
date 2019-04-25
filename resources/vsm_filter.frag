@@ -28,9 +28,10 @@ void main() {
       0.015625                           //
   );
 
-  vec2 accumulator = vec2(0.5);
+  vec2 accumulator = vec2(0.0);
   for (int i = 0; i < WEIGHT_COUNT; i++) {
-    accumulator = weights[i] * texture(sampler, fs_pos_in_tex + offsets[i]).rg;
+    accumulator += weights[i] * texture(sampler, fs_pos_in_tex + offsets[i]).rg;
   }
   fs_out = accumulator;
+  // fs_out = texture(sampler, fs_pos_in_tex).rg;
 }

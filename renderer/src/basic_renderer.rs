@@ -1,13 +1,16 @@
+use crate::frustrum::Frustrum;
 use crate::keyboard_model;
 use crate::resources::Resources;
-use crate::World;
-use crate::frustrum::Frustrum;
 use crate::shader_defines;
+use crate::World;
 use cgmath::*;
 use gl_typed as gl;
 
 unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(name, &[shader_defines::VERSION, shader_defines::DEFINES, source]);
+    gl.shader_source(
+        name,
+        &[shader_defines::VERSION, shader_defines::DEFINES, source],
+    );
     gl.compile_shader(name);
     let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
     if status == gl::ShaderCompileStatus::Compiled.into() {
@@ -35,6 +38,7 @@ pub struct Renderer {
     pub highlight_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
     pub shadow_sampler_loc: gl::OptionUniformLocation,
+    pub shadow_sampler: gl::SamplerName,
 }
 
 pub struct Parameters<'a> {
@@ -81,7 +85,7 @@ impl Renderer {
             1.0,
         );
         // Infinite far perspective projection.
-        gl.clear_depth(1.0 - params.frustrum.z0 as f64/params.frustrum.z1 as f64);
+        gl.clear_depth(1.0 - params.frustrum.z0 as f64 / params.frustrum.z1 as f64);
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
         gl.use_program(self.program_name);
@@ -92,13 +96,14 @@ impl Renderer {
 
         if let Some(loc) = self.diffuse_sampler_loc.into() {
             gl.uniform_1i(loc, 0);
-        };
+        }
 
         if let Some(loc) = self.shadow_sampler_loc.into() {
             gl.uniform_1i(loc, 1);
+            gl.bind_sampler(1, self.shadow_sampler);
             gl.active_texture(gl::TEXTURE1);
             gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
-        };
+        }
 
         let pos_from_wld_to_cam = if world.smooth_camera {
             world.camera.smooth_pos_from_wld_to_cam()
@@ -116,7 +121,11 @@ impl Renderer {
         }
 
         if let Some(loc) = self.pos_from_wld_to_lgt_loc.into() {
-            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_wld_to_lgt.as_ref());
+            gl.uniform_matrix4f(
+                loc,
+                gl::MajorAxis::Column,
+                params.pos_from_wld_to_lgt.as_ref(),
+            );
         }
 
         // Cache texture binding.
@@ -194,6 +203,10 @@ impl Renderer {
             );
         }
 
+        if self.shadow_sampler_loc.is_some() {
+            gl.unbind_sampler(1);
+        }
+
         gl.unbind_vertex_array();
 
         gl.bind_framebuffer(gl::FRAMEBUFFER, None);
@@ -252,35 +265,47 @@ impl Renderer {
         }
     }
 
-    pub unsafe fn new(gl: &gl::Gl) -> Self {
-        let vertex_shader_name = gl
-            .create_shader(gl::VERTEX_SHADER)
-            .expect("Failed to create shader.");
+    pub fn new(gl: &gl::Gl) -> Self {
+        unsafe {
+            let vertex_shader_name = gl
+                .create_shader(gl::VERTEX_SHADER)
+                .expect("Failed to create shader.");
 
-        let fragment_shader_name = gl
-            .create_shader(gl::FRAGMENT_SHADER)
-            .expect("Failed to create shader.");
+            let fragment_shader_name = gl
+                .create_shader(gl::FRAGMENT_SHADER)
+                .expect("Failed to create shader.");
 
-        let program_name = gl.create_program().expect("Failed to create program_name.");
-        gl.attach_shader(program_name, vertex_shader_name);
-        gl.attach_shader(program_name, fragment_shader_name);
+            let program_name = gl.create_program().expect("Failed to create program_name.");
+            gl.attach_shader(program_name, vertex_shader_name);
+            gl.attach_shader(program_name, fragment_shader_name);
 
-        Renderer {
-            program_name,
-            vertex_shader_name,
-            fragment_shader_name,
-            time_loc: gl::OptionUniformLocation::NONE,
-            diffuse_loc: gl::OptionUniformLocation::NONE,
-            ambient_loc: gl::OptionUniformLocation::NONE,
-            specular_loc: gl::OptionUniformLocation::NONE,
-            shininess_loc: gl::OptionUniformLocation::NONE,
-            pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-            pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
-            pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
-            pos_from_wld_to_lgt_loc: gl::OptionUniformLocation::NONE,
-            highlight_loc: gl::OptionUniformLocation::NONE,
-            diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
-            shadow_sampler_loc: gl::OptionUniformLocation::NONE,
+            let shadow_sampler = {
+                let mut names: [Option<gl::SamplerName>; 1] = std::mem::uninitialized();
+                gl.gen_samplers(&mut names);
+                names[0].expect("Failed to generate sampler.")
+            };
+
+            gl.sampler_parameter_i(shadow_sampler, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+            gl.sampler_parameter_i(shadow_sampler, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+
+            Renderer {
+                program_name,
+                vertex_shader_name,
+                fragment_shader_name,
+                time_loc: gl::OptionUniformLocation::NONE,
+                diffuse_loc: gl::OptionUniformLocation::NONE,
+                ambient_loc: gl::OptionUniformLocation::NONE,
+                specular_loc: gl::OptionUniformLocation::NONE,
+                shininess_loc: gl::OptionUniformLocation::NONE,
+                pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
+                pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
+                pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
+                pos_from_wld_to_lgt_loc: gl::OptionUniformLocation::NONE,
+                highlight_loc: gl::OptionUniformLocation::NONE,
+                diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
+                shadow_sampler_loc: gl::OptionUniformLocation::NONE,
+                shadow_sampler,
+            }
         }
     }
 }
