@@ -31,6 +31,7 @@ pub struct Renderer {
     pub ambient_loc: gl::OptionUniformLocation,
     pub specular_loc: gl::OptionUniformLocation,
     pub shininess_loc: gl::OptionUniformLocation,
+    pub sun_dir_in_cam_loc: gl::OptionUniformLocation,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_cam_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
@@ -125,6 +126,22 @@ impl Renderer {
                 loc,
                 gl::MajorAxis::Column,
                 params.pos_from_wld_to_lgt.as_ref(),
+            );
+        }
+
+        if let Some(loc) = self.sun_dir_in_cam_loc.into() {
+            // FIXME: Duplicate code!
+            let sun_ori =
+                Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
+            let cam_ori = if world.smooth_camera {
+                world.camera.smooth_orientation()
+            } else {
+                world.camera.orientation()
+            };
+
+            gl.uniform_3f(
+                loc,
+                (cam_ori.invert() * sun_ori.invert() * Vector3::new(0.0, 0.0, 1.0)).into(),
             );
         }
 
@@ -247,6 +264,8 @@ impl Renderer {
             self.ambient_loc = get_uniform_location!(gl, self.program_name, "ambient");
             self.specular_loc = get_uniform_location!(gl, self.program_name, "specular");
             self.shininess_loc = get_uniform_location!(gl, self.program_name, "shininess");
+            self.sun_dir_in_cam_loc =
+                get_uniform_location!(gl, self.program_name, "sun_dir_in_cam");
             self.pos_from_obj_to_wld_loc =
                 get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
             self.pos_from_wld_to_cam_loc =
@@ -301,6 +320,7 @@ impl Renderer {
                 ambient_loc: gl::OptionUniformLocation::NONE,
                 specular_loc: gl::OptionUniformLocation::NONE,
                 shininess_loc: gl::OptionUniformLocation::NONE,
+                sun_dir_in_cam_loc: gl::OptionUniformLocation::NONE,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
