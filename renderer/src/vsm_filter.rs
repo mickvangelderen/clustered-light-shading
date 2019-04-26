@@ -1,15 +1,17 @@
 use crate::convert::*;
+use crate::shader_defines;
 use gl_typed as gl;
 use gl_typed::convert::*;
-use crate::shader_defines;
 
 static VERTICES: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
 
 static INDICES: [[u32; 3]; 2] = [[0, 1, 2], [2, 3, 0]];
 
-
 unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(name, &[shader_defines::VERSION, shader_defines::DEFINES, source]);
+    gl.shader_source(
+        name,
+        &[shader_defines::VERSION, shader_defines::DEFINES, source],
+    );
     gl.compile_shader(name);
     let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
     if status == gl::ShaderCompileStatus::Compiled.into() {
@@ -210,8 +212,7 @@ impl Renderer {
                 names.try_transmute_each().unwrap()
             };
 
-            let [vertex_buffer_name, element_buffer_name]: [gl::BufferName;
-                2] = {
+            let [vertex_buffer_name, element_buffer_name]: [gl::BufferName; 2] = {
                 let mut names: [Option<gl::BufferName>; 2] = std::mem::uninitialized();
                 gl.gen_buffers(&mut names);
                 names.try_transmute_each().unwrap()
