@@ -529,10 +529,17 @@ fn main() {
     };
 
     let mut events_loop = glutin::EventsLoop::new();
+
     let gl_window = glutin::GlWindow::new(
         glutin::WindowBuilder::new()
             .with_title("Hello world!")
-            .with_dimensions(glutin::dpi::LogicalSize::new(1280.0, 720.0)),
+            .with_dimensions(
+                // Jump through some hoops to ensure a physical size, which is
+                // what I want in case I'm recording at a specific resolution.
+                glutin::dpi::PhysicalSize::new(1280.0, 720.0)
+                    .to_logical(events_loop.get_primary_monitor().get_hidpi_factor()),
+            )
+            .with_maximized(false),
         glutin::ContextBuilder::new()
             .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
             .with_gl_profile(glutin::GlProfile::Core)
