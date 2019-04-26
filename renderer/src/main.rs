@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 mod ao_renderer;
-mod vsm_filter;
 mod basic_renderer;
 mod camera;
 mod convert;
@@ -15,6 +14,7 @@ mod random_unit_sphere_volume;
 mod resources;
 mod shader_defines;
 mod shadow_renderer;
+mod vsm_filter;
 
 use crate::gl_ext::*;
 use cgmath::*;
@@ -620,7 +620,6 @@ fn main() {
         vsm_filter
     };
 
-
     let mut basic_renderer = unsafe {
         let mut basic_renderer = basic_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
@@ -725,8 +724,7 @@ fn main() {
                         vsm_filter_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &vsm_filter_fs_path => {
-                        vsm_filter_update.fragment_shader =
-                            Some(std::fs::read(&path).unwrap());
+                        vsm_filter_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &basic_renderer_vs_path => {
                         basic_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
@@ -851,6 +849,11 @@ fn main() {
 
         if should_resize {
             let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
+            println!("win_size: {:?}", win_size);
+            println!(
+                "win_size: {:?}",
+                glutin::dpi::PhysicalSize { width, height }
+            );
             main_framebuffer.resize(&gl, width as i32, height as i32);
         }
 
@@ -943,8 +946,9 @@ fn main() {
                 z1: -10.0,
             };
 
-            let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
-            let sun_pos_in_sun = sun_ori*world.sun_pos;
+            let sun_ori =
+                Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
+            let sun_pos_in_sun = sun_ori * world.sun_pos;
             let pos_from_lgt_to_clp = frustrum.orthographic();
             let pos_from_wld_to_lgt =
                 Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
@@ -970,7 +974,7 @@ fn main() {
                     framebuffer_xy: main_framebuffer.shadow_framebuffer_name(),
                     color: main_framebuffer.shadow_texture_name(),
                     color_x: main_framebuffer.shadow_2_texture_name(),
-                }
+                },
             );
 
             let frustrum = {

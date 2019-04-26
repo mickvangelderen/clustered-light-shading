@@ -44,15 +44,12 @@ pub struct Mesh {
 }
 
 impl Resources {
-    pub fn new<P: AsRef<Path>>(
-        gl: &gl::Gl,
-        resource_dir: P,
-    ) -> Self {
+    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P) -> Self {
         let resource_dir = resource_dir.as_ref();
 
         let objs: Vec<(String, Vec<tobj::Model>, Vec<tobj::Material>)> =
             ["two_planes.obj", "bunny.obj"]
-            // ["sponza/sponza.obj", "keyboard.obj"]
+                // ["sponza/sponza.obj", "keyboard.obj"]
                 .into_iter()
                 .map(|&rel_file_path| {
                     let file_path = &resource_dir.join(rel_file_path);

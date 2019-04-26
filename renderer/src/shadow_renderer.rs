@@ -5,7 +5,10 @@ use cgmath::*;
 use gl_typed as gl;
 
 unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(name, &[shader_defines::VERSION, shader_defines::DEFINES, source]);
+    gl.shader_source(
+        name,
+        &[shader_defines::VERSION, shader_defines::DEFINES, source],
+    );
     gl.compile_shader(name);
     let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
     if status == gl::ShaderCompileStatus::Compiled.into() {
@@ -45,12 +48,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub fn render<'a>(
-        &self,
-        gl: &gl::Gl,
-        params: &Parameters<'a>,
-        resources: &Resources,
-    ) {
+    pub fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, resources: &Resources) {
         unsafe {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -66,7 +64,11 @@ impl Renderer {
             gl.use_program(self.program_name);
 
             if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_wld_to_clp.as_ref());
+                gl.uniform_matrix4f(
+                    loc,
+                    gl::MajorAxis::Column,
+                    params.pos_from_wld_to_clp.as_ref(),
+                );
             }
 
             for i in 0..resources.vaos.len() {
