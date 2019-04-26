@@ -3,6 +3,7 @@ uniform vec3 diffuse;
 uniform vec3 specular;
 uniform float shininess;
 uniform float highlight;
+uniform vec3 sun_dir_in_cam;
 
 uniform sampler2D diffuse_sampler;
 // uniform sampler2D normal_sampler;
@@ -41,9 +42,10 @@ float compute_shadow_variance() {
 }
 
 void main() {
-  vec3 light_pos_in_cam = vec3(0.0);
-  vec3 light_dir_in_cam_normalized =
-      normalize(light_pos_in_cam - fs_pos_in_cam);
+  vec3 light_dir_in_cam_normalized = normalize(sun_dir_in_cam);
+  // vec3 light_pos_in_cam = vec3(0.0);
+  // vec3 light_dir_in_cam_normalized =
+  //     normalize(light_pos_in_cam - fs_pos_in_cam);
   vec3 cam_dir_in_cam_normalized = normalize(-fs_pos_in_cam);
 
   vec3 nor_in_cam = normalize(fs_nor_in_cam);
@@ -66,7 +68,6 @@ void main() {
   }
 
   float in_shadow = compute_shadow_variance();
-  // frag_color = vec4(vec3(in_shadow), 1.0);
   frag_color = vec4(
       ambient * ambient_weight //
           + mix((diffuse_color * diffuse_weight + specular * specular_weight),
