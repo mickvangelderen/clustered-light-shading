@@ -69,7 +69,7 @@ void main() {
   vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
 
   float dx = 1.0 / width;
-  float dy = 1.0 / width;
+  float dy = 1.0 / height;
 
   vec2 filtered_ao = vec2(0.0);
 
