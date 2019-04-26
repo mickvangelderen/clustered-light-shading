@@ -75,7 +75,7 @@ void main() {
 
   // frag_color = vec4(diffuse_color, 1.0);
   // frag_color = (vec4(nor_in_cam, 1.0) + vec4(1.0)) / 2.0;
-  // frag_nor_in_cam = nor_in_cam * 0.5 + vec3(0.5);
+  frag_nor_in_cam = nor_in_cam * 0.5 + vec3(0.5);
 
   // frag_color = vec4(texture(shadow_sampler, fs_pos_in_lgt.xy).rrr *
   // 1000, 1.0);
