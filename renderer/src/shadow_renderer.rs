@@ -59,7 +59,7 @@ impl Renderer {
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
             gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
-            gl.clear_color(0.0, 0.0, 0.0, 1.0);
+            gl.clear_color(1.0, 1.0, 1.0, 1.0);
             gl.clear_depth(1.0);
             gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
