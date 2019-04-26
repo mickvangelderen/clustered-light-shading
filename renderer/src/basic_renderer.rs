@@ -285,7 +285,11 @@ impl Renderer {
                 names[0].expect("Failed to generate sampler.")
             };
 
-            gl.sampler_parameter_i(shadow_sampler, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+            gl.sampler_parameter_i(
+                shadow_sampler,
+                gl::TEXTURE_MIN_FILTER,
+                gl::LINEAR_MIPMAP_LINEAR,
+            );
             gl.sampler_parameter_i(shadow_sampler, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
             Renderer {
