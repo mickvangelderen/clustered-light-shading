@@ -16,7 +16,7 @@ layout(location = VS_TAN_IN_OBJ_LOC) in vec3 vs_tan_in_obj;
 
 out vec3 fs_pos_in_cam;
 out vec2 fs_pos_in_tex;
-out vec3 fs_pos_in_lgt;
+out vec4 fs_pos_in_lgt;
 out vec3 fs_nor_in_cam;
 out vec3 fs_tan_in_cam;
 
@@ -40,11 +40,10 @@ void main() {
   mat4 pos_from_obj_to_cam_mat4 =
       pos_from_wld_to_cam * pos_from_obj_to_wld * pos_from_ver_to_obj;
 
-  fs_pos_in_cam = vec3(pos_from_obj_to_cam_mat4 * vec4(vs_pos_in_obj, 1.0));
+  fs_pos_in_cam = (pos_from_obj_to_cam_mat4 * vec4(vs_pos_in_obj, 1.0)).xyz;
   fs_pos_in_tex = vs_pos_in_tex;
-  vec4 pos_in_lgt = pos_from_wld_to_lgt * pos_from_obj_to_wld *
-                    pos_from_ver_to_obj * vec4(vs_pos_in_obj, 1.0);
-  fs_pos_in_lgt = pos_in_lgt.xyz / pos_in_lgt.w;
+  fs_pos_in_lgt = pos_from_wld_to_lgt * pos_from_obj_to_wld *
+                  pos_from_ver_to_obj * vec4(vs_pos_in_obj, 1.0);
 
   fs_nor_in_cam =
       transpose(inverse(mat3(pos_from_obj_to_cam_mat4))) * vs_nor_in_obj;
