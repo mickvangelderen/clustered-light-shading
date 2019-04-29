@@ -11,25 +11,25 @@ uniform sampler2D shadow_sampler;
 
 in vec3 fs_pos_in_cam;
 in vec2 fs_pos_in_tex;
-in vec3 fs_pos_in_lgt;
+in vec4 fs_pos_in_lgt;
 in vec3 fs_nor_in_cam;
 in vec3 fs_tan_in_cam;
 
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
-float compute_shadow_classic() {
-  float frag_depth_in_lgt = fs_pos_in_lgt.z * 0.5 + 0.5;
+float compute_shadow_classic(vec3 pos_in_lgt) {
+  float frag_depth_in_lgt = pos_in_lgt.z * 0.5 + 0.5;
   float closest_depth_in_lgt =
-      texture(shadow_sampler, fs_pos_in_lgt.xy * 0.5 + 0.5).x;
+      texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).x;
   frag_color = vec4(10 * vec3(frag_depth_in_lgt - closest_depth_in_lgt), 1.0);
   float bias = 0.002;
   return step(frag_depth_in_lgt, closest_depth_in_lgt + bias);
 }
 
-float compute_shadow_variance() {
-  float frag_depth = fs_pos_in_lgt.z * 0.5 + 0.5;
-  vec2 sam = texture(shadow_sampler, fs_pos_in_lgt.xy * 0.5 + 0.5).xy;
+float compute_shadow_variance(vec3 pos_in_lgt) {
+  float frag_depth = pos_in_lgt.z * 0.5 + 0.5;
+  vec2 sam = texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).xy;
   float mean_depth = sam.x;
   float mean_depth_sq = sam.y;
   float variance = mean_depth_sq - mean_depth * mean_depth;
@@ -42,6 +42,8 @@ float compute_shadow_variance() {
 }
 
 void main() {
+  vec3 pos_in_lgt = fs_pos_in_lgt.xyz / fs_pos_in_lgt.w;
+
   vec3 light_dir_in_cam_normalized = normalize(sun_dir_in_cam);
   // vec3 light_pos_in_cam = vec3(0.0);
   // vec3 light_dir_in_cam_normalized =
@@ -67,7 +69,7 @@ void main() {
     diffuse_color = diffuse;
   }
 
-  float in_shadow = compute_shadow_variance();
+  float in_shadow = compute_shadow_variance(pos_in_lgt);
   frag_color = vec4(
       ambient * ambient_weight //
           + mix((diffuse_color * diffuse_weight + specular * specular_weight),
