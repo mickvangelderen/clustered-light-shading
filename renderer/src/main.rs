@@ -168,6 +168,10 @@ pub struct ViewDependentResources {
     pub ao_framebuffer_name: gl::FramebufferName,
     pub ao_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg8ui>,
     pub ao_depth_renderbuffer_name: gl::RenderbufferName,
+    // Post resources.
+    pub post_framebuffer_name: gl::FramebufferName,
+    pub post_color_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rgba8>,
+    pub post_depth_texture: Texture<gl::symbols::Texture2D, gl::symbols::Depth24Stencil8>,
 }
 
 impl ViewDependentResources {
@@ -207,10 +211,16 @@ impl ViewDependentResources {
             let ao_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RG8UI).unwrap();
             ao_texture.update(gl, texture_update);
 
+            let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8).unwrap();
+            post_color_texture.update(gl, texture_update);
+
+            let post_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
+            post_depth_texture.update(gl, texture_update);
+
             // Framebuffers.
 
-            let [framebuffer_name, ao_framebuffer_name]: [gl::FramebufferName; 2] = {
-                let mut names: [Option<gl::FramebufferName>; 2] = mem::uninitialized();
+            let [framebuffer_name, ao_framebuffer_name, post_framebuffer_name]: [gl::FramebufferName; 3] = {
+                let mut names: [Option<gl::FramebufferName>; 3] = mem::uninitialized();
                 gl.gen_framebuffers(&mut names);
                 names.try_transmute_each().unwrap()
             };
@@ -270,6 +280,32 @@ impl ViewDependentResources {
                 );
             }
 
+            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(post_framebuffer_name));
+            {
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::COLOR_ATTACHMENT0,
+                    gl::TEXTURE_2D,
+                    post_color_texture.name(),
+                    0,
+                );
+
+                gl.framebuffer_texture_2d(
+                    gl::FRAMEBUFFER,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::TEXTURE_2D,
+                    post_depth_texture.name(),
+                    0,
+                );
+
+                assert_eq!(
+                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+            }
+
+            gl.bind_framebuffer(gl::FRAMEBUFFER, None);
+
             ViewDependentResources {
                 framebuffer_name,
                 color_texture,
@@ -278,6 +314,9 @@ impl ViewDependentResources {
                 ao_framebuffer_name,
                 ao_texture,
                 ao_depth_renderbuffer_name,
+                post_framebuffer_name,
+                post_color_texture,
+                post_depth_texture,
             }
         }
     }
@@ -911,9 +950,15 @@ fn main() {
         // === VR ===
         if let Some(ref vr_resources) = vr_resources {
             for &eye in EYES.into_iter() {
+                // VIVE:
+                // Left: [-1.3896277, 1.2525954, -1.4736392, 1.4612536]
+                // Left: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [-0.0307, 0.0, 0.015, 1.0]]
+                // Right: [-1.2475655, 1.3957016, -1.473202, 1.4637187]
+                // Right: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0307, 0.0, 0.015, 1.0]]
+
                 let frustrum = {
                     // These are the tangents.
-                    let [l, r, t, b] = vr_resources.context.system().get_projection_raw(eye);
+                    let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
                     let z0 = -0.1;
                     let z1 = -100.0;
                     frustrum::Frustrum::<f64> {
@@ -926,14 +971,16 @@ fn main() {
                     }
                 };
 
+                // NOTE: At least on the HTC Vive, the z coordinate is mapped to (0, 1) instead of (-1, 1).
                 let pos_from_eye_to_clp: Matrix4<f32> =
-                    frustrum.perspective_infinite_far().cast().unwrap();
+                    frustrum.perspective_z0p1().cast().unwrap();
                 let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
                 let pos_from_eye_to_hmd: Matrix4<f32> = vr_resources
                     .context
                     .system()
                     .get_eye_to_head_transform(eye)
                     .hmd_into();
+
                 let pos_from_hmd_to_clp =
                     pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
 
@@ -946,7 +993,7 @@ fn main() {
                             framebuffer: Some(view_dep_res.framebuffer_name),
                             width: vr_resources.dims.width as i32,
                             height: vr_resources.dims.height as i32,
-                            pos_from_cam_to_clp: pos_from_hmd_to_clp,
+                            pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
                             pos_from_wld_to_lgt: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
                             shadow_texture_name: view_ind_res.shadow_texture.name(),
                             frustrum: &frustrum,
@@ -974,7 +1021,7 @@ fn main() {
                     post_renderer.render(
                         &gl,
                         &post_renderer::Parameters {
-                            framebuffer: None,
+                            framebuffer: Some(view_dep_res.post_framebuffer_name),
                             width: vr_resources.dims.width as i32,
                             height: vr_resources.dims.height as i32,
                             color_texture_name: view_dep_res.color_texture.name(),
@@ -990,7 +1037,7 @@ fn main() {
 
             for &eye in EYES.into_iter() {
                 // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
-                let mut texture_t = gen_texture_t(vr_resources[eye].color_texture.name());
+                let mut texture_t = gen_texture_t(vr_resources[eye].post_color_texture.name());
                 vr_resources
                     .compositor()
                     .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
