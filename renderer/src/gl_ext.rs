@@ -1,112 +1,40 @@
 use gl_typed as gl;
 
-pub trait TextureName2DExt: Sized {
-    fn new(gl: &gl::Gl) -> Option<Self>;
-    fn update<'a>(&self, gl: &gl::Gl, update: Texture2DUpdate<'a>);
-}
-
-impl TextureName2DExt for gl::TextureName {
-    fn new(gl: &gl::Gl) -> Option<Self> {
-        unsafe {
-            let mut names: [Option<gl::TextureName>; 1] = std::mem::uninitialized();
-            gl.gen_textures(&mut names);
-            names[0]
-        }
-    }
-
-    #[inline]
-    fn update<'a>(&self, gl: &gl::Gl, update: Texture2DUpdate<'a>) {
-        unsafe {
-            gl.bind_texture(gl::TEXTURE_2D, *self);
-
-            if let Some(Texture2DUpdateData {
-                format,
-                width,
-                height,
-                bytes,
-            }) = update.data
-            {
-                gl.tex_image_2d(
-                    gl::TEXTURE_2D,
-                    0,
-                    format.internal_format(),
-                    width as i32,
-                    height as i32,
-                    format.format(),
-                    format.component_type(),
-                    match bytes {
-                        Some(slice) => slice.as_ptr() as *const std::ffi::c_void,
-                        None => std::ptr::null(),
-                    },
-                );
-            }
-
-            if let Some(max_level) = update.max_level {
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAX_LEVEL, max_level as i32);
-            }
-
-            if let Some(min_filter) = update.min_filter {
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, min_filter);
-            }
-
-            if let Some(mag_filter) = update.mag_filter {
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, mag_filter);
-            }
-
-            if let Some(wrap) = update.wrap_s {
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, wrap);
-            }
-
-            if let Some(wrap) = update.wrap_t {
-                gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, wrap);
-            }
-
-            gl.unbind_texture(gl::TEXTURE_2D);
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
-pub struct Texture2DUpdateData<'a> {
-    pub format: TextureFormat,
-    pub width: usize,
-    pub height: usize,
+pub struct TextureUpdateData<'a> {
+    pub width: i32,
+    pub height: i32,
     pub bytes: Option<&'a [u8]>,
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct Texture2DUpdate<'a> {
-    data: Option<Texture2DUpdateData<'a>>,
+pub struct TextureUpdate<'a> {
+    data: Option<TextureUpdateData<'a>>,
     max_level: Option<u32>,
     min_filter: Option<gl::TextureMinFilter>,
     mag_filter: Option<gl::TextureMagFilter>,
     wrap_s: Option<gl::TextureWrap>,
     wrap_t: Option<gl::TextureWrap>,
+    max_anisotropy: Option<f32>,
 }
 
-impl<'a> Texture2DUpdate<'a> {
+impl<'a> TextureUpdate<'a> {
     #[inline]
     pub fn new() -> Self {
-        Texture2DUpdate {
+        TextureUpdate {
             data: None,
             max_level: None,
             min_filter: None,
             mag_filter: None,
             wrap_s: None,
             wrap_t: None,
+            max_anisotropy: None,
         }
     }
 
     #[inline]
-    pub fn data(
-        mut self,
-        format: TextureFormat,
-        width: usize,
-        height: usize,
-        bytes: Option<&'a [u8]>,
-    ) -> Self {
-        self.data = Some(Texture2DUpdateData {
-            format,
+    pub fn data(mut self, width: i32, height: i32, bytes: Option<&'a [u8]>) -> Self {
+        self.data = Some(TextureUpdateData {
             width,
             height,
             bytes,
@@ -143,36 +71,194 @@ impl<'a> Texture2DUpdate<'a> {
         self.wrap_t = Some(wrap_t);
         self
     }
+
+    #[inline]
+    pub fn max_anisotropy(mut self, max_anisotropy: f32) -> Self {
+        self.max_anisotropy = Some(max_anisotropy);
+        self
+    }
+}
+
+impl From<gl::symbols::Rgba8> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::Rgba8) -> Self {
+        TextureFormat::Rgba8
+    }
+}
+
+impl From<gl::symbols::Rgb8> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::Rgb8) -> Self {
+        TextureFormat::Rgb8
+    }
+}
+
+impl From<gl::symbols::Depth24Stencil8> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::Depth24Stencil8) -> Self {
+        TextureFormat::Depth24Stencil8
+    }
+}
+
+impl From<gl::symbols::R11fG11fB10f> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::R11fG11fB10f) -> Self {
+        TextureFormat::R11fG11fB10f
+    }
+}
+
+impl From<gl::symbols::Rg8ui> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::Rg8ui) -> Self {
+        TextureFormat::Rg8ui
+    }
+}
+
+impl From<gl::symbols::Rg32f> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::Rg32f) -> Self {
+        TextureFormat::Rg32f
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
 pub enum TextureFormat {
-    RGBA8,
-    RGB8,
+    Rgba8,
+    Rgb8,
+    Depth24Stencil8,
+    R11fG11fB10f,
+    Rg8ui,
+    Rg32f,
 }
 
 impl TextureFormat {
     #[inline]
     pub fn internal_format(self) -> gl::InternalFormat {
         match self {
-            TextureFormat::RGBA8 => gl::RGBA8.into(),
-            TextureFormat::RGB8 => gl::RGB8.into(),
+            TextureFormat::Rgba8 => gl::RGBA8.into(),
+            TextureFormat::Rgb8 => gl::RGB8.into(),
+            TextureFormat::Depth24Stencil8 => gl::DEPTH24_STENCIL8.into(),
+            TextureFormat::R11fG11fB10f => gl::R11F_G11F_B10F.into(),
+            TextureFormat::Rg8ui => gl::RG8UI.into(),
+            TextureFormat::Rg32f => gl::RG32F.into(),
         }
     }
-
     #[inline]
     pub fn format(self) -> gl::Format {
         match self {
-            TextureFormat::RGBA8 => gl::RGBA.into(),
-            TextureFormat::RGB8 => gl::RGB.into(),
+            TextureFormat::Rgba8 => gl::RGBA.into(),
+            TextureFormat::Rgb8 => gl::RGB.into(),
+            TextureFormat::Depth24Stencil8 => gl::DEPTH_STENCIL.into(),
+            TextureFormat::R11fG11fB10f => gl::RGB.into(),
+            TextureFormat::Rg8ui => gl::RG_INTEGER.into(),
+            TextureFormat::Rg32f => gl::RG.into(),
         }
     }
 
     #[inline]
     pub fn component_type(self) -> gl::ComponentFormat {
         match self {
-            TextureFormat::RGBA8 => gl::UNSIGNED_BYTE.into(),
-            TextureFormat::RGB8 => gl::UNSIGNED_BYTE.into(),
+            TextureFormat::Rgba8 => gl::UNSIGNED_BYTE.into(),
+            TextureFormat::Rgb8 => gl::UNSIGNED_BYTE.into(),
+            TextureFormat::Depth24Stencil8 => gl::UNSIGNED_INT_24_8.into(),
+            TextureFormat::R11fG11fB10f => gl::FLOAT.into(),
+            TextureFormat::Rg8ui => gl::UNSIGNED_BYTE.into(),
+            TextureFormat::Rg32f => gl::FLOAT.into(),
+        }
+    }
+}
+
+pub struct Texture<Shape, Format> {
+    name: gl::TextureName,
+    shape: Shape,
+    format: Format,
+}
+
+impl<Shape, Format> Texture<Shape, Format> {
+    #[inline]
+    pub fn new(gl: &gl::Gl, shape: Shape, format: Format) -> Option<Self> {
+        unsafe {
+            let mut names: [Option<gl::TextureName>; 1] = std::mem::uninitialized();
+            gl.gen_textures(&mut names);
+            names[0].map(|name| Texture {
+                name,
+                shape,
+                format,
+            })
+        }
+    }
+
+    #[inline]
+    pub fn name(&self) -> gl::TextureName {
+        self.name
+    }
+
+    #[inline]
+    pub fn drop(self, gl: &gl::Gl) {
+        unsafe {
+            let mut names = [Some(self.name)];
+            gl.delete_textures(&mut names);
+        }
+    }
+}
+
+// FIXME: WORK WITH DIFFERENT DIMENSIONS
+impl<Shape, Format> Texture<Shape, Format>
+where
+    Shape: Copy + Into<gl::TextureTargetGE2D>,
+    Format: Copy + Into<TextureFormat>,
+{
+    #[inline]
+    pub fn update<'a>(&self, gl: &gl::Gl, update: TextureUpdate<'a>) {
+        unsafe {
+            gl.bind_texture(self.shape.into(), self.name());
+
+            if let Some(TextureUpdateData {
+                width,
+                height,
+                bytes,
+            }) = update.data
+            {
+                gl.tex_image_2d(
+                    self.shape.into(),
+                    0,
+                    self.format.into().internal_format(),
+                    width,
+                    height,
+                    self.format.into().format(),
+                    self.format.into().component_type(),
+                    match bytes {
+                        Some(slice) => slice.as_ptr() as *const std::ffi::c_void,
+                        None => std::ptr::null(),
+                    },
+                );
+            }
+
+            if let Some(max_level) = update.max_level {
+                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_MAX_LEVEL, max_level as i32);
+            }
+
+            if let Some(min_filter) = update.min_filter {
+                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_MIN_FILTER, min_filter);
+            }
+
+            if let Some(mag_filter) = update.mag_filter {
+                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_MAG_FILTER, mag_filter);
+            }
+
+            if let Some(wrap) = update.wrap_s {
+                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_S, wrap);
+            }
+
+            if let Some(wrap) = update.wrap_t {
+                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_T, wrap);
+            }
+
+            if let Some(max_anisotropy) = update.max_anisotropy {
+                gl.tex_parameter_f(self.shape.into(), gl::TEXTURE_MAX_ANISOTROPY, max_anisotropy);
+            }
+
+            gl.unbind_texture(self.shape.into());
         }
     }
 }
