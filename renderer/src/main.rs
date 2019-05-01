@@ -528,7 +528,7 @@ fn main() {
     let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
         Ok(context) => {
             let dims = context.system().get_recommended_render_target_size();
-            println!("Recommender render target size: {:?}", dims);
+            println!("Recommended render target size: {:?}", dims);
             let eye_left = ViewDependentResources::new(&gl, dims.width as i32, dims.height as i32);
             let eye_right = ViewDependentResources::new(&gl, dims.width as i32, dims.height as i32);
 
