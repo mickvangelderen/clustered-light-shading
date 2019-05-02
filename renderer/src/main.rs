@@ -596,6 +596,8 @@ fn main() {
     let mut input_right = glutin::ElementState::Released;
     let mut input_up = glutin::ElementState::Released;
     let mut input_down = glutin::ElementState::Released;
+    let mut input_sun_up = glutin::ElementState::Released;
+    let mut input_sun_down = glutin::ElementState::Released;
 
     let mut fps_average = filters::MovingAverageF32::new(DESIRED_FPS);
     let mut last_frame_start = std::time::Instant::now();
@@ -708,24 +710,28 @@ fn main() {
                                 // This has to update regardless of focus.
                                 world.keyboard_model.process_event(vk, keyboard_input.state);
 
-                                if focus {
-                                    // use glutin::ElementState;
-                                    use glutin::VirtualKeyCode;
-                                    match vk {
-                                        VirtualKeyCode::W => input_forward = keyboard_input.state,
-                                        VirtualKeyCode::S => input_backward = keyboard_input.state,
-                                        VirtualKeyCode::A => input_left = keyboard_input.state,
-                                        VirtualKeyCode::D => input_right = keyboard_input.state,
-                                        VirtualKeyCode::Q => input_up = keyboard_input.state,
-                                        VirtualKeyCode::Z => input_down = keyboard_input.state,
-                                        VirtualKeyCode::C => {
-                                            if keyboard_input.state == ElementState::Pressed {
-                                                world.smooth_camera = !world.smooth_camera;
-                                            }
+                                // use glutin::ElementState;
+                                use glutin::VirtualKeyCode;
+                                match vk {
+                                    VirtualKeyCode::W => input_forward = keyboard_input.state,
+                                    VirtualKeyCode::S => input_backward = keyboard_input.state,
+                                    VirtualKeyCode::A => input_left = keyboard_input.state,
+                                    VirtualKeyCode::D => input_right = keyboard_input.state,
+                                    VirtualKeyCode::Q => input_up = keyboard_input.state,
+                                    VirtualKeyCode::Z => input_down = keyboard_input.state,
+                                    VirtualKeyCode::C => {
+                                        if keyboard_input.state == ElementState::Pressed && focus {
+                                            world.smooth_camera = !world.smooth_camera;
                                         }
-                                        VirtualKeyCode::Escape => running = false,
-                                        _ => (),
                                     }
+                                    VirtualKeyCode::Escape => {
+                                        if keyboard_input.state == ElementState::Pressed && focus {
+                                            running = false;
+                                        }
+                                    }
+                                    VirtualKeyCode::Up => input_sun_up = keyboard_input.state,
+                                    VirtualKeyCode::Down => input_sun_down = keyboard_input.state,
+                                    _ => (),
                                 }
                             }
                         }
@@ -762,35 +768,49 @@ fn main() {
 
         world.camera.update(&camera::CameraUpdate {
             delta_time,
-            delta_position: Vector3 {
-                x: match input_left {
-                    ElementState::Pressed => -1.0,
-                    ElementState::Released => 0.0,
-                } + match input_right {
-                    ElementState::Pressed => 1.0,
-                    ElementState::Released => 0.0,
-                },
-                y: match input_up {
-                    ElementState::Pressed => 1.0,
-                    ElementState::Released => 0.0,
-                } + match input_down {
-                    ElementState::Pressed => -1.0,
-                    ElementState::Released => 0.0,
-                },
-                z: match input_forward {
-                    ElementState::Pressed => -1.0,
-                    ElementState::Released => 0.0,
-                } + match input_backward {
-                    ElementState::Pressed => 1.0,
-                    ElementState::Released => 0.0,
-                },
+            delta_position: if focus {
+                Vector3 {
+                    x: match input_left {
+                        ElementState::Pressed => -1.0,
+                        ElementState::Released => 0.0,
+                    } + match input_right {
+                        ElementState::Pressed => 1.0,
+                        ElementState::Released => 0.0,
+                    },
+                    y: match input_up {
+                        ElementState::Pressed => 1.0,
+                        ElementState::Released => 0.0,
+                    } + match input_down {
+                        ElementState::Pressed => -1.0,
+                        ElementState::Released => 0.0,
+                    },
+                    z: match input_forward {
+                        ElementState::Pressed => -1.0,
+                        ElementState::Released => 0.0,
+                    } + match input_backward {
+                        ElementState::Pressed => 1.0,
+                        ElementState::Released => 0.0,
+                    },
+                }
+            } else {
+                Vector3::zero()
             },
             delta_yaw: Rad(mouse_dx as f32),
             delta_pitch: Rad(mouse_dy as f32),
             delta_scroll: mouse_dscroll as f32,
         });
 
-        world.sun_rot += Rad(0.5) * delta_time;
+        if focus {
+            world.sun_rot += Rad(0.5)
+                * (match input_sun_up {
+                    ElementState::Pressed => -1.0,
+                    ElementState::Released => 0.0,
+                } + match input_sun_down {
+                    ElementState::Pressed => 1.0,
+                    ElementState::Released => 0.0,
+                })
+                * delta_time;
+        }
 
         world.keyboard_model.simulate(delta_time);
 
