@@ -48,8 +48,9 @@ impl Resources {
         let resource_dir = resource_dir.as_ref();
 
         let objs: Vec<(String, Vec<tobj::Model>, Vec<tobj::Material>)> =
-            ["two_planes.obj", "bunny.obj"]
-                // ["sponza/sponza.obj", "keyboard.obj"]
+            // ["two_planes.obj", "bunny.obj"]
+                ["sponza/sponza.obj", "keyboard.obj"]
+            // ["shadow_test.obj"]
                 .into_iter()
                 .map(|&rel_file_path| {
                     let file_path = &resource_dir.join(rel_file_path);

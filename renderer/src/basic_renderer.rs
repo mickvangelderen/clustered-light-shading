@@ -7,21 +7,6 @@ use crate::World;
 use cgmath::*;
 use gl_typed as gl;
 
-unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(
-        name,
-        &[shader_defines::VERSION, shader_defines::DEFINES, source],
-    );
-    gl.compile_shader(name);
-    let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
-    if status == gl::ShaderCompileStatus::Compiled.into() {
-        Ok(())
-    } else {
-        let log = gl.get_shader_info_log_move(name);
-        Err(String::from_utf8(log).unwrap())
-    }
-}
-
 pub struct Renderer {
     pub program_name: gl::ProgramName,
     pub vertex_shader_name: gl::ShaderName,
@@ -327,9 +312,9 @@ impl Renderer {
             gl.sampler_parameter_i(
                 shadow_sampler,
                 gl::TEXTURE_MIN_FILTER,
-                gl::LINEAR_MIPMAP_LINEAR,
+                gl::NEAREST,
             );
-            gl.sampler_parameter_i(shadow_sampler, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+            gl.sampler_parameter_i(shadow_sampler, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
 
             Renderer {
                 program_name,

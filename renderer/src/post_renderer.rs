@@ -10,18 +10,6 @@ static VERTICES: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]
 
 static INDICES: [[u32; 3]; 2] = [[0, 1, 2], [2, 3, 0]];
 
-unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(name, &[source]);
-    gl.compile_shader(name);
-    let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
-    if status == gl::ShaderCompileStatus::Compiled.into() {
-        Ok(())
-    } else {
-        let log = gl.get_shader_info_log_move(name);
-        Err(String::from_utf8(log).unwrap())
-    }
-}
-
 pub struct Renderer {
     pub program_name: gl::ProgramName,
     pub vertex_shader_name: gl::ShaderName,
