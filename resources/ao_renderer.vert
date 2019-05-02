@@ -1,5 +1,3 @@
-#version 400 core
-
 in vec2 vs_pos_in_qua;
 out vec2 fs_pos_in_tex;
 

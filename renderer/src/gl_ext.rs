@@ -262,3 +262,86 @@ where
         }
     }
 }
+
+pub trait ShaderNameExt: Sized {
+    fn new<K>(gl: &gl::Gl, kind: K) -> Option<Self>
+    where
+        K: Into<gl::ShaderKind>;
+
+    fn compile<'s, A>(&self, gl: &gl::Gl, sources: &A) -> Result<(), String>
+    where
+        A: gl::Array<Item = &'s [u8]> + gl::ArrayMap<*const i8> + gl::ArrayMap<i32> + ?Sized;
+}
+
+impl ShaderNameExt for gl::ShaderName {
+    #[inline]
+    fn new<K>(gl: &gl::Gl, kind: K) -> Option<Self>
+    where
+        K: Into<gl::ShaderKind>,
+    {
+        unsafe { gl.create_shader(kind) }
+    }
+
+    #[inline]
+    fn compile<'s, A>(&self, gl: &gl::Gl, sources: &A) -> Result<(), String>
+    where
+        A: gl::Array<Item = &'s [u8]> + gl::ArrayMap<*const i8> + gl::ArrayMap<i32> + ?Sized,
+    {
+        unsafe {
+            gl.shader_source(*self, sources);
+            gl.compile_shader(*self);
+            let status = gl.get_shaderiv_move(*self, gl::COMPILE_STATUS);
+            if status == gl::ShaderCompileStatus::Compiled.into() {
+                Ok(())
+            } else {
+                let log = gl.get_shader_info_log_move(*self);
+                Err(String::from_utf8(log).unwrap())
+            }
+        }
+    }
+}
+
+pub trait ProgramNameExt: Sized {
+    fn new(gl: &gl::Gl) -> Option<Self>;
+
+    fn attach<'i, I>(&self, gl: &gl::Gl, names: I)
+    where
+        I: IntoIterator<Item = &'i gl::ShaderName>;
+
+    fn link(&self, gl: &gl::Gl) -> Result<(), String>;
+}
+
+impl ProgramNameExt for gl::ProgramName {
+    #[inline]
+    fn new(gl: &gl::Gl) -> Option<Self> {
+        unsafe { gl.create_program() }
+    }
+
+    #[inline]
+    fn attach<'i, I>(&self, gl: &gl::Gl, names: I)
+    where
+        I: IntoIterator<Item = &'i gl::ShaderName>,
+    {
+        unsafe {
+            for name in names.into_iter() {
+                gl.attach_shader(*self, *name);
+            }
+        }
+    }
+
+    #[inline]
+    fn link(&self, gl: &gl::Gl) -> Result<(), String> {
+        unsafe {
+            gl.link_program(*self);
+
+            if gl.get_programiv_move(*self, gl::LINK_STATUS)
+                == gl::UncheckedProgramLinkStatus::from(gl::LINKED)
+            {
+                Ok(())
+            } else {
+                Err(String::from_utf8(gl.get_program_info_log_move(*self))
+                    .expect("Program info log is not utf8."))
+            }
+        }
+    }
+}

@@ -1,5 +1,3 @@
-#version 420
-
 uniform float time;
 uniform int width;
 uniform int height;
