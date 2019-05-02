@@ -1,5 +1,7 @@
 use crate::convert::*;
 use crate::frustrum::Frustrum;
+use crate::gl_ext::*;
+use crate::shader_defines;
 use crate::World;
 use gl_typed as gl;
 use gl_typed::convert::*;
@@ -154,19 +156,38 @@ impl Renderer {
         let mut should_link = false;
 
         if let Some(bytes) = update.vertex_shader {
-            recompile_shader(gl, self.vertex_shader_name, bytes.as_ref())
-                .unwrap_or_else(|e| eprintln!("{}", e));
+            self.vertex_shader_name
+                .compile(
+                    gl,
+                    &[
+                        shader_defines::VERSION,
+                        shader_defines::DEFINES,
+                        bytes.as_ref(),
+                    ],
+                )
+                .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
             should_link = true;
         }
 
         if let Some(bytes) = update.fragment_shader {
-            recompile_shader(gl, self.fragment_shader_name, bytes.as_ref())
-                .unwrap_or_else(|e| eprintln!("{}", e));
+            self.fragment_shader_name
+                .compile(
+                    gl,
+                    &[
+                        shader_defines::VERSION,
+                        shader_defines::DEFINES,
+                        bytes.as_ref(),
+                    ],
+                )
+                .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
             should_link = true;
         }
 
         if should_link {
-            gl.link_program(self.program_name);
+            self.program_name
+                .link(gl)
+                .unwrap_or_else(|e| eprintln!("{} (program):\n{}", file!(), e));
+
             gl.use_program(self.program_name);
 
             macro_rules! get_uniform_location {

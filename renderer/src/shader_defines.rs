@@ -10,7 +10,7 @@ pub const VS_TAN_IN_OBJ_LOC: gl::AttributeLocation =
     unsafe { gl::AttributeLocation::new_unchecked(3) };
 
 pub const VERSION: &'static [u8] = br"
-#version 400 core
+#version 420 core
 ";
 
 pub const DEFINES: &'static [u8] = br"
