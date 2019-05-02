@@ -131,4 +131,4 @@ macro_rules! impl_flatten_unflatten {
     };
 }
 
-impl_flatten_unflatten!(2, 3,);
+impl_flatten_unflatten!(1, 2, 3, 4,);

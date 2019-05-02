@@ -18,16 +18,23 @@ in vec3 fs_tan_in_cam;
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
-float compute_shadow_classic(vec3 pos_in_lgt) {
-  float frag_depth_in_lgt = pos_in_lgt.z * 0.5 + 0.5;
+float compute_visibility_classic(vec3 pos_in_lgt, float bias) {
+  // if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
+  //     pos_in_lgt.y < -1.0 || pos_in_lgt.y > 1.0) {
+  //   return 1.0;
+  // } else if (pos_in_lgt.z < -1.0) {
+  //   return 1.0;
+  // } else if (pos_in_lgt.z > 1.0) {
+  //   return 1.0;
+  // } else {
   float closest_depth_in_lgt =
       texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).x;
-  frag_color = vec4(10 * vec3(frag_depth_in_lgt - closest_depth_in_lgt), 1.0);
-  float bias = 0.002;
+  float frag_depth_in_lgt = pos_in_lgt.z * 0.5 + 0.5;
   return step(frag_depth_in_lgt, closest_depth_in_lgt + bias);
+  // }
 }
 
-float compute_shadow_variance(vec3 pos_in_lgt) {
+float compute_visibility_variance(vec3 pos_in_lgt) {
   float frag_depth = pos_in_lgt.z * 0.5 + 0.5;
   vec2 sam = texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).xy;
   float mean_depth = sam.x;
@@ -69,17 +76,31 @@ void main() {
     diffuse_color = diffuse;
   }
 
-  float in_shadow = compute_shadow_variance(pos_in_lgt);
-  frag_color = vec4(
-      ambient * ambient_weight //
-          + mix((diffuse_color * diffuse_weight + specular * specular_weight),
-                vec3(0.0), (1.0 - in_shadow) * 0.4),
-      1.0);
+  // Can be computed as sqrt(1/dot(l, n)^2 - 1) but this is probably cheaper.
+  // The width of a shadow map texel.
+  // Bias is clamped between 0.0 and 0.1 because it can technically go to
+  // infinity when dot(l, n) is 0.
+  // float shadow_map_texel_width_in_cam = 0.005;
+  // float bias = clamp(shadow_map_texel_width_in_cam *
+  // tan(acos(diffuse_weight)),
+  //                    0.0, 0.005);
+  float bias = 0.005;
+
+  float visibility = compute_visibility_classic(pos_in_lgt, bias);
+  frag_color = vec4(ambient * ambient_weight //
+                        + visibility * (diffuse_color * diffuse_weight +
+                                        specular * specular_weight),
+                    1.0);
+
+  if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
+      pos_in_lgt.y < -1.0 || pos_in_lgt.y > 1.0) {
+    frag_color = vec4(1.0, 0.0, 0.0, 1.0);
+  }
+  if (pos_in_lgt.z < -1.0 || pos_in_lgt.z > 1.0) {
+    frag_color = vec4(0.0, 1.0, 0.0, 1.0);
+  }
 
   // frag_color = vec4(diffuse_color, 1.0);
   // frag_color = (vec4(nor_in_cam, 1.0) + vec4(1.0)) / 2.0;
   frag_nor_in_cam = nor_in_cam * 0.5 + vec3(0.5);
-
-  // frag_color = vec4(texture(shadow_sampler, fs_pos_in_lgt.xy).rrr *
-  // 1000, 1.0);
 }

@@ -8,6 +8,7 @@ mod filters;
 mod frustrum;
 mod gl_ext;
 mod keyboard_model;
+mod overlay_renderer;
 mod post_renderer;
 mod random_unit_sphere_surface;
 mod random_unit_sphere_volume;
@@ -214,7 +215,8 @@ impl ViewDependentResources {
             let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8).unwrap();
             post_color_texture.update(gl, texture_update);
 
-            let post_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
+            let post_depth_texture =
+                Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
             post_depth_texture.update(gl, texture_update);
 
             // Framebuffers.
@@ -375,6 +377,8 @@ fn main() {
     let ao_renderer_fs_path = resource_dir.join("ao_renderer.frag");
     let post_renderer_vs_path = resource_dir.join("post_renderer.vert");
     let post_renderer_fs_path = resource_dir.join("post_renderer.frag");
+    let overlay_renderer_vs_path = resource_dir.join("overlay_renderer.vert");
+    let overlay_renderer_fs_path = resource_dir.join("overlay_renderer.frag");
 
     let start_instant = std::time::Instant::now();
 
@@ -561,6 +565,20 @@ fn main() {
         post_renderer
     };
 
+    let mut overlay_renderer = {
+        let mut overlay_renderer = overlay_renderer::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&overlay_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&overlay_renderer_fs_path).unwrap();
+        overlay_renderer.update(
+            &gl,
+            overlay_renderer::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        overlay_renderer
+    };
+
     let resources = resources::Resources::new(&gl, &resource_dir);
 
     // === VR ===
@@ -577,7 +595,7 @@ fn main() {
                 eye_left,
                 eye_right,
             })
-        },
+        }
         Err(error) => {
             eprintln!(
                 "Failed to acquire context: {:?}",
@@ -610,6 +628,7 @@ fn main() {
         let mut basic_renderer_update = basic_renderer::Update::default();
         let mut ao_renderer_update = ao_renderer::Update::default();
         let mut post_renderer_update = post_renderer::Update::default();
+        let mut overlay_renderer_update = overlay_renderer::Update::default();
 
         for event in rx_fs.try_iter() {
             if let Some(ref path) = event.path {
@@ -645,6 +664,13 @@ fn main() {
                     path if path == &post_renderer_fs_path => {
                         post_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
+                    path if path == &overlay_renderer_vs_path => {
+                        overlay_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &overlay_renderer_fs_path => {
+                        overlay_renderer_update.fragment_shader =
+                            Some(std::fs::read(&path).unwrap());
+                    }
                     _ => {}
                 }
             }
@@ -674,6 +700,10 @@ fn main() {
             unsafe {
                 post_renderer.update(&gl, post_renderer_update);
             }
+        }
+
+        if overlay_renderer_update.should_update() {
+            overlay_renderer.update(&gl, overlay_renderer_update);
         }
 
         let simulation_start_nanos = start_instant.elapsed().as_nanos() as u64;
@@ -855,12 +885,12 @@ fn main() {
         // draw everything here
 
         let sun_frustrum = frustrum::Frustrum {
-            x0: -10.0,
-            x1: 10.0,
-            y0: -10.0,
-            y1: 10.0,
-            z0: 10.0,
-            z1: -10.0,
+            x0: -15.0,
+            x1: 15.0,
+            y0: -15.0,
+            y1: 15.0,
+            z0: 30.0,
+            z1: -30.0,
         };
 
         let pos_from_lgt_to_clp = sun_frustrum.orthographic();
@@ -889,17 +919,17 @@ fn main() {
             );
 
             // View independent.
-            vsm_filter.render(
-                &gl,
-                &vsm_filter::Parameters {
-                    width: SHADOW_W,
-                    height: SHADOW_H,
-                    framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
-                    framebuffer_xy: view_ind_res.shadow_framebuffer_name,
-                    color: view_ind_res.shadow_texture.name(),
-                    color_x: view_ind_res.shadow_2_texture.name(),
-                },
-            );
+            // vsm_filter.render(
+            //     &gl,
+            //     &vsm_filter::Parameters {
+            //         width: SHADOW_W,
+            //         height: SHADOW_H,
+            //         framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
+            //         framebuffer_xy: view_ind_res.shadow_framebuffer_name,
+            //         color: view_ind_res.shadow_texture.name(),
+            //         color_x: view_ind_res.shadow_2_texture.name(),
+            //     },
+            // );
 
             let frustrum = {
                 let z0 = -0.1;
@@ -965,6 +995,18 @@ fn main() {
                 },
                 &world,
             );
+
+            overlay_renderer.render(
+                &gl,
+                &overlay_renderer::Parameters {
+                    framebuffer: None,
+                    x0: 0,
+                    x1: (physical_size.height / 3.0) as i32,
+                    y0: 0,
+                    y1: (physical_size.height / 3.0) as i32,
+                    color_texture_name: view_ind_res.shadow_texture.name(),
+                },
+            );
         }
 
         // === VR ===
@@ -992,8 +1034,7 @@ fn main() {
                 };
 
                 // NOTE: At least on the HTC Vive, the z coordinate is mapped to (0, 1) instead of (-1, 1).
-                let pos_from_eye_to_clp: Matrix4<f32> =
-                    frustrum.perspective_z0p1().cast().unwrap();
+                let pos_from_eye_to_clp: Matrix4<f32> = frustrum.perspective_z0p1().cast().unwrap();
                 let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
                 let pos_from_eye_to_hmd: Matrix4<f32> = vr_resources
                     .context
