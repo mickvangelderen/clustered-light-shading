@@ -59,7 +59,7 @@ void main() {
 
   vec3 nor_in_cam = normalize(fs_nor_in_cam);
 
-  float ambient_weight = 0.1;
+  float ambient_weight = 0.2;
   float diffuse_weight = max(dot(nor_in_cam, light_dir_in_cam_normalized), 0.0);
   float specular_angle =
       max(dot(cam_dir_in_cam_normalized,
@@ -87,9 +87,9 @@ void main() {
   float bias = 0.005;
 
   float visibility = compute_visibility_classic(pos_in_lgt, bias);
-  frag_color = vec4(ambient * ambient_weight //
-                        + visibility * (diffuse_color * diffuse_weight +
-                                        specular * specular_weight),
+  frag_color = vec4((diffuse_color * ambient_weight) +
+                        visibility * (diffuse_color * diffuse_weight +
+                                      specular * specular_weight),
                     1.0);
 
   if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
