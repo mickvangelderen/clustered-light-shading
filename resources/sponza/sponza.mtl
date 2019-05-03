@@ -15,7 +15,7 @@ newmtl sp_00_luk_mali
 	map_Ka sp_luk.jpg
 	map_Kd sp_luk.jpg
 	map_bump sp_luk-bump.jpg
-	bump sp_luk-bump.jpg
+	map_Ns sp_luk-bump.jpg
 
 newmtl sp_svod_kapitel
 	Ns 50.000000
@@ -31,7 +31,7 @@ newmtl sp_svod_kapitel
 	map_Ka 00_skap.jpg
 	map_Kd 00_skap.jpg
 	map_bump 00_skap.jpg
-	bump 00_skap.jpg
+	map_Ns 00_skap.jpg
 
 newmtl sp_01_stub_baza_
 	Ns 19.999998
@@ -59,7 +59,7 @@ newmtl sp_01_stub_kut
 	map_Ka 01_stub.jpg
 	map_Kd 01_stub.jpg
 	map_bump 01_stub-bump.jpg
-	bump 01_stub-bump.jpg
+	map_Ns 01_stub-bump.jpg
 
 newmtl sp_00_stup
 	Ns 50.000000
@@ -75,7 +75,7 @@ newmtl sp_00_stup
 	map_Ka 01_stub.jpg
 	map_Kd 01_stub.jpg
 	map_bump 01_stub-bump.jpg
-	bump 01_stub-bump.jpg
+	map_Ns 01_stub-bump.jpg
 
 newmtl sp_01_stub_baza
 	Ns 50.000000
@@ -91,7 +91,7 @@ newmtl sp_01_stub_baza
 	map_Ka 01_s_ba.jpg
 	map_Kd 01_s_ba.jpg
 	map_bump 01_s_ba.jpg
-	bump 01_s_ba.jpg
+	map_Ns 01_s_ba.jpg
 
 newmtl sp_00_luk_mal1
 	Ns 50.000000
@@ -107,7 +107,7 @@ newmtl sp_00_luk_mal1
 	map_Ka 01_st_kp.jpg
 	map_Kd 01_st_kp.jpg
 	map_bump 01_st_kp-bump.jpg
-	bump 01_st_kp-bump.jpg
+	map_Ns 01_st_kp-bump.jpg
 
 newmtl sp_01_stub
 	Ns 50.000000
@@ -123,7 +123,7 @@ newmtl sp_01_stub
 	map_Ka 01_stub.jpg
 	map_Kd 01_stub.jpg
 	map_bump 01_stub-bump.jpg
-	bump 01_stub-bump.jpg
+	map_Ns 01_stub-bump.jpg
 
 newmtl sp_01_stup
 	Ns 50.000000
@@ -153,7 +153,7 @@ newmtl sp_vijenac
 	map_Ka 00_skap.jpg
 	map_Kd 00_skap.jpg
 	map_bump 00_skap.jpg
-	bump 00_skap.jpg
+	map_Ns 00_skap.jpg
 
 newmtl sp_00_svod
 	Ns 1.000000
@@ -185,7 +185,7 @@ newmtl sp_02_reljef
 	map_Ka reljef.jpg
 	map_Kd reljef.jpg
 	map_bump reljef-bump.jpg
-	bump reljef-bump.jpg
+	map_Ns reljef-bump.jpg
 
 newmtl sp_01_luk_a
 	Ns 50.000000
@@ -201,7 +201,7 @@ newmtl sp_01_luk_a
 	map_Ka sp_luk.jpg
 	map_Kd sp_luk.jpg
 	map_bump sp_luk-bump.jpg
-	bump sp_luk-bump.jpg
+	map_Ns sp_luk-bump.jpg
 
 newmtl sp_zid_vani
 	Ns 50.000000
@@ -217,7 +217,7 @@ newmtl sp_zid_vani
 	map_Ka kamen.jpg
 	map_Kd kamen.jpg
 	map_bump kamen-bump.jpg
-	bump kamen-bump.jpg
+	map_Ns kamen-bump.jpg
 
 newmtl sp_01_stup_baza
 	Ns 50.000000
@@ -233,7 +233,7 @@ newmtl sp_01_stup_baza
 	map_Ka 01_s_ba.jpg
 	map_Kd 01_s_ba.jpg
 	map_bump 01_s_ba.jpg
-	bump 01_s_ba.jpg
+	map_Ns 01_s_ba.jpg
 
 newmtl sp_00_zid
 	Ns 50.000000
@@ -249,7 +249,7 @@ newmtl sp_00_zid
 	map_Ka kamen.jpg
 	map_Kd kamen.jpg
 	map_bump kamen-bump.jpg
-	bump kamen-bump.jpg
+	map_Ns kamen-bump.jpg
 
 newmtl sp_00_prozor
 	Ns 50.000000
@@ -265,7 +265,7 @@ newmtl sp_00_prozor
 	map_Ka prozor1.jpg
 	map_Kd prozor1.jpg
 	map_bump prozor1.jpg
-	bump prozor1.jpg
+	map_Ns prozor1.jpg
 
 newmtl sp_00_vrata_krug
 	Ns 19.999998
@@ -281,7 +281,7 @@ newmtl sp_00_vrata_krug
 	map_Ka vrata_kr.jpg
 	map_Kd vrata_kr.jpg
 	map_bump vrata_kr.jpg
-	bump vrata_kr.jpg
+	map_Ns vrata_kr.jpg
 
 newmtl sp_00_pod
 	Ns 50.000000
@@ -297,7 +297,7 @@ newmtl sp_00_pod
 	map_Ka kamen.jpg
 	map_Kd kamen.jpg
 	map_bump kamen-bump.jpg
-	bump kamen-bump.jpg
+	map_Ns kamen-bump.jpg
 
 newmtl sp_00_vrata_kock
 	Ns 19.999998
@@ -313,4 +313,4 @@ newmtl sp_00_vrata_kock
 	map_Ka vrata_ko.jpg
 	map_Kd vrata_ko.jpg
 	map_bump vrata_ko.jpg
-	bump vrata_ko.jpg
+	map_Ns vrata_ko.jpg
