@@ -19,19 +19,10 @@ layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
 float compute_visibility_classic(vec3 pos_in_lgt, float bias) {
-  // if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
-  //     pos_in_lgt.y < -1.0 || pos_in_lgt.y > 1.0) {
-  //   return 1.0;
-  // } else if (pos_in_lgt.z < -1.0) {
-  //   return 1.0;
-  // } else if (pos_in_lgt.z > 1.0) {
-  //   return 1.0;
-  // } else {
   float closest_depth_in_lgt =
       texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).x;
   float frag_depth_in_lgt = pos_in_lgt.z * 0.5 + 0.5;
   return step(frag_depth_in_lgt, closest_depth_in_lgt + bias);
-  // }
 }
 
 float compute_visibility_variance(vec3 pos_in_lgt) {
@@ -41,11 +32,7 @@ float compute_visibility_variance(vec3 pos_in_lgt) {
   float mean_depth_sq = sam.y;
   float variance = mean_depth_sq - mean_depth * mean_depth;
   float diff = frag_depth - mean_depth;
-  if (diff > 0.0) {
-    return variance / (variance + diff * diff);
-  } else {
-    return 1.0;
-  }
+  return (diff > 0.0) ? variance / (variance + diff * diff) : 1.0;
 }
 
 void main() {
@@ -86,19 +73,21 @@ void main() {
   //                    0.0, 0.005);
   float bias = 0.005;
 
-  float visibility = compute_visibility_classic(pos_in_lgt, bias);
+  float visibility = compute_visibility_variance(pos_in_lgt);
   frag_color = vec4((diffuse_color * ambient_weight) +
                         visibility * (diffuse_color * diffuse_weight +
                                       specular * specular_weight),
                     1.0);
 
-  if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
-      pos_in_lgt.y < -1.0 || pos_in_lgt.y > 1.0) {
-    frag_color = vec4(1.0, 0.0, 0.0, 1.0);
-  }
-  if (pos_in_lgt.z < -1.0 || pos_in_lgt.z > 1.0) {
-    frag_color = vec4(0.0, 1.0, 0.0, 1.0);
-  }
+  // if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
+  //     pos_in_lgt.y < -1.0 || pos_in_lgt.y > 1.0) {
+  //   // Need a larger shadow xy frustrum.
+  //   frag_color = vec4(1.0, 0.0, 0.0, 1.0);
+  // }
+  // if (pos_in_lgt.z < -1.0 || pos_in_lgt.z > 1.0) {
+  //   // Need a larger shadow z frustrum.
+  //   frag_color = vec4(0.0, 1.0, 0.0, 1.0);
+  // }
 
   // frag_color = vec4(diffuse_color, 1.0);
   // frag_color = (vec4(nor_in_cam, 1.0) + vec4(1.0)) / 2.0;

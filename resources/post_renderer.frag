@@ -91,7 +91,7 @@ void main() {
   // frag_color = vec4(nor_in_cam * 0.5 + vec3(0.5), 1.0);
 
   // NO AO
-  frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // APPLIED AO
   // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
@@ -100,11 +100,11 @@ void main() {
   //                   1.0);
 
   // APPLIED UNFILTERED AO
-  // uvec2 ao = sample_ao(fs_pos_in_tex);
-  // float ao_weight = float(ao.x) / float(ao.x + ao.y);
-  // frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
-  //                       (1.0 - ao_weight)),
-  //                   1.0);
+  uvec2 ao = sample_ao(fs_pos_in_tex);
+  float ao_weight = float(ao.x) / float(ao.x + ao.y);
+  frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
+                        (1.0 - ao_weight)),
+                    1.0);
 
   // ANIMATED APPLIED AO
   // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
