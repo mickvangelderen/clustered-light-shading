@@ -885,10 +885,10 @@ fn main() {
         // draw everything here
 
         let sun_frustrum = frustrum::Frustrum {
-            x0: -15.0,
-            x1: 15.0,
-            y0: -15.0,
-            y1: 15.0,
+            x0: -25.0,
+            x1: 25.0,
+            y0: -25.0,
+            y1: 25.0,
             z0: 30.0,
             z1: -30.0,
         };
@@ -919,17 +919,17 @@ fn main() {
             );
 
             // View independent.
-            // vsm_filter.render(
-            //     &gl,
-            //     &vsm_filter::Parameters {
-            //         width: SHADOW_W,
-            //         height: SHADOW_H,
-            //         framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
-            //         framebuffer_xy: view_ind_res.shadow_framebuffer_name,
-            //         color: view_ind_res.shadow_texture.name(),
-            //         color_x: view_ind_res.shadow_2_texture.name(),
-            //     },
-            // );
+            vsm_filter.render(
+                &gl,
+                &vsm_filter::Parameters {
+                    width: SHADOW_W,
+                    height: SHADOW_H,
+                    framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
+                    framebuffer_xy: view_ind_res.shadow_framebuffer_name,
+                    color: view_ind_res.shadow_texture.name(),
+                    color_x: view_ind_res.shadow_2_texture.name(),
+                },
+            );
 
             let frustrum = {
                 let z0 = -0.1;
