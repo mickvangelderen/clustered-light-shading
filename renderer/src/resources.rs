@@ -12,6 +12,9 @@ pub struct Resources {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<tobj::Material>,
     pub diffuse_textures: Vec<gl::TextureName>,
+    pub diffuse_dimensions: Vec<[f32; 2]>,
+    pub normal_textures: Vec<gl::TextureName>,
+    pub normal_dimensions: Vec<[f32; 2]>,
     pub vaos: Vec<gl::VertexArrayName>,
     pub vbs: Vec<gl::BufferName>,
     pub ebs: Vec<gl::BufferName>,
@@ -298,13 +301,29 @@ impl Resources {
             names.try_transmute_each().unwrap()
         };
 
+        let mut diffuse_dimensions = Vec::with_capacity(materials.len());
+
+        let normal_textures = unsafe {
+            let mut names = Vec::with_capacity(materials.len());
+            names.set_len(materials.len());
+            gl.gen_textures(&mut names);
+            names.try_transmute_each().unwrap()
+        };
+
+        let mut normal_dimensions = Vec::with_capacity(materials.len());
+
         for (i, material) in materials.iter().enumerate() {
+            let mut dimensions = [0.0, 0.0];
+
             if !material.diffuse_texture.is_empty() {
                 let file_path = resource_dir.join(&material.diffuse_texture);
                 println!("Loading diffuse texture {:?}", &file_path);
                 match image::open(&file_path) {
                     Ok(img) => {
                         let img = img.flipv().to_rgba();
+
+                        dimensions = [img.width() as f32, img.height() as f32];
+
                         unsafe {
                             loop {
                                 if gl.get_error() == 0 {
@@ -346,12 +365,72 @@ impl Resources {
                     }
                 }
             }
+
+            diffuse_dimensions.push(dimensions);
+
+            let mut dimensions = [0.0, 0.0];
+
+            println!("{}", material.normal_texture);
+            if !material.normal_texture.is_empty() {
+                let file_path = resource_dir.join(&material.normal_texture);
+                println!("Loading normal texture {:?}", &file_path);
+                match image::open(&file_path) {
+                    Ok(img) => {
+                        let img = img.flipv().to_rgba();
+                        unsafe {
+                            loop {
+                                if gl.get_error() == 0 {
+                                    break;
+                                }
+                            }
+
+                            dimensions = [img.width() as f32, img.height() as f32];
+
+                            gl.bind_texture(gl::TEXTURE_2D, normal_textures[i]);
+                            gl.tex_image_2d(
+                                gl::TEXTURE_2D,
+                                0,
+                                gl::RGBA8,
+                                img.width() as i32,
+                                img.height() as i32,
+                                gl::RGBA,
+                                gl::UNSIGNED_BYTE,
+                                img.as_ptr() as *const std::os::raw::c_void,
+                            );
+                            gl.generate_mipmap(gl::TEXTURE_2D);
+                            gl.tex_parameter_i(
+                                gl::TEXTURE_2D,
+                                gl::TEXTURE_MIN_FILTER,
+                                gl::LINEAR_MIPMAP_LINEAR,
+                            );
+                            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+
+                            loop {
+                                let error = gl.get_error();
+                                if error == 0 {
+                                    break;
+                                }
+                                eprintln!("OpenGL error {}", error);
+                            }
+                        }
+                        println!("Loaded normal texture {:?}", &file_path);
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to load normal texture {:?}: {}", &file_path, err);
+                    }
+                }
+            }
+
+            normal_dimensions.push(dimensions);
         }
 
         Resources {
             meshes,
             materials,
             diffuse_textures,
+            diffuse_dimensions,
+            normal_textures,
+            normal_dimensions,
             vaos,
             vbs,
             ebs,

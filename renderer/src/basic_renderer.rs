@@ -23,7 +23,11 @@ pub struct Renderer {
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_lgt_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
+    pub diffuse_dimensions_loc: gl::OptionUniformLocation,
+    pub normal_dimensions_loc: gl::OptionUniformLocation,
+    pub shadow_dimensions_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
+    pub normal_sampler_loc: gl::OptionUniformLocation,
     pub shadow_sampler_loc: gl::OptionUniformLocation,
     pub shadow_sampler: gl::SamplerName,
 }
@@ -35,6 +39,7 @@ pub struct Parameters<'a> {
     pub pos_from_cam_to_clp: Matrix4<f32>,
     pub pos_from_wld_to_lgt: Matrix4<f32>,
     pub shadow_texture_name: gl::TextureName,
+    pub shadow_texture_dimensions: [f32; 2],
     pub frustrum: &'a Frustrum<f32>,
 }
 
@@ -85,11 +90,19 @@ impl Renderer {
             gl.uniform_1i(loc, 0);
         }
 
-        if let Some(loc) = self.shadow_sampler_loc.into() {
+        if let Some(loc) = self.normal_sampler_loc.into() {
             gl.uniform_1i(loc, 1);
-            gl.bind_sampler(1, self.shadow_sampler);
-            gl.active_texture(gl::TEXTURE1);
+        }
+
+        if let Some(loc) = self.shadow_sampler_loc.into() {
+            gl.uniform_1i(loc, 2);
+            gl.bind_sampler(2, self.shadow_sampler);
+            gl.active_texture(gl::TEXTURE2);
             gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
+        }
+
+        if let Some(loc) = self.shadow_dimensions_loc.into() {
+            gl.uniform_2f(loc, params.shadow_texture_dimensions);
         }
 
         let pos_from_wld_to_cam = if world.smooth_camera {
@@ -141,9 +154,21 @@ impl Renderer {
                 if let Some(material_id) = maybe_material_id {
                     let material = &resources.materials[material_id as usize];
                     let diffuse_texture = resources.diffuse_textures[material_id as usize];
+                    let normal_texture = resources.normal_textures[material_id as usize];
 
                     gl.active_texture(gl::TEXTURE0);
                     gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
+
+                    if let Some(loc) = self.diffuse_dimensions_loc.into() {
+                        gl.uniform_2f(loc, resources.diffuse_dimensions[material_id as usize]);
+                    }
+
+                    gl.active_texture(gl::TEXTURE1);
+                    gl.bind_texture(gl::TEXTURE_2D, normal_texture);
+
+                    if let Some(loc) = self.normal_dimensions_loc.into() {
+                        gl.uniform_2f(loc, resources.normal_dimensions[material_id as usize]);
+                    }
 
                     if let Some(loc) = self.ambient_loc.into() {
                         gl.uniform_3f(loc, material.ambient);
@@ -280,8 +305,13 @@ impl Renderer {
             self.pos_from_wld_to_lgt_loc =
                 get_uniform_location!(gl, self.program_name, "pos_from_wld_to_lgt");
             self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
+            self.diffuse_dimensions_loc = get_uniform_location!(gl, self.program_name, "diffuse_dimensions");
+            self.normal_dimensions_loc = get_uniform_location!(gl, self.program_name, "normal_dimensions");
+            self.shadow_dimensions_loc = get_uniform_location!(gl, self.program_name, "shadow_dimensions");
             self.diffuse_sampler_loc =
                 get_uniform_location!(gl, self.program_name, "diffuse_sampler");
+            self.normal_sampler_loc =
+                get_uniform_location!(gl, self.program_name, "normal_sampler");
             self.shadow_sampler_loc =
                 get_uniform_location!(gl, self.program_name, "shadow_sampler");
 
@@ -328,8 +358,12 @@ impl Renderer {
                 pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_lgt_loc: gl::OptionUniformLocation::NONE,
+                diffuse_dimensions_loc: gl::OptionUniformLocation::NONE,
+                normal_dimensions_loc: gl::OptionUniformLocation::NONE,
+                shadow_dimensions_loc: gl::OptionUniformLocation::NONE,
                 highlight_loc: gl::OptionUniformLocation::NONE,
                 diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
+                normal_sampler_loc: gl::OptionUniformLocation::NONE,
                 shadow_sampler_loc: gl::OptionUniformLocation::NONE,
                 shadow_sampler,
             }
