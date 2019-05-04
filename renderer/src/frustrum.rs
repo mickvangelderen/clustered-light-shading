@@ -137,6 +137,38 @@ impl<S: Float> Frustrum<S> {
     fn dz(self) -> S {
         self.z1 - self.z0
     }
+
+    pub fn line_mesh(self) -> ([[S; 3]; 8], [[u32; 2]; 12]) {
+        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
+        let vertices = [
+            [x0, y0, z0],
+            [x1, y0, z0],
+            [x0, y1, z0],
+            [x1, y1, z0],
+            [x0, y0, z1],
+            [x1, y0, z1],
+            [x0, y1, z1],
+            [x1, y1, z1],
+        ];
+        let indices = [
+            // Front
+            [0, 1],
+            [2, 3],
+            [0, 2],
+            [1, 3],
+            // Back
+            [4, 5],
+            [6, 7],
+            [4, 6],
+            [5, 7],
+            // Side
+            [0, 4],
+            [1, 5],
+            [2, 6],
+            [3, 7],
+        ];
+        (vertices, indices)
+    }
 }
 
 impl<S: ToPrimitive> Frustrum<S> {
