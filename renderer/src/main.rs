@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+mod line_renderer;
 mod ao_renderer;
 mod basic_renderer;
 mod camera;
@@ -379,6 +380,8 @@ fn main() {
     let post_renderer_fs_path = resource_dir.join("post_renderer.frag");
     let overlay_renderer_vs_path = resource_dir.join("overlay_renderer.vert");
     let overlay_renderer_fs_path = resource_dir.join("overlay_renderer.frag");
+    let line_renderer_vs_path = resource_dir.join("line_renderer.vert");
+    let line_renderer_fs_path = resource_dir.join("line_renderer.frag");
 
     let start_instant = std::time::Instant::now();
 
@@ -579,6 +582,21 @@ fn main() {
         overlay_renderer
     };
 
+    let mut line_renderer = {
+        let mut line_renderer = line_renderer::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&line_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&line_renderer_fs_path).unwrap();
+        line_renderer.update(
+            &gl,
+            line_renderer::Update {
+                vertex_shader: Some(&vs_bytes),
+                fragment_shader: Some(&fs_bytes),
+            },
+        );
+        line_renderer
+    };
+
+
     let resources = resources::Resources::new(&gl, &resource_dir);
 
     // === VR ===
@@ -629,6 +647,7 @@ fn main() {
         let mut ao_renderer_update = ao_renderer::Update::default();
         let mut post_renderer_update = post_renderer::Update::default();
         let mut overlay_renderer_update = overlay_renderer::Update::default();
+        let mut line_renderer_update = line_renderer::Update::default();
 
         for event in rx_fs.try_iter() {
             if let Some(ref path) = event.path {
@@ -671,6 +690,13 @@ fn main() {
                         overlay_renderer_update.fragment_shader =
                             Some(std::fs::read(&path).unwrap());
                     }
+                    path if path == &line_renderer_vs_path => {
+                        line_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                    }
+                    path if path == &line_renderer_fs_path => {
+                        line_renderer_update.fragment_shader =
+                            Some(std::fs::read(&path).unwrap());
+                    }
                     _ => {}
                 }
             }
@@ -704,6 +730,10 @@ fn main() {
 
         if overlay_renderer_update.should_update() {
             overlay_renderer.update(&gl, overlay_renderer_update);
+        }
+
+        if line_renderer_update.should_update() {
+            line_renderer.update(&gl, line_renderer_update);
         }
 
         let simulation_start_nanos = start_instant.elapsed().as_nanos() as u64;
@@ -893,6 +923,8 @@ fn main() {
             z1: -30.0,
         };
 
+        let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.line_mesh();
+
         let pos_from_lgt_to_clp = sun_frustrum.orthographic();
 
         let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
@@ -901,6 +933,8 @@ fn main() {
 
         let pos_from_wld_to_lgt =
             Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
+        let pos_from_sun_to_wld =
+            Matrix4::from(sun_ori.invert()) * Matrix4::from_translation(-sun_pos_in_sun);
 
         unsafe {
             let physical_size = win_size.to_physical(win_dpi);
@@ -961,6 +995,21 @@ fn main() {
                     shadow_texture_name: view_ind_res.shadow_texture.name(),
                     shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
                     frustrum: &frustrum,
+                },
+                &world,
+                &resources,
+            );
+
+            line_renderer.render(
+                &gl,
+                &line_renderer::Parameters {
+                    framebuffer: Some(view_dep_res.framebuffer_name),
+                    width: physical_size.width as i32,
+                    height: physical_size.height as i32,
+                    pos_from_obj_to_wld: pos_from_sun_to_wld,
+                    pos_from_cam_to_clp: pos_from_hmd_to_clp,
+                    vertices: &sun_frustrum_vertices[..],
+                    indices: &sun_frustrum_indices[..],
                 },
                 &world,
                 &resources,
