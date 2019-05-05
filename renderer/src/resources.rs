@@ -1,5 +1,6 @@
 use crate::convert::*;
 use crate::keyboard_model;
+use crate::light::*;
 use crate::shader_defines;
 use cgmath::*;
 use gl_typed as gl;
@@ -29,6 +30,7 @@ pub struct Resources {
     pub ebs: Vec<gl::BufferName>,
     pub element_counts: Vec<usize>,
     pub key_indices: Vec<keyboard_model::UncheckedIndex>,
+    pub point_lights: [PointLight; shader_defines::POINT_LIGHT_CAPACITY as usize],
 }
 
 #[inline]
@@ -411,6 +413,12 @@ impl Resources {
             }
         }
 
+        let attenuation = AttenCoefs {
+            constant: 1.0,
+            linear: 0.3499999940395355,
+            quadratic: 0.4399999976158142,
+        };
+
         Resources {
             meshes,
             materials,
@@ -422,6 +430,96 @@ impl Resources {
             ebs,
             element_counts,
             key_indices,
+            point_lights: [
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
+                    specular: RGB::new(1.0000, 1.0000, 1.0000),
+                    pos_in_pnt: Point3::new(-12.9671, 1.8846, -4.4980),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
+                    specular: RGB::new(1.0000, 1.0000, 1.0000),
+                    pos_in_pnt: Point3::new(-11.9563, 2.6292, 3.8412),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
+                    specular: RGB::new(1.0000, 1.0000, 1.0000),
+                    pos_in_pnt: Point3::new(13.6090, 2.6292, 3.3216),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
+                    specular: RGB::new(1.0000, 1.0000, 1.0000),
+                    pos_in_pnt: Point3::new(12.5982, 1.8846, -5.0176),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
+                    specular: RGB::new(1.0000, 1.0000, 1.0000),
+                    pos_in_pnt: Point3::new(3.3116, 4.3440, 5.1447),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(0.0367, 4.0000, 0.0000),
+                    specular: RGB::new(0.0092, 1.0000, 0.0000),
+                    pos_in_pnt: Point3::new(8.8820, 6.7391, -1.0279),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(4.0000, 0.1460, 0.1006),
+                    specular: RGB::new(1.0000, 0.0365, 0.0251),
+                    pos_in_pnt: Point3::new(-4.6988, 10.0393, 0.8667),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+                PointLight {
+                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: RGB::new(0.8952, 0.8517, 4.0000),
+                    specular: RGB::new(0.2238, 0.2129, 1.0000),
+                    pos_in_pnt: Point3::new(-4.6816, 1.0259, -2.1767),
+                    attenuation: AttenCoefs {
+                        constant: 1.0000,
+                        linear: 0.3500,
+                        quadratic: 0.4400,
+                    },
+                },
+            ],
         }
     }
 }

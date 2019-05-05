@@ -18,6 +18,18 @@ in vec4 fs_pos_in_lgt;
 in vec3 fs_nor_in_cam;
 in vec3 fs_tan_in_cam;
 
+struct PointLight {
+  vec4 ambient;
+  vec4 diffuse;
+  vec4 specular;
+  vec4 pos_in_cam;
+  vec4 attenuation;
+};
+
+layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
+  PointLight point_lights[POINT_LIGHT_CAPACITY];
+};
+
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
@@ -65,13 +77,47 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   return normalize(vec3(-x, -y, 1.0));
 }
 
+vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
+                              vec3 frag_pos_in_cam, vec3 cam_dir_in_cam_norm) {
+  vec3 pos_from_frag_to_light = point_light.pos_in_cam.xyz - frag_pos_in_cam;
+  vec3 light_dir_in_cam_norm = normalize(pos_from_frag_to_light);
+
+  // Attenuation.
+  float d_sq = dot(pos_from_frag_to_light, pos_from_frag_to_light);
+  float light_weight =
+      1.0 / dot(point_light.attenuation.xyz, vec3(1.0, sqrt(d_sq), d_sq));
+
+  // Ambient.
+  float ambient_weight = 1.0;
+
+  // Diffuse.
+  float diffuse_weight = max(0.0, dot(nor_in_cam, light_dir_in_cam_norm));
+
+  // Specular.
+  float specular_angle =
+      max(0.0, dot(cam_dir_in_cam_norm,
+                   reflect(-light_dir_in_cam_norm, nor_in_cam)));
+  float specular_weight = pow(specular_angle, shininess);
+
+  return
+      // Ambient
+      (light_weight * ambient_weight) * point_light.ambient.rgb *
+          texture(diffuse_sampler, fs_pos_in_tex).rgb +
+      // Diffuse
+      (light_weight * diffuse_weight) * point_light.diffuse.rgb *
+          texture(diffuse_sampler, fs_pos_in_tex).rgb +
+      // Specular
+      (light_weight * specular_weight) * point_light.specular.rgb *
+          texture(specular_sampler, fs_pos_in_tex).rgb;
+}
+
 void main() {
   // Perspective divide after interpolation.
   vec3 pos_in_lgt = fs_pos_in_lgt.xyz / fs_pos_in_lgt.w;
 
   // Common intermediates.
-  vec3 light_dir_in_cam_normalized = normalize(sun_dir_in_cam);
-  vec3 cam_dir_in_cam_normalized = normalize(-fs_pos_in_cam);
+  vec3 light_dir_in_cam_norm = normalize(sun_dir_in_cam);
+  vec3 cam_dir_in_cam_norm = normalize(-fs_pos_in_cam);
 
   // Perturbed normal in camera space.
   // TODO: Consider https://github.com/mickvangelderen/vr-lab/issues/3
@@ -87,7 +133,7 @@ void main() {
   float ambient_weight = 0.2;
 
   // Diffuse.
-  float diffuse_weight = max(dot(nor_in_cam, light_dir_in_cam_normalized), 0.0);
+  float diffuse_weight = max(dot(nor_in_cam, light_dir_in_cam_norm), 0.0);
   vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
   if (diffuse_sample.a < 0.5) {
     discard;
@@ -96,8 +142,7 @@ void main() {
 
   // Specular.
   float specular_angle =
-      max(dot(cam_dir_in_cam_normalized,
-              reflect(-light_dir_in_cam_normalized, nor_in_cam)),
+      max(dot(cam_dir_in_cam_norm, reflect(-light_dir_in_cam_norm, nor_in_cam)),
           0.0);
   float specular_weight = pow(specular_angle, shininess);
   vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
@@ -107,6 +152,15 @@ void main() {
                         visibility * (diffuse_color * diffuse_weight +
                                       specular_color * specular_weight),
                     1.0);
+
+  vec3 color_accumulator = vec3(0.0);
+
+  for (int i = 0; i < POINT_LIGHT_CAPACITY; i += 1) {
+    color_accumulator += point_light_contribution(
+        point_lights[i], nor_in_cam, fs_pos_in_cam, cam_dir_in_cam_norm);
+  }
+
+  frag_color = vec4(color_accumulator, 1.0);
 
   // DIFFUSE TEXTURE
   // frag_color = texture(diffuse_sampler, fs_pos_in_tex);
