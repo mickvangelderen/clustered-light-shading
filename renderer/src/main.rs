@@ -14,6 +14,7 @@ mod filters;
 mod frustrum;
 mod gl_ext;
 mod keyboard_model;
+mod light;
 mod line_renderer;
 mod overlay_renderer;
 mod parameters;
@@ -194,6 +195,8 @@ pub struct ViewDependentResources {
     pub post_framebuffer_name: gl::FramebufferName,
     pub post_color_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rgba8>,
     pub post_depth_texture: Texture<gl::symbols::Texture2D, gl::symbols::Depth24Stencil8>,
+    // Uniform buffers.
+    pub lighting_buffer_name: gl::BufferName,
 }
 
 impl ViewDependentResources {
@@ -354,6 +357,14 @@ impl ViewDependentResources {
 
             gl.bind_framebuffer(gl::FRAMEBUFFER, None);
 
+            // Uniform block buffers,
+
+            let [lighting_buffer_name]: [gl::BufferName; 1] = {
+                let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
+                gl.gen_buffers(&mut names);
+                names.try_transmute_each().unwrap()
+            };
+
             ViewDependentResources {
                 framebuffer_name,
                 color_texture,
@@ -367,6 +378,7 @@ impl ViewDependentResources {
                 post_framebuffer_name,
                 post_color_texture,
                 post_depth_texture,
+                lighting_buffer_name,
             }
         }
     }
@@ -1111,6 +1123,27 @@ fn main() {
 
                 let view_dep_res = &vr_resources[eye];
 
+
+                unsafe {
+                    let mut point_lights: [light::PointLightBufferEntry;
+                        shader_defines::POINT_LIGHT_CAPACITY as usize] = std::mem::uninitialized();
+                    for i in 0..shader_defines::POINT_LIGHT_CAPACITY as usize {
+                        point_lights[i] = light::PointLightBufferEntry::from_point_light(
+                            resources.point_lights[i],
+                            view_dep_params.pos_from_wld_to_cam,
+                        );
+                    }
+                    let lighting_buffer = light::LightingBuffer { point_lights };
+                    gl.bind_buffer(gl::UNIFORM_BUFFER, view_dep_res.lighting_buffer_name);
+                    gl.buffer_data(gl::UNIFORM_BUFFER, lighting_buffer.as_ref(), gl::STREAM_DRAW);
+                    gl.bind_buffer_base(
+                        gl::UNIFORM_BUFFER,
+                        shader_defines::LIGHTING_BUFFER_BINDING,
+                        view_dep_res.lighting_buffer_name,
+                    );
+                    gl.unbind_buffer(gl::UNIFORM_BUFFER);
+                }
+
                 basic_renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
@@ -1239,6 +1272,26 @@ fn main() {
                     pos_from_clp_to_wld: pos_from_wld_to_clp.invert().unwrap().cast().unwrap(),
                 }
             };
+
+            unsafe {
+                let mut point_lights: [light::PointLightBufferEntry; shader_defines::POINT_LIGHT_CAPACITY as usize] =
+                    std::mem::uninitialized();
+                for i in 0..shader_defines::POINT_LIGHT_CAPACITY as usize {
+                    point_lights[i] = light::PointLightBufferEntry::from_point_light(
+                        resources.point_lights[i],
+                        view_dep_params.pos_from_wld_to_cam,
+                    );
+                }
+                let lighting_buffer = light::LightingBuffer { point_lights };
+                gl.bind_buffer(gl::UNIFORM_BUFFER, view_dep_res.lighting_buffer_name);
+                gl.buffer_data(gl::UNIFORM_BUFFER, lighting_buffer.as_ref(), gl::STREAM_DRAW);
+                gl.bind_buffer_base(
+                    gl::UNIFORM_BUFFER,
+                    shader_defines::LIGHTING_BUFFER_BINDING,
+                    view_dep_res.lighting_buffer_name,
+                );
+                gl.unbind_buffer(gl::UNIFORM_BUFFER);
+            }
 
             basic_renderer.render(
                 &gl,
