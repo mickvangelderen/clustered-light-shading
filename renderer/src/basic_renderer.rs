@@ -1,4 +1,3 @@
-use crate::frustrum::Frustrum;
 use crate::gl_ext::*;
 use crate::keyboard_model;
 use crate::resources::Resources;
@@ -32,7 +31,7 @@ pub struct Renderer {
     pub shadow_sampler: gl::SamplerName,
 }
 
-pub struct Parameters<'a> {
+pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
@@ -40,7 +39,6 @@ pub struct Parameters<'a> {
     pub pos_from_wld_to_lgt: Matrix4<f32>,
     pub shadow_texture_name: gl::TextureName,
     pub shadow_texture_dimensions: [f32; 2],
-    pub frustrum: &'a Frustrum<f32>,
 }
 
 #[derive(Default)]
@@ -56,7 +54,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub unsafe fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World, resources: &Resources) {
+    pub unsafe fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, resources: &Resources) {
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -66,7 +64,8 @@ impl Renderer {
 
         gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
         // Infinite far perspective projection.
-        gl.clear_depth(1.0 - params.frustrum.z0 as f64 / params.frustrum.z1 as f64);
+        // gl.clear_depth(1.0 - params.frustrum.z0 as f64 / params.frustrum.z1 as f64);
+        gl.clear_depth(1.0);
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
         gl.use_program(self.program_name);

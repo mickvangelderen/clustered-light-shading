@@ -1,8 +1,6 @@
 use crate::convert::*;
-use crate::frustrum::Frustrum;
 use crate::gl_ext::*;
-use crate::keyboard_model;
-use crate::resources::Resources;
+use crate::resources::*;
 use crate::shader_defines;
 use crate::World;
 use cgmath::*;

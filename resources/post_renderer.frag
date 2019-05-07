@@ -22,30 +22,27 @@ float lerp(float x, float x0, float x1, float y0, float y1) {
   return ((x - x0) * y1 + (x1 - x) * y0) / (x1 - x0);
 }
 
-float sample_z_ndc(vec2 pos_in_tex) {
-  return texture(depth_sampler, pos_in_tex).r * 2.0 - 1.0;
-}
-
 vec2 pos_from_cam_to_tex(vec3 pos_in_cam) {
   vec4 p_clp = pos_from_cam_to_clp * vec4(pos_in_cam, 1.0);
   return (p_clp.xy / p_clp.w) * 0.5 + vec2(0.5);
 }
 
 vec3 sample_pos_in_cam(vec2 pos_in_tex) {
-  float z_ndc = texture(depth_sampler, pos_in_tex).r;
+  float z_ndc = texture(depth_sampler, pos_in_tex).r * 2.0 - 1.0;
 
   float a = pos_from_cam_to_clp[2][2];
   float b = pos_from_cam_to_clp[3][2];
   float c = pos_from_cam_to_clp[2][3];
   float d = pos_from_cam_to_clp[3][3];
 
-  float z_clp = (b - d * z_ndc) / (c * z_ndc - a);
+  float w_clp = (b * c - a * d) / (c * z_ndc - a);
+  vec4 p_ndc = vec4(                   //
+      pos_in_tex.xy * 2.0 - vec2(1.0), //
+      z_ndc,                           //
+      1.0                              //
+  );
 
-  float w_clp = z_clp / z_ndc;
-
-  vec4 p_clp = vec4(w_clp * (pos_in_tex.xy * 2.0 - vec2(1.0)), z_clp, w_clp);
-
-  return (pos_from_clp_to_cam * p_clp).xyz;
+  return mat4x3(pos_from_clp_to_cam) * (w_clp * p_ndc);
 }
 
 uvec2 sample_ao(vec2 pos_in_tex) { return texture(ao_sampler, pos_in_tex).xy; }

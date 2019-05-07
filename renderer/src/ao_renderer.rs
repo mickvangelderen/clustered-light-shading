@@ -1,8 +1,8 @@
 use crate::convert::*;
-use crate::frustrum::Frustrum;
 use crate::gl_ext::*;
 use crate::shader_defines;
 use crate::World;
+use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -19,12 +19,8 @@ pub struct Renderer {
     pub time_loc: gl::OptionUniformLocation,
     pub width_loc: gl::OptionUniformLocation,
     pub height_loc: gl::OptionUniformLocation,
-    pub x0_loc: gl::OptionUniformLocation,
-    pub x1_loc: gl::OptionUniformLocation,
-    pub y0_loc: gl::OptionUniformLocation,
-    pub y1_loc: gl::OptionUniformLocation,
-    pub z0_loc: gl::OptionUniformLocation,
-    pub z1_loc: gl::OptionUniformLocation,
+    pub pos_from_cam_to_clp_loc: gl::OptionUniformLocation,
+    pub pos_from_clp_to_cam_loc: gl::OptionUniformLocation,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
     pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
@@ -32,7 +28,7 @@ pub struct Renderer {
     pub vs_pos_in_qua_loc: gl::OptionAttributeLocation,
 }
 
-pub struct Parameters<'a> {
+pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
@@ -40,7 +36,8 @@ pub struct Parameters<'a> {
     pub depth_texture_name: gl::TextureName,
     pub nor_in_cam_texture_name: gl::TextureName,
     pub random_unit_sphere_surface_texture_name: gl::TextureName,
-    pub frustrum: &'a Frustrum<f32>,
+    pub pos_from_cam_to_clp: Matrix4<f32>,
+    pub pos_from_clp_to_cam: Matrix4<f32>,
 }
 
 #[derive(Default)]
@@ -56,7 +53,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub unsafe fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World) {
+    pub unsafe fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World) {
         gl.disable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -78,28 +75,12 @@ impl Renderer {
             gl.uniform_1i(loc, params.height);
         }
 
-        if let Some(loc) = self.x0_loc.into() {
-            gl.uniform_1f(loc, params.frustrum.x0);
+        if let Some(loc) = self.pos_from_cam_to_clp_loc.into() {
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_cam_to_clp.as_ref());
         }
 
-        if let Some(loc) = self.x1_loc.into() {
-            gl.uniform_1f(loc, params.frustrum.x1);
-        }
-
-        if let Some(loc) = self.y0_loc.into() {
-            gl.uniform_1f(loc, params.frustrum.y0);
-        }
-
-        if let Some(loc) = self.y1_loc.into() {
-            gl.uniform_1f(loc, params.frustrum.y1);
-        }
-
-        if let Some(loc) = self.z0_loc.into() {
-            gl.uniform_1f(loc, params.frustrum.z0);
-        }
-
-        if let Some(loc) = self.z1_loc.into() {
-            gl.uniform_1f(loc, params.frustrum.z1);
+        if let Some(loc) = self.pos_from_clp_to_cam_loc.into() {
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_clp_to_cam.as_ref());
         }
 
         if let Some(loc) = self.color_sampler_loc.into() {
@@ -176,12 +157,8 @@ impl Renderer {
             self.time_loc = get_uniform_location!(gl, self.program_name, "time");
             self.width_loc = get_uniform_location!(gl, self.program_name, "width");
             self.height_loc = get_uniform_location!(gl, self.program_name, "height");
-            self.x0_loc = get_uniform_location!(gl, self.program_name, "x0");
-            self.x1_loc = get_uniform_location!(gl, self.program_name, "x1");
-            self.y0_loc = get_uniform_location!(gl, self.program_name, "y0");
-            self.y1_loc = get_uniform_location!(gl, self.program_name, "y1");
-            self.z0_loc = get_uniform_location!(gl, self.program_name, "z0");
-            self.z1_loc = get_uniform_location!(gl, self.program_name, "z1");
+            self.pos_from_cam_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_cam_to_clp");
+            self.pos_from_clp_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_clp_to_cam");
             self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
             self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
             self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
@@ -278,12 +255,8 @@ impl Renderer {
             time_loc: gl::OptionUniformLocation::NONE,
             width_loc: gl::OptionUniformLocation::NONE,
             height_loc: gl::OptionUniformLocation::NONE,
-            x0_loc: gl::OptionUniformLocation::NONE,
-            x1_loc: gl::OptionUniformLocation::NONE,
-            y0_loc: gl::OptionUniformLocation::NONE,
-            y1_loc: gl::OptionUniformLocation::NONE,
-            z0_loc: gl::OptionUniformLocation::NONE,
-            z1_loc: gl::OptionUniformLocation::NONE,
+            pos_from_cam_to_clp_loc: gl::OptionUniformLocation::NONE,
+            pos_from_clp_to_cam_loc: gl::OptionUniformLocation::NONE,
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             depth_sampler_loc: gl::OptionUniformLocation::NONE,
             nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
