@@ -925,7 +925,7 @@ fn main() {
 
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.line_mesh();
 
-        let pos_from_lgt_to_clp = sun_frustrum.orthographic();
+        let pos_from_lgt_to_clp = sun_frustrum.orthographic((-1.0, 1.0));
 
         let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
 
@@ -981,7 +981,7 @@ fn main() {
 
             // Do math in f64 precision.
             let pos_from_hmd_to_clp: Matrix4<f32> =
-                frustrum.perspective_infinite_far().cast().unwrap();
+                frustrum.perspective((-1.0, 1.0)).cast().unwrap();
             let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
 
             basic_renderer.render(
@@ -1083,8 +1083,8 @@ fn main() {
                     }
                 };
 
-                // NOTE: At least on the HTC Vive, the z coordinate is mapped to (0, 1) instead of (-1, 1).
-                let pos_from_eye_to_clp: Matrix4<f32> = frustrum.perspective_z0p1().cast().unwrap();
+                let pos_from_eye_to_clp: Matrix4<f32> =
+                    frustrum.perspective((-1.0, 1.0)).cast().unwrap();
                 let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
                 let pos_from_eye_to_hmd: Matrix4<f32> = vr_resources
                     .context
