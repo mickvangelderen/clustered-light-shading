@@ -76,7 +76,7 @@ impl ViewIndependentResources {
             };
 
             gl.bind_renderbuffer(gl::RENDERBUFFER, shadow_depth_renderbuffer_name);
-            gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, width, height);
+            gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH_COMPONENT32F, width, height);
             gl.unbind_renderbuffer(gl::RENDERBUFFER);
 
             // Textures.
@@ -116,7 +116,7 @@ impl ViewIndependentResources {
 
                 gl.framebuffer_renderbuffer(
                     gl::FRAMEBUFFER,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::DEPTH_ATTACHMENT,
                     gl::RENDERBUFFER,
                     shadow_depth_renderbuffer_name,
                 );
@@ -138,7 +138,7 @@ impl ViewIndependentResources {
 
                 gl.framebuffer_renderbuffer(
                     gl::FRAMEBUFFER,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::DEPTH_ATTACHMENT,
                     gl::RENDERBUFFER,
                     shadow_depth_renderbuffer_name,
                 );
