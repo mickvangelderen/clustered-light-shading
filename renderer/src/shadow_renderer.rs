@@ -5,10 +5,7 @@ use cgmath::*;
 use gl_typed as gl;
 
 unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(
-        name,
-        &[shader_defines::VERSION, shader_defines::DEFINES, source],
-    );
+    gl.shader_source(name, &[shader_defines::VERSION, shader_defines::DEFINES, source]);
     gl.compile_shader(name);
     let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
     if status == gl::ShaderCompileStatus::Compiled.into() {
@@ -64,17 +61,12 @@ impl Renderer {
             gl.use_program(self.program_name);
 
             if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-                gl.uniform_matrix4f(
-                    loc,
-                    gl::MajorAxis::Column,
-                    params.pos_from_wld_to_clp.as_ref(),
-                );
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_wld_to_clp.as_ref());
             }
 
             for i in 0..resources.vaos.len() {
                 if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                    let pos_from_obj_to_wld =
-                        Matrix4::from_translation(resources.meshes[i].translate);
+                    let pos_from_obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
 
                     gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
                 }
@@ -82,12 +74,7 @@ impl Renderer {
                 gl.bind_vertex_array(resources.vaos[i]);
                 // // NOTE: Help renderdoc.
                 // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, resources.ebs[i]);
-                gl.draw_elements(
-                    gl::TRIANGLES,
-                    resources.element_counts[i],
-                    gl::UNSIGNED_INT,
-                    0,
-                );
+                gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
             }
 
             gl.unbind_vertex_array();
@@ -102,14 +89,12 @@ impl Renderer {
             let mut should_link = false;
 
             if let Some(bytes) = update.vertex_shader {
-                recompile_shader(gl, self.vertex_shader_name, bytes.as_ref())
-                    .unwrap_or_else(|e| eprintln!("{}", e));
+                recompile_shader(gl, self.vertex_shader_name, bytes.as_ref()).unwrap_or_else(|e| eprintln!("{}", e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
-                recompile_shader(gl, self.fragment_shader_name, bytes.as_ref())
-                    .unwrap_or_else(|e| eprintln!("{}", e));
+                recompile_shader(gl, self.fragment_shader_name, bytes.as_ref()).unwrap_or_else(|e| eprintln!("{}", e));
                 should_link = true;
             }
 
@@ -127,10 +112,8 @@ impl Renderer {
                     }};
                 }
 
-                self.pos_from_obj_to_wld_loc =
-                    get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.pos_from_wld_to_clp_loc =
-                    get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+                self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
+                self.pos_from_wld_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
 
                 gl.unuse_program();
             }
@@ -139,13 +122,9 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_shader_name = gl
-                .create_shader(gl::VERTEX_SHADER)
-                .expect("Failed to create shader.");
+            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
 
-            let fragment_shader_name = gl
-                .create_shader(gl::FRAGMENT_SHADER)
-                .expect("Failed to create shader.");
+            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
 
             let program_name = gl.create_program().expect("Failed to create program_name.");
             gl.attach_shader(program_name, vertex_shader_name);

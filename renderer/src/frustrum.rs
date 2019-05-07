@@ -33,14 +33,7 @@ impl<S: Float> Frustrum<S> {
         let two = one + one;
 
         // Parameters.
-        let Frustrum {
-            x0,
-            x1,
-            y0,
-            y1,
-            z0,
-            z1,
-        } = self;
+        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
         let (r0, r1) = depth_range;
 
         // Intermediates.
@@ -93,9 +86,7 @@ impl<S: Float> Frustrum<S> {
         let two = one + one;
 
         // Parameters.
-        let Frustrum {
-            x0, x1, y0, y1, z0, ..
-        } = self;
+        let Frustrum { x0, x1, y0, y1, z0, .. } = self;
         let (r0, r1) = depth_range;
 
         // Intermediates.
@@ -146,14 +137,7 @@ impl<S: Float> Frustrum<S> {
         let two = one + one;
 
         // Parameters.
-        let Frustrum {
-            x0,
-            x1,
-            y0,
-            y1,
-            z0,
-            z1,
-        } = self;
+        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
         let (r0, r1) = depth_range;
 
         // Intermediates.
@@ -198,14 +182,7 @@ impl<S: Float> Frustrum<S> {
     }
 
     pub fn line_mesh(self) -> ([[S; 3]; 8], [[u32; 2]; 12]) {
-        let Frustrum {
-            x0,
-            x1,
-            y0,
-            y1,
-            z0,
-            z1,
-        } = self;
+        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
         let vertices = [
             [x0, y0, z0],
             [x1, y0, z0],

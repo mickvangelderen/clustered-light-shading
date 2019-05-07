@@ -2,8 +2,8 @@ use crate::convert::*;
 use crate::frustrum::Frustrum;
 use crate::gl_ext::*;
 use crate::shader_defines;
-use cgmath::*;
 use crate::World;
+use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -128,28 +128,14 @@ impl Renderer {
 
         if let Some(bytes) = update.vertex_shader {
             self.vertex_shader_name
-                .compile(
-                    gl,
-                    &[
-                        shader_defines::VERSION,
-                        shader_defines::DEFINES,
-                        bytes.as_ref(),
-                    ],
-                )
+                .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                 .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
             should_link = true;
         }
 
         if let Some(bytes) = update.fragment_shader {
             self.fragment_shader_name
-                .compile(
-                    gl,
-                    &[
-                        shader_defines::VERSION,
-                        shader_defines::DEFINES,
-                        bytes.as_ref(),
-                    ],
-                )
+                .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                 .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
             should_link = true;
         }
@@ -178,8 +164,7 @@ impl Renderer {
             self.pos_from_clp_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_clp_to_cam");
             self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
             self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
-            self.nor_in_cam_sampler_loc =
-                get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
+            self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
             self.ao_sampler_loc = get_uniform_location!(gl, self.program_name, "ao_sampler");
 
             // Disable old locations.
@@ -202,8 +187,7 @@ impl Renderer {
                 }};
             }
 
-            self.vs_pos_in_qua_loc =
-                get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
+            self.vs_pos_in_qua_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
 
             // Set up attributes.
 
@@ -211,14 +195,7 @@ impl Renderer {
             gl.bind_vertex_array(self.vertex_array_name);
 
             if let Some(loc) = self.vs_pos_in_qua_loc.into() {
-                gl.vertex_attrib_pointer(
-                    loc,
-                    2,
-                    gl::FLOAT,
-                    gl::FALSE,
-                    std::mem::size_of::<[f32; 2]>(),
-                    0,
-                );
+                gl.vertex_attrib_pointer(loc, 2, gl::FLOAT, gl::FALSE, std::mem::size_of::<[f32; 2]>(), 0);
 
                 gl.enable_vertex_attrib_array(loc);
             }
@@ -231,13 +208,9 @@ impl Renderer {
     }
 
     pub unsafe fn new(gl: &gl::Gl) -> Self {
-        let vertex_shader_name = gl
-            .create_shader(gl::VERTEX_SHADER)
-            .expect("Failed to create shader.");
+        let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
 
-        let fragment_shader_name = gl
-            .create_shader(gl::FRAGMENT_SHADER)
-            .expect("Failed to create shader.");
+        let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
 
         let program_name = gl.create_program().expect("Failed to create program_name.");
         gl.attach_shader(program_name, vertex_shader_name);
@@ -249,8 +222,7 @@ impl Renderer {
             names.try_transmute_each().unwrap()
         };
 
-        let [vertex_buffer_name, element_buffer_name, hbao_kernel_buffer_name]: [gl::BufferName;
-            3] = {
+        let [vertex_buffer_name, element_buffer_name, hbao_kernel_buffer_name]: [gl::BufferName; 3] = {
             let mut names: [Option<gl::BufferName>; 3] = std::mem::uninitialized();
             gl.gen_buffers(&mut names);
             names.try_transmute_each().unwrap()
@@ -264,21 +236,13 @@ impl Renderer {
         );
         gl.unbind_buffer(gl::UNIFORM_BUFFER);
         const HBAO_KERNEL_BUFFER_BINDING: u32 = 0;
-        gl.bind_buffer_base(
-            gl::UNIFORM_BUFFER,
-            HBAO_KERNEL_BUFFER_BINDING,
-            hbao_kernel_buffer_name,
-        );
+        gl.bind_buffer_base(gl::UNIFORM_BUFFER, HBAO_KERNEL_BUFFER_BINDING, hbao_kernel_buffer_name);
 
         gl.bind_vertex_array(vertex_array_name);
         gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
         gl.buffer_data(gl::ARRAY_BUFFER, (&VERTICES[..]).flatten(), gl::STATIC_DRAW);
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
-        gl.buffer_data(
-            gl::ELEMENT_ARRAY_BUFFER,
-            (&INDICES[..]).flatten(),
-            gl::STATIC_DRAW,
-        );
+        gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, (&INDICES[..]).flatten(), gl::STATIC_DRAW);
         gl.unbind_vertex_array();
         gl.unbind_buffer(gl::ARRAY_BUFFER);
         gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);

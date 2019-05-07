@@ -1,7 +1,6 @@
 fn write_obj_quads(name: &str, vertices: &[[f32; 3]], quads: &[[u32; 4]]) -> std::io::Result<()> {
     use std::io::Write;
-    let mut bufwriter =
-        std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
+    let mut bufwriter = std::io::BufWriter::new(std::fs::File::create(format!("{}.obj", name)).unwrap());
     let f = &mut bufwriter;
 
     for p in vertices.iter() {
@@ -54,12 +53,7 @@ fn main() {
             *vertex = normalize_to(*vertex, radius)
         }
         let quads = polygen::cube_quads(subdivisions);
-        write_obj_quads(
-            &format!("cubic_sphere_{}", subdivisions),
-            &spherical,
-            &quads,
-        )
-        .unwrap();
+        write_obj_quads(&format!("cubic_sphere_{}", subdivisions), &spherical, &quads).unwrap();
         write_obj_quads(
             &format!("cube_projected_onto_sphere_{}", subdivisions),
             &projected,

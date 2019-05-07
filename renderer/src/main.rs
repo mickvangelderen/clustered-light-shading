@@ -1,6 +1,5 @@
 #![allow(non_snake_case)]
 
-mod line_renderer;
 mod ao_renderer;
 mod basic_renderer;
 mod camera;
@@ -9,6 +8,7 @@ mod filters;
 mod frustrum;
 mod gl_ext;
 mod keyboard_model;
+mod line_renderer;
 mod overlay_renderer;
 mod post_renderer;
 mod random_unit_sphere_surface;
@@ -216,8 +216,7 @@ impl ViewDependentResources {
             let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8).unwrap();
             post_color_texture.update(gl, texture_update);
 
-            let post_depth_texture =
-                Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
+            let post_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
             post_depth_texture.update(gl, texture_update);
 
             // Framebuffers.
@@ -362,12 +361,8 @@ impl ViewDependentResources {
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
-    let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")]
-        .into_iter()
-        .collect();
-    let log_dir: PathBuf = [current_dir.as_ref(), Path::new("logs")]
-        .into_iter()
-        .collect();
+    let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
+    let log_dir: PathBuf = [current_dir.as_ref(), Path::new("logs")].into_iter().collect();
     let shadow_renderer_vs_path = resource_dir.join("shadow_renderer.vert");
     let shadow_renderer_fs_path = resource_dir.join("shadow_renderer.frag");
     let vsm_filter_vs_path = resource_dir.join("vsm_filter.vert");
@@ -408,9 +403,7 @@ fn main() {
 
     let mut watcher = notify::raw_watcher(tx_fs).unwrap();
 
-    watcher
-        .watch("resources", notify::RecursiveMode::Recursive)
-        .unwrap();
+    watcher.watch("resources", notify::RecursiveMode::Recursive).unwrap();
 
     let mut world = World {
         time: 0.0,
@@ -596,7 +589,6 @@ fn main() {
         line_renderer
     };
 
-
     let resources = resources::Resources::new(&gl, &resource_dir);
 
     // === VR ===
@@ -656,8 +648,7 @@ fn main() {
                         shadow_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &shadow_renderer_fs_path => {
-                        shadow_renderer_update.fragment_shader =
-                            Some(std::fs::read(&path).unwrap());
+                        shadow_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &vsm_filter_vs_path => {
                         vsm_filter_update.vertex_shader = Some(std::fs::read(&path).unwrap());
@@ -687,15 +678,13 @@ fn main() {
                         overlay_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &overlay_renderer_fs_path => {
-                        overlay_renderer_update.fragment_shader =
-                            Some(std::fs::read(&path).unwrap());
+                        overlay_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &line_renderer_vs_path => {
                         line_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     }
                     path if path == &line_renderer_fs_path => {
-                        line_renderer_update.fragment_shader =
-                            Some(std::fs::read(&path).unwrap());
+                        line_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                     }
                     _ => {}
                 }
@@ -815,10 +804,7 @@ fn main() {
         if should_resize {
             let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
             println!("win_size: {:?}", win_size);
-            println!(
-                "win_size: {:?}",
-                glutin::dpi::PhysicalSize { width, height }
-            );
+            println!("win_size: {:?}", glutin::dpi::PhysicalSize { width, height });
             view_dep_res.resize(&gl, width as i32, height as i32);
         }
 
@@ -884,13 +870,10 @@ fn main() {
                 println!("{:?}", &event);
             }
 
-            let mut poses: [vr::sys::TrackedDevicePose_t;
-                vr::sys::k_unMaxTrackedDeviceCount as usize] = unsafe { mem::zeroed() };
+            let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
+                unsafe { mem::zeroed() };
 
-            vr_resources
-                .compositor()
-                .wait_get_poses(&mut poses[..], None)
-                .unwrap();
+            vr_resources.compositor().wait_get_poses(&mut poses[..], None).unwrap();
 
             const HMD_POSE_INDEX: usize = vr::sys::k_unTrackedDeviceIndex_Hmd as usize;
             let hmd_pose = poses[HMD_POSE_INDEX];
@@ -899,10 +882,9 @@ fn main() {
                     // Fun.
                     world.clear_color[i] = hmd_pose.vAngularVelocity.v[i].abs() * 0.1;
                 }
-                world.pos_from_cam_to_hmd =
-                    Matrix4::<f32>::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m)
-                        .invert()
-                        .unwrap();
+                world.pos_from_cam_to_hmd = Matrix4::<f32>::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m)
+                    .invert()
+                    .unwrap();
             } else {
                 // TODO: Structure code better to facilitate reset in case of vr crash/disconnect.
                 world.pos_from_cam_to_hmd = Matrix4::from_translation(Vector3::zero());
@@ -931,10 +913,8 @@ fn main() {
 
         let sun_pos_in_sun = sun_ori * world.sun_pos;
 
-        let pos_from_wld_to_lgt =
-            Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
-        let pos_from_sun_to_wld =
-            Matrix4::from(sun_ori.invert()) * Matrix4::from_translation(-sun_pos_in_sun);
+        let pos_from_wld_to_lgt = Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
+        let pos_from_sun_to_wld = Matrix4::from(sun_ori.invert()) * Matrix4::from_translation(-sun_pos_in_sun);
 
         unsafe {
             let physical_size = win_size.to_physical(win_dpi);
@@ -980,8 +960,7 @@ fn main() {
             };
 
             // Do math in f64 precision.
-            let pos_from_hmd_to_clp: Matrix4<f32> =
-                frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
+            let pos_from_hmd_to_clp: Matrix4<f32> = frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
             let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
 
             basic_renderer.render(
@@ -1024,8 +1003,7 @@ fn main() {
                     color_texture_name: view_dep_res.color_texture.name(),
                     depth_texture_name: view_dep_res.depth_texture.name(),
                     nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
-                    random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture
-                        .name(),
+                    random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
                     frustrum: &frustrum,
                 },
                 &world,
@@ -1084,17 +1062,12 @@ fn main() {
                     }
                 };
 
-                let pos_from_eye_to_clp: Matrix4<f32> =
-                    frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
+                let pos_from_eye_to_clp: Matrix4<f32> = frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
                 let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
-                let pos_from_eye_to_hmd: Matrix4<f32> = vr_resources
-                    .context
-                    .system()
-                    .get_eye_to_head_transform(eye)
-                    .hmd_into();
+                let pos_from_eye_to_hmd: Matrix4<f32> =
+                    vr_resources.context.system().get_eye_to_head_transform(eye).hmd_into();
 
-                let pos_from_hmd_to_clp =
-                    pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
+                let pos_from_hmd_to_clp = pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
 
                 unsafe {
                     let view_dep_res = &vr_resources[eye];
@@ -1124,8 +1097,7 @@ fn main() {
                             color_texture_name: view_dep_res.color_texture.name(),
                             depth_texture_name: view_dep_res.depth_texture.name(),
                             nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
-                            random_unit_sphere_surface_texture_name:
-                                random_unit_sphere_surface_texture.name(),
+                            random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
                             frustrum: &frustrum,
                         },
                         &world,
@@ -1188,8 +1160,7 @@ fn main() {
                 duration
             };
             const NANOS_PER_SEC: f32 = 1_000_000_000.0;
-            let fps = NANOS_PER_SEC
-                / (duration.as_secs() as f32 * NANOS_PER_SEC + duration.subsec_nanos() as f32);
+            let fps = NANOS_PER_SEC / (duration.as_secs() as f32 * NANOS_PER_SEC + duration.subsec_nanos() as f32);
             fps_average.submit(fps);
             gl_window
                 .window()

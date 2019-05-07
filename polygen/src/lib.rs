@@ -128,16 +128,7 @@ fn edge_index(n: u32, basis: Basis, i3: Face, i2: Face, i1: u32) -> u32 {
 
 #[inline]
 fn face_index(n: u32, basis: Basis, i3: u32, i2: u32, i1: Face) -> u32 {
-    8 + 12 * n
-        + index_4d(
-            n,
-            n,
-            2,
-            basis.index() as u32,
-            i3 - 1,
-            i2 - 1,
-            i1.index() as u32,
-        )
+    8 + 12 * n + index_4d(n, n, 2, basis.index() as u32, i3 - 1, i2 - 1, i1.index() as u32)
 }
 
 #[inline]
@@ -230,8 +221,7 @@ fn cube_polygons<P: FromQuad<u32> + Clone>(subdivisions: u32) -> Vec<P> {
     unsafe {
         let n = subdivisions;
 
-        let mut faces: Vec<P> =
-            Vec::with_capacity(P::Polygons::LENGTH * (6 * (n + 1) * (n + 1)) as usize);
+        let mut faces: Vec<P> = Vec::with_capacity(P::Polygons::LENGTH * (6 * (n + 1) * (n + 1)) as usize);
 
         for &basis in BASES.into_iter() {
             for &i1 in FACES.into_iter() {
@@ -281,11 +271,7 @@ pub fn cube_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
         for &yf in FACES.into_iter() {
             for &xf in FACES.into_iter() {
                 debug_assert_eq!(vertices.len(), corner_index(zf, yf, xf) as usize);
-                vertices.push([
-                    xf.to_f32() * radius,
-                    yf.to_f32() * radius,
-                    zf.to_f32() * radius,
-                ]);
+                vertices.push([xf.to_f32() * radius, yf.to_f32() * radius, zf.to_f32() * radius]);
             }
         }
     }
@@ -356,11 +342,7 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
                     let ca1 = f32::cos(a1);
                     let sa1 = f32::sin(a1);
                     let s = radius / f32::sqrt(1.0 + ca1.powi(2));
-                    vertices.push(basis.to_xyz([
-                        s * sa1,
-                        s * ca1 * i2.to_f32(),
-                        s * ca1 * i3.to_f32(),
-                    ]))
+                    vertices.push(basis.to_xyz([s * sa1, s * ca1 * i2.to_f32(), s * ca1 * i3.to_f32()]))
                 }
             }
         }
@@ -379,11 +361,7 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
                     let ca3 = f32::cos(a3);
                     let sa3 = f32::sin(a3);
                     let s = radius / f32::sqrt(ca2.powi(2) * sa3.powi(2) + ca3.powi(2));
-                    vertices.push(basis.to_xyz([
-                        s * ca2 * ca3 * i1.to_f32(),
-                        s * sa2 * ca3,
-                        s * ca2 * sa3,
-                    ]))
+                    vertices.push(basis.to_xyz([s * ca2 * ca3 * i1.to_f32(), s * sa2 * ca3, s * ca2 * sa3]))
                 }
             }
         }
@@ -415,15 +393,9 @@ pub fn compute_normals(triangles: &[Tri], pos_in_obj: &[[f32; 3]]) -> Vec<[f32; 
 
     for (tri_idx, &tri) in triangles.iter().enumerate() {
         unsafe {
-            vertex_to_triangles
-                .get_unchecked_mut(tri[0] as usize)
-                .push(tri_idx);
-            vertex_to_triangles
-                .get_unchecked_mut(tri[1] as usize)
-                .push(tri_idx);
-            vertex_to_triangles
-                .get_unchecked_mut(tri[2] as usize)
-                .push(tri_idx);
+            vertex_to_triangles.get_unchecked_mut(tri[0] as usize).push(tri_idx);
+            vertex_to_triangles.get_unchecked_mut(tri[1] as usize).push(tri_idx);
+            vertex_to_triangles.get_unchecked_mut(tri[2] as usize).push(tri_idx);
         }
     }
 
@@ -442,11 +414,7 @@ pub fn compute_normals(triangles: &[Tri], pos_in_obj: &[[f32; 3]]) -> Vec<[f32; 
         .collect()
 }
 
-pub fn compute_tangents(
-    triangles: &[Tri],
-    pos_in_obj: &[[f32; 3]],
-    pos_in_tex: &[[f32; 2]],
-) -> Vec<[f32; 3]> {
+pub fn compute_tangents(triangles: &[Tri], pos_in_obj: &[[f32; 3]], pos_in_tex: &[[f32; 2]]) -> Vec<[f32; 3]> {
     // Compute tangents per triangle.
     let unnormalized_tangents_per_triangle: Vec<Vector3<f32>> = triangles
         .iter()
@@ -482,15 +450,9 @@ pub fn compute_tangents(
 
     for (tri_idx, &tri) in triangles.iter().enumerate() {
         unsafe {
-            vertex_to_triangles
-                .get_unchecked_mut(tri[0] as usize)
-                .push(tri_idx);
-            vertex_to_triangles
-                .get_unchecked_mut(tri[1] as usize)
-                .push(tri_idx);
-            vertex_to_triangles
-                .get_unchecked_mut(tri[2] as usize)
-                .push(tri_idx);
+            vertex_to_triangles.get_unchecked_mut(tri[0] as usize).push(tri_idx);
+            vertex_to_triangles.get_unchecked_mut(tri[1] as usize).push(tri_idx);
+            vertex_to_triangles.get_unchecked_mut(tri[2] as usize).push(tri_idx);
         }
     }
 
