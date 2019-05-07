@@ -19,11 +19,7 @@ fn main() {
                 [p[0] as f32, p[1] as f32, p[2] as f32]
             })
             .collect();
-        std::fs::write(
-            out_dir.join("unit_sphere_volume.bin"),
-            slice_to_bytes(&values[..]),
-        )
-        .unwrap();
+        std::fs::write(out_dir.join("unit_sphere_volume.bin"), slice_to_bytes(&values[..])).unwrap();
     }
     {
         let dist = UnitSphereDense::new();
@@ -34,11 +30,7 @@ fn main() {
                 [p[0] as f32, p[1] as f32, p[2] as f32]
             })
             .collect();
-        std::fs::write(
-            out_dir.join("unit_sphere_dense.bin"),
-            slice_to_bytes(&values[..]),
-        )
-        .unwrap();
+        std::fs::write(out_dir.join("unit_sphere_dense.bin"), slice_to_bytes(&values[..])).unwrap();
     }
     {
         let dist = UnitSphereSurface::new();
@@ -49,10 +41,6 @@ fn main() {
                 [p[0] as f32, p[1] as f32, p[2] as f32]
             })
             .collect();
-        std::fs::write(
-            out_dir.join("unit_sphere_surface.bin"),
-            slice_to_bytes(&values[..]),
-        )
-        .unwrap();
+        std::fs::write(out_dir.join("unit_sphere_surface.bin"), slice_to_bytes(&values[..])).unwrap();
     }
 }

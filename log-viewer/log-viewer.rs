@@ -20,20 +20,12 @@ fn main() -> io::Result<()> {
     };
 
     let frame = entries.len() as u64;
-    let sim = entries
-        .iter()
-        .map(log::Entry::simulation_duration_nanos)
-        .sum();
+    let sim = entries.iter().map(log::Entry::simulation_duration_nanos).sum();
     let pos = entries.iter().map(log::Entry::pose_duration_nanos).sum();
     let ren = entries.iter().map(log::Entry::render_duration_nanos).sum();
 
-    let total = entries.last().unwrap().simulation_start_nanos
-        - entries.first().unwrap().simulation_start_nanos;
-    println!(
-        "frame count: {}, fps: {}",
-        frame,
-        1_000_000_000.0 / total as f64
-    );
+    let total = entries.last().unwrap().simulation_start_nanos - entries.first().unwrap().simulation_start_nanos;
+    println!("frame count: {}, fps: {}", frame, 1_000_000_000.0 / total as f64);
 
     fn ms(a: u64, b: u64) -> f64 {
         ((a / b) as f64 + (a % b) as f64) / 1_000_000.0

@@ -56,13 +56,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub unsafe fn render<'a>(
-        &self,
-        gl: &gl::Gl,
-        params: &Parameters<'a>,
-        world: &World,
-        resources: &Resources,
-    ) {
+    pub unsafe fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World, resources: &Resources) {
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -70,12 +64,7 @@ impl Renderer {
         gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
         gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()]);
 
-        gl.clear_color(
-            world.clear_color[0],
-            world.clear_color[1],
-            world.clear_color[2],
-            1.0,
-        );
+        gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
         // Infinite far perspective projection.
         gl.clear_depth(1.0 - params.frustrum.z0 as f64 / params.frustrum.z1 as f64);
         gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
@@ -121,17 +110,12 @@ impl Renderer {
         }
 
         if let Some(loc) = self.pos_from_wld_to_lgt_loc.into() {
-            gl.uniform_matrix4f(
-                loc,
-                gl::MajorAxis::Column,
-                params.pos_from_wld_to_lgt.as_ref(),
-            );
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_wld_to_lgt.as_ref());
         }
 
         if let Some(loc) = self.sun_dir_in_cam_loc.into() {
             // FIXME: Duplicate code!
-            let sun_ori =
-                Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
+            let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
             let cam_ori = if world.smooth_camera {
                 world.camera.smooth_orientation()
             } else {
@@ -223,12 +207,7 @@ impl Renderer {
             gl.bind_vertex_array(resources.vaos[i]);
             // // NOTE: Help renderdoc.
             // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, resources.ebs[i]);
-            gl.draw_elements(
-                gl::TRIANGLES,
-                resources.element_counts[i],
-                gl::UNSIGNED_INT,
-                0,
-            );
+            gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
         }
 
         if self.shadow_sampler_loc.is_some() {
@@ -246,28 +225,14 @@ impl Renderer {
 
         if let Some(bytes) = update.vertex_shader {
             self.vertex_shader_name
-                .compile(
-                    gl,
-                    &[
-                        shader_defines::VERSION,
-                        shader_defines::DEFINES,
-                        bytes.as_ref(),
-                    ],
-                )
+                .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                 .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
             should_link = true;
         }
 
         if let Some(bytes) = update.fragment_shader {
             self.fragment_shader_name
-                .compile(
-                    gl,
-                    &[
-                        shader_defines::VERSION,
-                        shader_defines::DEFINES,
-                        bytes.as_ref(),
-                    ],
-                )
+                .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                 .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
             should_link = true;
         }
@@ -294,26 +259,18 @@ impl Renderer {
             self.ambient_loc = get_uniform_location!(gl, self.program_name, "ambient");
             self.specular_loc = get_uniform_location!(gl, self.program_name, "specular");
             self.shininess_loc = get_uniform_location!(gl, self.program_name, "shininess");
-            self.sun_dir_in_cam_loc =
-                get_uniform_location!(gl, self.program_name, "sun_dir_in_cam");
-            self.pos_from_obj_to_wld_loc =
-                get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-            self.pos_from_wld_to_cam_loc =
-                get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
-            self.pos_from_wld_to_clp_loc =
-                get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
-            self.pos_from_wld_to_lgt_loc =
-                get_uniform_location!(gl, self.program_name, "pos_from_wld_to_lgt");
+            self.sun_dir_in_cam_loc = get_uniform_location!(gl, self.program_name, "sun_dir_in_cam");
+            self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
+            self.pos_from_wld_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
+            self.pos_from_wld_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+            self.pos_from_wld_to_lgt_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_lgt");
             self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
             self.diffuse_dimensions_loc = get_uniform_location!(gl, self.program_name, "diffuse_dimensions");
             self.normal_dimensions_loc = get_uniform_location!(gl, self.program_name, "normal_dimensions");
             self.shadow_dimensions_loc = get_uniform_location!(gl, self.program_name, "shadow_dimensions");
-            self.diffuse_sampler_loc =
-                get_uniform_location!(gl, self.program_name, "diffuse_sampler");
-            self.normal_sampler_loc =
-                get_uniform_location!(gl, self.program_name, "normal_sampler");
-            self.shadow_sampler_loc =
-                get_uniform_location!(gl, self.program_name, "shadow_sampler");
+            self.diffuse_sampler_loc = get_uniform_location!(gl, self.program_name, "diffuse_sampler");
+            self.normal_sampler_loc = get_uniform_location!(gl, self.program_name, "normal_sampler");
+            self.shadow_sampler_loc = get_uniform_location!(gl, self.program_name, "shadow_sampler");
 
             gl.unuse_program();
         }
@@ -321,13 +278,9 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_shader_name = gl
-                .create_shader(gl::VERTEX_SHADER)
-                .expect("Failed to create shader.");
+            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
 
-            let fragment_shader_name = gl
-                .create_shader(gl::FRAGMENT_SHADER)
-                .expect("Failed to create shader.");
+            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
 
             let program_name = gl.create_program().expect("Failed to create program_name.");
             gl.attach_shader(program_name, vertex_shader_name);

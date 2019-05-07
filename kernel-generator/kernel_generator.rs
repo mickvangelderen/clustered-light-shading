@@ -18,11 +18,7 @@ impl Distribution<[f64; 3]> for UnitSphereVolume {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> [f64; 3] {
         let uniform = rand::distributions::Uniform::new(-1., 1.);
         loop {
-            let p = [
-                uniform.sample(rng),
-                uniform.sample(rng),
-                uniform.sample(rng),
-            ];
+            let p = [uniform.sample(rng), uniform.sample(rng), uniform.sample(rng)];
             let [x, y, z] = p;
             if x * x + y * y + z * z >= 1. {
                 continue;

@@ -44,13 +44,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub unsafe fn render<'a>(
-        &self,
-        gl: &gl::Gl,
-        params: &Parameters<'a>,
-        world: &World,
-        resources: &Resources,
-    ) {
+    pub unsafe fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World, resources: &Resources) {
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
@@ -67,11 +61,7 @@ impl Renderer {
         };
 
         if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-            gl.uniform_matrix4f(
-                loc,
-                gl::MajorAxis::Column,
-                params.pos_from_obj_to_wld.as_ref(),
-            );
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_obj_to_wld.as_ref());
         }
 
         if let Some(loc) = self.pos_from_wld_to_cam_loc.into() {
@@ -97,18 +87,9 @@ impl Renderer {
         // gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
 
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
-        gl.buffer_data(
-            gl::ELEMENT_ARRAY_BUFFER,
-            params.indices.flatten(),
-            gl::STATIC_DRAW,
-        );
+        gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, params.indices.flatten(), gl::STATIC_DRAW);
 
-        gl.draw_elements(
-            gl::LINES,
-            params.indices.flatten().len(),
-            gl::UNSIGNED_INT,
-            0,
-        );
+        gl.draw_elements(gl::LINES, params.indices.flatten().len(), gl::UNSIGNED_INT, 0);
 
         gl.unbind_vertex_array();
 
@@ -122,28 +103,14 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            shader_defines::VERSION,
-                            shader_defines::DEFINES,
-                            bytes.as_ref(),
-                        ],
-                    )
+                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            shader_defines::VERSION,
-                            shader_defines::DEFINES,
-                            bytes.as_ref(),
-                        ],
-                    )
+                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
@@ -165,12 +132,9 @@ impl Renderer {
                     }};
                 }
 
-                self.pos_from_obj_to_wld_loc =
-                    get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.pos_from_wld_to_cam_loc =
-                    get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
-                self.pos_from_wld_to_clp_loc =
-                    get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+                self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
+                self.pos_from_wld_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
+                self.pos_from_wld_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
 
                 gl.unuse_program();
             }
@@ -179,13 +143,9 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_shader_name = gl
-                .create_shader(gl::VERTEX_SHADER)
-                .expect("Failed to create shader.");
+            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
 
-            let fragment_shader_name = gl
-                .create_shader(gl::FRAGMENT_SHADER)
-                .expect("Failed to create shader.");
+            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
 
             let program_name = gl.create_program().expect("Failed to create program_name.");
             gl.attach_shader(program_name, vertex_shader_name);

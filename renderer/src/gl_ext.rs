@@ -34,11 +34,7 @@ impl<'a> TextureUpdate<'a> {
 
     #[inline]
     pub fn data(mut self, width: i32, height: i32, bytes: Option<&'a [u8]>) -> Self {
-        self.data = Some(TextureUpdateData {
-            width,
-            height,
-            bytes,
-        });
+        self.data = Some(TextureUpdateData { width, height, bytes });
         self
     }
 
@@ -180,11 +176,7 @@ impl<Shape, Format> Texture<Shape, Format> {
         unsafe {
             let mut names: [Option<gl::TextureName>; 1] = std::mem::uninitialized();
             gl.gen_textures(&mut names);
-            names[0].map(|name| Texture {
-                name,
-                shape,
-                format,
-            })
+            names[0].map(|name| Texture { name, shape, format })
         }
     }
 
@@ -213,12 +205,7 @@ where
         unsafe {
             gl.bind_texture(self.shape.into(), self.name());
 
-            if let Some(TextureUpdateData {
-                width,
-                height,
-                bytes,
-            }) = update.data
-            {
+            if let Some(TextureUpdateData { width, height, bytes }) = update.data {
                 gl.tex_image_2d(
                     self.shape.into(),
                     0,
@@ -334,13 +321,10 @@ impl ProgramNameExt for gl::ProgramName {
         unsafe {
             gl.link_program(*self);
 
-            if gl.get_programiv_move(*self, gl::LINK_STATUS)
-                == gl::UncheckedProgramLinkStatus::from(gl::LINKED)
-            {
+            if gl.get_programiv_move(*self, gl::LINK_STATUS) == gl::UncheckedProgramLinkStatus::from(gl::LINKED) {
                 Ok(())
             } else {
-                Err(String::from_utf8(gl.get_program_info_log_move(*self))
-                    .expect("Program info log is not utf8."))
+                Err(String::from_utf8(gl.get_program_info_log_move(*self)).expect("Program info log is not utf8."))
             }
         }
     }

@@ -107,13 +107,9 @@ impl Resources {
             })
             .collect();
 
-        let mut meshes: Vec<Mesh> =
-            Vec::with_capacity(objs.iter().map(|(_, ref models, _)| models.len()).sum());
-        let mut materials: Vec<tobj::Material> = Vec::with_capacity(
-            objs.iter()
-                .map(|(_, _, ref materials)| materials.len())
-                .sum(),
-        );
+        let mut meshes: Vec<Mesh> = Vec::with_capacity(objs.iter().map(|(_, ref models, _)| models.len()).sum());
+        let mut materials: Vec<tobj::Material> =
+            Vec::with_capacity(objs.iter().map(|(_, _, ref materials)| materials.len()).sum());
 
         for (i, (obj_path, obj_models, obj_materials)) in objs.into_iter().enumerate() {
             let material_offset = material_offsets[i];
@@ -180,8 +176,7 @@ impl Resources {
             names.try_transmute_each().unwrap()
         };
 
-        let element_counts: Vec<usize> =
-            meshes.iter().map(|mesh| mesh.triangles.len() * 3).collect();
+        let element_counts: Vec<usize> = meshes.iter().map(|mesh| mesh.triangles.len() * 3).collect();
 
         let key_indices: Vec<keyboard_model::UncheckedIndex> = meshes
             .iter()
@@ -208,26 +203,10 @@ impl Resources {
                 gl.bind_vertex_array(vao);
                 gl.bind_buffer(gl::ARRAY_BUFFER, vb);
                 gl.buffer_reserve(gl::ARRAY_BUFFER, total_size, gl::STATIC_DRAW);
-                gl.buffer_sub_data(
-                    gl::ARRAY_BUFFER,
-                    pos_in_obj_offset,
-                    (&mesh.pos_in_obj[..]).flatten(),
-                );
-                gl.buffer_sub_data(
-                    gl::ARRAY_BUFFER,
-                    pos_in_tex_offset,
-                    (&mesh.pos_in_tex[..]).flatten(),
-                );
-                gl.buffer_sub_data(
-                    gl::ARRAY_BUFFER,
-                    nor_in_obj_offset,
-                    (&mesh.nor_in_obj[..]).flatten(),
-                );
-                gl.buffer_sub_data(
-                    gl::ARRAY_BUFFER,
-                    tan_in_obj_offset,
-                    (&mesh.tan_in_obj[..]).flatten(),
-                );
+                gl.buffer_sub_data(gl::ARRAY_BUFFER, pos_in_obj_offset, (&mesh.pos_in_obj[..]).flatten());
+                gl.buffer_sub_data(gl::ARRAY_BUFFER, pos_in_tex_offset, (&mesh.pos_in_tex[..]).flatten());
+                gl.buffer_sub_data(gl::ARRAY_BUFFER, nor_in_obj_offset, (&mesh.nor_in_obj[..]).flatten());
+                gl.buffer_sub_data(gl::ARRAY_BUFFER, tan_in_obj_offset, (&mesh.tan_in_obj[..]).flatten());
 
                 gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
                 // NOTE: Add this to have renderdoc show the BufferData calls.
@@ -343,11 +322,7 @@ impl Resources {
                                 img.as_ptr() as *const std::os::raw::c_void,
                             );
                             gl.generate_mipmap(gl::TEXTURE_2D);
-                            gl.tex_parameter_i(
-                                gl::TEXTURE_2D,
-                                gl::TEXTURE_MIN_FILTER,
-                                gl::LINEAR_MIPMAP_LINEAR,
-                            );
+                            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
                             gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
                             loop {
@@ -398,11 +373,7 @@ impl Resources {
                                 img.as_ptr() as *const std::os::raw::c_void,
                             );
                             gl.generate_mipmap(gl::TEXTURE_2D);
-                            gl.tex_parameter_i(
-                                gl::TEXTURE_2D,
-                                gl::TEXTURE_MIN_FILTER,
-                                gl::LINEAR_MIPMAP_LINEAR,
-                            );
+                            gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
                             gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
                             loop {

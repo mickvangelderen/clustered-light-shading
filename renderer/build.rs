@@ -22,11 +22,7 @@ fn main() {
                 [to_byte(p[0]), to_byte(p[1]), to_byte(p[2])]
             })
             .collect();
-        std::fs::write(
-            out_dir.join("unit_sphere_surface.bin"),
-            slice_to_bytes(&values[..]),
-        )
-        .unwrap();
+        std::fs::write(out_dir.join("unit_sphere_surface.bin"), slice_to_bytes(&values[..])).unwrap();
 
         fn to_byte(val: f64) -> u8 {
             (val * (255.0 / 2.0) + (255.0 / 2.0)) as u8
@@ -41,10 +37,6 @@ fn main() {
                 [p[0] as f32, p[1] as f32, p[2] as f32, 0.0]
             })
             .collect();
-        std::fs::write(
-            out_dir.join("unit_sphere_volume.bin"),
-            slice_to_bytes(&values[..]),
-        )
-        .unwrap();
+        std::fs::write(out_dir.join("unit_sphere_volume.bin"), slice_to_bytes(&values[..])).unwrap();
     }
 }

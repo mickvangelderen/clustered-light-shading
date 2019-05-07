@@ -101,28 +101,14 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            shader_defines::VERSION,
-                            shader_defines::DEFINES,
-                            bytes.as_ref(),
-                        ],
-                    )
+                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            shader_defines::VERSION,
-                            shader_defines::DEFINES,
-                            bytes.as_ref(),
-                        ],
-                    )
+                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
@@ -167,8 +153,7 @@ impl Renderer {
                     }};
                 }
 
-                self.vs_pos_in_qua_loc =
-                    get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
+                self.vs_pos_in_qua_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
 
                 // Set up attributes.
 
@@ -176,14 +161,7 @@ impl Renderer {
                 gl.bind_vertex_array(self.vertex_array_name);
 
                 if let Some(loc) = self.vs_pos_in_qua_loc.into() {
-                    gl.vertex_attrib_pointer(
-                        loc,
-                        2,
-                        gl::FLOAT,
-                        gl::FALSE,
-                        std::mem::size_of::<[f32; 2]>(),
-                        0,
-                    );
+                    gl.vertex_attrib_pointer(loc, 2, gl::FLOAT, gl::FALSE, std::mem::size_of::<[f32; 2]>(), 0);
 
                     gl.enable_vertex_attrib_array(loc);
                 }
@@ -198,13 +176,9 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_shader_name = gl
-                .create_shader(gl::VERTEX_SHADER)
-                .expect("Failed to create shader.");
+            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
 
-            let fragment_shader_name = gl
-                .create_shader(gl::FRAGMENT_SHADER)
-                .expect("Failed to create shader.");
+            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
 
             let program_name = gl.create_program().expect("Failed to create program_name.");
             gl.attach_shader(program_name, vertex_shader_name);
@@ -226,11 +200,7 @@ impl Renderer {
             gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
             gl.buffer_data(gl::ARRAY_BUFFER, (&VERTICES[..]).flatten(), gl::STATIC_DRAW);
             gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
-            gl.buffer_data(
-                gl::ELEMENT_ARRAY_BUFFER,
-                (&INDICES[..]).flatten(),
-                gl::STATIC_DRAW,
-            );
+            gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, (&INDICES[..]).flatten(), gl::STATIC_DRAW);
             gl.unbind_vertex_array();
             gl.unbind_buffer(gl::ARRAY_BUFFER);
             gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
