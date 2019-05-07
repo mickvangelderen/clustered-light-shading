@@ -1,4 +1,3 @@
-use crate::frustrum::Frustrum;
 use crate::resources::Resources;
 use crate::shader_defines;
 use cgmath::*;
@@ -24,12 +23,11 @@ pub struct Renderer {
     pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
 }
 
-pub struct Parameters<'a> {
+pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
     pub pos_from_wld_to_clp: Matrix4<f32>,
-    pub frustrum: &'a Frustrum<f32>,
 }
 
 #[derive(Default)]
@@ -45,7 +43,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, resources: &Resources) {
+    pub fn render(&self, gl: &gl::Gl, params: &Parameters, resources: &Resources) {
         unsafe {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -72,8 +70,6 @@ impl Renderer {
                 }
 
                 gl.bind_vertex_array(resources.vaos[i]);
-                // // NOTE: Help renderdoc.
-                // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, resources.ebs[i]);
                 gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
             }
 

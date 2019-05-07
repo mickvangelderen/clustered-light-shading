@@ -359,6 +359,8 @@ impl ViewDependentResources {
     }
 }
 
+const DEPTH_RANGE: (f64, f64) = (-1.0, 1.0);
+
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
@@ -905,9 +907,9 @@ fn main() {
             z1: -30.0,
         };
 
-        let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.line_mesh();
+        let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast().unwrap().line_mesh();
 
-        let pos_from_lgt_to_clp = sun_frustrum.orthographic((-1.0, 1.0));
+        let pos_from_lgt_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
 
         let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
 
@@ -915,6 +917,9 @@ fn main() {
 
         let pos_from_wld_to_lgt = Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
         let pos_from_sun_to_wld = Matrix4::from(sun_ori.invert()) * Matrix4::from_translation(-sun_pos_in_sun);
+        let pos_from_wld_to_clp: Matrix4<f32> = (pos_from_lgt_to_clp * pos_from_wld_to_lgt.cast().unwrap())
+            .cast()
+            .unwrap();
 
         unsafe {
             let physical_size = win_size.to_physical(win_dpi);
@@ -926,8 +931,7 @@ fn main() {
                     framebuffer: Some(view_ind_res.shadow_framebuffer_name),
                     width: SHADOW_W,
                     height: SHADOW_H,
-                    pos_from_wld_to_clp: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
-                    frustrum: &sun_frustrum,
+                    pos_from_wld_to_clp,
                 },
                 &resources,
             );
@@ -945,23 +949,24 @@ fn main() {
                 },
             );
 
-            let frustrum = {
-                let z0 = -0.1;
-                let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.fovy).0 as f64) / 2.0);
-                let dx = dy * physical_size.width as f64 / physical_size.height as f64;
-                frustrum::Frustrum::<f64> {
-                    x0: -dx,
-                    x1: dx,
-                    y0: -dy,
-                    y1: dy,
-                    z0,
-                    z1: -100.0,
-                }
-            };
+            let (pos_from_cam_to_clp, pos_from_clp_to_cam): (Matrix4<f32>, Matrix4<f32>) = {
+                let frustrum = {
+                    let z0 = -0.1;
+                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.fovy).0 as f64) / 2.0);
+                    let dx = dy * physical_size.width as f64 / physical_size.height as f64;
+                    frustrum::Frustrum::<f64> {
+                        x0: -dx,
+                        x1: dx,
+                        y0: -dy,
+                        y1: dy,
+                        z0,
+                        z1: -100.0,
+                    }
+                };
 
-            // Do math in f64 precision.
-            let pos_from_hmd_to_clp: Matrix4<f32> = frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
-            let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
+                let m = frustrum.perspective(DEPTH_RANGE);
+                (m.cast().unwrap(), m.invert().unwrap().cast().unwrap())
+            };
 
             basic_renderer.render(
                 &gl,
@@ -969,11 +974,10 @@ fn main() {
                     framebuffer: Some(view_dep_res.framebuffer_name),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
-                    pos_from_cam_to_clp: pos_from_hmd_to_clp,
+                    pos_from_cam_to_clp,
                     pos_from_wld_to_lgt: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
                     shadow_texture_name: view_ind_res.shadow_texture.name(),
                     shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                    frustrum: &frustrum,
                 },
                 &world,
                 &resources,
@@ -986,7 +990,7 @@ fn main() {
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     pos_from_obj_to_wld: pos_from_sun_to_wld,
-                    pos_from_cam_to_clp: pos_from_hmd_to_clp,
+                    pos_from_cam_to_clp,
                     vertices: &sun_frustrum_vertices[..],
                     indices: &sun_frustrum_indices[..],
                 },
@@ -1000,11 +1004,12 @@ fn main() {
                     framebuffer: Some(view_dep_res.ao_framebuffer_name),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
+                    pos_from_cam_to_clp,
+                    pos_from_clp_to_cam,
                     color_texture_name: view_dep_res.color_texture.name(),
                     depth_texture_name: view_dep_res.depth_texture.name(),
                     nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
                     random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                    frustrum: &frustrum,
                 },
                 &world,
             );
@@ -1015,12 +1020,12 @@ fn main() {
                     framebuffer: None,
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
+                    pos_from_cam_to_clp,
+                    pos_from_clp_to_cam,
                     color_texture_name: view_dep_res.color_texture.name(),
                     depth_texture_name: view_dep_res.depth_texture.name(),
                     nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
                     ao_texture_name: view_dep_res.ao_texture.name(),
-                    frustrum: &frustrum,
-                    pos_from_cam_to_clp: pos_from_hmd_to_clp,
                 },
                 &world,
             );
@@ -1047,27 +1052,30 @@ fn main() {
                 // Right: [-1.2475655, 1.3957016, -1.473202, 1.4637187]
                 // Right: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0307, 0.0, 0.015, 1.0]]
 
-                let frustrum = {
-                    // These are the tangents.
-                    let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
-                    let z0 = -0.1;
-                    let z1 = -100.0;
-                    frustrum::Frustrum::<f64> {
-                        x0: -z0 * l as f64,
-                        x1: -z0 * r as f64,
-                        y0: -z0 * b as f64,
-                        y1: -z0 * t as f64,
-                        z0,
-                        z1,
-                    }
+                let (pos_from_cam_to_clp, pos_from_clp_to_cam) = {
+                    let frustrum = {
+                        // These are the tangents.
+                        let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
+                        let z0 = -0.1;
+                        let z1 = -100.0;
+                        frustrum::Frustrum::<f64> {
+                            x0: -z0 * l as f64,
+                            x1: -z0 * r as f64,
+                            y0: -z0 * b as f64,
+                            y1: -z0 * t as f64,
+                            z0,
+                            z1,
+                        }
+                    };
+
+                    let m: Matrix4<f64> = frustrum.orthographic(DEPTH_RANGE);
+                    (m.cast().unwrap(), m.invert().unwrap().cast().unwrap())
                 };
 
-                let pos_from_eye_to_clp: Matrix4<f32> = frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
-                let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
                 let pos_from_eye_to_hmd: Matrix4<f32> =
                     vr_resources.context.system().get_eye_to_head_transform(eye).hmd_into();
 
-                let pos_from_hmd_to_clp = pos_from_eye_to_clp * pos_from_eye_to_hmd.invert().unwrap();
+                let pos_from_hmd_to_clp = pos_from_cam_to_clp * pos_from_eye_to_hmd.invert().unwrap();
 
                 unsafe {
                     let view_dep_res = &vr_resources[eye];
@@ -1082,7 +1090,6 @@ fn main() {
                             pos_from_wld_to_lgt: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
                             shadow_texture_name: view_ind_res.shadow_texture.name(),
                             shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                            frustrum: &frustrum,
                         },
                         &world,
                         &resources,
@@ -1094,11 +1101,12 @@ fn main() {
                             framebuffer: Some(view_dep_res.ao_framebuffer_name),
                             width: vr_resources.dims.width as i32,
                             height: vr_resources.dims.height as i32,
+                            pos_from_cam_to_clp,
+                            pos_from_clp_to_cam,
                             color_texture_name: view_dep_res.color_texture.name(),
                             depth_texture_name: view_dep_res.depth_texture.name(),
                             nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
                             random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                            frustrum: &frustrum,
                         },
                         &world,
                     );
@@ -1109,12 +1117,12 @@ fn main() {
                             framebuffer: Some(view_dep_res.post_framebuffer_name),
                             width: vr_resources.dims.width as i32,
                             height: vr_resources.dims.height as i32,
+                            pos_from_cam_to_clp,
+                            pos_from_clp_to_cam,
                             color_texture_name: view_dep_res.color_texture.name(),
                             depth_texture_name: view_dep_res.depth_texture.name(),
                             nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
                             ao_texture_name: view_dep_res.ao_texture.name(),
-                            frustrum: &frustrum,
-                            pos_from_cam_to_clp: pos_from_hmd_to_clp,
                         },
                         &world,
                     );
