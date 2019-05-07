@@ -18,17 +18,13 @@ in vec2 fs_pos_in_tex;
 
 layout(location = 0) out uvec2 fs_ao;
 
-float sample_z_ndc(vec2 pos_in_tex) {
-  return texture(depth_sampler, pos_in_tex).r * 2.0 - 1.0;
-}
-
 vec2 pos_from_cam_to_tex(vec3 pos_in_cam) {
   vec4 p_clp = pos_from_cam_to_clp * vec4(pos_in_cam, 1.0);
   return (p_clp.xy / p_clp.w) * 0.5 + vec2(0.5);
 }
 
 vec3 sample_pos_in_cam(vec2 pos_in_tex) {
-  float z_ndc = texture(depth_sampler, pos_in_tex).r * 2.0 - 1.0;
+  float z_ndc = texture(depth_sampler, pos_in_tex).r;
 
   float a = pos_from_cam_to_clp[2][2];
   float b = pos_from_cam_to_clp[3][2];

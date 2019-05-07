@@ -359,7 +359,7 @@ impl ViewDependentResources {
     }
 }
 
-const DEPTH_RANGE: (f64, f64) = (-1.0, 1.0);
+const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
@@ -470,6 +470,10 @@ fn main() {
             println!("OpenGL debugging enabled.");
             gl.enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
         }
+
+        // Reverse-Z.
+        gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
+        gl.depth_func(gl::GT);
     }
 
     let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);

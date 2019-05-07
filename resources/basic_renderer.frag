@@ -25,12 +25,12 @@ layout(location = 1) out vec3 frag_nor_in_cam;
 float compute_visibility_classic(vec3 pos_in_lgt, float bias) {
   float closest_depth_in_lgt =
       texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).x;
-  float frag_depth_in_lgt = pos_in_lgt.z * 0.5 + 0.5;
+  float frag_depth_in_lgt = 1.0 - pos_in_lgt.z;
   return step(frag_depth_in_lgt, closest_depth_in_lgt + bias);
 }
 
 float compute_visibility_variance(vec3 pos_in_lgt) {
-  float frag_depth = pos_in_lgt.z * 0.5 + 0.5;
+  float frag_depth = 1.0 - pos_in_lgt.z;
   vec2 sam = texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).xy;
   float mean_depth = sam.x;
   float mean_depth_sq = sam.y;
