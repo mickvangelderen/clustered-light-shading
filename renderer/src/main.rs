@@ -981,7 +981,7 @@ fn main() {
 
             // Do math in f64 precision.
             let pos_from_hmd_to_clp: Matrix4<f32> =
-                frustrum.perspective((-1.0, 1.0)).cast().unwrap();
+                frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
             let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
 
             basic_renderer.render(
@@ -1042,6 +1042,7 @@ fn main() {
                     nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
                     ao_texture_name: view_dep_res.ao_texture.name(),
                     frustrum: &frustrum,
+                    pos_from_cam_to_clp: pos_from_hmd_to_clp,
                 },
                 &world,
             );
@@ -1084,7 +1085,7 @@ fn main() {
                 };
 
                 let pos_from_eye_to_clp: Matrix4<f32> =
-                    frustrum.perspective((-1.0, 1.0)).cast().unwrap();
+                    frustrum.perspective_infinite_far((-1.0, 1.0)).cast().unwrap();
                 let frustrum: frustrum::Frustrum<f32> = frustrum.cast().unwrap();
                 let pos_from_eye_to_hmd: Matrix4<f32> = vr_resources
                     .context
@@ -1141,6 +1142,7 @@ fn main() {
                             nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
                             ao_texture_name: view_dep_res.ao_texture.name(),
                             frustrum: &frustrum,
+                            pos_from_cam_to_clp: pos_from_hmd_to_clp,
                         },
                         &world,
                     );

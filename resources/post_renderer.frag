@@ -1,16 +1,12 @@
 uniform float time;
 uniform int width;
 uniform int height;
-uniform float x0;
-uniform float x1;
-uniform float y0;
-uniform float y1;
-uniform float z0;
-uniform float z1;
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;
 uniform usampler2D ao_sampler;
+uniform mat4 pos_from_clp_to_cam;
+uniform mat4 pos_from_cam_to_clp;
 
 #define HBAO_KERNEL_BINDING 0
 
@@ -31,28 +27,25 @@ float sample_z_ndc(vec2 pos_in_tex) {
 }
 
 vec2 pos_from_cam_to_tex(vec3 pos_in_cam) {
-  float x = pos_in_cam.x;
-  float y = pos_in_cam.y;
-  float z = pos_in_cam.z;
-  float s = z0 / z;
-
-  return vec2((s * x - x0) / (x1 - x0), (s * y - y0) / (y1 - y0));
+  vec4 p_clp = pos_from_cam_to_clp * vec4(pos_in_cam, 1.0);
+  return (p_clp.xy / p_clp.w) * 0.5 + vec2(0.5);
 }
 
-// Reverse projection matrix.
-// float z_from_ndc_to_cam(float z_ndc) {
-//   return (2.0 * z0 * z1) / (z_ndc * (z1 - z0) + z0 + z1);
-// }
-
-// Reverse infinite far perspective projection matrix.
-float z_from_ndc_to_cam(float z_ndc) { return 2.0 * z0 / (1.0 - z_ndc); }
-
 vec3 sample_pos_in_cam(vec2 pos_in_tex) {
-  float z_ndc = sample_z_ndc(pos_in_tex);
-  // This is z_from_ndc_to_cam(z_ndc) / z0
-  float s = 2.0 / (1.0 - z_ndc);
-  return vec3(s * mix(x0, x1, pos_in_tex.x), s * mix(y0, y1, pos_in_tex.y),
-              s * z0);
+  float z_ndc = texture(depth_sampler, pos_in_tex).r;
+
+  float a = pos_from_cam_to_clp[2][2];
+  float b = pos_from_cam_to_clp[3][2];
+  float c = pos_from_cam_to_clp[2][3];
+  float d = pos_from_cam_to_clp[3][3];
+
+  float z_clp = (b - d * z_ndc) / (c * z_ndc - a);
+
+  float w_clp = z_clp / z_ndc;
+
+  vec4 p_clp = vec4(w_clp * (pos_in_tex.xy * 2.0 - vec2(1.0)), z_clp, w_clp);
+
+  return (pos_from_clp_to_cam * p_clp).xyz;
 }
 
 uvec2 sample_ao(vec2 pos_in_tex) { return texture(ao_sampler, pos_in_tex).xy; }
