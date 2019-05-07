@@ -53,7 +53,8 @@ impl Renderer {
             gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
             gl.clear_color(1.0, 1.0, 1.0, 1.0);
-            gl.clear_depth(1.0);
+            // Reverse-Z.
+            gl.clear_depth(0.0);
             gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
             gl.use_program(self.program_name);

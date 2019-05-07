@@ -28,7 +28,7 @@ vec2 pos_from_cam_to_tex(vec3 pos_in_cam) {
 }
 
 vec3 sample_pos_in_cam(vec2 pos_in_tex) {
-  float z_ndc = texture(depth_sampler, pos_in_tex).r * 2.0 - 1.0;
+  float z_ndc = texture(depth_sampler, pos_in_tex).r;
 
   float a = pos_from_cam_to_clp[2][2];
   float b = pos_from_cam_to_clp[3][2];
