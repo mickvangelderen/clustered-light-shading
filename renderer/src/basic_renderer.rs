@@ -19,7 +19,7 @@ pub struct Renderer {
     pub sun_dir_in_cam_loc: gl::OptionUniformLocation,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_cam_loc: gl::OptionUniformLocation,
-    pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
+    pub pos_from_cam_to_clp_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_lgt_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
     pub diffuse_dimensions_loc: gl::OptionUniformLocation,
@@ -103,9 +103,8 @@ impl Renderer {
             gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_cam.as_ref());
         }
 
-        if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-            let pos_from_wld_to_clp = params.pos_from_cam_to_clp * pos_from_wld_to_cam;
-            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_clp.as_ref());
+        if let Some(loc) = self.pos_from_cam_to_clp_loc.into() {
+            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_cam_to_clp.as_ref());
         }
 
         if let Some(loc) = self.pos_from_wld_to_lgt_loc.into() {
@@ -261,7 +260,7 @@ impl Renderer {
             self.sun_dir_in_cam_loc = get_uniform_location!(gl, self.program_name, "sun_dir_in_cam");
             self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
             self.pos_from_wld_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
-            self.pos_from_wld_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+            self.pos_from_cam_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_cam_to_clp");
             self.pos_from_wld_to_lgt_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_lgt");
             self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
             self.diffuse_dimensions_loc = get_uniform_location!(gl, self.program_name, "diffuse_dimensions");
@@ -308,7 +307,7 @@ impl Renderer {
                 sun_dir_in_cam_loc: gl::OptionUniformLocation::NONE,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
-                pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
+                pos_from_cam_to_clp_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_lgt_loc: gl::OptionUniformLocation::NONE,
                 diffuse_dimensions_loc: gl::OptionUniformLocation::NONE,
                 normal_dimensions_loc: gl::OptionUniformLocation::NONE,
