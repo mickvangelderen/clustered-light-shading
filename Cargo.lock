@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "gl-typed"
-version = "0.4.7"
+version = "0.4.8"
 dependencies = [
  "bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "convute 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1171,7 +1171,7 @@ name = "renderer"
 version = "0.1.1"
 dependencies = [
  "cgmath 0.17.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "gl-typed 0.4.7",
+ "gl-typed 0.4.8",
  "glutin 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.21.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "kernel-generator 0.1.0",
