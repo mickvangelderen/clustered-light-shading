@@ -21,7 +21,13 @@ in vec3 fs_tan_in_cam;
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
-float compute_visibility_classic(vec3 pos_in_lgt, float bias) {
+float compute_visibility_classic(vec3 pos_in_lgt) {
+  // Can make the bias depend on the angle between the light direction and the
+  // surface normal but does that really help? The worst case scenario is not
+  // improved. For now I just use a constant so at least I don't have to look
+  // for errors here.
+  float bias = 0.005;
+
   float closest_depth_in_lgt =
       texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).x;
   float frag_depth_in_lgt = 1.0 - pos_in_lgt.z;
@@ -95,12 +101,6 @@ void main() {
           0.0);
   float specular_weight = pow(specular_angle, shininess);
   vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
-
-  // Can make the bias depend on the angle between the light direction and the
-  // surface normal but does that really help? The worst case scenario is not
-  // improved. For now I just use a constant so at least I don't have to look
-  // for errors here.
-  float bias = 0.005;
 
   float visibility = compute_visibility_variance(pos_in_lgt);
   frag_color = vec4((diffuse_color * ambient_weight) +
