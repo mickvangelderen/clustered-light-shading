@@ -22,12 +22,17 @@ pub struct Renderer {
     pub pos_from_cam_to_clp_loc: gl::OptionUniformLocation,
     pub pos_from_wld_to_lgt_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
-    pub diffuse_dimensions_loc: gl::OptionUniformLocation,
-    pub normal_dimensions_loc: gl::OptionUniformLocation,
-    pub shadow_dimensions_loc: gl::OptionUniformLocation,
+
+    pub shadow_sampler_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
     pub normal_sampler_loc: gl::OptionUniformLocation,
-    pub shadow_sampler_loc: gl::OptionUniformLocation,
+    pub specular_sampler_loc: gl::OptionUniformLocation,
+
+    pub shadow_dimensions_loc: gl::OptionUniformLocation,
+    pub diffuse_dimensions_loc: gl::OptionUniformLocation,
+    pub normal_dimensions_loc: gl::OptionUniformLocation,
+    pub specular_dimensions_loc: gl::OptionUniformLocation,
+
     pub shadow_sampler: gl::SamplerName,
 }
 
@@ -78,19 +83,23 @@ impl Renderer {
             gl.uniform_1f(loc, world.time);
         }
 
-        if let Some(loc) = self.diffuse_sampler_loc.into() {
+        if let Some(loc) = self.shadow_sampler_loc.into() {
             gl.uniform_1i(loc, 0);
+            gl.bind_sampler(0, self.shadow_sampler);
+            gl.active_texture(gl::TEXTURE0);
+            gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
         }
 
-        if let Some(loc) = self.normal_sampler_loc.into() {
+        if let Some(loc) = self.diffuse_sampler_loc.into() {
             gl.uniform_1i(loc, 1);
         }
 
-        if let Some(loc) = self.shadow_sampler_loc.into() {
+        if let Some(loc) = self.normal_sampler_loc.into() {
             gl.uniform_1i(loc, 2);
-            gl.bind_sampler(2, self.shadow_sampler);
-            gl.active_texture(gl::TEXTURE2);
-            gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
+        }
+
+        if let Some(loc) = self.specular_sampler_loc.into() {
+            gl.uniform_1i(loc, 3);
         }
 
         if let Some(loc) = self.shadow_dimensions_loc.into() {
@@ -134,62 +143,42 @@ impl Renderer {
         let mut bound_material = None;
 
         for i in 0..resources.vaos.len() {
-            let maybe_material_id = resources.meshes[i].material_id;
-            if bound_material != maybe_material_id {
-                bound_material = maybe_material_id;
-                if let Some(material_id) = maybe_material_id {
-                    let material = &resources.materials[material_id as usize];
-                    let diffuse_texture = resources.diffuse_textures[material_id as usize];
-                    let normal_texture = resources.normal_textures[material_id as usize];
+            let maybe_material_index = resources.meshes[i].material_index;
+            if bound_material != maybe_material_index {
+                bound_material = maybe_material_index;
+                if let Some(material_index) = maybe_material_index {
+                    let material = &resources.materials[material_index as usize];
 
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, diffuse_texture);
-
-                    if let Some(loc) = self.diffuse_dimensions_loc.into() {
-                        gl.uniform_2f(loc, resources.diffuse_dimensions[material_id as usize]);
-                    }
+                    let diffuse_texture = &resources.textures[material.diffuse as usize];
+                    let normal_texture = &resources.textures[material.normal as usize];
+                    let specular_texture = &resources.textures[material.specular as usize];
 
                     gl.active_texture(gl::TEXTURE1);
-                    gl.bind_texture(gl::TEXTURE_2D, normal_texture);
+                    gl.bind_texture(gl::TEXTURE_2D, diffuse_texture.name);
+
+                    gl.active_texture(gl::TEXTURE2);
+                    gl.bind_texture(gl::TEXTURE_2D, normal_texture.name);
+
+                    gl.active_texture(gl::TEXTURE3);
+                    gl.bind_texture(gl::TEXTURE_2D, specular_texture.name);
+
+                    if let Some(loc) = self.diffuse_dimensions_loc.into() {
+                        gl.uniform_2f(loc, diffuse_texture.dimensions);
+                    }
 
                     if let Some(loc) = self.normal_dimensions_loc.into() {
-                        gl.uniform_2f(loc, resources.normal_dimensions[material_id as usize]);
+                        gl.uniform_2f(loc, normal_texture.dimensions);
                     }
 
-                    if let Some(loc) = self.ambient_loc.into() {
-                        gl.uniform_3f(loc, material.ambient);
-                    }
-
-                    if let Some(loc) = self.diffuse_loc.into() {
-                        gl.uniform_3f(loc, material.diffuse);
-                    }
-
-                    if let Some(loc) = self.specular_loc.into() {
-                        gl.uniform_3f(loc, material.specular);
+                    if let Some(loc) = self.specular_dimensions_loc.into() {
+                        gl.uniform_2f(loc, specular_texture.dimensions);
                     }
 
                     if let Some(loc) = self.shininess_loc.into() {
                         gl.uniform_1f(loc, material.shininess);
                     }
                 } else {
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.unbind_texture(gl::TEXTURE_2D);
-
-                    if let Some(loc) = self.ambient_loc.into() {
-                        gl.uniform_3f(loc, [1.0, 1.0, 1.0]);
-                    }
-
-                    if let Some(loc) = self.diffuse_loc.into() {
-                        gl.uniform_3f(loc, [1.0, 1.0, 1.0]);
-                    }
-
-                    if let Some(loc) = self.specular_loc.into() {
-                        gl.uniform_3f(loc, [1.0, 1.0, 1.0]);
-                    }
-
-                    if let Some(loc) = self.shininess_loc.into() {
-                        gl.uniform_1f(loc, 64.0);
-                    }
+                    // TODO SET DEFAULTS
                 }
             }
 
@@ -267,12 +256,14 @@ impl Renderer {
             self.pos_from_cam_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_cam_to_clp");
             self.pos_from_wld_to_lgt_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_lgt");
             self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
-            self.diffuse_dimensions_loc = get_uniform_location!(gl, self.program_name, "diffuse_dimensions");
-            self.normal_dimensions_loc = get_uniform_location!(gl, self.program_name, "normal_dimensions");
-            self.shadow_dimensions_loc = get_uniform_location!(gl, self.program_name, "shadow_dimensions");
+            self.shadow_sampler_loc = get_uniform_location!(gl, self.program_name, "shadow_sampler");
             self.diffuse_sampler_loc = get_uniform_location!(gl, self.program_name, "diffuse_sampler");
             self.normal_sampler_loc = get_uniform_location!(gl, self.program_name, "normal_sampler");
-            self.shadow_sampler_loc = get_uniform_location!(gl, self.program_name, "shadow_sampler");
+            self.specular_sampler_loc = get_uniform_location!(gl, self.program_name, "specular_sampler");
+            self.shadow_dimensions_loc = get_uniform_location!(gl, self.program_name, "shadow_dimensions");
+            self.diffuse_dimensions_loc = get_uniform_location!(gl, self.program_name, "diffuse_dimensions");
+            self.normal_dimensions_loc = get_uniform_location!(gl, self.program_name, "normal_dimensions");
+            self.specular_dimensions_loc = get_uniform_location!(gl, self.program_name, "specular_dimensions");
 
             gl.unuse_program();
         }
@@ -313,13 +304,18 @@ impl Renderer {
                 pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
                 pos_from_cam_to_clp_loc: gl::OptionUniformLocation::NONE,
                 pos_from_wld_to_lgt_loc: gl::OptionUniformLocation::NONE,
-                diffuse_dimensions_loc: gl::OptionUniformLocation::NONE,
-                normal_dimensions_loc: gl::OptionUniformLocation::NONE,
-                shadow_dimensions_loc: gl::OptionUniformLocation::NONE,
                 highlight_loc: gl::OptionUniformLocation::NONE,
+
+                shadow_sampler_loc: gl::OptionUniformLocation::NONE,
                 diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
                 normal_sampler_loc: gl::OptionUniformLocation::NONE,
-                shadow_sampler_loc: gl::OptionUniformLocation::NONE,
+                specular_sampler_loc: gl::OptionUniformLocation::NONE,
+
+                shadow_dimensions_loc: gl::OptionUniformLocation::NONE,
+                diffuse_dimensions_loc: gl::OptionUniformLocation::NONE,
+                normal_dimensions_loc: gl::OptionUniformLocation::NONE,
+                specular_dimensions_loc: gl::OptionUniformLocation::NONE,
+
                 shadow_sampler,
             }
         }

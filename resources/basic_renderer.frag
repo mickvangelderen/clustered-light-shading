@@ -1,17 +1,16 @@
-uniform vec3 ambient;
-uniform vec3 diffuse;
-uniform vec3 specular;
-uniform float shininess;
 uniform float highlight;
 uniform vec3 sun_dir_in_cam;
 
-uniform vec2 diffuse_dimensions;
-uniform vec2 normal_dimensions;
-uniform vec2 shadow_dimensions;
-
+uniform sampler2D shadow_sampler;
 uniform sampler2D diffuse_sampler;
 uniform sampler2D normal_sampler;
-uniform sampler2D shadow_sampler;
+uniform sampler2D specular_sampler;
+uniform float shininess;
+
+uniform vec2 shadow_dimensions;
+uniform vec2 diffuse_dimensions;
+uniform vec2 normal_dimensions;
+uniform vec2 specular_dimensions;
 
 in vec3 fs_pos_in_cam;
 in vec2 fs_pos_in_tex;
@@ -57,73 +56,69 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   float x = (v02 - v00) + 2.0 * (v12 - v10) + (v22 - v20);
   float y = (v20 - v00) + 2.0 * (v21 - v01) + (v22 - v02);
 
-  return normalize(vec3(x, y, 2.0));
+  return normalize(vec3(x, y, 1.0));
 }
 
 void main() {
   // Perspective divide after interpolation.
   vec3 pos_in_lgt = fs_pos_in_lgt.xyz / fs_pos_in_lgt.w;
 
+  // Common intermediates.
   vec3 light_dir_in_cam_normalized = normalize(sun_dir_in_cam);
   vec3 cam_dir_in_cam_normalized = normalize(-fs_pos_in_cam);
 
+  // Perturbed normal in camera space.
+  // TODO: Consider https://github.com/mickvangelderen/vr-lab/issues/3
   vec3 fs_nor_in_cam_norm = normalize(fs_nor_in_cam);
   vec3 fs_bitan_in_cam_norm =
       cross(fs_nor_in_cam_norm, normalize(fs_tan_in_cam));
   vec3 fs_tan_in_cam_norm = cross(fs_bitan_in_cam_norm, fs_nor_in_cam_norm);
-
   mat3 dir_from_tan_to_cam =
       mat3(fs_tan_in_cam_norm, fs_bitan_in_cam_norm, fs_nor_in_cam_norm);
-
   vec3 nor_in_cam = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
 
+  // Ambient.
   float ambient_weight = 0.2;
+
+  // Diffuse.
   float diffuse_weight = max(dot(nor_in_cam, light_dir_in_cam_normalized), 0.0);
+  vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
+  if (diffuse_sample.a < 0.5) {
+    discard;
+  }
+  vec3 diffuse_color = diffuse_sample.rgb;
+
+  // Specular.
   float specular_angle =
       max(dot(cam_dir_in_cam_normalized,
               reflect(-light_dir_in_cam_normalized, nor_in_cam)),
           0.0);
   float specular_weight = pow(specular_angle, shininess);
+  vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
 
-  // vec3 diffuse_color = texture(diffuse_sampler, fs_pos_in_tex).rgb;
-  vec3 diffuse_color;
-  vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
-  if (diffuse_sample != vec4(0.0, 0.0, 0.0, 1.0)) {
-    diffuse_color = diffuse_sample.rgb;
-  } else {
-    diffuse_color = diffuse;
-  }
-
-  // Can be computed as sqrt(1/dot(l, n)^2 - 1) but this is probably cheaper.
-  // The width of a shadow map tex
-  // Bias is clamped between 0.0 and 0.1 because it can technically go to
-  // infinity when dot(l, n) is 0.
-  // float shadow_map_texel_width_in_cam = 0.005;
-  // float bias = clamp(shadow_map_texel_width_in_cam *
-  // tan(acos(diffuse_weight)),
-  //                    0.0, 0.005);
+  // Can make the bias depend on the angle between the light direction and the
+  // surface normal but does that really help? The worst case scenario is not
+  // improved. For now I just use a constant so at least I don't have to look
+  // for errors here.
   float bias = 0.005;
 
   float visibility = compute_visibility_variance(pos_in_lgt);
   frag_color = vec4((diffuse_color * ambient_weight) +
                         visibility * (diffuse_color * diffuse_weight +
-                                      specular * specular_weight),
+                                      specular_color * specular_weight),
                     1.0);
 
-  // frag_color = vec4(tbn * vec3(0.0, 0.0, 1.0) * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(fs_nor_in_cam * 0.5 + 0.5, 1.0);
+  // DIFFUSE TEXTURE
+  // frag_color = texture(diffuse_sampler, fs_pos_in_tex);
 
-  // if (pos_in_lgt.x < -1.0 || pos_in_lgt.x > 1.0 || //
-  //     pos_in_lgt.y < -1.0 || pos_in_lgt.y > 1.0) {
-  //   // Need a larger shadow xy frustrum.
-  //   frag_color = vec4(1.0, 0.0, 0.0, 1.0);
-  // }
-  // if (pos_in_lgt.z < -1.0 || pos_in_lgt.z > 1.0) {
-  //   // Need a larger shadow z frustrum.
-  //   frag_color = vec4(0.0, 1.0, 0.0, 1.0);
-  // }
+  // NORMAL TEXURE
+  // frag_color = texture(normal_sampler, fs_pos_in_tex);
 
-  // frag_color = vec4(diffuse_color, 1.0);
-  // frag_color = (vec4(nor_in_cam, 1.0) + vec4(1.0)) / 2.0;
+  // SPECULAR_TEXTURE
+  // frag_color = texture(specular_sampler, fs_pos_in_tex);
+
+  // NORMAL IN CAMERA SPACE
+  // frag_color = vec4(nor_in_cam, 1.0);
+
   frag_nor_in_cam = nor_in_cam * 0.5 + vec3(0.5);
 }
