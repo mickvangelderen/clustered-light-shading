@@ -15,6 +15,7 @@ pub struct TextureUpdate<'a> {
     mag_filter: Option<gl::TextureMagFilter>,
     wrap_s: Option<gl::TextureWrap>,
     wrap_t: Option<gl::TextureWrap>,
+    wrap_r: Option<gl::TextureWrap>,
     max_anisotropy: Option<f32>,
 }
 
@@ -28,6 +29,7 @@ impl<'a> TextureUpdate<'a> {
             mag_filter: None,
             wrap_s: None,
             wrap_t: None,
+            wrap_r: None,
             max_anisotropy: None,
         }
     }
@@ -65,6 +67,12 @@ impl<'a> TextureUpdate<'a> {
     #[inline]
     pub fn wrap_t(mut self, wrap_t: gl::TextureWrap) -> Self {
         self.wrap_t = Some(wrap_t);
+        self
+    }
+
+    #[inline]
+    pub fn wrap_r(mut self, wrap_r: gl::TextureWrap) -> Self {
+        self.wrap_r = Some(wrap_r);
         self
     }
 
@@ -194,10 +202,9 @@ impl<Shape, Format> Texture<Shape, Format> {
     }
 }
 
-// FIXME: WORK WITH DIFFERENT DIMENSIONS
 impl<Shape, Format> Texture<Shape, Format>
 where
-    Shape: Copy + Into<gl::TextureTargetGE2D>,
+    Shape: Copy + Into<gl::TextureTarget>,
     Format: Copy + Into<TextureFormat>,
 {
     #[inline]
@@ -239,6 +246,10 @@ where
 
             if let Some(wrap) = update.wrap_t {
                 gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_T, wrap);
+            }
+
+            if let Some(wrap) = update.wrap_r {
+                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_R, wrap);
             }
 
             if let Some(max_anisotropy) = update.max_anisotropy {
