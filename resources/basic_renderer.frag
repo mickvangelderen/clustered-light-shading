@@ -56,7 +56,7 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   float x = (v02 - v00) + 2.0 * (v12 - v10) + (v22 - v20);
   float y = (v20 - v00) + 2.0 * (v21 - v01) + (v22 - v02);
 
-  return normalize(vec3(x, y, 1.0));
+  return normalize(vec3(-x, -y, 1.0));
 }
 
 void main() {
