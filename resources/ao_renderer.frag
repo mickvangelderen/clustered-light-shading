@@ -8,15 +8,13 @@ uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;
 uniform sampler2D random_unit_sphere_surface_sampler;
 
-#define HBAO_KERNEL_BINDING 0
-
-layout(std140, binding = HBAO_KERNEL_BINDING) uniform HBAO_Kernel {
-  vec4 hbao_kernel[128];
+layout(std140, binding = AO_SAMPLE_BUFFER_BINDING) buffer SphereSamples {
+  vec4 ao_samples[512];
 };
 
 in vec2 fs_pos_in_tex;
 
-layout(location = 0) out uvec2 fs_ao;
+layout(location = 0) out float fs_ao;
 
 vec2 pos_from_cam_to_tex(vec3 pos_in_cam) {
   vec4 p_clp = pos_from_cam_to_clp * vec4(pos_in_cam, 1.0);
@@ -46,64 +44,63 @@ vec3 sample_nor_in_cam(vec2 pos_in_tex) {
   return sam * 2.0 - vec3(1.0);
 }
 
-vec3 sample_random_normal() {
-  return texture(random_unit_sphere_surface_sampler, gl_FragCoord.xy / 256.0)
-                 .xyz *
-             2.0 -
-         vec3(1.0);
+vec3 sample_random_normal(vec2 pos_in_tex) {
+  vec3 sam = texture(random_unit_sphere_surface_sampler, pos_in_tex).xyz;
+  return sam * 2.0 - vec3(1.0);
 }
 
 void main() {
   vec3 pos_in_cam = sample_pos_in_cam(fs_pos_in_tex);
   vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
 
-  uint occlude_count = 0;
-  uint visible_count = 0;
-
   uint ix = uint(gl_FragCoord.x);
   uint iy = uint(gl_FragCoord.y);
-  uint kernel_offset = ((iy % 2) * 2 + (ix % 2)) * 32;
-  // uint kernel_offset = 0;
-  vec3 random_normal = sample_random_normal();
+  // uint sample_base = ((iy % 8) * 8 + (ix % 8)) * 64;
+  uint sample_base = 0;
+  vec3 random_normal = sample_random_normal(gl_FragCoord.xy / 256.0);
+  // vec3 random_normal = vec3(0.0, 0.0, 1.0);
 
   float radius = 1.0;
   float radius_sq = radius * radius;
 
-  for (int i = 0; i < 32; i += 1) {
-    // vec3 kernel_sample = hbao_kernel[i].xyz * radius;
-    vec3 kernel_sample =
-        reflect(hbao_kernel[kernel_offset + i].xyz, random_normal) * radius;
+  uint visible_count = 0;
+  uint total_count = 0;
 
-    // k/dot(nor_in_cam, nor_in_cam) = k is the signed distance from
-    // kernel_sample to the plane defined by nor_in_cam.
-    float k = dot(nor_in_cam, kernel_sample);
-    // Mirror kernel_sample across (0, 0, 0) to move it to the positive
-    // hemisphere.
-    vec3 sam_pos_in_cam = pos_in_cam +
-                          (k < 0.0 ? -kernel_sample : kernel_sample) +
-                          0.01 * nor_in_cam;
+  const uint N = 16;
+  for (int i = 0; i < N; i += 1) {
+    // NOTE: Instead of having N random samples for every pixel, we have N
+    // random samples per group of pixels, and reflect the samples along a
+    // random normal of which we have 1 per pixel. I could also try a PRNG.
+    vec3 ao_sample =
+        reflect(ao_samples[sample_base + i].xyz, random_normal) * radius;
 
+    // NOTE: The samples are distributed over a sphere, we use the fragment
+    // normal to mirror these samples across the origin to put them in the
+    // positive hemisphere.
+    float mirror = dot(nor_in_cam, ao_sample) < 0.0 ? -1.0 : 1.0;
+
+    vec3 sam_pos_in_cam = pos_in_cam + mirror * ao_sample + 0.01 * nor_in_cam;
+
+    // PERF: Can manually do these computations but hopefully the optimizer does
+    // it for us.
     vec2 sam_pos_in_tex = pos_from_cam_to_tex(sam_pos_in_cam);
     vec3 hit_pos_in_cam = sample_pos_in_cam(sam_pos_in_tex);
     vec3 hit_ray = hit_pos_in_cam - pos_in_cam;
 
-    // NOTE: z are negative!!!
-    if (hit_pos_in_cam.z > sam_pos_in_cam.z) {
-      // Sample is occluded, but the occluder might not be in range of the
-      // hemisphere.
-      if ((dot(hit_ray, hit_ray) < radius_sq) &&
-          (dot(hit_ray, nor_in_cam) >= 0.0)) {
-        // Hit is within positive hemisphere.
-        occlude_count += 1;
-      } else {
-        // Hit is not within positive hemisphere.
-        // Sample is not trustworthy.
-      }
-    } else {
-      // Sample must be visible.
-      visible_count += 1;
-    }
+    // NOTE: Depth values are negative.
+    bool is_sample_visible = hit_pos_in_cam.z < sam_pos_in_cam.z;
+
+    // NOTE: Test if sample position is within the AO sphere and if it is in the
+    // positive hemisphere.
+    bool is_hit_within_hemi = (dot(hit_ray, hit_ray) < radius_sq) &&
+                              (dot(hit_ray, nor_in_cam) >= 0.0);
+
+    // NOTE: Samples that are occluded but not in the positive hemisphere are
+    // unreliable. They do not count towards neither occlusion nor visibility.
+    visible_count += is_sample_visible ? 1 : 0;
+    total_count += is_sample_visible || is_hit_within_hemi ? 1 : 0;
   }
 
-  fs_ao = uvec2(visible_count, occlude_count);
+  // NOTE: We assume a sample is visible if we don't have any usable samples.
+  fs_ao = total_count > 0 ? float(visible_count) / float(total_count) : 1.0;
 }

@@ -97,6 +97,20 @@ impl From<gl::symbols::Rgb8> for TextureFormat {
     }
 }
 
+impl From<gl::symbols::Rg8> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::Rg8) -> Self {
+        TextureFormat::Rg8
+    }
+}
+
+impl From<gl::symbols::R8> for TextureFormat {
+    #[inline]
+    fn from(_: gl::symbols::R8) -> Self {
+        TextureFormat::R8
+    }
+}
+
 impl From<gl::symbols::Depth24Stencil8> for TextureFormat {
     #[inline]
     fn from(_: gl::symbols::Depth24Stencil8) -> Self {
@@ -129,6 +143,8 @@ impl From<gl::symbols::Rg32f> for TextureFormat {
 pub enum TextureFormat {
     Rgba8,
     Rgb8,
+    Rg8,
+    R8,
     Depth24Stencil8,
     R11fG11fB10f,
     Rg8ui,
@@ -141,6 +157,8 @@ impl TextureFormat {
         match self {
             TextureFormat::Rgba8 => gl::RGBA8.into(),
             TextureFormat::Rgb8 => gl::RGB8.into(),
+            TextureFormat::Rg8 => gl::RG8.into(),
+            TextureFormat::R8 => gl::R8.into(),
             TextureFormat::Depth24Stencil8 => gl::DEPTH24_STENCIL8.into(),
             TextureFormat::R11fG11fB10f => gl::R11F_G11F_B10F.into(),
             TextureFormat::Rg8ui => gl::RG8UI.into(),
@@ -152,6 +170,8 @@ impl TextureFormat {
         match self {
             TextureFormat::Rgba8 => gl::RGBA.into(),
             TextureFormat::Rgb8 => gl::RGB.into(),
+            TextureFormat::Rg8 => gl::RG.into(),
+            TextureFormat::R8 => gl::RED.into(),
             TextureFormat::Depth24Stencil8 => gl::DEPTH_STENCIL.into(),
             TextureFormat::R11fG11fB10f => gl::RGB.into(),
             TextureFormat::Rg8ui => gl::RG_INTEGER.into(),
@@ -164,6 +184,8 @@ impl TextureFormat {
         match self {
             TextureFormat::Rgba8 => gl::UNSIGNED_BYTE.into(),
             TextureFormat::Rgb8 => gl::UNSIGNED_BYTE.into(),
+            TextureFormat::Rg8 => gl::UNSIGNED_BYTE.into(),
+            TextureFormat::R8 => gl::UNSIGNED_BYTE.into(),
             TextureFormat::Depth24Stencil8 => gl::UNSIGNED_INT_24_8.into(),
             TextureFormat::R11fG11fB10f => gl::FLOAT.into(),
             TextureFormat::Rg8ui => gl::UNSIGNED_BYTE.into(),

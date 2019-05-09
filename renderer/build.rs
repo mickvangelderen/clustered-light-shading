@@ -30,13 +30,14 @@ fn main() {
     }
     {
         let dist = UnitSphereDense::new();
-        let values: Vec<[f32; 4]> = (0..128)
+        let values: Vec<[f32; 4]> = (0..512)
             .into_iter()
             .map(|_| {
-                let p = dist.sample(&mut rng);
-                [p[0] as f32, p[1] as f32, p[2] as f32, 0.0]
+                let [x, y, z] = dist.sample(&mut rng);
+                let w = (x * x + y * y + z * z).sqrt();
+                [x as f32, y as f32, z as f32, w as f32]
             })
             .collect();
-        std::fs::write(out_dir.join("unit_sphere_volume.bin"), slice_to_bytes(&values[..])).unwrap();
+        std::fs::write(out_dir.join("unit_sphere_dense.bin"), slice_to_bytes(&values[..])).unwrap();
     }
 }

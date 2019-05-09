@@ -14,4 +14,5 @@ path = "src/bin/kernel_generator.rs"
 
 [dependencies]
 rand = "0.6.5"
+cgmath = "*"
 
