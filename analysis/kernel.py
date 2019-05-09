@@ -5,14 +5,16 @@ import numpy as np
 
 dense = np.reshape(np.fromfile('../unit_sphere_dense.bin', dtype='float32'), (-1, 3));
 volum = np.reshape(np.fromfile('../unit_sphere_volume.bin', dtype='float32'), (-1, 3));
+refle = np.reshape(np.fromfile('../unit_sphere_volume_reflected.bin', dtype='float32'), (-1, 3));
 surfa = np.reshape(np.fromfile('../unit_sphere_surface.bin', dtype='float32'), (-1, 3));
+surfr = np.reshape(np.fromfile('../unit_sphere_surface_reflected.bin', dtype='float32'), (-1, 3));
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.set_xlim(-1.0, 1.0);
-ax.set_ylim(-1.0, 1.0);
-ax.set_zlim(-1.0, 1.0);
-ax.scatter(dense[:, 0], dense[:, 1], dense[:, 2]);
+#fig = plt.figure()
+#ax = fig.add_subplot(111, projection='3d')
+#ax.set_xlim(-1.0, 1.0);
+#ax.set_ylim(-1.0, 1.0);
+#ax.set_zlim(-1.0, 1.0);
+#ax.scatter(dense[:, 0], dense[:, 1], dense[:, 2]);
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
@@ -26,6 +28,20 @@ ax = fig.add_subplot(111, projection='3d')
 ax.set_xlim(-1.0, 1.0);
 ax.set_ylim(-1.0, 1.0);
 ax.set_zlim(-1.0, 1.0);
+ax.scatter(refle[:, 0], refle[:, 1], refle[:, 2]);
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.set_xlim(-1.0, 1.0);
+ax.set_ylim(-1.0, 1.0);
+ax.set_zlim(-1.0, 1.0);
 ax.scatter(surfa[:, 0], surfa[:, 1], surfa[:, 2]);
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.set_xlim(-1.0, 1.0);
+ax.set_ylim(-1.0, 1.0);
+ax.set_zlim(-1.0, 1.0);
+ax.scatter(surfr[:, 0], surfr[:, 1], surfr[:, 2]);
 
 plt.show()

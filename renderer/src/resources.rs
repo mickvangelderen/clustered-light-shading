@@ -125,7 +125,7 @@ impl Resources {
             .map(|rel_file_path| {
                 let file_path = resource_dir.join(&rel_file_path);
                 println!("Loading {:?}.", file_path.display());
-                let mut obj = tobj::load_obj(&file_path).unwrap();
+                let obj = tobj::load_obj(&file_path).unwrap();
                 let vertex_count: usize = obj.0.iter().map(|model| model.mesh.indices.len()).sum();
                 println!("Loaded {:?} with {} vertices.", file_path.display(), vertex_count);
                 (rel_file_path, obj.0, obj.1)

@@ -42,57 +42,59 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub unsafe fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World, resources: &Resources) {
-        gl.enable(gl::DEPTH_TEST);
-        gl.enable(gl::CULL_FACE);
-        gl.cull_face(gl::BACK);
-        gl.viewport(0, 0, params.width, params.height);
-        gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-        gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()]);
+    pub fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World, resources: &Resources) {
+        unsafe {
+            gl.enable(gl::DEPTH_TEST);
+            gl.enable(gl::CULL_FACE);
+            gl.cull_face(gl::BACK);
+            gl.viewport(0, 0, params.width, params.height);
+            gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
+            gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()]);
 
-        gl.use_program(self.program_name);
+            gl.use_program(self.program_name);
 
-        let pos_from_wld_to_cam = if world.smooth_camera {
-            world.camera.smooth_pos_from_wld_to_cam()
-        } else {
-            world.camera.pos_from_wld_to_cam()
-        };
+            let pos_from_wld_to_cam = if world.smooth_camera {
+                world.camera.smooth_pos_from_wld_to_cam()
+            } else {
+                world.camera.pos_from_wld_to_cam()
+            };
 
-        if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_obj_to_wld.as_ref());
+            if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_obj_to_wld.as_ref());
+            }
+
+            if let Some(loc) = self.pos_from_wld_to_cam_loc.into() {
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_cam.as_ref());
+            }
+
+            if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
+                let pos_from_wld_to_clp = params.pos_from_cam_to_clp * pos_from_wld_to_cam;
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_clp.as_ref());
+            }
+
+            gl.bind_vertex_array(self.vertex_array_name);
+            gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
+            gl.buffer_data(gl::ARRAY_BUFFER, params.vertices.flatten(), gl::STREAM_DRAW);
+            // gl.vertex_attrib_pointer(
+            //     shader_defines::VS_POS_IN_OBJ_LOC,
+            //     3,
+            //     gl::FLOAT,
+            //     gl::FALSE,
+            //     std::mem::size_of::<[f32; 3]>(),
+            //     0,
+            // );
+            // gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
+
+            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
+            gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, params.indices.flatten(), gl::STATIC_DRAW);
+
+            gl.draw_elements(gl::LINES, params.indices.flatten().len(), gl::UNSIGNED_INT, 0);
+
+            gl.unbind_vertex_array();
+
+            gl.bind_framebuffer(gl::FRAMEBUFFER, None);
+            gl.unuse_program();
         }
-
-        if let Some(loc) = self.pos_from_wld_to_cam_loc.into() {
-            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_cam.as_ref());
-        }
-
-        if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-            let pos_from_wld_to_clp = params.pos_from_cam_to_clp * pos_from_wld_to_cam;
-            gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_clp.as_ref());
-        }
-
-        gl.bind_vertex_array(self.vertex_array_name);
-        gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
-        gl.buffer_data(gl::ARRAY_BUFFER, params.vertices.flatten(), gl::STREAM_DRAW);
-        // gl.vertex_attrib_pointer(
-        //     shader_defines::VS_POS_IN_OBJ_LOC,
-        //     3,
-        //     gl::FLOAT,
-        //     gl::FALSE,
-        //     std::mem::size_of::<[f32; 3]>(),
-        //     0,
-        // );
-        // gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
-
-        gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
-        gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, params.indices.flatten(), gl::STATIC_DRAW);
-
-        gl.draw_elements(gl::LINES, params.indices.flatten().len(), gl::UNSIGNED_INT, 0);
-
-        gl.unbind_vertex_array();
-
-        gl.bind_framebuffer(gl::FRAMEBUFFER, None);
-        gl.unuse_program();
     }
 
     pub fn update<B: AsRef<[u8]>>(&mut self, gl: &gl::Gl, update: Update<B>) {

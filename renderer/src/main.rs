@@ -12,7 +12,7 @@ mod line_renderer;
 mod overlay_renderer;
 mod post_renderer;
 mod random_unit_sphere_surface;
-mod random_unit_sphere_volume;
+mod random_unit_sphere_dense;
 mod resources;
 mod shader_defines;
 mod shadow_renderer;
@@ -168,7 +168,7 @@ pub struct ViewDependentResources {
     pub nor_in_cam_texture: Texture<gl::symbols::Texture2D, gl::symbols::R11fG11fB10f>,
     // AO resources.
     pub ao_framebuffer_name: gl::FramebufferName,
-    pub ao_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg8ui>,
+    pub ao_texture: Texture<gl::symbols::Texture2D, gl::symbols::R8>,
     pub ao_depth_renderbuffer_name: gl::RenderbufferName,
     // Post resources.
     pub post_framebuffer_name: gl::FramebufferName,
@@ -210,7 +210,7 @@ impl ViewDependentResources {
             let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
             depth_texture.update(gl, texture_update);
 
-            let ao_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RG8UI).unwrap();
+            let ao_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8).unwrap();
             ao_texture.update(gl, texture_update);
 
             let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8).unwrap();
@@ -525,7 +525,7 @@ fn main() {
         vsm_filter
     };
 
-    let mut basic_renderer = unsafe {
+    let mut basic_renderer = {
         let mut basic_renderer = basic_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
         let fs_bytes = std::fs::read(&basic_renderer_fs_path).unwrap();
@@ -539,7 +539,7 @@ fn main() {
         basic_renderer
     };
 
-    let mut ao_renderer = unsafe {
+    let mut ao_renderer = {
         let mut ao_renderer = ao_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&ao_renderer_vs_path).unwrap();
         let fs_bytes = std::fs::read(&ao_renderer_fs_path).unwrap();
@@ -553,7 +553,7 @@ fn main() {
         ao_renderer
     };
 
-    let mut post_renderer = unsafe {
+    let mut post_renderer = {
         let mut post_renderer = post_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&post_renderer_vs_path).unwrap();
         let fs_bytes = std::fs::read(&post_renderer_fs_path).unwrap();
@@ -706,21 +706,15 @@ fn main() {
         }
 
         if basic_renderer_update.should_update() {
-            unsafe {
-                basic_renderer.update(&gl, basic_renderer_update);
-            }
+            basic_renderer.update(&gl, basic_renderer_update);
         }
 
         if ao_renderer_update.should_update() {
-            unsafe {
-                ao_renderer.update(&gl, ao_renderer_update);
-            }
+            ao_renderer.update(&gl, ao_renderer_update);
         }
 
         if post_renderer_update.should_update() {
-            unsafe {
-                post_renderer.update(&gl, post_renderer_update);
-            }
+            post_renderer.update(&gl, post_renderer_update);
         }
 
         if overlay_renderer_update.should_update() {
@@ -852,6 +846,12 @@ fn main() {
             delta_scroll: mouse_dscroll as f32,
         });
 
+        if vr_resources.is_some() {
+            // Pitch makes me dizzy.
+            world.camera.smooth_pitch = Rad(0.0);
+            world.camera.pitch = Rad(0.0);
+        }
+
         if focus {
             world.sun_rot += Rad(0.5)
                 * (match input_sun_up {
@@ -925,34 +925,152 @@ fn main() {
             .cast()
             .unwrap();
 
-        unsafe {
-            let physical_size = win_size.to_physical(win_dpi);
+        // View independent.
+        shadow_renderer.render(
+            &gl,
+            &shadow_renderer::Parameters {
+                framebuffer: Some(view_ind_res.shadow_framebuffer_name),
+                width: SHADOW_W,
+                height: SHADOW_H,
+                pos_from_wld_to_clp,
+            },
+            &resources,
+        );
 
-            // View independent.
-            shadow_renderer.render(
-                &gl,
-                &shadow_renderer::Parameters {
-                    framebuffer: Some(view_ind_res.shadow_framebuffer_name),
-                    width: SHADOW_W,
-                    height: SHADOW_H,
-                    pos_from_wld_to_clp,
-                },
-                &resources,
-            );
+        // View independent.
+        vsm_filter.render(
+            &gl,
+            &vsm_filter::Parameters {
+                width: SHADOW_W,
+                height: SHADOW_H,
+                framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
+                framebuffer_xy: view_ind_res.shadow_framebuffer_name,
+                color: view_ind_res.shadow_texture.name(),
+                color_x: view_ind_res.shadow_2_texture.name(),
+            },
+        );
 
-            // View independent.
-            vsm_filter.render(
-                &gl,
-                &vsm_filter::Parameters {
-                    width: SHADOW_W,
-                    height: SHADOW_H,
-                    framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
-                    framebuffer_xy: view_ind_res.shadow_framebuffer_name,
-                    color: view_ind_res.shadow_texture.name(),
-                    color_x: view_ind_res.shadow_2_texture.name(),
-                },
-            );
+        let physical_size = win_size.to_physical(win_dpi);
 
+        if let Some(ref vr_resources) = vr_resources {
+            // === VR ===
+            let viewports = {
+                let w = physical_size.width as i32;
+                let h = physical_size.height as i32;
+                [(0, w / 2, 0, h), (w / 2, w, 0, h)]
+            };
+
+            for (&eye, &viewport) in EYES.into_iter().zip(viewports.into_iter()) {
+                // VIVE:
+                // Left: [-1.3896277, 1.2525954, -1.4736392, 1.4612536]
+                // Left: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [-0.0307, 0.0, 0.015, 1.0]]
+                // Right: [-1.2475655, 1.3957016, -1.473202, 1.4637187]
+                // Right: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0307, 0.0, 0.015, 1.0]]
+
+                let (pos_from_cam_to_clp, pos_from_clp_to_cam) = {
+                    let frustrum = {
+                        // These are the tangents.
+                        let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
+                        let z0 = -0.1;
+                        let z1 = -100.0;
+                        frustrum::Frustrum::<f64> {
+                            x0: -z0 * l as f64,
+                            x1: -z0 * r as f64,
+                            y0: -z0 * b as f64,
+                            y1: -z0 * t as f64,
+                            z0,
+                            z1,
+                        }
+                    };
+
+                    let m: Matrix4<f64> = frustrum.perspective(DEPTH_RANGE);
+                    (m.cast().unwrap(), m.invert().unwrap().cast().unwrap())
+                };
+
+                let pos_from_eye_to_hmd: Matrix4<f32> =
+                    vr_resources.context.system().get_eye_to_head_transform(eye).hmd_into();
+
+                let pos_from_hmd_to_clp = pos_from_cam_to_clp * pos_from_eye_to_hmd.invert().unwrap();
+
+                let view_dep_res = &vr_resources[eye];
+
+                basic_renderer.render(
+                    &gl,
+                    &basic_renderer::Parameters {
+                        framebuffer: Some(view_dep_res.framebuffer_name),
+                        width: vr_resources.dims.width as i32,
+                        height: vr_resources.dims.height as i32,
+                        pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
+                        pos_from_wld_to_lgt: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
+                        shadow_texture_name: view_ind_res.shadow_texture.name(),
+                        shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
+                    },
+                    &world,
+                    &resources,
+                );
+
+                ao_renderer.render(
+                    &gl,
+                    &ao_renderer::Parameters {
+                        framebuffer: Some(view_dep_res.ao_framebuffer_name),
+                        width: vr_resources.dims.width as i32,
+                        height: vr_resources.dims.height as i32,
+                        pos_from_cam_to_clp,
+                        pos_from_clp_to_cam,
+                        color_texture_name: view_dep_res.color_texture.name(),
+                        depth_texture_name: view_dep_res.depth_texture.name(),
+                        nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
+                        random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
+                    },
+                    &world,
+                );
+
+                post_renderer.render(
+                    &gl,
+                    &post_renderer::Parameters {
+                        framebuffer: Some(view_dep_res.post_framebuffer_name),
+                        width: vr_resources.dims.width as i32,
+                        height: vr_resources.dims.height as i32,
+                        pos_from_cam_to_clp,
+                        pos_from_clp_to_cam,
+                        color_texture_name: view_dep_res.color_texture.name(),
+                        depth_texture_name: view_dep_res.depth_texture.name(),
+                        nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
+                        ao_texture_name: view_dep_res.ao_texture.name(),
+                    },
+                    &world,
+                );
+
+                overlay_renderer.render(
+                    &gl,
+                    &overlay_renderer::Parameters {
+                        framebuffer: None,
+                        x0: viewport.0,
+                        x1: viewport.1,
+                        y0: viewport.2,
+                        y1: viewport.3,
+                        color_texture_name: view_dep_res.post_color_texture.name(),
+                        channel_defaults: [0.0, 0.0, 0.0, 1.0],
+                        channel_weights: [1.0, 1.0, 1.0, 0.0],
+                    },
+                );
+            }
+
+            for &eye in EYES.into_iter() {
+                // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
+                let mut texture_t = gen_texture_t(vr_resources[eye].post_color_texture.name());
+                vr_resources
+                    .compositor()
+                    .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "failed to submit texture: {:?}",
+                            vr::CompositorError::from_unchecked(error).unwrap()
+                        );
+                    });
+            }
+        // --- VR ---
+        } else {
             let (pos_from_cam_to_clp, pos_from_clp_to_cam): (Matrix4<f32>, Matrix4<f32>) = {
                 let frustrum = {
                     let z0 = -0.1;
@@ -1043,111 +1161,11 @@ fn main() {
                     y0: 0,
                     y1: (physical_size.height / 3.0) as i32,
                     color_texture_name: view_ind_res.shadow_texture.name(),
+                    channel_defaults: [0.0, 0.0, 0.0, 1.0],
+                    channel_weights: [1.0, 0.0, 0.0, 0.0],
                 },
             );
         }
-
-        // === VR ===
-        if let Some(ref vr_resources) = vr_resources {
-            for &eye in EYES.into_iter() {
-                // VIVE:
-                // Left: [-1.3896277, 1.2525954, -1.4736392, 1.4612536]
-                // Left: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [-0.0307, 0.0, 0.015, 1.0]]
-                // Right: [-1.2475655, 1.3957016, -1.473202, 1.4637187]
-                // Right: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0307, 0.0, 0.015, 1.0]]
-
-                let (pos_from_cam_to_clp, pos_from_clp_to_cam) = {
-                    let frustrum = {
-                        // These are the tangents.
-                        let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
-                        let z0 = -0.1;
-                        let z1 = -100.0;
-                        frustrum::Frustrum::<f64> {
-                            x0: -z0 * l as f64,
-                            x1: -z0 * r as f64,
-                            y0: -z0 * b as f64,
-                            y1: -z0 * t as f64,
-                            z0,
-                            z1,
-                        }
-                    };
-
-                    let m: Matrix4<f64> = frustrum.orthographic(DEPTH_RANGE);
-                    (m.cast().unwrap(), m.invert().unwrap().cast().unwrap())
-                };
-
-                let pos_from_eye_to_hmd: Matrix4<f32> =
-                    vr_resources.context.system().get_eye_to_head_transform(eye).hmd_into();
-
-                let pos_from_hmd_to_clp = pos_from_cam_to_clp * pos_from_eye_to_hmd.invert().unwrap();
-
-                unsafe {
-                    let view_dep_res = &vr_resources[eye];
-
-                    basic_renderer.render(
-                        &gl,
-                        &basic_renderer::Parameters {
-                            framebuffer: Some(view_dep_res.framebuffer_name),
-                            width: vr_resources.dims.width as i32,
-                            height: vr_resources.dims.height as i32,
-                            pos_from_cam_to_clp: pos_from_hmd_to_clp * world.pos_from_cam_to_hmd,
-                            pos_from_wld_to_lgt: pos_from_lgt_to_clp * pos_from_wld_to_lgt,
-                            shadow_texture_name: view_ind_res.shadow_texture.name(),
-                            shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                        },
-                        &world,
-                        &resources,
-                    );
-
-                    ao_renderer.render(
-                        &gl,
-                        &ao_renderer::Parameters {
-                            framebuffer: Some(view_dep_res.ao_framebuffer_name),
-                            width: vr_resources.dims.width as i32,
-                            height: vr_resources.dims.height as i32,
-                            pos_from_cam_to_clp,
-                            pos_from_clp_to_cam,
-                            color_texture_name: view_dep_res.color_texture.name(),
-                            depth_texture_name: view_dep_res.depth_texture.name(),
-                            nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
-                            random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                        },
-                        &world,
-                    );
-
-                    post_renderer.render(
-                        &gl,
-                        &post_renderer::Parameters {
-                            framebuffer: Some(view_dep_res.post_framebuffer_name),
-                            width: vr_resources.dims.width as i32,
-                            height: vr_resources.dims.height as i32,
-                            pos_from_cam_to_clp,
-                            pos_from_clp_to_cam,
-                            color_texture_name: view_dep_res.color_texture.name(),
-                            depth_texture_name: view_dep_res.depth_texture.name(),
-                            nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
-                            ao_texture_name: view_dep_res.ao_texture.name(),
-                        },
-                        &world,
-                    );
-                }
-            }
-
-            for &eye in EYES.into_iter() {
-                // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
-                let mut texture_t = gen_texture_t(vr_resources[eye].post_color_texture.name());
-                vr_resources
-                    .compositor()
-                    .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
-                    .unwrap_or_else(|error| {
-                        panic!(
-                            "failed to submit texture: {:?}",
-                            vr::CompositorError::from_unchecked(error).unwrap()
-                        );
-                    });
-            }
-        }
-        // --- VR ---
 
         let render_end_nanos = start_instant.elapsed().as_nanos() as u64;
 

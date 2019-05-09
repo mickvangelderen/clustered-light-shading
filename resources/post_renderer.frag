@@ -4,15 +4,9 @@ uniform int height;
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;
-uniform usampler2D ao_sampler;
+uniform sampler2D ao_sampler;
 uniform mat4 pos_from_clp_to_cam;
 uniform mat4 pos_from_cam_to_clp;
-
-#define HBAO_KERNEL_BINDING 0
-
-layout(std140, binding = HBAO_KERNEL_BINDING) uniform HBAO_Kernel {
-  vec4 hbao_kernel[1024];
-};
 
 in vec2 fs_pos_in_tex;
 
@@ -45,7 +39,9 @@ vec3 sample_pos_in_cam(vec2 pos_in_tex) {
   return mat4x3(pos_from_clp_to_cam) * (w_clp * p_ndc);
 }
 
-uvec2 sample_ao(vec2 pos_in_tex) { return texture(ao_sampler, pos_in_tex).xy; }
+uvec2 sample_ao(vec2 pos_in_tex) {
+  return uvec2(texture(ao_sampler, pos_in_tex).xy);
+}
 
 vec3 sample_nor_in_cam(vec2 pos_in_tex) {
   vec3 sam = texture(nor_in_cam_sampler, pos_in_tex).xyz;
@@ -59,21 +55,27 @@ void main() {
   float dx = 1.0 / width;
   float dy = 1.0 / height;
 
-  vec2 filtered_ao = vec2(0.0);
+  float filtered_ao = 0.0;
 
   float ao_r = 1.0;
   float ao_r_sq = ao_r * ao_r;
 
-  float sum = 0.0;
-  for (int iy = -5; iy <= 5; iy += 1) {
-    for (int ix = -5; ix <= 5; ix += 1) {
+  const float[25] weights = float[25](                  //
+      0.003765, 0.015019, 0.023792, 0.015019, 0.003765, //
+      0.015019, 0.059912, 0.094907, 0.059912, 0.015019, //
+      0.023792, 0.094907, 0.150342, 0.094907, 0.023792, //
+      0.015019, 0.059912, 0.094907, 0.059912, 0.015019, //
+      0.003765, 0.015019, 0.023792, 0.015019, 0.003765  //
+  );
+
+  for (int iy = -2; iy <= 2; iy += 1) {
+    for (int ix = -2; ix <= 2; ix += 1) {
       vec2 sam_pos_in_tex = fs_pos_in_tex + vec2(iy * dy, ix * dx);
+      // float z_diff = sample_pos_in_cam(sam_pos_in_tex).z - pos_in_cam.z;
+      // float z_weight = max(0.0, 1.0 - (z_diff * z_diff / ao_r_sq));
 
-      vec3 frag_to_sam_in_cam = sample_pos_in_cam(sam_pos_in_tex) - pos_in_cam;
-      float weight =
-          max(0.0, 1.0 - dot(frag_to_sam_in_cam, frag_to_sam_in_cam) / ao_r_sq);
-
-      filtered_ao += weight * sample_ao(sam_pos_in_tex);
+      filtered_ao += weights[(iy + 2) * 5 + ix + 2] *
+                     texture(ao_sampler, sam_pos_in_tex).r;
     }
   }
 
@@ -84,17 +86,15 @@ void main() {
   // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // APPLIED AO
-  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
+  frag_color =
+      vec4(filtered_ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+
+  // APPLIED UNFILTERED AO
+  // uvec2 ao = sample_ao(fs_pos_in_tex);
+  // float ao_weight = float(ao.x) / float(ao.x + ao.y);
   // frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
   //                       (1.0 - ao_weight)),
   //                   1.0);
-
-  // APPLIED UNFILTERED AO
-  uvec2 ao = sample_ao(fs_pos_in_tex);
-  float ao_weight = float(ao.x) / float(ao.x + ao.y);
-  frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
-                        (1.0 - ao_weight)),
-                    1.0);
 
   // ANIMATED APPLIED AO
   // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
@@ -103,12 +103,8 @@ void main() {
   //                   1.0);
 
   // FILTERED AO
-  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
-  // frag_color = vec4(vec3(ao_weight), 1.0);
+  // frag_color = vec4(vec3(filtered_ao), 1.0);
 
   // UNFILTERED AO
-  // uvec2 ao = sample_ao(fs_pos_in_tex);
-  // float ao_weight = float(ao.x) / float(ao.x + ao.y);
-  // // float ao_weight = 1 - float(ao.y) / 64.0;
-  // frag_color = vec4(vec3(ao_weight), 1.0);
+  // frag_color = vec4(vec3(texture(ao_sampler, fs_pos_in_tex).r), 1.0);
 }

@@ -15,6 +15,8 @@ pub struct Renderer {
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
     pub color_sampler_loc: gl::OptionUniformLocation,
+    pub channel_defaults_loc: gl::OptionUniformLocation,
+    pub channel_weights_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters {
@@ -24,6 +26,8 @@ pub struct Parameters {
     pub y0: i32,
     pub y1: i32,
     pub color_texture_name: gl::TextureName,
+    pub channel_defaults: [f32; 4],
+    pub channel_weights: [f32; 4],
 }
 
 #[derive(Default)]
@@ -55,6 +59,15 @@ impl Renderer {
                 gl.uniform_1i(loc, 0);
                 gl.active_texture(gl::TEXTURE0);
                 gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
+            };
+
+            if let Some(loc) = self.channel_defaults_loc.into() {
+                gl.uniform_4f(loc, params.channel_defaults);
+            };
+
+
+            if let Some(loc) = self.channel_weights_loc.into() {
+                gl.uniform_4f(loc, params.channel_weights);
             };
 
             gl.bind_vertex_array(self.vertex_array_name);
@@ -102,6 +115,8 @@ impl Renderer {
                 }
 
                 self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
+                self.channel_defaults_loc = get_uniform_location!(gl, self.program_name, "channel_defaults");
+                self.channel_weights_loc = get_uniform_location!(gl, self.program_name, "channel_weights");
 
                 gl.unuse_program();
             }
@@ -124,21 +139,11 @@ impl Renderer {
                 names.try_transmute_each().unwrap()
             };
 
-            let [vertex_buffer_name, element_buffer_name, hbao_kernel_buffer_name]: [gl::BufferName; 3] = {
-                let mut names: [Option<gl::BufferName>; 3] = std::mem::uninitialized();
+            let [vertex_buffer_name, element_buffer_name]: [gl::BufferName; 2] = {
+                let mut names: [Option<gl::BufferName>; 2] = std::mem::uninitialized();
                 gl.gen_buffers(&mut names);
                 names.try_transmute_each().unwrap()
             };
-
-            gl.bind_buffer(gl::UNIFORM_BUFFER, hbao_kernel_buffer_name);
-            gl.buffer_data(
-                gl::UNIFORM_BUFFER,
-                crate::random_unit_sphere_volume::get(),
-                gl::STATIC_DRAW,
-            );
-            gl.unbind_buffer(gl::UNIFORM_BUFFER);
-            const HBAO_KERNEL_BUFFER_BINDING: u32 = 0;
-            gl.bind_buffer_base(gl::UNIFORM_BUFFER, HBAO_KERNEL_BUFFER_BINDING, hbao_kernel_buffer_name);
 
             gl.bind_vertex_array(vertex_array_name);
             gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
@@ -166,6 +171,8 @@ impl Renderer {
                 vertex_buffer_name,
                 element_buffer_name,
                 color_sampler_loc: gl::OptionUniformLocation::NONE,
+                channel_defaults_loc: gl::OptionUniformLocation::NONE,
+                channel_weights_loc: gl::OptionUniformLocation::NONE,
             }
         }
     }
