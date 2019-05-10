@@ -51,33 +51,7 @@ vec3 sample_nor_in_cam(vec2 pos_in_tex) {
 void main() {
   vec3 pos_in_cam = sample_pos_in_cam(fs_pos_in_tex);
   vec3 nor_in_cam = sample_nor_in_cam(fs_pos_in_tex);
-
-  float dx = 1.0 / width;
-  float dy = 1.0 / height;
-
-  float filtered_ao = 0.0;
-
-  float ao_r = 1.0;
-  float ao_r_sq = ao_r * ao_r;
-
-  const float[25] weights = float[25](                  //
-      0.003765, 0.015019, 0.023792, 0.015019, 0.003765, //
-      0.015019, 0.059912, 0.094907, 0.059912, 0.015019, //
-      0.023792, 0.094907, 0.150342, 0.094907, 0.023792, //
-      0.015019, 0.059912, 0.094907, 0.059912, 0.015019, //
-      0.003765, 0.015019, 0.023792, 0.015019, 0.003765  //
-  );
-
-  for (int iy = -2; iy <= 2; iy += 1) {
-    for (int ix = -2; ix <= 2; ix += 1) {
-      vec2 sam_pos_in_tex = fs_pos_in_tex + vec2(iy * dy, ix * dx);
-      // float z_diff = sample_pos_in_cam(sam_pos_in_tex).z - pos_in_cam.z;
-      // float z_weight = max(0.0, 1.0 - (z_diff * z_diff / ao_r_sq));
-
-      filtered_ao += weights[(iy + 2) * 5 + ix + 2] *
-                     texture(ao_sampler, sam_pos_in_tex).r;
-    }
-  }
+  float ao = texture(ao_sampler, fs_pos_in_tex).r;
 
   // NORMALS
   // frag_color = vec4(nor_in_cam * 0.5 + vec3(0.5), 1.0);
@@ -86,25 +60,8 @@ void main() {
   // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // APPLIED AO
-  frag_color =
-      vec4(filtered_ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  // frag_color = vec4(ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
-  // APPLIED UNFILTERED AO
-  // uvec2 ao = sample_ao(fs_pos_in_tex);
-  // float ao_weight = float(ao.x) / float(ao.x + ao.y);
-  // frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
-  //                       (1.0 - ao_weight)),
-  //                   1.0);
-
-  // ANIMATED APPLIED AO
-  // float ao_weight = filtered_ao.x / (filtered_ao.x + filtered_ao.y);
-  // frag_color = vec4(mix(texture(color_sampler, fs_pos_in_tex).rgb, vec3(0.0),
-  //                       (cos(time * 3.14) + 1.0)/2.0 * (1.0 - ao_weight)),
-  //                   1.0);
-
-  // FILTERED AO
-  // frag_color = vec4(vec3(filtered_ao), 1.0);
-
-  // UNFILTERED AO
-  // frag_color = vec4(vec3(texture(ao_sampler, fs_pos_in_tex).r), 1.0);
+  // AO
+  frag_color = vec4(vec3(ao), 1.0);
 }
