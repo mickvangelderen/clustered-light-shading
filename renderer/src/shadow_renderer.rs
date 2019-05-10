@@ -1,3 +1,4 @@
+use crate::parameters;
 use crate::resources::Resources;
 use crate::shader_defines;
 use cgmath::*;
@@ -20,14 +21,14 @@ pub struct Renderer {
     pub vertex_shader_name: gl::ShaderName,
     pub fragment_shader_name: gl::ShaderName,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
-    pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
+    pub view_ind_uniforms: parameters::ViewIndependentUniforms,
 }
 
 pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
-    pub pos_from_wld_to_clp: Matrix4<f32>,
+    pub view_ind_params: parameters::ViewIndependentParameters,
 }
 
 #[derive(Default)]
@@ -59,9 +60,7 @@ impl Renderer {
 
             gl.use_program(self.program_name);
 
-            if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_wld_to_clp.as_ref());
-            }
+            self.view_ind_uniforms.set(gl, params.view_ind_params);
 
             for i in 0..resources.vaos.len() {
                 if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
@@ -99,18 +98,8 @@ impl Renderer {
                 gl.link_program(self.program_name);
                 gl.use_program(self.program_name);
 
-                macro_rules! get_uniform_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get uniform location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
-                }
-
                 self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.pos_from_wld_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+                self.view_ind_uniforms.update(gl, self.program_name);
 
                 gl.unuse_program();
             }
@@ -132,7 +121,7 @@ impl Renderer {
                 vertex_shader_name,
                 fragment_shader_name,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-                pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
+                view_ind_uniforms: Default::default(),
             }
         }
     }

@@ -1,8 +1,8 @@
+use crate::parameters;
 use crate::convert::*;
 use crate::gl_ext::*;
 use crate::shader_defines;
 use crate::World;
-use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -19,8 +19,7 @@ pub struct Renderer {
     pub time_loc: gl::OptionUniformLocation,
     pub width_loc: gl::OptionUniformLocation,
     pub height_loc: gl::OptionUniformLocation,
-    pub pos_from_cam_to_clp_loc: gl::OptionUniformLocation,
-    pub pos_from_clp_to_cam_loc: gl::OptionUniformLocation,
+    pub view_dep_uniforms: parameters::ViewDependentUniforms,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
     pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
@@ -36,8 +35,7 @@ pub struct Parameters {
     pub depth_texture_name: gl::TextureName,
     pub nor_in_cam_texture_name: gl::TextureName,
     pub random_unit_sphere_surface_texture_name: gl::TextureName,
-    pub pos_from_cam_to_clp: Matrix4<f32>,
-    pub pos_from_clp_to_cam: Matrix4<f32>,
+    pub view_dep_params: parameters::ViewDependentParameters,
 }
 
 #[derive(Default)]
@@ -76,13 +74,7 @@ impl Renderer {
                 gl.uniform_1i(loc, params.height);
             }
 
-            if let Some(loc) = self.pos_from_cam_to_clp_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_cam_to_clp.as_ref());
-            }
-
-            if let Some(loc) = self.pos_from_clp_to_cam_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_clp_to_cam.as_ref());
-            }
+            self.view_dep_uniforms.set(gl, params.view_dep_params);
 
             if let Some(loc) = self.color_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
@@ -147,21 +139,10 @@ impl Renderer {
 
                 gl.use_program(self.program_name);
 
-                macro_rules! get_uniform_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get uniform location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
-                }
-
                 self.time_loc = get_uniform_location!(gl, self.program_name, "time");
                 self.width_loc = get_uniform_location!(gl, self.program_name, "width");
                 self.height_loc = get_uniform_location!(gl, self.program_name, "height");
-                self.pos_from_cam_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_cam_to_clp");
-                self.pos_from_clp_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_clp_to_cam");
+                self.view_dep_uniforms.update(gl, self.program_name);
                 self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
                 self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
                 self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
@@ -178,16 +159,6 @@ impl Renderer {
                 gl.unbind_vertex_array();
 
                 // Obtain new locations.
-                macro_rules! get_attribute_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_attrib_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get attribute location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
-                }
-
                 self.vs_pos_in_qua_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
 
                 // Set up attributes.
@@ -263,8 +234,7 @@ impl Renderer {
                 time_loc: gl::OptionUniformLocation::NONE,
                 width_loc: gl::OptionUniformLocation::NONE,
                 height_loc: gl::OptionUniformLocation::NONE,
-                pos_from_cam_to_clp_loc: gl::OptionUniformLocation::NONE,
-                pos_from_clp_to_cam_loc: gl::OptionUniformLocation::NONE,
+                view_dep_uniforms: Default::default(),
                 color_sampler_loc: gl::OptionUniformLocation::NONE,
                 depth_sampler_loc: gl::OptionUniformLocation::NONE,
                 nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
