@@ -97,4 +97,12 @@ impl Camera {
         // Directly construct the inverse cam_to_wld transformation matrix.
         Matrix4::from(self.orientation().invert()) * Matrix4::from_translation(-self.position)
     }
+
+    pub fn smooth_pos_from_cam_to_wld(&self) -> Matrix4<f32> {
+        Matrix4::from_translation(self.smooth_position) * Matrix4::from(self.smooth_orientation())
+    }
+
+    pub fn pos_from_cam_to_wld(&self) -> Matrix4<f32> {
+        Matrix4::from_translation(self.position) * Matrix4::from(self.orientation())
+    }
 }

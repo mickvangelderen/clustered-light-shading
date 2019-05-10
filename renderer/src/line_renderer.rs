@@ -1,9 +1,7 @@
+use crate::parameters;
 use crate::convert::*;
 use crate::gl_ext::*;
-use crate::resources::*;
 use crate::shader_defines;
-use crate::World;
-use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -15,16 +13,16 @@ pub struct Renderer {
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
-    pub pos_from_wld_to_cam_loc: gl::OptionUniformLocation,
-    pub pos_from_wld_to_clp_loc: gl::OptionUniformLocation,
+    pub view_dep_uniforms: parameters::ViewDependentUniforms,
+    pub view_ind_uniforms: parameters::ViewIndependentUniforms,
 }
 
 pub struct Parameters<'a> {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
-    pub pos_from_obj_to_wld: Matrix4<f32>,
-    pub pos_from_cam_to_clp: Matrix4<f32>,
+    pub view_dep_params: parameters::ViewDependentParameters,
+    pub view_ind_params: parameters::ViewIndependentParameters,
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
 }
@@ -42,7 +40,7 @@ impl<B: AsRef<[u8]>> Update<B> {
 }
 
 impl Renderer {
-    pub fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>, world: &World, resources: &Resources) {
+    pub fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>) {
         unsafe {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -53,37 +51,16 @@ impl Renderer {
 
             gl.use_program(self.program_name);
 
-            let pos_from_wld_to_cam = if world.smooth_camera {
-                world.camera.smooth_pos_from_wld_to_cam()
-            } else {
-                world.camera.pos_from_wld_to_cam()
-            };
-
             if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_obj_to_wld.as_ref());
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.view_ind_params.light_pos_from_wld_to_cam.as_ref());
             }
 
-            if let Some(loc) = self.pos_from_wld_to_cam_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_cam.as_ref());
-            }
-
-            if let Some(loc) = self.pos_from_wld_to_clp_loc.into() {
-                let pos_from_wld_to_clp = params.pos_from_cam_to_clp * pos_from_wld_to_cam;
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_wld_to_clp.as_ref());
-            }
+            self.view_ind_uniforms.set(gl, params.view_ind_params);
+            self.view_dep_uniforms.set(gl, params.view_dep_params);
 
             gl.bind_vertex_array(self.vertex_array_name);
             gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
             gl.buffer_data(gl::ARRAY_BUFFER, params.vertices.flatten(), gl::STREAM_DRAW);
-            // gl.vertex_attrib_pointer(
-            //     shader_defines::VS_POS_IN_OBJ_LOC,
-            //     3,
-            //     gl::FLOAT,
-            //     gl::FALSE,
-            //     std::mem::size_of::<[f32; 3]>(),
-            //     0,
-            // );
-            // gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
 
             gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
             gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, params.indices.flatten(), gl::STATIC_DRAW);
@@ -122,19 +99,9 @@ impl Renderer {
 
                 gl.use_program(self.program_name);
 
-                macro_rules! get_uniform_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get uniform location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
-                }
-
                 self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.pos_from_wld_to_cam_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_cam");
-                self.pos_from_wld_to_clp_loc = get_uniform_location!(gl, self.program_name, "pos_from_wld_to_clp");
+                self.view_ind_uniforms.update(gl, self.program_name);
+                self.view_dep_uniforms.update(gl, self.program_name);
 
                 gl.unuse_program();
             }
@@ -189,8 +156,8 @@ impl Renderer {
                 vertex_buffer_name,
                 element_buffer_name,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-                pos_from_wld_to_cam_loc: gl::OptionUniformLocation::NONE,
-                pos_from_wld_to_clp_loc: gl::OptionUniformLocation::NONE,
+                view_ind_uniforms: Default::default(),
+                view_dep_uniforms: Default::default(),
             }
         }
     }
