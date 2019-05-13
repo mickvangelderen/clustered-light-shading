@@ -381,6 +381,9 @@ impl ViewDependentResources {
             self.depth_texture.update(gl, texture_update);
             self.nor_in_cam_texture.update(gl, texture_update);
             self.ao_texture.update(gl, texture_update);
+            self.ao_x_texture.update(gl, texture_update);
+            self.post_color_texture.update(gl, texture_update);
+            self.post_depth_texture.update(gl, texture_update);
         }
     }
 
@@ -401,6 +404,9 @@ impl ViewDependentResources {
                 self.depth_texture.drop(gl);
                 self.nor_in_cam_texture.drop(gl);
                 self.ao_texture.drop(gl);
+                self.ao_x_texture.drop(gl);
+                self.post_color_texture.drop(gl);
+                self.post_depth_texture.drop(gl);
             }
         }
     }
