@@ -60,8 +60,8 @@ void main() {
   // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // APPLIED AO
-  // frag_color = vec4(ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  frag_color = vec4(ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // AO
-  frag_color = vec4(vec3(ao), 1.0);
+  // frag_color = vec4(vec3(ao), 1.0);
 }
