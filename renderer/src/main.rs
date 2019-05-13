@@ -53,11 +53,22 @@ pub struct World {
     time: f32,
     clear_color: [f32; 3],
     camera: camera::Camera,
+    smooth_camera: camera::Camera,
     sun_pos: Vector3<f32>,
     sun_rot: Rad<f32>,
-    smooth_camera: bool,
+    use_smooth_camera: bool,
     pos_from_bdy_to_hmd: cgmath::Matrix4<f32>,
     keyboard_model: keyboard_model::KeyboardModel,
+}
+
+impl World {
+    fn get_camera(&self) -> &camera::Camera {
+        if self.use_smooth_camera {
+            &self.smooth_camera
+        } else {
+            &self.camera
+        }
+    }
 }
 
 pub struct ViewIndependentResources {
@@ -449,13 +460,18 @@ fn main() {
         time: 0.0,
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::Camera {
-            smooth_position: Vector3::new(0.0, 1.0, 1.5),
             position: Vector3::new(0.0, 1.0, 1.5),
-            smooth_yaw: Rad(0.0),
             yaw: Rad(0.0),
-            smooth_pitch: Rad(0.0),
             pitch: Rad(0.0),
-            smooth_fovy: Deg(90.0).into(),
+            fovy: Deg(90.0).into(),
+            positional_velocity: 2.0,
+            angular_velocity: 0.4,
+            zoom_velocity: 1.0,
+        },
+        smooth_camera: camera::Camera {
+            position: Vector3::new(0.0, 1.0, 1.5),
+            yaw: Rad(0.0),
+            pitch: Rad(0.0),
             fovy: Deg(90.0).into(),
             positional_velocity: 2.0,
             angular_velocity: 0.4,
@@ -463,7 +479,7 @@ fn main() {
         },
         sun_pos: Vector3::new(0.0, 0.0, 0.0),
         sun_rot: Deg(85.2).into(),
-        smooth_camera: true,
+        use_smooth_camera: true,
         pos_from_bdy_to_hmd: Matrix4::from_translation(Vector3::zero()),
         keyboard_model: keyboard_model::KeyboardModel::new(),
     };
@@ -833,7 +849,7 @@ fn main() {
                                     VirtualKeyCode::Z => input_down = keyboard_input.state,
                                     VirtualKeyCode::C => {
                                         if keyboard_input.state == ElementState::Pressed && focus {
-                                            world.smooth_camera = !world.smooth_camera;
+                                            world.use_smooth_camera = !world.use_smooth_camera;
                                         }
                                     }
                                     VirtualKeyCode::Escape => {
@@ -904,15 +920,16 @@ fn main() {
             } else {
                 Vector3::zero()
             },
-            delta_yaw: Rad(mouse_dx as f32),
-            delta_pitch: Rad(mouse_dy as f32),
+            delta_yaw: Rad(-mouse_dx as f32),
+            delta_pitch: Rad(-mouse_dy as f32),
             delta_scroll: mouse_dscroll as f32,
         });
+        world.smooth_camera.interpolate(&world.camera, 0.80);
 
         if vr_resources.is_some() {
             // Pitch makes me dizzy.
-            world.camera.smooth_pitch = Rad(0.0);
             world.camera.pitch = Rad(0.0);
+            world.smooth_camera.pitch = Rad(0.0);
         }
 
         if focus {
@@ -979,11 +996,11 @@ fn main() {
         let view_ind_params = {
             let pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
 
-            let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
-            let sun_pos_in_sun = sun_ori * world.sun_pos;
+            let rot_from_wld_to_cam = Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
 
-            let pos_from_wld_to_cam = Matrix4::from_translation(sun_pos_in_sun) * Matrix4::from(sun_ori);
-            let pos_from_cam_to_wld = Matrix4::from(sun_ori.invert()) * Matrix4::from_translation(-sun_pos_in_sun);
+            let pos_from_wld_to_cam = Matrix4::from(rot_from_wld_to_cam) * Matrix4::from_translation(-world.sun_pos);
+            let pos_from_cam_to_wld = Matrix4::from_translation(world.sun_pos) * Matrix4::from(rot_from_wld_to_cam.invert());
+
             let pos_from_wld_to_clp: Matrix4<f32> = (pos_from_cam_to_clp * pos_from_wld_to_cam.cast().unwrap())
                 .cast()
                 .unwrap();
@@ -1043,11 +1060,7 @@ fn main() {
                 // Right: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0307, 0.0, 0.015, 1.0]]
 
                 let view_dep_params = {
-                    let pos_from_wld_to_bdy: Matrix4<f64> = if world.smooth_camera {
-                        world.camera.smooth_pos_from_wld_to_cam()
-                    } else {
-                        world.camera.pos_from_wld_to_cam()
-                    }
+                    let pos_from_wld_to_bdy: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam()
                     .cast()
                     .unwrap();
 
@@ -1187,25 +1200,17 @@ fn main() {
         // --- VR ---
         } else {
             let view_dep_params = {
-                let pos_from_wld_to_cam: Matrix4<f64> = if world.smooth_camera {
-                    world.camera.smooth_pos_from_wld_to_cam()
-                } else {
-                    world.camera.pos_from_wld_to_cam()
-                }
+                let pos_from_wld_to_cam: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam()
                 .cast()
                 .unwrap();
 
-                let pos_from_cam_to_wld: Matrix4<f64> = if world.smooth_camera {
-                    world.camera.smooth_pos_from_cam_to_wld()
-                } else {
-                    world.camera.pos_from_cam_to_wld()
-                }
+                let pos_from_cam_to_wld: Matrix4<f64> = world.get_camera().pos_from_cam_to_wld()
                 .cast()
                 .unwrap();
 
                 let frustrum = {
                     let z0 = -0.1;
-                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.fovy).0 as f64) / 2.0);
+                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.get_camera().fovy).0 as f64) / 2.0);
                     let dx = dy * physical_size.width as f64 / physical_size.height as f64;
                     frustrum::Frustrum::<f64> {
                         x0: -dx,
