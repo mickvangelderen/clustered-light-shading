@@ -52,7 +52,7 @@ impl Renderer {
             gl.use_program(self.program_name);
 
             if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.view_ind_params.light_pos_from_wld_to_cam.as_ref());
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.view_ind_params.light_pos_from_cam_to_wld.as_ref());
             }
 
             self.view_ind_uniforms.set(gl, params.view_ind_params);
