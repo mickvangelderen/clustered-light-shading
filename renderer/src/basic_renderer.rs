@@ -1,6 +1,6 @@
-use crate::parameters;
 use crate::gl_ext::*;
 use crate::keyboard_model;
+use crate::parameters;
 use crate::resources::Resources;
 use crate::shader_defines;
 use crate::World;
@@ -107,18 +107,10 @@ impl Renderer {
             self.view_dep_uniforms.set(gl, params.view_dep_params);
 
             if let Some(loc) = self.sun_dir_in_cam_loc.into() {
-                // FIXME: Duplicate code!
-                let sun_ori = Quaternion::from_angle_y(Deg(10.0)) * Quaternion::from_angle_x(world.sun_rot);
-                let cam_ori = if world.smooth_camera {
-                    world.camera.smooth_orientation()
-                } else {
-                    world.camera.orientation()
-                };
-
-                gl.uniform_3f(
-                    loc,
-                    (cam_ori.invert() * sun_ori.invert() * Vector3::new(0.0, 0.0, 1.0)).into(),
-                );
+                let light_rot_from_wld_to_cam = Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
+                let rot_from_wld_to_cam = world.get_camera().rot_from_wld_to_cam();
+                let light_dir_in_cam = rot_from_wld_to_cam * light_rot_from_wld_to_cam.invert() * Vector3::new(0.0, 0.0, 1.0);
+                gl.uniform_3f(loc, light_dir_in_cam.into());
             }
 
             // Cache texture binding.
@@ -218,7 +210,6 @@ impl Renderer {
                     .unwrap_or_else(|e| eprintln!("{} (program):\n{}", file!(), e));
 
                 gl.use_program(self.program_name);
-
 
                 self.time_loc = get_uniform_location!(gl, self.program_name, "time");
                 self.diffuse_loc = get_uniform_location!(gl, self.program_name, "diffuse");
