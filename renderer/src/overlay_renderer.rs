@@ -15,8 +15,8 @@ pub struct Renderer {
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
     pub color_sampler_loc: gl::OptionUniformLocation,
-    pub channel_defaults_loc: gl::OptionUniformLocation,
-    pub channel_weights_loc: gl::OptionUniformLocation,
+    pub default_colors_loc: gl::OptionUniformLocation,
+    pub color_matrix_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters {
@@ -26,8 +26,8 @@ pub struct Parameters {
     pub y0: i32,
     pub y1: i32,
     pub color_texture_name: gl::TextureName,
-    pub channel_defaults: [f32; 4],
-    pub channel_weights: [f32; 4],
+    pub default_colors: [f32; 4],
+    pub color_matrix: [[f32; 4]; 4],
 }
 
 #[derive(Default)]
@@ -61,13 +61,13 @@ impl Renderer {
                 gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
             };
 
-            if let Some(loc) = self.channel_defaults_loc.into() {
-                gl.uniform_4f(loc, params.channel_defaults);
+            if let Some(loc) = self.default_colors_loc.into() {
+                gl.uniform_4f(loc, params.default_colors);
             };
 
 
-            if let Some(loc) = self.channel_weights_loc.into() {
-                gl.uniform_4f(loc, params.channel_weights);
+            if let Some(loc) = self.color_matrix_loc.into() {
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Row, &params.color_matrix);
             };
 
             gl.bind_vertex_array(self.vertex_array_name);
@@ -115,8 +115,8 @@ impl Renderer {
                 }
 
                 self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
-                self.channel_defaults_loc = get_uniform_location!(gl, self.program_name, "channel_defaults");
-                self.channel_weights_loc = get_uniform_location!(gl, self.program_name, "channel_weights");
+                self.default_colors_loc = get_uniform_location!(gl, self.program_name, "default_colors");
+                self.color_matrix_loc = get_uniform_location!(gl, self.program_name, "color_matrix");
 
                 gl.unuse_program();
             }
@@ -171,8 +171,8 @@ impl Renderer {
                 vertex_buffer_name,
                 element_buffer_name,
                 color_sampler_loc: gl::OptionUniformLocation::NONE,
-                channel_defaults_loc: gl::OptionUniformLocation::NONE,
-                channel_weights_loc: gl::OptionUniformLocation::NONE,
+                default_colors_loc: gl::OptionUniformLocation::NONE,
+                color_matrix_loc: gl::OptionUniformLocation::NONE,
             }
         }
     }

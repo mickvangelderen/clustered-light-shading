@@ -1160,8 +1160,13 @@ fn main() {
                         y0: viewport.2,
                         y1: viewport.3,
                         color_texture_name: view_dep_res.post_color_texture.name(),
-                        channel_defaults: [0.0, 0.0, 0.0, 1.0],
-                        channel_weights: [1.0, 1.0, 1.0, 0.0],
+                        default_colors: [0.0, 0.0, 0.0, 0.0],
+                        color_matrix: [
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
                     },
                 );
             }
@@ -1309,8 +1314,13 @@ fn main() {
                     y0: 0,
                     y1: (physical_size.height / 3.0) as i32,
                     color_texture_name: view_ind_res.shadow_texture.name(),
-                    channel_defaults: [0.0, 0.0, 0.0, 1.0],
-                    channel_weights: [1.0, 0.0, 0.0, 0.0],
+                    default_colors: [0.0, 0.0, 0.0, 1.0],
+                    color_matrix: [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0],
+                    ],
                 },
             );
         }
