@@ -1,4 +1,4 @@
-![Hot Reloading](media/hot-reloading.gif)
+![Decent VR-ready renderer screenshot](media/decent-vr-ready-renderer.jpg)
 
 Requires SteamVR (installed through steam) and standard OpenGL development
 headers and libraries to be installed.
@@ -196,3 +196,40 @@ of the angles to PI/4 changes the sphere to look like the one on the right.
 ![Sphere at 5 subdivision with edges spherical](media/spheres/cubic_sphere_fix_edge.jpg)
 
 [Code](https://github.com/mickvangelderen/vr-lab/releases/tag/cubic-sphere-generation-fix-edge)
+
+## A decent VR-ready renderer
+
+We are rendering the sponza scene in realtime, in VR, with reasonable detail! 
+
+![Decent VR-ready renderer screenshot](media/decent-vr-ready-renderer.jpg)
+
+There are some straightforward but probably time consuming improvments to be made:
+
+1. Use bindless textures
+2. Leverage multi draw commands.
+
+Right now we're doing ~8000 OpenGL calls per frame. Most of them are setting
+material related uniforms and actually doing the draws.
+
+However this does not seem to be a bottle neck right now, as far as I can tell
+from the apitrace and NSight anyway. The basic renderer and the ambient
+occlusion renderer are taking up most of the frame budget. 
+
+Theres also a lot of duplication in the code still, despite my efforts to reduce
+it.
+
+The statefulness of OpenGL makes me uneasy. It is probably a good idea to always set all of the rendering state, like framebuffers, color attachment locations, and write masks, before each renderer runs. Cach
+better to live with non-significant overhead and cache the opengl state locally to 
+
+### Future
+
+Thing I would like to try:
+
+1. bindless textures
+2. multi-draw commands
+3. exponential shadow maps
+
+Things I need to do:
+
+1. provide and shade with multiple point/spot lights
+2. implement basic monoscopic clustered light shading
