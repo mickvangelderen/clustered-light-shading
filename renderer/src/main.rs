@@ -8,6 +8,7 @@ mod ao_filter;
 mod ao_renderer;
 mod basic_renderer;
 mod camera;
+mod cgmath_ext;
 mod convert;
 mod filters;
 mod frustrum;
@@ -1005,7 +1006,8 @@ fn main() {
             let rot_from_wld_to_cam = Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
 
             let pos_from_wld_to_cam = Matrix4::from(rot_from_wld_to_cam) * Matrix4::from_translation(-world.sun_pos);
-            let pos_from_cam_to_wld = Matrix4::from_translation(world.sun_pos) * Matrix4::from(rot_from_wld_to_cam.invert());
+            let pos_from_cam_to_wld =
+                Matrix4::from_translation(world.sun_pos) * Matrix4::from(rot_from_wld_to_cam.invert());
 
             let pos_from_wld_to_clp: Matrix4<f32> = (pos_from_cam_to_clp * pos_from_wld_to_cam.cast().unwrap())
                 .cast()
@@ -1066,9 +1068,7 @@ fn main() {
                 // Right: Matrix4 [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0307, 0.0, 0.015, 1.0]]
 
                 let view_dep_params = {
-                    let pos_from_wld_to_bdy: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam()
-                    .cast()
-                    .unwrap();
+                    let pos_from_wld_to_bdy: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam().cast().unwrap();
 
                     let pos_from_bdy_to_hmd: Matrix4<f64> = world.pos_from_bdy_to_hmd.cast().unwrap();
 
@@ -1206,13 +1206,9 @@ fn main() {
         // --- VR ---
         } else {
             let view_dep_params = {
-                let pos_from_wld_to_cam: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam()
-                .cast()
-                .unwrap();
+                let pos_from_wld_to_cam: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam().cast().unwrap();
 
-                let pos_from_cam_to_wld: Matrix4<f64> = world.get_camera().pos_from_cam_to_wld()
-                .cast()
-                .unwrap();
+                let pos_from_cam_to_wld: Matrix4<f64> = world.get_camera().pos_from_cam_to_wld().cast().unwrap();
 
                 let frustrum = {
                     let z0 = -0.1;

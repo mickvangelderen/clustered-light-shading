@@ -1,3 +1,4 @@
+use crate::cgmath_ext::*;
 use crate::gl_ext::*;
 use crate::keyboard_model;
 use crate::parameters;
@@ -107,9 +108,13 @@ impl Renderer {
             self.view_dep_uniforms.set(gl, params.view_dep_params);
 
             if let Some(loc) = self.sun_dir_in_cam_loc.into() {
-                let light_rot_from_wld_to_cam = Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
-                let rot_from_wld_to_cam = world.get_camera().rot_from_wld_to_cam();
-                let light_dir_in_cam = rot_from_wld_to_cam * light_rot_from_wld_to_cam.invert() * Vector3::new(0.0, 0.0, 1.0);
+                let light_rot_from_wld_to_cam =
+                    Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
+                let rot_from_wld_to_cam: Matrix3<f32> = params.view_dep_params.pos_from_wld_to_cam.truncate();
+                // NOTE: Here the light direction means the direction towards
+                // the light, not from the light. Hence the vector (0, 0, 1).
+                let light_dir_in_cam =
+                    rot_from_wld_to_cam * (light_rot_from_wld_to_cam.invert() * Vector3::new(0.0, 0.0, 1.0));
                 gl.uniform_3f(loc, light_dir_in_cam.into());
             }
 
