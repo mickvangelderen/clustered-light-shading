@@ -9,6 +9,7 @@ mod ao_renderer;
 mod basic_renderer;
 mod camera;
 mod cgmath_ext;
+mod clamp;
 mod convert;
 mod filters;
 mod frustrum;
@@ -26,6 +27,7 @@ mod shader_defines;
 mod shadow_renderer;
 mod vsm_filter;
 
+use crate::clamp::Clamp;
 use crate::gl_ext::*;
 use cgmath::*;
 use convert::*;
@@ -1074,10 +1076,13 @@ fn main() {
                 .into_iter()
                 .map(|&p| view_dep_params.pos_from_clp_to_cam.transform_point(p));
             let first = frustrum::BoundingBox::from_point(corner_iter.next().unwrap());
-            (corner_iter.fold(first, |b, p| b.enclose(p)), view_dep_params.pos_from_wld_to_cam)
+            (
+                corner_iter.fold(first, |b, p| b.enclose(p)),
+                view_dep_params.pos_from_wld_to_cam,
+            )
         };
 
-        let cluster_side = 100.0;
+        let cluster_side = 10.0;
         let cbb_dx = cluster_bounding_box.x1 - cluster_bounding_box.x0;
         let cbb_dy = cluster_bounding_box.y1 - cluster_bounding_box.y0;
         let cbb_dz = cluster_bounding_box.z1 - cluster_bounding_box.z0;
@@ -1109,30 +1114,26 @@ fn main() {
         for (i, l) in resources.point_lights.iter().enumerate() {
             let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
 
-            let x0 = std::cmp::max(0, f32::floor(pos_in_cls.x - l.radius * cbb_sx) as usize);
+            let x0 = Clamp::clamp(f32::floor(pos_in_cls.x - l.radius * cbb_sx) as usize, (0, cbb_cx));
             let x1 = f32::floor(pos_in_cls.x) as usize;
-            let x2 = std::cmp::min(
-                cbb_cx as usize - 1,
-                f32::floor(pos_in_cls.x + l.radius * cbb_sx) as usize,
-            );
+            let x2 = Clamp::clamp(f32::floor(pos_in_cls.x + l.radius * cbb_sx) as usize + 1, (0, cbb_cx));
 
-            let y0 = std::cmp::max(0, f32::floor(pos_in_cls.y - l.radius * cbb_sy) as usize);
+            let y0 = Clamp::clamp(f32::floor(pos_in_cls.y - l.radius * cbb_sy) as usize, (0, cbb_cy));
             let y1 = f32::floor(pos_in_cls.y) as usize;
-            let y2 = std::cmp::min(
-                cbb_cy as usize - 1,
-                f32::floor(pos_in_cls.y + l.radius * cbb_sy) as usize,
-            );
+            let y2 = Clamp::clamp(f32::floor(pos_in_cls.y + l.radius * cbb_sy) as usize + 1, (0, cbb_cy));
 
-            let z0 = std::cmp::max(0, f32::floor(pos_in_cls.z - l.radius * cbb_sz) as usize);
+            let z0 = Clamp::clamp(f32::floor(pos_in_cls.z - l.radius * cbb_sz) as usize, (0, cbb_cz));
             let z1 = f32::floor(pos_in_cls.z) as usize;
-            let z2 = std::cmp::min(
-                cbb_cz as usize - 1,
-                f32::floor(pos_in_cls.z + l.radius * cbb_sz) as usize,
-            );
+            let z2 = Clamp::clamp(f32::floor(pos_in_cls.z + l.radius * cbb_sz) as usize + 1, (0, cbb_cz));
+
+            // println!(
+            //     "lights[{}] pos_in_cls: {:?}, radius: {}, x: ({}, {}, {}), y: ({}, {}, {}), z: ({}, {}, {})",
+            //     i, pos_in_cls, l.radius, x0, x1, x2, y0, y1, y2, z0, z1, z2
+            // );
 
             let r_sq = l.radius * l.radius;
 
-            for z in z0..=z2 {
+            for z in z0..z2 {
                 let dz = if z < z1 {
                     pos_in_cls.z - (z + 1) as f32
                 } else if z > z1 {
@@ -1140,7 +1141,7 @@ fn main() {
                 } else {
                     0.0
                 } * cbb_sz_inv;
-                for y in y0..=y2 {
+                for y in y0..y2 {
                     let dy = if y < y1 {
                         pos_in_cls.y - (y + 1) as f32
                     } else if y > y1 {
@@ -1148,7 +1149,7 @@ fn main() {
                     } else {
                         0.0
                     } * cbb_sy_inv;
-                    for x in x0..=x2 {
+                    for x in x0..x2 {
                         let dx = if x < x1 {
                             pos_in_cls.x - (x + 1) as f32
                         } else if x > x1 {
