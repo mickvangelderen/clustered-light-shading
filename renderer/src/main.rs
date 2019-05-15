@@ -1051,7 +1051,7 @@ fn main() {
                         y0: -dy,
                         y1: dy,
                         z0,
-                        z1: -100.0,
+                        z1: -20.0, // TODO: REDUCED!!
                     }
                 };
 
@@ -1082,7 +1082,7 @@ fn main() {
             )
         };
 
-        let cluster_side = 10.0;
+        let cluster_side = 0.25;
         let cbb_dx = cluster_bounding_box.x1 - cluster_bounding_box.x0;
         let cbb_dy = cluster_bounding_box.y1 - cluster_bounding_box.y0;
         let cbb_dz = cluster_bounding_box.z1 - cluster_bounding_box.z0;
@@ -1109,22 +1109,21 @@ fn main() {
 
         println!("cluster x * y * z = {} * {} * {} = {}", cbb_cx, cbb_cy, cbb_cz, cbb_n);
 
-        let mut clustering: Vec<[u16; 1]> = (0..cbb_n).into_iter().map(|_| [0u16; 1]).collect();
+        let mut clustering: Vec<[u32; 16]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
 
         for (i, l) in resources.point_lights.iter().enumerate() {
             let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
 
-            let x0 = Clamp::clamp(f32::floor(pos_in_cls.x - l.radius * cbb_sx) as usize, (0, cbb_cx));
+            // NOTE: We must clamp as f32 because the value might actually overflow.
+            let x0 = Clamp::clamp(f32::floor(pos_in_cls.x - l.radius * cbb_sx), (0.0, cbb_cx as f32)) as usize;
             let x1 = f32::floor(pos_in_cls.x) as usize;
-            let x2 = Clamp::clamp(f32::floor(pos_in_cls.x + l.radius * cbb_sx) as usize + 1, (0, cbb_cx));
-
-            let y0 = Clamp::clamp(f32::floor(pos_in_cls.y - l.radius * cbb_sy) as usize, (0, cbb_cy));
+            let x2 = Clamp::clamp(f32::floor(pos_in_cls.x + l.radius * cbb_sx) + 1.0, (0.0, cbb_cx as f32)) as usize;
+            let y0 = Clamp::clamp(f32::floor(pos_in_cls.y - l.radius * cbb_sy), (0.0, cbb_cy as f32)) as usize;
             let y1 = f32::floor(pos_in_cls.y) as usize;
-            let y2 = Clamp::clamp(f32::floor(pos_in_cls.y + l.radius * cbb_sy) as usize + 1, (0, cbb_cy));
-
-            let z0 = Clamp::clamp(f32::floor(pos_in_cls.z - l.radius * cbb_sz) as usize, (0, cbb_cz));
+            let y2 = Clamp::clamp(f32::floor(pos_in_cls.y + l.radius * cbb_sy) + 1.0, (0.0, cbb_cy as f32)) as usize;
+            let z0 = Clamp::clamp(f32::floor(pos_in_cls.z - l.radius * cbb_sz), (0.0, cbb_cz as f32)) as usize;
             let z1 = f32::floor(pos_in_cls.z) as usize;
-            let z2 = Clamp::clamp(f32::floor(pos_in_cls.z + l.radius * cbb_sz) as usize + 1, (0, cbb_cz));
+            let z2 = Clamp::clamp(f32::floor(pos_in_cls.z + l.radius * cbb_sz) + 1.0, (0.0, cbb_cz as f32)) as usize;
 
             // println!(
             //     "lights[{}] pos_in_cls: {:?}, radius: {}, x: ({}, {}, {}), y: ({}, {}, {}), z: ({}, {}, {})",
@@ -1161,6 +1160,12 @@ fn main() {
                             // It's a hit!
                             let thing = &mut clustering[((z * cbb_cy) + y) * cbb_cx + x];
                             thing[0] += 1;
+                            let offset = thing[0] as usize;
+                            if offset < thing.len() {
+                                thing[offset] = i as u32;
+                            } else {
+                                eprintln!("Overflowing clustered light assignment!");
+                            }
                         }
                     }
                 }
@@ -1168,7 +1173,7 @@ fn main() {
         }
 
         let cls_header = light::CLSBufferHeader {
-            cluster_dims: Vector4::new(cbb_cx as u32, cbb_cy as u32, cbb_cz as u32, 1),
+            cluster_dims: Vector4::new(cbb_cx as u32, cbb_cy as u32, cbb_cz as u32, 16),
         };
 
         unsafe {
