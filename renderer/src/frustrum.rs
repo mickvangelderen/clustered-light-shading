@@ -26,6 +26,22 @@ impl AsRef<[f32; 6]> for Frustrum<f32> {
 
 impl<S: Float> Frustrum<S> {
     #[inline]
+    pub fn corners_in_clp(depth_range: (S, S)) -> [Point3<S>; 8] {
+        let (x0, y0, x1, y1) = (-S::one(), -S::one(), S::one(), S::one());
+        let (z0, z1) = depth_range;
+        [
+            Point3::new(x0, y0, z0),
+            Point3::new(x1, y0, z0),
+            Point3::new(x0, y1, z0),
+            Point3::new(x1, y1, z0),
+            Point3::new(x0, y0, z1),
+            Point3::new(x1, y0, z1),
+            Point3::new(x0, y1, z1),
+            Point3::new(x1, y1, z1),
+        ]
+    }
+
+    #[inline]
     pub fn perspective(self, depth_range: (S, S)) -> Matrix4<S> {
         // Constants.
         let zero = S::zero();
@@ -226,5 +242,47 @@ impl<S: ToPrimitive> Frustrum<S> {
             z0: T::from(self.z0)?,
             z1: T::from(self.z1)?,
         })
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct BoundingBox<S> {
+    pub x0: S,
+    pub y0: S,
+    pub z0: S,
+    pub x1: S,
+    pub y1: S,
+    pub z1: S,
+}
+
+fn partial_min<S: std::cmp::PartialOrd>(a: S, b: S) -> S {
+    if a < b { a } else { b}
+}
+
+fn partial_max<S: std::cmp::PartialOrd>(a: S, b: S) -> S {
+    if a > b { a } else { b}
+}
+
+impl<S: Float> BoundingBox<S> {
+    pub fn from_point(p: Point3<S>) -> Self {
+        BoundingBox {
+            x0: p.x,
+            y0: p.y,
+            z0: p.z,
+            x1: p.x,
+            y1: p.y,
+            z1: p.z,
+        }
+    }
+
+    pub fn enclose(self, p: Point3<S>) -> Self {
+        BoundingBox {
+            x0: partial_min(self.x0, p.x),
+            y0: partial_min(self.y0, p.y),
+            z0: partial_min(self.z0, p.z),
+            x1: partial_max(self.x1, p.x),
+            y1: partial_max(self.y1, p.y),
+            z1: partial_max(self.z1, p.z),
+        }
     }
 }

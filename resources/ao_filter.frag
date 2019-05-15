@@ -53,6 +53,6 @@ void main() {
         smoothstep(ao_r, 0.0, abs(delta_depth)) * weights[i] * sample_color;
   }
 
-  fs_out = accumulator;
-  // fs_out = texture(color_sampler, fs_pos_in_tex).x;
+  // fs_out = accumulator;
+  fs_out = texture(color_sampler, fs_pos_in_tex).x;
 }

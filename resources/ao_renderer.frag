@@ -66,7 +66,7 @@ void main() {
   uint visible_count = 0;
   uint total_count = 0;
 
-  const uint N = 8;
+  const uint N = 1;
   for (int i = 0; i < N; i += 1) {
     // NOTE: Instead of having N random samples for every pixel, we have N
     // random samples per group of pixels, and reflect the samples along a

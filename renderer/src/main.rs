@@ -81,6 +81,8 @@ pub struct ViewIndependentResources {
     // Filter shadow resources.
     pub shadow_2_framebuffer_name: gl::FramebufferName,
     pub shadow_2_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg32f>,
+    // Storage buffers.
+    pub cls_buffer_name: gl::BufferName,
 }
 
 impl ViewIndependentResources {
@@ -168,12 +170,21 @@ impl ViewIndependentResources {
                 );
             }
 
+            // Storage buffers,
+
+            let [cls_buffer_name]: [gl::BufferName; 1] = {
+                let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
+                gl.gen_buffers(&mut names);
+                names.try_transmute_each().unwrap()
+            };
+
             ViewIndependentResources {
                 shadow_framebuffer_name,
                 shadow_texture,
                 shadow_depth_renderbuffer_name,
                 shadow_2_framebuffer_name,
                 shadow_2_texture,
+                cls_buffer_name,
             }
         }
     }
@@ -426,6 +437,7 @@ impl ViewDependentResources {
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
+const DEPTH_RANGE_F32: (f32, f32) = (1.0, 0.0);
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
@@ -1001,6 +1013,7 @@ fn main() {
 
         // draw everything here
 
+        // Shadowing.
         let sun_frustrum = frustrum::Frustrum {
             x0: -25.0,
             x1: 25.0,
@@ -1011,6 +1024,167 @@ fn main() {
         };
 
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast().unwrap().line_mesh();
+
+        // Clustered light shading.
+
+        // FIXME: DO THING FOR VR EYES!!!
+        let (cluster_bounding_box, pos_from_wld_to_cam) = if let Some(vr_resources) = vr_resources {
+            unimplemented!();
+        } else {
+            let physical_size = win_size.to_physical(win_dpi);
+
+            // TODO: DEDUPLICATE
+            let view_dep_params = {
+                let pos_from_wld_to_cam: Matrix4<f64> = world.get_camera().pos_from_wld_to_cam().cast().unwrap();
+
+                let pos_from_cam_to_wld: Matrix4<f64> = world.get_camera().pos_from_cam_to_wld().cast().unwrap();
+
+                let frustrum = {
+                    let z0 = -0.1;
+                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.get_camera().fovy).0 as f64) / 2.0);
+                    let dx = dy * physical_size.width as f64 / physical_size.height as f64;
+                    frustrum::Frustrum::<f64> {
+                        x0: -dx,
+                        x1: dx,
+                        y0: -dy,
+                        y1: dy,
+                        z0,
+                        z1: -100.0,
+                    }
+                };
+
+                let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+
+                let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
+
+                parameters::ViewDependentParameters {
+                    pos_from_wld_to_cam: pos_from_wld_to_cam.cast().unwrap(),
+                    pos_from_cam_to_wld: pos_from_cam_to_wld.cast().unwrap(),
+
+                    pos_from_cam_to_clp: pos_from_cam_to_clp.cast().unwrap(),
+                    pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap().cast().unwrap(),
+
+                    pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
+                    pos_from_clp_to_wld: pos_from_wld_to_clp.invert().unwrap().cast().unwrap(),
+                }
+            };
+
+            let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE_F32);
+            let mut corner_iter = corners_in_clp
+                .into_iter()
+                .map(|&p| view_dep_params.pos_from_clp_to_cam.transform_point(p));
+            let first = frustrum::BoundingBox::from_point(corner_iter.next().unwrap());
+            (corner_iter.fold(first, |b, p| b.enclose(p)), view_dep_params.pos_from_wld_to_cam)
+        };
+
+        let cluster_side = 100.0;
+        let cbb_dx = cluster_bounding_box.x1 - cluster_bounding_box.x0;
+        let cbb_dy = cluster_bounding_box.y1 - cluster_bounding_box.y0;
+        let cbb_dz = cluster_bounding_box.z1 - cluster_bounding_box.z0;
+        let cbb_cx = f32::ceil(cbb_dx / cluster_side);
+        let cbb_cy = f32::ceil(cbb_dy / cluster_side);
+        let cbb_cz = f32::ceil(cbb_dz / cluster_side);
+        let cbb_sx = cbb_cx / cbb_dx;
+        let cbb_sy = cbb_cy / cbb_dy;
+        let cbb_sz = cbb_cz / cbb_dz;
+        let cbb_sx_inv = cbb_dx / cbb_cx;
+        let cbb_sy_inv = cbb_dy / cbb_cy;
+        let cbb_sz_inv = cbb_dz / cbb_cz;
+        let cbb_cx = cbb_cx as usize;
+        let cbb_cy = cbb_cy as usize;
+        let cbb_cz = cbb_cz as usize;
+        let cbb_n = cbb_cx * cbb_cy * cbb_cz;
+        let pos_from_cam_to_cls = Matrix4::from_nonuniform_scale(cbb_sx, cbb_sy, cbb_sz)
+            * Matrix4::from_translation(Vector3::new(
+                -cluster_bounding_box.x0,
+                -cluster_bounding_box.y0,
+                -cluster_bounding_box.z0,
+            ));
+        let pos_from_wld_to_cls = pos_from_cam_to_cls * pos_from_wld_to_cam;
+
+        println!("cluster x * y * z = {} * {} * {} = {}", cbb_cx, cbb_cy, cbb_cz, cbb_n);
+
+        let mut clustering: Vec<[u16; 1]> = (0..cbb_n).into_iter().map(|_| [0u16; 1]).collect();
+
+        for (i, l) in resources.point_lights.iter().enumerate() {
+            let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
+
+            let x0 = std::cmp::max(0, f32::floor(pos_in_cls.x - l.radius * cbb_sx) as usize);
+            let x1 = f32::floor(pos_in_cls.x) as usize;
+            let x2 = std::cmp::min(
+                cbb_cx as usize - 1,
+                f32::floor(pos_in_cls.x + l.radius * cbb_sx) as usize,
+            );
+
+            let y0 = std::cmp::max(0, f32::floor(pos_in_cls.y - l.radius * cbb_sy) as usize);
+            let y1 = f32::floor(pos_in_cls.y) as usize;
+            let y2 = std::cmp::min(
+                cbb_cy as usize - 1,
+                f32::floor(pos_in_cls.y + l.radius * cbb_sy) as usize,
+            );
+
+            let z0 = std::cmp::max(0, f32::floor(pos_in_cls.z - l.radius * cbb_sz) as usize);
+            let z1 = f32::floor(pos_in_cls.z) as usize;
+            let z2 = std::cmp::min(
+                cbb_cz as usize - 1,
+                f32::floor(pos_in_cls.z + l.radius * cbb_sz) as usize,
+            );
+
+            let r_sq = l.radius * l.radius;
+
+            for z in z0..=z2 {
+                let dz = if z < z1 {
+                    pos_in_cls.z - (z + 1) as f32
+                } else if z > z1 {
+                    pos_in_cls.z - z as f32
+                } else {
+                    0.0
+                } * cbb_sz_inv;
+                for y in y0..=y2 {
+                    let dy = if y < y1 {
+                        pos_in_cls.y - (y + 1) as f32
+                    } else if y > y1 {
+                        pos_in_cls.y - y as f32
+                    } else {
+                        0.0
+                    } * cbb_sy_inv;
+                    for x in x0..=x2 {
+                        let dx = if x < x1 {
+                            pos_in_cls.x - (x + 1) as f32
+                        } else if x > x1 {
+                            pos_in_cls.x - x as f32
+                        } else {
+                            0.0
+                        } * cbb_sx_inv;
+                        if dz * dz + dy * dy + dx * dx < r_sq {
+                            // It's a hit!
+                            let thing = &mut clustering[((z * cbb_cy) + y) * cbb_cx + x];
+                            thing[0] += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        let cls_header = light::CLSBufferHeader {
+            cluster_dims: Vector4::new(cbb_cx as u32, cbb_cy as u32, cbb_cz as u32, 1),
+        };
+
+        unsafe {
+            let header_size = std::mem::size_of::<light::CLSBufferHeader>();
+            let body_size = std::mem::size_of_val(&clustering[..]);
+            let total_size = header_size + body_size;
+            gl.bind_buffer(gl::SHADER_STORAGE_BUFFER, view_ind_res.cls_buffer_name);
+            gl.buffer_reserve(gl::SHADER_STORAGE_BUFFER, total_size, gl::STREAM_DRAW);
+            gl.buffer_sub_data(gl::SHADER_STORAGE_BUFFER, 0, &[cls_header]);
+            gl.buffer_sub_data(gl::SHADER_STORAGE_BUFFER, header_size, &clustering[..]);
+            gl.bind_buffer_base(
+                gl::SHADER_STORAGE_BUFFER,
+                shader_defines::CLS_BUFFER_BINDING,
+                view_ind_res.cls_buffer_name,
+            );
+            gl.unbind_buffer(gl::SHADER_STORAGE_BUFFER);
+        }
 
         let view_ind_params = {
             let pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
@@ -1034,6 +1208,9 @@ fn main() {
 
                 light_pos_from_wld_to_clp: pos_from_wld_to_clp,
                 light_pos_from_clp_to_wld: pos_from_wld_to_clp.invert().unwrap(),
+
+                pos_from_wld_to_cls,
+                pos_from_cls_to_wld: pos_from_wld_to_cls.invert().unwrap(),
             }
         };
 
@@ -1122,7 +1299,6 @@ fn main() {
                 };
 
                 let view_dep_res = &vr_resources[eye];
-
 
                 unsafe {
                     let mut point_lights: [light::PointLightBufferEntry;
@@ -1365,24 +1541,24 @@ fn main() {
                 &world,
             );
 
-            overlay_renderer.render(
-                &gl,
-                &overlay_renderer::Parameters {
-                    framebuffer: None,
-                    x0: 0,
-                    x1: (physical_size.height / 3.0) as i32,
-                    y0: 0,
-                    y1: (physical_size.height / 3.0) as i32,
-                    color_texture_name: view_ind_res.shadow_texture.name(),
-                    default_colors: [0.0, 0.0, 0.0, 1.0],
-                    color_matrix: [
-                        [1.0, 0.0, 0.0, 0.0],
-                        [1.0, 0.0, 0.0, 0.0],
-                        [1.0, 0.0, 0.0, 0.0],
-                        [0.0, 0.0, 0.0, 0.0],
-                    ],
-                },
-            );
+            // overlay_renderer.render(
+            //     &gl,
+            //     &overlay_renderer::Parameters {
+            //         framebuffer: None,
+            //         x0: 0,
+            //         x1: (physical_size.height / 3.0) as i32,
+            //         y0: 0,
+            //         y1: (physical_size.height / 3.0) as i32,
+            //         color_texture_name: view_ind_res.shadow_texture.name(),
+            //         default_colors: [0.0, 0.0, 0.0, 1.0],
+            //         color_matrix: [
+            //             [1.0, 0.0, 0.0, 0.0],
+            //             [1.0, 0.0, 0.0, 0.0],
+            //             [1.0, 0.0, 0.0, 0.0],
+            //             [0.0, 0.0, 0.0, 0.0],
+            //         ],
+            //     },
+            // );
         }
 
         let render_end_nanos = start_instant.elapsed().as_nanos() as u64;
