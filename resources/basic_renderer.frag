@@ -31,9 +31,9 @@ layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
   PointLight point_lights[POINT_LIGHT_CAPACITY];
 };
 
-layout(std140, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
+layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
   uvec4 cluster_dims;
-  uint16_t clusters[];
+  uint clusters[];
 };
 
 layout(location = 0) out vec4 frag_color;
@@ -161,19 +161,28 @@ void main() {
 
   uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
   uint cluster_index =
-      ((fs_idx_in_cls.z * cluster_dims.y) + fs_idx_in_cls.y) * cluster_dims.x +
-      fs_idx_in_cls.x;
+      (((fs_idx_in_cls.z * cluster_dims.y) + fs_idx_in_cls.y) * cluster_dims.x +
+       fs_idx_in_cls.x) *
+      cluster_dims.w;
 
-  // frag_color = vec4(vec3(fs_idx_in_cls) / vec3(cluster_dims), 1.0);
+  // frag_color = vec4(vec3(fs_idx_in_cls), 1.0);
 
-  frag_color = vec4(vec3(float(clusters[cluster_index])), 1.0);
+  // frag_color =
+  //     vec4(vec3(float(cluster_index) /
+  //               float(cluster_dims.x * cluster_dims.y * cluster_dims.z - 1)),
+  //          1.0);
 
-  // vec3 color_accumulator = vec3(0.0);
-  // for (int i = 0; i < POINT_LIGHT_CAPACITY; i += 1) {
-  //   color_accumulator += point_light_contribution(
-  //       point_lights[i], nor_in_cam, fs_pos_in_cam, cam_dir_in_cam_norm);
-  // }
-  // frag_color = vec4(color_accumulator, 1.0);
+  frag_color = vec4(vec3(float(clusters[cluster_index]) / 8.0), 1.0);
+
+  vec3 color_accumulator = vec3(0.0);
+  uint cluster_length = clusters[cluster_index];
+  for (uint i = 0; i < cluster_length; i += 1) {
+    uint light_index = clusters[cluster_index + 1 + i];
+    color_accumulator +=
+        point_light_contribution(point_lights[light_index], nor_in_cam,
+                                 fs_pos_in_cam, cam_dir_in_cam_norm);
+  }
+  frag_color = vec4(color_accumulator, 1.0);
 
   // DIFFUSE TEXTURE
   // frag_color = texture(diffuse_sampler, fs_pos_in_tex);
