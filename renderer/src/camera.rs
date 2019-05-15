@@ -1,3 +1,4 @@
+use crate::clamp::Clamp;
 use cgmath::*;
 
 #[derive(Debug)]
@@ -18,27 +19,6 @@ pub struct Camera {
     pub positional_velocity: f32,
     pub angular_velocity: f32,
     pub zoom_velocity: f32,
-}
-
-trait Clamp: Sized {
-    fn clamp(&self, range: (Self, Self)) -> Self;
-}
-
-impl<T> Clamp for T
-where
-    T: PartialOrd,
-    T: Copy,
-{
-    fn clamp(&self, range: (Self, Self)) -> Self {
-        let (min, max) = range;
-        if *self > max {
-            max
-        } else if *self < min {
-            min
-        } else {
-            *self
-        }
-    }
 }
 
 impl Camera {
