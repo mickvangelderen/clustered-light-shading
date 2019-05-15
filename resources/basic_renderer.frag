@@ -13,6 +13,7 @@ uniform vec2 normal_dimensions;
 uniform vec2 specular_dimensions;
 
 in vec3 fs_pos_in_cam;
+in vec3 fs_pos_in_cls;
 in vec2 fs_pos_in_tex;
 in vec4 fs_pos_in_lgt;
 in vec3 fs_nor_in_cam;
@@ -28,6 +29,11 @@ struct PointLight {
 
 layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
   PointLight point_lights[POINT_LIGHT_CAPACITY];
+};
+
+layout(std140, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
+  uvec4 cluster_dims;
+  uint16_t clusters[];
 };
 
 layout(location = 0) out vec4 frag_color;
@@ -153,14 +159,21 @@ void main() {
                                       specular_color * specular_weight),
                     1.0);
 
-  vec3 color_accumulator = vec3(0.0);
+  uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
+  uint cluster_index =
+      ((fs_idx_in_cls.z * cluster_dims.y) + fs_idx_in_cls.y) * cluster_dims.x +
+      fs_idx_in_cls.x;
 
-  for (int i = 0; i < POINT_LIGHT_CAPACITY; i += 1) {
-    color_accumulator += point_light_contribution(
-        point_lights[i], nor_in_cam, fs_pos_in_cam, cam_dir_in_cam_norm);
-  }
+  // frag_color = vec4(vec3(fs_idx_in_cls) / vec3(cluster_dims), 1.0);
 
-  frag_color = vec4(color_accumulator, 1.0);
+  frag_color = vec4(vec3(float(clusters[cluster_index])), 1.0);
+
+  // vec3 color_accumulator = vec3(0.0);
+  // for (int i = 0; i < POINT_LIGHT_CAPACITY; i += 1) {
+  //   color_accumulator += point_light_contribution(
+  //       point_lights[i], nor_in_cam, fs_pos_in_cam, cam_dir_in_cam_norm);
+  // }
+  // frag_color = vec4(color_accumulator, 1.0);
 
   // DIFFUSE TEXTURE
   // frag_color = texture(diffuse_sampler, fs_pos_in_tex);

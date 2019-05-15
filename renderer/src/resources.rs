@@ -413,12 +413,6 @@ impl Resources {
             }
         }
 
-        let attenuation = AttenCoefs {
-            constant: 1.0,
-            linear: 0.3499999940395355,
-            quadratic: 0.4399999976158142,
-        };
-
         Resources {
             meshes,
             materials,
@@ -441,6 +435,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -452,6 +447,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -463,6 +459,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -474,6 +471,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -485,6 +483,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -496,6 +495,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -507,6 +507,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -518,6 +519,7 @@ impl Resources {
                         linear: 0.3500,
                         quadratic: 0.4400,
                     },
+                    radius: 13.0,
                 },
             ],
         }
