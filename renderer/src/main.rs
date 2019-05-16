@@ -1107,9 +1107,9 @@ fn main() {
             ));
         let pos_from_wld_to_cls = pos_from_cam_to_cls * pos_from_wld_to_cam;
 
-        println!("cluster x * y * z = {} * {} * {} = {}", cbb_cx, cbb_cy, cbb_cz, cbb_n);
-
         let mut clustering: Vec<[u32; 16]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
+
+        println!("cluster x * y * z = {} * {} * {} = {} ({} MB)", cbb_cx, cbb_cy, cbb_cz, cbb_n, std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0);
 
         for (i, l) in resources.point_lights.iter().enumerate() {
             let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
