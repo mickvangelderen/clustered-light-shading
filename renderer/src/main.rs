@@ -1051,7 +1051,7 @@ fn main() {
                         y0: -dy,
                         y1: dy,
                         z0,
-                        z1: -20.0, // TODO: REDUCED!!
+                        z1: -100.0,
                     }
                 };
 
@@ -1082,7 +1082,7 @@ fn main() {
             )
         };
 
-        let cluster_side = 0.25;
+        let cluster_side = 5.00;
         let cbb_dx = cluster_bounding_box.x1 - cluster_bounding_box.x0;
         let cbb_dy = cluster_bounding_box.y1 - cluster_bounding_box.y0;
         let cbb_dz = cluster_bounding_box.z1 - cluster_bounding_box.z0;
