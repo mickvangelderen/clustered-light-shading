@@ -10,6 +10,7 @@ mod basic_renderer;
 mod camera;
 mod cgmath_ext;
 mod clamp;
+mod configuration;
 mod convert;
 mod filters;
 mod frustrum;
@@ -445,6 +446,7 @@ fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
     let log_dir: PathBuf = [current_dir.as_ref(), Path::new("logs")].into_iter().collect();
+    let configuration_path = resource_dir.join(configuration::FILE_PATH);
     let shadow_renderer_vs_path = resource_dir.join("shadow_renderer.vert");
     let shadow_renderer_fs_path = resource_dir.join("shadow_renderer.frag");
     let vsm_filter_vs_path = resource_dir.join("vsm_filter.vert");
@@ -696,6 +698,8 @@ fn main() {
         line_renderer
     };
 
+    let mut configuration: configuration::Root = Default::default();
+
     let resources = resources::Resources::new(&gl, &resource_dir);
 
     // === VR ===
@@ -740,6 +744,7 @@ fn main() {
     let mut running = true;
     while running {
         // File watch events.
+        let mut configuration_update = false;
         let mut shadow_renderer_update = shadow_renderer::Update::default();
         let mut vsm_filter_update = vsm_filter::Update::default();
         let mut ao_filter_update = ao_filter::Update::default();
@@ -751,7 +756,11 @@ fn main() {
 
         for event in rx_fs.try_iter() {
             if let Some(ref path) = event.path {
+                // println!("Detected file change in {:?}", path.display());
                 match path {
+                    path if path == &configuration_path => {
+                        configuration_update = true;
+                    }
                     path if path == &shadow_renderer_vs_path => {
                         shadow_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
                     }
@@ -802,6 +811,19 @@ fn main() {
                     }
                     _ => {}
                 }
+            }
+        }
+
+        if configuration_update {
+            match std::fs::read_to_string(&configuration_path) {
+                Ok(contents) => match toml::from_str(&contents) {
+                    Ok(new_configuration) => {
+                        println!("Updated configuration {:#?}", new_configuration);
+                        configuration = new_configuration;
+                    }
+                    Err(err) => eprintln!("Failed to parse configuration file {:?}: {}.", configuration_path, err),
+                },
+                Err(err) => eprintln!("Failed to read configuration file {:?}: {}.", configuration_path, err),
             }
         }
 
@@ -1082,7 +1104,7 @@ fn main() {
             )
         };
 
-        let cluster_side = 5.00;
+        let cluster_side = configuration.clustered_light_shading.cluster_side;
         let cbb_dx = cluster_bounding_box.x1 - cluster_bounding_box.x0;
         let cbb_dy = cluster_bounding_box.y1 - cluster_bounding_box.y0;
         let cbb_dz = cluster_bounding_box.z1 - cluster_bounding_box.z0;
@@ -1109,7 +1131,14 @@ fn main() {
 
         let mut clustering: Vec<[u32; 16]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
 
-        println!("cluster x * y * z = {} * {} * {} = {} ({} MB)", cbb_cx, cbb_cy, cbb_cz, cbb_n, std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0);
+        // println!(
+        //     "cluster x * y * z = {} * {} * {} = {} ({} MB)",
+        //     cbb_cx,
+        //     cbb_cy,
+        //     cbb_cz,
+        //     cbb_n,
+        //     std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
+        // );
 
         for (i, l) in resources.point_lights.iter().enumerate() {
             let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
