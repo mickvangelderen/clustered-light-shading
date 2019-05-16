@@ -55,3 +55,33 @@ blended with GL_BLEND_MIN/ max?
 3. How can you do light assignment on the GPU?
 3. Any ideas on how to compute the min/max per layer on the GPU efficiently?
 4. How do I make u16 integers work on the GPU?
+
+
+## Variations
+
+### Clustering
+
+1. Clustered orthographic
+2. Clustered layered frustrum bounded orthographic
+3. Clustered layered fragment bounded orthograhpic
+4. Tiled
+
+### Light assignment
+
+CPU: for each light, for each cluster
+CPU: for each cluster, for each light
+GPU: for each light, for each cluster?
+GPU: for each cluster, for each light (markus did this with bounding volume hierarchy)?
+
+## Metrics
+1. cluster count
+2. cluster dimension computation time
+3. light assignment count, time
+4. shading operation count, time
+5. acceleration data structure bytes
+
+## Light density and radii vs cluster size
+
+What is the optimal cluster size? What are we trying to achieve? 
+
+We only want to iterate over the lightsk
