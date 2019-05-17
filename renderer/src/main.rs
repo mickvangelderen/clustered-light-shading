@@ -714,9 +714,9 @@ fn main() {
         .iter()
         .map(|mat| rendering::MaterialData {
             shininess: mat.shininess,
-            _pad0: [0.0; 3],
         })
         .collect();
+    println!("material_datas len {}", material_datas.len());
     material_resources.write_all(&gl, &material_datas);
     drop(material_datas);
 

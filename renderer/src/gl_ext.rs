@@ -368,13 +368,14 @@ pub trait BufferNameExt: Sized {
     fn new_unwrap(gl: &gl::Gl) -> Self;
 }
 
+// FIXME: CREATEVS GEN
 impl BufferNameExt for gl::BufferName {
     #[inline]
     fn new(gl: &gl::Gl) -> Option<Self> {
         unsafe {
-        let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
-        gl.gen_buffers(&mut names);
-        names[0]
+            let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
+            gl.create_buffers(&mut names);
+            names[0]
         }
     }
 

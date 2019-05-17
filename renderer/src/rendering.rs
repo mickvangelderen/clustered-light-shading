@@ -208,13 +208,11 @@ impl ViewResources {
 #[repr(C, align(256))]
 pub struct MaterialData {
     pub shininess: f32,
-    pub _pad0: [f32; 3],
 }
 
 pub const MATERIAL_DATA_DECLARATION: &'static str = r"
 layout(std140, binding = MATERIAL_DATA_BINDING) uniform MaterialData {
     float shininess;
-    vec3 _material_data_pad0;
 };
 ";
 
@@ -232,17 +230,13 @@ impl MaterialResources {
 
     #[inline]
     pub fn bind_index(&self, gl: &gl::Gl, index: usize) {
-        let byte_size = std::mem::size_of::<MaterialData>();
-        let byte_offset = byte_size * index;
-        // println!("bound material {} of size {} at offset {}", index, byte_size, byte_offset);
-
         unsafe {
             gl.bind_buffer_range(
                 gl::UNIFORM_BUFFER,
                 MATERIAL_DATA_BINDING,
                 self.buffer_name,
-                byte_offset,
-                byte_size,
+                std::mem::size_of::<MaterialData>() * index,
+                std::mem::size_of::<MaterialData>(),
             );
         }
     }
