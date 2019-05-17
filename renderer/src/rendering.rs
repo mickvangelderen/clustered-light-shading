@@ -75,7 +75,7 @@ pub const COMMON_DECLARATION: &'static str = concat!(
 );
 
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(C, align(256))]
 pub struct GlobalData {
     pub light_pos_from_wld_to_cam: Matrix4<f32>,
     pub light_pos_from_cam_to_wld: Matrix4<f32>,
@@ -108,7 +108,7 @@ layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 pos_from_cls_to_wld;
 
     float time;
-    float _global_data_pad0[3];
+    vec3 _global_data_pad0;
 };
 ";
 
@@ -140,7 +140,7 @@ impl GlobalResources {
 }
 
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(C, align(256))]
 pub struct ViewData {
     pub pos_from_wld_to_cam: Matrix4<f32>,
     pub pos_from_cam_to_wld: Matrix4<f32>,
@@ -205,7 +205,7 @@ impl ViewResources {
 }
 
 #[derive(Debug, Copy, Clone)]
-#[repr(C)]
+#[repr(C, align(256))]
 pub struct MaterialData {
     pub shininess: f32,
     pub _pad0: [f32; 3],
@@ -214,7 +214,7 @@ pub struct MaterialData {
 pub const MATERIAL_DATA_DECLARATION: &'static str = r"
 layout(std140, binding = MATERIAL_DATA_BINDING) uniform MaterialData {
     float shininess;
-    float _material_data_pad0[3];
+    vec3 _material_data_pad0;
 };
 ";
 
@@ -232,13 +232,17 @@ impl MaterialResources {
 
     #[inline]
     pub fn bind_index(&self, gl: &gl::Gl, index: usize) {
+        let byte_size = std::mem::size_of::<MaterialData>();
+        let byte_offset = byte_size * index;
+        // println!("bound material {} of size {} at offset {}", index, byte_size, byte_offset);
+
         unsafe {
             gl.bind_buffer_range(
                 gl::UNIFORM_BUFFER,
                 MATERIAL_DATA_BINDING,
                 self.buffer_name,
-                std::mem::size_of::<MaterialData>() * index,
-                std::mem::size_of::<MaterialData>(),
+                byte_offset,
+                byte_size,
             );
         }
     }
