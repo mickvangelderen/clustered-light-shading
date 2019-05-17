@@ -31,6 +31,7 @@ pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
+    pub material_resources: rendering::MaterialResources,
     pub shadow_texture_name: gl::TextureName,
     pub shadow_texture_dimensions: [f32; 2],
 }
@@ -122,7 +123,7 @@ impl Renderer {
                             gl.uniform_2f(loc, specular_texture.dimensions);
                         }
 
-                        // TODO: bind material buffer range thing.
+                        params.material_resources.bind_index(gl, material_index as usize);
                     } else {
                         // TODO SET DEFAULTS
                     }

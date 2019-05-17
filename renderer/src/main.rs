@@ -557,6 +557,12 @@ fn main() {
             gl.enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
         }
 
+        // NOTE: This alignment is hardcoded in rendering.rs.
+        assert_eq!(256, gl.get_uniform_buffer_offset_alignment());
+        assert_eq!(0, std::mem::size_of::<rendering::GlobalData>() % 256);
+        assert_eq!(0, std::mem::size_of::<rendering::ViewData>() % 256);
+        assert_eq!(0, std::mem::size_of::<rendering::MaterialData>() % 256);
+
         // Reverse-Z.
         gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
         gl.depth_func(gl::GT);
@@ -701,6 +707,18 @@ fn main() {
 
     let global_resources = rendering::GlobalResources::new(&gl);
     global_resources.bind(&gl);
+
+    let material_resources = rendering::MaterialResources::new(&gl);
+    let material_datas: Vec<rendering::MaterialData> = resources
+        .materials
+        .iter()
+        .map(|mat| rendering::MaterialData {
+            shininess: mat.shininess,
+            _pad0: [0.0; 3],
+        })
+        .collect();
+    material_resources.write_all(&gl, &material_datas);
+    drop(material_datas);
 
     let view_resources = rendering::ViewResources::new(&gl);
 
@@ -1400,6 +1418,7 @@ fn main() {
                         framebuffer: Some(view_dep_res.framebuffer_name),
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
+                        material_resources,
                         shadow_texture_name: view_ind_res.shadow_texture.name(),
                         shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
                     },
@@ -1512,6 +1531,7 @@ fn main() {
                     framebuffer: Some(view_dep_res.framebuffer_name),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
+                    material_resources,
                     shadow_texture_name: view_ind_res.shadow_texture.name(),
                     shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
                 },
