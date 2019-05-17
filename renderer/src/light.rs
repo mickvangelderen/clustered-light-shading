@@ -1,5 +1,5 @@
 use cgmath::*;
-use crate::shader_defines;
+use crate::rendering;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
@@ -68,7 +68,7 @@ impl PointLightBufferEntry {
 #[derive(Debug)]
 #[repr(C)]
 pub struct LightingBuffer {
-    pub point_lights: [PointLightBufferEntry; shader_defines::POINT_LIGHT_CAPACITY as usize],
+    pub point_lights: [PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize],
 }
 
 impl AsRef<[u8; std::mem::size_of::<LightingBuffer>()]> for LightingBuffer {

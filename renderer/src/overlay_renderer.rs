@@ -1,6 +1,6 @@
 use crate::convert::*;
 use crate::gl_ext::*;
-use crate::shader_defines;
+use crate::rendering;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -85,14 +85,31 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
@@ -149,14 +166,14 @@ impl Renderer {
             gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
             gl.buffer_data(gl::ARRAY_BUFFER, (&VERTICES[..]).flatten(), gl::STATIC_DRAW);
             gl.vertex_attrib_pointer(
-                shader_defines::VS_POS_IN_TEX_LOC,
+                rendering::VS_POS_IN_TEX_LOC,
                 2,
                 gl::FLOAT,
                 gl::FALSE,
                 std::mem::size_of::<[f32; 2]>(),
                 0,
             );
-            gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_TEX_LOC);
+            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
             gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
             gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, (&INDICES[..]).flatten(), gl::STATIC_DRAW);
             gl.unbind_vertex_array();

@@ -1,7 +1,6 @@
-use crate::parameters;
 use crate::convert::*;
 use crate::gl_ext::*;
-use crate::shader_defines;
+use crate::rendering;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -13,16 +12,12 @@ pub struct Renderer {
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
-    pub view_dep_uniforms: parameters::ViewDependentUniforms,
-    pub view_ind_uniforms: parameters::ViewIndependentUniforms,
 }
 
 pub struct Parameters<'a> {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
-    pub view_dep_params: parameters::ViewDependentParameters,
-    pub view_ind_params: parameters::ViewIndependentParameters,
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
 }
@@ -51,13 +46,6 @@ impl Renderer {
 
             gl.use_program(self.program_name);
 
-            if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.view_ind_params.light_pos_from_cam_to_wld.as_ref());
-            }
-
-            self.view_ind_uniforms.set(gl, params.view_ind_params);
-            self.view_dep_uniforms.set(gl, params.view_dep_params);
-
             gl.bind_vertex_array(self.vertex_array_name);
             gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
             gl.buffer_data(gl::ARRAY_BUFFER, params.vertices.flatten(), gl::STREAM_DRAW);
@@ -80,14 +68,31 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
@@ -100,9 +105,6 @@ impl Renderer {
                 gl.use_program(self.program_name);
 
                 self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.view_ind_uniforms.update(gl, self.program_name);
-                self.view_dep_uniforms.update(gl, self.program_name);
-
                 gl.unuse_program();
             }
         }
@@ -134,14 +136,14 @@ impl Renderer {
             gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
             gl.buffer_reserve(gl::ARRAY_BUFFER, 4, gl::STREAM_DRAW);
             gl.vertex_attrib_pointer(
-                shader_defines::VS_POS_IN_OBJ_LOC,
+                rendering::VS_POS_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
                 gl::FALSE,
                 std::mem::size_of::<[f32; 3]>(),
                 0,
             );
-            gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
+            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
             gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
             gl.buffer_reserve(gl::ELEMENT_ARRAY_BUFFER, 4, gl::STATIC_DRAW);
             gl.unbind_vertex_array();
@@ -156,8 +158,6 @@ impl Renderer {
                 vertex_buffer_name,
                 element_buffer_name,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-                view_ind_uniforms: Default::default(),
-                view_dep_uniforms: Default::default(),
             }
         }
     }

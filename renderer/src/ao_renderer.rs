@@ -1,7 +1,6 @@
-use crate::parameters;
 use crate::convert::*;
 use crate::gl_ext::*;
-use crate::shader_defines;
+use crate::rendering;
 use crate::World;
 use gl_typed as gl;
 use gl_typed::convert::*;
@@ -19,7 +18,6 @@ pub struct Renderer {
     pub time_loc: gl::OptionUniformLocation,
     pub width_loc: gl::OptionUniformLocation,
     pub height_loc: gl::OptionUniformLocation,
-    pub view_dep_uniforms: parameters::ViewDependentUniforms,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
     pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
@@ -35,7 +33,6 @@ pub struct Parameters {
     pub depth_texture_name: gl::TextureName,
     pub nor_in_cam_texture_name: gl::TextureName,
     pub random_unit_sphere_surface_texture_name: gl::TextureName,
-    pub view_dep_params: parameters::ViewDependentParameters,
 }
 
 #[derive(Default)]
@@ -73,8 +70,6 @@ impl Renderer {
             if let Some(loc) = self.height_loc.into() {
                 gl.uniform_1i(loc, params.height);
             }
-
-            self.view_dep_uniforms.set(gl, params.view_dep_params);
 
             if let Some(loc) = self.color_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
@@ -120,14 +115,33 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
@@ -142,7 +156,6 @@ impl Renderer {
                 self.time_loc = get_uniform_location!(gl, self.program_name, "time");
                 self.width_loc = get_uniform_location!(gl, self.program_name, "width");
                 self.height_loc = get_uniform_location!(gl, self.program_name, "height");
-                self.view_dep_uniforms.update(gl, self.program_name);
                 self.color_sampler_loc = get_uniform_location!(gl, self.program_name, "color_sampler");
                 self.depth_sampler_loc = get_uniform_location!(gl, self.program_name, "depth_sampler");
                 self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program_name, "nor_in_cam_sampler");
@@ -210,7 +223,7 @@ impl Renderer {
             );
             gl.bind_buffer_base(
                 gl::SHADER_STORAGE_BUFFER,
-                shader_defines::AO_SAMPLE_BUFFER_BINDING,
+                rendering::AO_SAMPLE_BUFFER_BINDING,
                 ao_sample_buffer_name,
             );
             gl.unbind_buffer(gl::SHADER_STORAGE_BUFFER);
@@ -234,7 +247,6 @@ impl Renderer {
                 time_loc: gl::OptionUniformLocation::NONE,
                 width_loc: gl::OptionUniformLocation::NONE,
                 height_loc: gl::OptionUniformLocation::NONE,
-                view_dep_uniforms: Default::default(),
                 color_sampler_loc: gl::OptionUniformLocation::NONE,
                 depth_sampler_loc: gl::OptionUniformLocation::NONE,
                 nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,

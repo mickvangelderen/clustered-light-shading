@@ -1,26 +1,4 @@
-uniform float time;
-uniform vec3 ambient;
-uniform vec3 diffuse;
-uniform vec3 specular;
-uniform float shininess;
 uniform mat4 pos_from_obj_to_wld;
-
-uniform mat4 light_pos_from_wld_to_cam;
-uniform mat4 light_pos_from_cam_to_wld;
-uniform mat4 light_pos_from_cam_to_clp;
-uniform mat4 light_pos_from_clp_to_cam;
-uniform mat4 light_pos_from_wld_to_clp;
-uniform mat4 light_pos_from_clp_to_wld;
-uniform mat4 pos_from_wld_to_cls;
-uniform mat4 pos_from_cls_to_wld;
-
-uniform mat4 pos_from_wld_to_cam;
-uniform mat4 pos_from_cam_to_wld;
-uniform mat4 pos_from_cam_to_clp;
-uniform mat4 pos_from_clp_to_cam;
-uniform mat4 pos_from_wld_to_clp;
-uniform mat4 pos_from_clp_to_wld;
-
 uniform float highlight;
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;

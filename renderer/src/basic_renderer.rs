@@ -1,9 +1,7 @@
-use crate::cgmath_ext::*;
 use crate::gl_ext::*;
 use crate::keyboard_model;
-use crate::parameters;
+use crate::rendering;
 use crate::resources::Resources;
-use crate::shader_defines;
 use crate::World;
 use cgmath::*;
 use gl_typed as gl;
@@ -13,17 +11,8 @@ pub struct Renderer {
     pub vertex_shader_name: gl::ShaderName,
     pub fragment_shader_name: gl::ShaderName,
     //
-    pub time_loc: gl::OptionUniformLocation,
-    pub diffuse_loc: gl::OptionUniformLocation,
-    pub ambient_loc: gl::OptionUniformLocation,
-    pub specular_loc: gl::OptionUniformLocation,
-    pub shininess_loc: gl::OptionUniformLocation,
-    pub sun_dir_in_cam_loc: gl::OptionUniformLocation,
     pub highlight_loc: gl::OptionUniformLocation,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
-
-    pub view_dep_uniforms: parameters::ViewDependentUniforms,
-    pub view_ind_uniforms: parameters::ViewIndependentUniforms,
 
     pub shadow_sampler_loc: gl::OptionUniformLocation,
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
@@ -42,8 +31,6 @@ pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
-    pub view_dep_params: parameters::ViewDependentParameters,
-    pub view_ind_params: parameters::ViewIndependentParameters,
     pub shadow_texture_name: gl::TextureName,
     pub shadow_texture_dimensions: [f32; 2],
 }
@@ -77,10 +64,6 @@ impl Renderer {
 
             gl.use_program(self.program_name);
 
-            if let Some(loc) = self.time_loc.into() {
-                gl.uniform_1f(loc, world.time);
-            }
-
             if let Some(loc) = self.shadow_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
                 gl.bind_sampler(0, self.shadow_sampler);
@@ -102,20 +85,6 @@ impl Renderer {
 
             if let Some(loc) = self.shadow_dimensions_loc.into() {
                 gl.uniform_2f(loc, params.shadow_texture_dimensions);
-            }
-
-            self.view_ind_uniforms.set(gl, params.view_ind_params);
-            self.view_dep_uniforms.set(gl, params.view_dep_params);
-
-            if let Some(loc) = self.sun_dir_in_cam_loc.into() {
-                let light_rot_from_wld_to_cam =
-                    Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
-                let rot_from_wld_to_cam: Matrix3<f32> = params.view_dep_params.pos_from_wld_to_cam.truncate();
-                // NOTE: Here the light direction means the direction towards
-                // the light, not from the light. Hence the vector (0, 0, 1).
-                let light_dir_in_cam =
-                    rot_from_wld_to_cam * (light_rot_from_wld_to_cam.invert() * Vector3::new(0.0, 0.0, 1.0));
-                gl.uniform_3f(loc, light_dir_in_cam.into());
             }
 
             // Cache texture binding.
@@ -153,9 +122,7 @@ impl Renderer {
                             gl.uniform_2f(loc, specular_texture.dimensions);
                         }
 
-                        if let Some(loc) = self.shininess_loc.into() {
-                            gl.uniform_1f(loc, material.shininess);
-                        }
+                        // TODO: bind material buffer range thing.
                     } else {
                         // TODO SET DEFAULTS
                     }
@@ -175,8 +142,7 @@ impl Renderer {
                 }
 
                 gl.bind_vertex_array(resources.vaos[i]);
-                // // NOTE: Help renderdoc.
-                // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, resources.ebs[i]);
+
                 gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
             }
 
@@ -197,14 +163,33 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
@@ -216,20 +201,14 @@ impl Renderer {
 
                 gl.use_program(self.program_name);
 
-                self.time_loc = get_uniform_location!(gl, self.program_name, "time");
-                self.diffuse_loc = get_uniform_location!(gl, self.program_name, "diffuse");
-                self.ambient_loc = get_uniform_location!(gl, self.program_name, "ambient");
-                self.specular_loc = get_uniform_location!(gl, self.program_name, "specular");
-                self.shininess_loc = get_uniform_location!(gl, self.program_name, "shininess");
-                self.sun_dir_in_cam_loc = get_uniform_location!(gl, self.program_name, "sun_dir_in_cam");
                 self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.view_ind_uniforms.update(gl, self.program_name);
-                self.view_dep_uniforms.update(gl, self.program_name);
                 self.highlight_loc = get_uniform_location!(gl, self.program_name, "highlight");
+
                 self.shadow_sampler_loc = get_uniform_location!(gl, self.program_name, "shadow_sampler");
                 self.diffuse_sampler_loc = get_uniform_location!(gl, self.program_name, "diffuse_sampler");
                 self.normal_sampler_loc = get_uniform_location!(gl, self.program_name, "normal_sampler");
                 self.specular_sampler_loc = get_uniform_location!(gl, self.program_name, "specular_sampler");
+
                 self.shadow_dimensions_loc = get_uniform_location!(gl, self.program_name, "shadow_dimensions");
                 self.diffuse_dimensions_loc = get_uniform_location!(gl, self.program_name, "diffuse_dimensions");
                 self.normal_dimensions_loc = get_uniform_location!(gl, self.program_name, "normal_dimensions");
@@ -265,15 +244,7 @@ impl Renderer {
                 program_name,
                 vertex_shader_name,
                 fragment_shader_name,
-                time_loc: gl::OptionUniformLocation::NONE,
-                diffuse_loc: gl::OptionUniformLocation::NONE,
-                ambient_loc: gl::OptionUniformLocation::NONE,
-                specular_loc: gl::OptionUniformLocation::NONE,
-                shininess_loc: gl::OptionUniformLocation::NONE,
-                sun_dir_in_cam_loc: gl::OptionUniformLocation::NONE,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-                view_ind_uniforms: Default::default(),
-                view_dep_uniforms: Default::default(),
                 highlight_loc: gl::OptionUniformLocation::NONE,
 
                 shadow_sampler_loc: gl::OptionUniformLocation::NONE,

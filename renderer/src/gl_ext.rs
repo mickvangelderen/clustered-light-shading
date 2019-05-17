@@ -362,3 +362,24 @@ impl ProgramNameExt for gl::ProgramName {
         }
     }
 }
+
+pub trait BufferNameExt: Sized {
+    fn new(gl: &gl::Gl) -> Option<Self>;
+    fn new_unwrap(gl: &gl::Gl) -> Self;
+}
+
+impl BufferNameExt for gl::BufferName {
+    #[inline]
+    fn new(gl: &gl::Gl) -> Option<Self> {
+        unsafe {
+        let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
+        gl.gen_buffers(&mut names);
+        names[0]
+        }
+    }
+
+    #[inline]
+    fn new_unwrap(gl: &gl::Gl) -> Self {
+        BufferNameExt::new(gl).expect("Failed to acquire buffer name.")
+    }
+}
