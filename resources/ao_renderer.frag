@@ -1,8 +1,6 @@
-uniform float time;
 uniform int width;
 uniform int height;
-uniform mat4 pos_from_cam_to_clp;
-uniform mat4 pos_from_clp_to_cam;
+
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;

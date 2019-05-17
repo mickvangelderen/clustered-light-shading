@@ -1,6 +1,6 @@
 use crate::convert::*;
 use crate::gl_ext::*;
-use crate::shader_defines;
+use crate::rendering;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
@@ -101,14 +101,31 @@ impl Renderer {
 
             if let Some(bytes) = update.vertex_shader {
                 self.vertex_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
                 self.fragment_shader_name
-                    .compile(gl, &[shader_defines::VERSION, shader_defines::DEFINES, bytes.as_ref()])
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
                     .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }

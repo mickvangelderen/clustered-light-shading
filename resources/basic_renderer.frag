@@ -1,11 +1,9 @@
 uniform float highlight;
-uniform vec3 sun_dir_in_cam;
 
 uniform sampler2D shadow_sampler;
 uniform sampler2D diffuse_sampler;
 uniform sampler2D normal_sampler;
 uniform sampler2D specular_sampler;
-uniform float shininess;
 
 uniform vec2 shadow_dimensions;
 uniform vec2 diffuse_dimensions;
@@ -103,7 +101,7 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_angle =
       max(0.0, dot(cam_dir_in_cam_norm,
                    reflect(-light_dir_in_cam_norm, nor_in_cam)));
-  float specular_weight = pow(specular_angle, shininess);
+  float specular_weight = pow(specular_angle, max(1.0, shinyness));
 
   return
       // Ambient
@@ -122,7 +120,7 @@ void main() {
   vec3 pos_in_lgt = fs_pos_in_lgt.xyz / fs_pos_in_lgt.w;
 
   // Common intermediates.
-  vec3 light_dir_in_cam_norm = normalize(sun_dir_in_cam);
+  vec3 light_dir_in_cam_norm = normalize(light_dir_in_cam);
   vec3 cam_dir_in_cam_norm = normalize(-fs_pos_in_cam);
 
   // Perturbed normal in camera space.
@@ -150,7 +148,7 @@ void main() {
   float specular_angle =
       max(dot(cam_dir_in_cam_norm, reflect(-light_dir_in_cam_norm, nor_in_cam)),
           0.0);
-  float specular_weight = pow(specular_angle, shininess);
+  float specular_weight = pow(specular_angle, max(1.0, shinyness));
   vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
 
   float visibility = compute_visibility_variance(pos_in_lgt);

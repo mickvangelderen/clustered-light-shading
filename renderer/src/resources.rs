@@ -1,7 +1,7 @@
 use crate::convert::*;
 use crate::keyboard_model;
 use crate::light::*;
-use crate::shader_defines;
+use crate::rendering;
 use cgmath::*;
 use gl_typed as gl;
 use gl_typed::convert::*;
@@ -30,7 +30,7 @@ pub struct Resources {
     pub ebs: Vec<gl::BufferName>,
     pub element_counts: Vec<usize>,
     pub key_indices: Vec<keyboard_model::UncheckedIndex>,
-    pub point_lights: [PointLight; shader_defines::POINT_LIGHT_CAPACITY as usize],
+    pub point_lights: [PointLight; rendering::POINT_LIGHT_CAPACITY as usize],
 }
 
 #[inline]
@@ -364,7 +364,7 @@ impl Resources {
 
                 // AOS layout.
                 gl.vertex_attrib_pointer(
-                    shader_defines::VS_POS_IN_OBJ_LOC,
+                    rendering::VS_POS_IN_OBJ_LOC,
                     3,
                     gl::FLOAT,
                     gl::FALSE,
@@ -372,10 +372,10 @@ impl Resources {
                     pos_in_obj_offset,
                 );
 
-                gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_OBJ_LOC);
+                gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
 
                 gl.vertex_attrib_pointer(
-                    shader_defines::VS_POS_IN_TEX_LOC,
+                    rendering::VS_POS_IN_TEX_LOC,
                     2,
                     gl::FLOAT,
                     gl::FALSE,
@@ -383,10 +383,10 @@ impl Resources {
                     pos_in_tex_offset,
                 );
 
-                gl.enable_vertex_attrib_array(shader_defines::VS_POS_IN_TEX_LOC);
+                gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
 
                 gl.vertex_attrib_pointer(
-                    shader_defines::VS_NOR_IN_OBJ_LOC,
+                    rendering::VS_NOR_IN_OBJ_LOC,
                     3,
                     gl::FLOAT,
                     gl::FALSE,
@@ -394,10 +394,10 @@ impl Resources {
                     nor_in_obj_offset,
                 );
 
-                gl.enable_vertex_attrib_array(shader_defines::VS_NOR_IN_OBJ_LOC);
+                gl.enable_vertex_attrib_array(rendering::VS_NOR_IN_OBJ_LOC);
 
                 gl.vertex_attrib_pointer(
-                    shader_defines::VS_TAN_IN_OBJ_LOC,
+                    rendering::VS_TAN_IN_OBJ_LOC,
                     3,
                     gl::FLOAT,
                     gl::FALSE,
@@ -405,7 +405,7 @@ impl Resources {
                     tan_in_obj_offset,
                 );
 
-                gl.enable_vertex_attrib_array(shader_defines::VS_TAN_IN_OBJ_LOC);
+                gl.enable_vertex_attrib_array(rendering::VS_TAN_IN_OBJ_LOC);
 
                 gl.unbind_vertex_array();
                 gl.unbind_buffer(gl::ARRAY_BUFFER);

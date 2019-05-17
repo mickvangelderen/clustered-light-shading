@@ -1,34 +1,20 @@
-use crate::parameters;
+use crate::gl_ext::*;
+use crate::rendering;
 use crate::resources::Resources;
-use crate::shader_defines;
 use cgmath::*;
 use gl_typed as gl;
-
-unsafe fn recompile_shader(gl: &gl::Gl, name: gl::ShaderName, source: &[u8]) -> Result<(), String> {
-    gl.shader_source(name, &[shader_defines::VERSION, shader_defines::DEFINES, source]);
-    gl.compile_shader(name);
-    let status = gl.get_shaderiv_move(name, gl::COMPILE_STATUS);
-    if status == gl::ShaderCompileStatus::Compiled.into() {
-        Ok(())
-    } else {
-        let log = gl.get_shader_info_log_move(name);
-        Err(String::from_utf8(log).unwrap())
-    }
-}
 
 pub struct Renderer {
     pub program_name: gl::ProgramName,
     pub vertex_shader_name: gl::ShaderName,
     pub fragment_shader_name: gl::ShaderName,
     pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
-    pub view_ind_uniforms: parameters::ViewIndependentUniforms,
 }
 
 pub struct Parameters {
     pub framebuffer: Option<gl::FramebufferName>,
     pub width: i32,
     pub height: i32,
-    pub view_ind_params: parameters::ViewIndependentParameters,
 }
 
 #[derive(Default)]
@@ -60,8 +46,6 @@ impl Renderer {
 
             gl.use_program(self.program_name);
 
-            self.view_ind_uniforms.set(gl, params.view_ind_params);
-
             for i in 0..resources.vaos.len() {
                 if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
                     let pos_from_obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
@@ -85,21 +69,44 @@ impl Renderer {
             let mut should_link = false;
 
             if let Some(bytes) = update.vertex_shader {
-                recompile_shader(gl, self.vertex_shader_name, bytes.as_ref()).unwrap_or_else(|e| eprintln!("{}", e));
+                self.vertex_shader_name
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
+                    .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
                 should_link = true;
             }
 
             if let Some(bytes) = update.fragment_shader {
-                recompile_shader(gl, self.fragment_shader_name, bytes.as_ref()).unwrap_or_else(|e| eprintln!("{}", e));
+                self.fragment_shader_name
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
+                    .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
                 should_link = true;
             }
 
             if should_link {
-                gl.link_program(self.program_name);
+                self.program_name
+                    .link(gl)
+                    .unwrap_or_else(|e| eprintln!("{} (program):\n{}", file!(), e));
+
                 gl.use_program(self.program_name);
 
                 self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
-                self.view_ind_uniforms.update(gl, self.program_name);
 
                 gl.unuse_program();
             }
@@ -121,7 +128,6 @@ impl Renderer {
                 vertex_shader_name,
                 fragment_shader_name,
                 pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-                view_ind_uniforms: Default::default(),
             }
         }
     }

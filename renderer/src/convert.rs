@@ -132,3 +132,27 @@ macro_rules! impl_flatten_unflatten {
 }
 
 impl_flatten_unflatten!(1, 2, 3, 4,);
+
+pub trait ValueAsBytes {
+    fn value_as_bytes(&self) -> &[u8];
+}
+
+impl<T> ValueAsBytes for T {
+    fn value_as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self as *const Self as *const u8, std::mem::size_of::<Self>())
+        }
+    }
+}
+
+pub trait SliceToBytes {
+    fn slice_to_bytes(&self) -> &[u8];
+}
+
+impl<T> SliceToBytes for [T] {
+    fn slice_to_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
+        }
+    }
+}
