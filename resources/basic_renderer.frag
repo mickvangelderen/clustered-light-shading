@@ -101,7 +101,7 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_angle =
       max(0.0, dot(cam_dir_in_cam_norm,
                    reflect(-light_dir_in_cam_norm, nor_in_cam)));
-  float specular_weight = pow(specular_angle, max(1.0, shinyness));
+  float specular_weight = pow(specular_angle, shininess);
 
   return
       // Ambient
@@ -148,7 +148,7 @@ void main() {
   float specular_angle =
       max(dot(cam_dir_in_cam_norm, reflect(-light_dir_in_cam_norm, nor_in_cam)),
           0.0);
-  float specular_weight = pow(specular_angle, max(1.0, shinyness));
+  float specular_weight = pow(specular_angle, shininess);
   vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
 
   float visibility = compute_visibility_variance(pos_in_lgt);
