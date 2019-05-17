@@ -207,13 +207,13 @@ impl ViewResources {
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct MaterialData {
-    pub shinyness: f32,
+    pub shininess: f32,
     pub _pad0: [f32; 3],
 }
 
 pub const MATERIAL_DATA_DECLARATION: &'static str = r"
 layout(std140, binding = MATERIAL_DATA_BINDING) uniform MaterialData {
-    float shinyness;
+    float shininess;
     float _material_data_pad0[3];
 };
 ";
