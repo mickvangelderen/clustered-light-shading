@@ -202,15 +202,6 @@ pub struct Texture<Shape, Format> {
 
 impl<Shape, Format> Texture<Shape, Format> {
     #[inline]
-    pub fn new(gl: &gl::Gl, shape: Shape, format: Format) -> Option<Self> {
-        unsafe {
-            let mut names: [Option<gl::TextureName>; 1] = std::mem::uninitialized();
-            gl.gen_textures(&mut names);
-            names[0].map(|name| Texture { name, shape, format })
-        }
-    }
-
-    #[inline]
     pub fn name(&self) -> gl::TextureName {
         self.name
     }
@@ -218,8 +209,7 @@ impl<Shape, Format> Texture<Shape, Format> {
     #[inline]
     pub fn drop(self, gl: &gl::Gl) {
         unsafe {
-            let mut names = [Some(self.name)];
-            gl.delete_textures(&mut names);
+            gl.delete_texture(self.name);
         }
     }
 }
@@ -229,6 +219,17 @@ where
     Shape: Copy + Into<gl::TextureTarget>,
     Format: Copy + Into<TextureFormat>,
 {
+    #[inline]
+    pub fn new(gl: &gl::Gl, shape: Shape, format: Format) -> Self {
+        unsafe {
+            Texture {
+                name: gl.create_texture(shape.into()),
+                shape,
+                format,
+            }
+        }
+    }
+
     #[inline]
     pub fn update<'a>(&self, gl: &gl::Gl, update: TextureUpdate<'a>) {
         unsafe {
@@ -284,7 +285,7 @@ where
 }
 
 pub trait ShaderNameExt: Sized {
-    fn new<K>(gl: &gl::Gl, kind: K) -> Option<Self>
+    fn new<K>(gl: &gl::Gl, kind: K) -> Self
     where
         K: Into<gl::ShaderKind>;
 
@@ -295,7 +296,7 @@ pub trait ShaderNameExt: Sized {
 
 impl ShaderNameExt for gl::ShaderName {
     #[inline]
-    fn new<K>(gl: &gl::Gl, kind: K) -> Option<Self>
+    fn new<K>(gl: &gl::Gl, kind: K) -> Self
     where
         K: Into<gl::ShaderKind>,
     {
@@ -310,19 +311,18 @@ impl ShaderNameExt for gl::ShaderName {
         unsafe {
             gl.shader_source(*self, sources);
             gl.compile_shader(*self);
-            let status = gl.get_shaderiv_move(*self, gl::COMPILE_STATUS);
+            let status = gl.get_shaderiv(*self, gl::COMPILE_STATUS);
             if status == gl::ShaderCompileStatus::Compiled.into() {
                 Ok(())
             } else {
-                let log = gl.get_shader_info_log_move(*self);
-                Err(String::from_utf8(log).unwrap())
+                Err(gl.get_shader_info_log(*self))
             }
         }
     }
 }
 
 pub trait ProgramNameExt: Sized {
-    fn new(gl: &gl::Gl) -> Option<Self>;
+    fn new(gl: &gl::Gl) -> Self;
 
     fn attach<'i, I>(&self, gl: &gl::Gl, names: I)
     where
@@ -333,7 +333,7 @@ pub trait ProgramNameExt: Sized {
 
 impl ProgramNameExt for gl::ProgramName {
     #[inline]
-    fn new(gl: &gl::Gl) -> Option<Self> {
+    fn new(gl: &gl::Gl) -> Self {
         unsafe { gl.create_program() }
     }
 
@@ -354,33 +354,22 @@ impl ProgramNameExt for gl::ProgramName {
         unsafe {
             gl.link_program(*self);
 
-            if gl.get_programiv_move(*self, gl::LINK_STATUS) == gl::UncheckedProgramLinkStatus::from(gl::LINKED) {
+            if gl.get_programiv(*self, gl::LINK_STATUS) == gl::UncheckedProgramLinkStatus::from(gl::LINKED) {
                 Ok(())
             } else {
-                Err(String::from_utf8(gl.get_program_info_log_move(*self)).expect("Program info log is not utf8."))
+                Err(gl.get_program_info_log(*self))
             }
         }
     }
 }
 
 pub trait BufferNameExt: Sized {
-    fn new(gl: &gl::Gl) -> Option<Self>;
-    fn new_unwrap(gl: &gl::Gl) -> Self;
+    fn new(gl: &gl::Gl) -> Self;
 }
 
-// FIXME: CREATEVS GEN
 impl BufferNameExt for gl::BufferName {
     #[inline]
-    fn new(gl: &gl::Gl) -> Option<Self> {
-        unsafe {
-            let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
-            gl.create_buffers(&mut names);
-            names[0]
-        }
-    }
-
-    #[inline]
-    fn new_unwrap(gl: &gl::Gl) -> Self {
-        BufferNameExt::new(gl).expect("Failed to acquire buffer name.")
+    fn new(gl: &gl::Gl) -> Self {
+        unsafe { gl.create_buffer() }
     }
 }

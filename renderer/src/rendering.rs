@@ -1,5 +1,6 @@
 use crate::convert::*;
 use crate::gl_ext::*;
+use crate::rendering;
 use cgmath::*;
 use gl_typed as gl;
 
@@ -120,8 +121,11 @@ pub struct GlobalResources {
 impl GlobalResources {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
-        let buffer_name = gl::BufferName::new_unwrap(gl);
-        GlobalResources { buffer_name }
+        unsafe {
+            GlobalResources {
+                buffer_name: gl.create_buffer(),
+            }
+        }
     }
 
     #[inline]
@@ -179,8 +183,11 @@ pub struct ViewResources {
 impl ViewResources {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
-        let buffer_name = gl::BufferName::new_unwrap(gl);
-        ViewResources { buffer_name }
+        unsafe {
+            ViewResources {
+                buffer_name: gl.create_buffer(),
+            }
+        }
     }
 
     #[inline]
@@ -224,8 +231,11 @@ pub struct MaterialResources {
 impl MaterialResources {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
-        let buffer_name = gl::BufferName::new_unwrap(gl);
-        MaterialResources { buffer_name }
+        unsafe {
+            MaterialResources {
+                buffer_name: gl.create_buffer(),
+            }
+        }
     }
 
     #[inline]
@@ -245,6 +255,98 @@ impl MaterialResources {
     pub fn write_all(&self, gl: &gl::Gl, data: &[MaterialData]) {
         unsafe {
             gl.named_buffer_data(self.buffer_name, data.slice_to_bytes(), gl::DYNAMIC_DRAW);
+        }
+    }
+}
+
+pub struct VSFSProgram {
+    pub name: gl::ProgramName,
+    vertex_shader_name: gl::ShaderName,
+    fragment_shader_name: gl::ShaderName,
+}
+
+#[derive(Default)]
+pub struct VSFSProgramUpdate {
+    pub vertex_shader: Option<Vec<u8>>,
+    pub fragment_shader: Option<Vec<u8>>,
+}
+
+impl VSFSProgram {
+    pub fn update(&mut self, gl: &gl::Gl, update: &VSFSProgramUpdate) -> bool {
+        unsafe {
+            let mut should_link = false;
+
+            if let Some(ref bytes) = update.vertex_shader {
+                self.vertex_shader_name
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
+                    .unwrap_or_else(|e| {
+                        eprintln!(
+                            "In vertex shader: {}\nCompilation error:\n{}",
+                            std::str::from_utf8(bytes.as_ref()).unwrap(),
+                            e
+                        )
+                    });
+                should_link = true;
+            }
+
+            if let Some(ref bytes) = update.fragment_shader {
+                self.fragment_shader_name
+                    .compile(
+                        gl,
+                        &[
+                            rendering::COMMON_DECLARATION.as_bytes(),
+                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                            "#line 1 1\n".as_bytes(),
+                            bytes.as_ref(),
+                        ],
+                    )
+                    .unwrap_or_else(|e| {
+                        eprintln!(
+                            "In fragment shader: {}\nCompilation error:\n{}",
+                            std::str::from_utf8(bytes.as_ref()).unwrap(),
+                            e
+                        )
+                    });
+                should_link = true;
+            }
+
+            if should_link {
+                self.name.link(gl).map(|_| true).unwrap_or_else(|e| {
+                    eprintln!("{} (program):\n{}", file!(), e);
+                    false
+                })
+            } else {
+                false
+            }
+        }
+    }
+
+    pub fn new(gl: &gl::Gl) -> Self {
+        unsafe {
+            let name = gl.create_program();
+
+            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER);
+            gl.attach_shader(name, vertex_shader_name);
+
+            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER);
+            gl.attach_shader(name, fragment_shader_name);
+
+            VSFSProgram {
+                name,
+                vertex_shader_name,
+                fragment_shader_name,
+            }
         }
     }
 }

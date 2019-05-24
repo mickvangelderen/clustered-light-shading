@@ -1,13 +1,10 @@
 use crate::convert::*;
-use crate::gl_ext::*;
 use crate::rendering;
 use gl_typed as gl;
 use gl_typed::convert::*;
 
 pub struct Renderer {
-    pub program_name: gl::ProgramName,
-    pub vertex_shader_name: gl::ShaderName,
-    pub fragment_shader_name: gl::ShaderName,
+    pub program: rendering::VSFSProgram,
     pub vertex_array_name: gl::VertexArrayName,
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
@@ -44,7 +41,7 @@ impl Renderer {
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
             gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()]);
 
-            gl.use_program(self.program_name);
+            gl.use_program(self.program.name);
 
             gl.bind_vertex_array(self.vertex_array_name);
             gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
@@ -62,49 +59,12 @@ impl Renderer {
         }
     }
 
-    pub fn update<B: AsRef<[u8]>>(&mut self, gl: &gl::Gl, update: Update<B>) {
+    pub fn update(&mut self, gl: &gl::Gl, update: &rendering::VSFSProgramUpdate) {
         unsafe {
-            let mut should_link = false;
+            if self.program.update(gl, update) {
+                gl.use_program(self.program.name);
 
-            if let Some(bytes) = update.vertex_shader {
-                self.vertex_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            rendering::COMMON_DECLARATION.as_bytes(),
-                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
-                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
-                            "#line 1 1\n".as_bytes(),
-                            bytes.as_ref(),
-                        ],
-                    )
-                    .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
-                should_link = true;
-            }
-
-            if let Some(bytes) = update.fragment_shader {
-                self.fragment_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            rendering::COMMON_DECLARATION.as_bytes(),
-                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
-                            "#line 1 1\n".as_bytes(),
-                            bytes.as_ref(),
-                        ],
-                    )
-                    .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
-                should_link = true;
-            }
-
-            if should_link {
-                self.program_name
-                    .link(gl)
-                    .unwrap_or_else(|e| eprintln!("{} (program):\n{}", file!(), e));
-
-                gl.use_program(self.program_name);
-
-                self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program_name, "pos_from_obj_to_wld");
+                self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, self.program.name, "pos_from_obj_to_wld");
                 gl.unuse_program();
             }
         }
@@ -112,14 +72,6 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
-
-            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
-
-            let program_name = gl.create_program().expect("Failed to create program_name.");
-            gl.attach_shader(program_name, vertex_shader_name);
-            gl.attach_shader(program_name, fragment_shader_name);
-
             let [vertex_array_name]: [gl::VertexArrayName; 1] = {
                 let mut names: [Option<gl::VertexArrayName>; 1] = std::mem::uninitialized();
                 gl.gen_vertex_arrays(&mut names);
@@ -151,9 +103,7 @@ impl Renderer {
             gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
 
             Renderer {
-                program_name,
-                vertex_shader_name,
-                fragment_shader_name,
+                program: rendering::VSFSProgram::new(gl),
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,
