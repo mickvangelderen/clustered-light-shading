@@ -8,9 +8,7 @@ static VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
 static INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
 pub struct Renderer {
-    pub program_name: gl::ProgramName,
-    pub vertex_shader_name: gl::ShaderName,
-    pub fragment_shader_name: gl::ShaderName,
+    pub program: rendering::VSFSProgram,
     pub vertex_array_name: gl::VertexArrayName,
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
@@ -28,18 +26,6 @@ pub struct Parameters {
     pub color_x: gl::TextureName,
 }
 
-#[derive(Default)]
-pub struct Update<B: AsRef<[u8]>> {
-    pub vertex_shader: Option<B>,
-    pub fragment_shader: Option<B>,
-}
-
-impl<B: AsRef<[u8]>> Update<B> {
-    pub fn should_update(&self) -> bool {
-        self.vertex_shader.is_some() || self.fragment_shader.is_some()
-    }
-}
-
 impl Renderer {
     pub fn render(&self, gl: &gl::Gl, params: &Parameters) {
         unsafe {
@@ -47,7 +33,7 @@ impl Renderer {
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
             gl.viewport(0, 0, params.width, params.height);
-            gl.use_program(self.program_name);
+            gl.use_program(self.program.name);
             gl.bind_vertex_array(self.vertex_array_name);
 
             // X pass.
@@ -95,60 +81,13 @@ impl Renderer {
         }
     }
 
-    pub fn update<B: AsRef<[u8]>>(&mut self, gl: &gl::Gl, update: Update<B>) {
+    pub fn update(&mut self, gl: &gl::Gl, update: &rendering::VSFSProgramUpdate) {
         unsafe {
-            let mut should_link = false;
+            if self.program.update(gl, update) {
+                gl.use_program(self.program.name);
 
-            if let Some(bytes) = update.vertex_shader {
-                self.vertex_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            rendering::COMMON_DECLARATION.as_bytes(),
-                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
-                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
-                            "#line 1 1\n".as_bytes(),
-                            bytes.as_ref(),
-                        ],
-                    )
-                    .unwrap_or_else(|e| eprintln!("{} (vertex):\n{}", file!(), e));
-                should_link = true;
-            }
-
-            if let Some(bytes) = update.fragment_shader {
-                self.fragment_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            rendering::COMMON_DECLARATION.as_bytes(),
-                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
-                            "#line 1 1\n".as_bytes(),
-                            bytes.as_ref(),
-                        ],
-                    )
-                    .unwrap_or_else(|e| eprintln!("{} (fragment):\n{}", file!(), e));
-                should_link = true;
-            }
-
-            if should_link {
-                self.program_name
-                    .link(gl)
-                    .unwrap_or_else(|e| eprintln!("{} (program):\n{}", file!(), e));
-
-                gl.use_program(self.program_name);
-
-                macro_rules! get_uniform_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get uniform location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
-                }
-
-                self.delta_loc = get_uniform_location!(gl, self.program_name, "delta");
-                self.sampler_loc = get_uniform_location!(gl, self.program_name, "sampler");
+                self.delta_loc = get_uniform_location!(gl, self.program.name, "delta");
+                self.sampler_loc = get_uniform_location!(gl, self.program.name, "sampler");
 
                 // Disable old locations.
                 gl.bind_vertex_array(self.vertex_array_name);
@@ -160,17 +99,7 @@ impl Renderer {
                 gl.unbind_vertex_array();
 
                 // Obtain new locations.
-                macro_rules! get_attribute_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_attrib_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get attribute location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
-                }
-
-                self.vs_pos_in_qua_loc = get_attribute_location!(gl, self.program_name, "vs_pos_in_qua");
+                self.vs_pos_in_qua_loc = get_attribute_location!(gl, self.program.name, "vs_pos_in_qua");
 
                 // Set up attributes.
 
@@ -193,14 +122,6 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER).expect("Failed to create shader.");
-
-            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER).expect("Failed to create shader.");
-
-            let program_name = gl.create_program().expect("Failed to create program_name.");
-            gl.attach_shader(program_name, vertex_shader_name);
-            gl.attach_shader(program_name, fragment_shader_name);
-
             let [vertex_array_name]: [gl::VertexArrayName; 1] = {
                 let mut names: [Option<gl::VertexArrayName>; 1] = std::mem::uninitialized();
                 gl.gen_vertex_arrays(&mut names);
@@ -223,9 +144,7 @@ impl Renderer {
             gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
 
             Renderer {
-                program_name,
-                vertex_shader_name,
-                fragment_shader_name,
+                program: rendering::VSFSProgram::new(gl),
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,

@@ -33,7 +33,6 @@ use arrayvec::ArrayVec;
 use cgmath::*;
 use convert::*;
 use gl_typed as gl;
-use gl_typed::convert::*;
 use glutin::GlContext;
 use notify::Watcher;
 use openvr as vr;
@@ -92,15 +91,8 @@ impl ViewIndependentResources {
         unsafe {
             // Renderbuffers.
 
-            let [shadow_depth_renderbuffer_name]: [gl::RenderbufferName; 1] = {
-                let mut names: [Option<gl::RenderbufferName>; 1] = mem::uninitialized();
-                gl.gen_renderbuffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
-
-            gl.bind_renderbuffer(gl::RENDERBUFFER, shadow_depth_renderbuffer_name);
-            gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH_COMPONENT32F, width, height);
-            gl.unbind_renderbuffer(gl::RENDERBUFFER);
+            let shadow_depth_renderbuffer_name = gl.create_renderbuffer();
+            gl.named_renderbuffer_storage(shadow_depth_renderbuffer_name, gl::DEPTH_COMPONENT32F, width, height);
 
             // Textures.
 
@@ -113,19 +105,16 @@ impl ViewIndependentResources {
                 .wrap_s(gl::CLAMP_TO_EDGE.into())
                 .wrap_t(gl::CLAMP_TO_EDGE.into());
 
-            let shadow_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RG32F).unwrap();
+            let shadow_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RG32F);
             shadow_texture.update(gl, texture_update.max_anisotropy(max_anisotropy));
 
-            let shadow_2_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RG32F).unwrap();
+            let shadow_2_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RG32F);
             shadow_2_texture.update(gl, texture_update.max_level(0));
 
             // Framebuffers.
 
-            let [shadow_framebuffer_name, shadow_2_framebuffer_name]: [gl::FramebufferName; 2] = {
-                let mut names: [Option<gl::FramebufferName>; 2] = mem::uninitialized();
-                gl.gen_framebuffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
+            let shadow_framebuffer_name = gl.create_framebuffer();
+            let shadow_2_framebuffer_name = gl.create_framebuffer();
 
             gl.bind_framebuffer(gl::FRAMEBUFFER, Some(shadow_framebuffer_name));
             {
@@ -174,11 +163,7 @@ impl ViewIndependentResources {
 
             // Storage buffers,
 
-            let [cls_buffer_name]: [gl::BufferName; 1] = {
-                let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
-                gl.gen_buffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
+            let cls_buffer_name = gl.create_buffer();
 
             ViewIndependentResources {
                 shadow_framebuffer_name,
@@ -216,19 +201,10 @@ impl ViewDependentResources {
     pub fn new(gl: &gl::Gl, width: i32, height: i32) -> Self {
         unsafe {
             // Renderbuffers.
-
-            let [ao_depth_renderbuffer_name]: [gl::RenderbufferName; 1] = {
-                let mut names: [Option<gl::RenderbufferName>; 1] = mem::uninitialized();
-                gl.gen_renderbuffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
-
-            gl.bind_renderbuffer(gl::RENDERBUFFER, ao_depth_renderbuffer_name);
-            gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, width, height);
-            gl.unbind_renderbuffer(gl::RENDERBUFFER);
+            let ao_depth_renderbuffer_name = gl.create_renderbuffer();
+            gl.named_renderbuffer_storage(ao_depth_renderbuffer_name, gl::DEPTH24_STENCIL8, width, height);
 
             // Textures.
-
             let texture_update = TextureUpdate::new()
                 .data(width, height, None)
                 .min_filter(gl::NEAREST.into())
@@ -237,35 +213,30 @@ impl ViewDependentResources {
                 .wrap_s(gl::CLAMP_TO_EDGE.into())
                 .wrap_t(gl::CLAMP_TO_EDGE.into());
 
-            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8).unwrap();
+            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8);
             color_texture.update(gl, texture_update);
 
-            let nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F).unwrap();
+            let nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F);
             nor_in_cam_texture.update(gl, texture_update);
 
-            let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
+            let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
             depth_texture.update(gl, texture_update);
 
-            let ao_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8).unwrap();
+            let ao_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8);
             ao_texture.update(gl, texture_update);
 
-            let ao_x_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8).unwrap();
+            let ao_x_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8);
             ao_x_texture.update(gl, texture_update);
 
-            let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8).unwrap();
+            let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8);
             post_color_texture.update(gl, texture_update);
 
-            let post_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8).unwrap();
+            let post_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
             post_depth_texture.update(gl, texture_update);
 
             // Framebuffers.
 
-            let [framebuffer_name, ao_framebuffer_name, ao_x_framebuffer_name, post_framebuffer_name]: [gl::FramebufferName; 4] = {
-                let mut names: [Option<gl::FramebufferName>; 4] = mem::uninitialized();
-                gl.gen_framebuffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
-
+            let framebuffer_name = gl.create_framebuffer();
             gl.bind_framebuffer(gl::FRAMEBUFFER, Some(framebuffer_name));
             {
                 gl.framebuffer_texture_2d(
@@ -298,6 +269,7 @@ impl ViewDependentResources {
                 );
             }
 
+            let ao_framebuffer_name = gl.create_framebuffer();
             gl.bind_framebuffer(gl::FRAMEBUFFER, Some(ao_framebuffer_name));
             {
                 gl.framebuffer_texture_2d(
@@ -321,6 +293,7 @@ impl ViewDependentResources {
                 );
             }
 
+            let ao_x_framebuffer_name = gl.create_framebuffer();
             gl.bind_framebuffer(gl::FRAMEBUFFER, Some(ao_x_framebuffer_name));
             {
                 gl.framebuffer_texture_2d(
@@ -344,6 +317,7 @@ impl ViewDependentResources {
                 );
             }
 
+            let post_framebuffer_name = gl.create_framebuffer();
             gl.bind_framebuffer(gl::FRAMEBUFFER, Some(post_framebuffer_name));
             {
                 gl.framebuffer_texture_2d(
@@ -372,11 +346,7 @@ impl ViewDependentResources {
 
             // Uniform block buffers,
 
-            let [lighting_buffer_name]: [gl::BufferName; 1] = {
-                let mut names: [Option<gl::BufferName>; 1] = std::mem::uninitialized();
-                gl.gen_buffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
+            let lighting_buffer_name = gl.create_buffer();
 
             ViewDependentResources {
                 framebuffer_name,
@@ -398,9 +368,7 @@ impl ViewDependentResources {
 
     pub fn resize(&self, gl: &gl::Gl, width: i32, height: i32) {
         unsafe {
-            gl.bind_renderbuffer(gl::RENDERBUFFER, self.ao_depth_renderbuffer_name);
-            gl.renderbuffer_storage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, width, height);
-            gl.unbind_renderbuffer(gl::RENDERBUFFER);
+            gl.named_renderbuffer_storage(self.ao_depth_renderbuffer_name, gl::DEPTH24_STENCIL8, width, height);
 
             let texture_update = TextureUpdate::new().data(width, height, None);
             self.color_texture.update(gl, texture_update);
@@ -415,25 +383,16 @@ impl ViewDependentResources {
 
     pub fn drop(self, gl: &gl::Gl) {
         unsafe {
-            {
-                // FIXME: MUT
-                let mut names = [Some(self.framebuffer_name), Some(self.ao_framebuffer_name)];
-                gl.delete_framebuffers(&mut names[..]);
-            }
-            {
-                // FIXME: MUT
-                let mut names = [Some(self.ao_depth_renderbuffer_name)];
-                gl.delete_renderbuffers(&mut names[..]);
-            }
-            {
-                self.color_texture.drop(gl);
-                self.depth_texture.drop(gl);
-                self.nor_in_cam_texture.drop(gl);
-                self.ao_texture.drop(gl);
-                self.ao_x_texture.drop(gl);
-                self.post_color_texture.drop(gl);
-                self.post_depth_texture.drop(gl);
-            }
+            gl.delete_framebuffer(self.framebuffer_name);
+            gl.delete_framebuffer(self.ao_framebuffer_name);
+            gl.delete_renderbuffer(self.ao_depth_renderbuffer_name);
+            self.color_texture.drop(gl);
+            self.depth_texture.drop(gl);
+            self.nor_in_cam_texture.drop(gl);
+            self.ao_texture.drop(gl);
+            self.ao_x_texture.drop(gl);
+            self.post_color_texture.drop(gl);
+            self.post_depth_texture.drop(gl);
         }
     }
 }
@@ -573,7 +532,7 @@ fn main() {
     let view_ind_res = ViewIndependentResources::new(&gl, SHADOW_W, SHADOW_H);
     let view_dep_res = ViewDependentResources::new(&gl, width as i32, height as i32);
 
-    let random_unit_sphere_surface_texture = Texture::new(&gl, gl::TEXTURE_2D, gl::RGB8).unwrap();
+    let random_unit_sphere_surface_texture = Texture::new(&gl, gl::TEXTURE_2D, gl::RGB8);
     random_unit_sphere_surface_texture.update(
         &gl,
         TextureUpdate::new()
@@ -595,9 +554,9 @@ fn main() {
         let fs_bytes = std::fs::read(&shadow_renderer_fs_path).unwrap();
         shadow_renderer.update(
             &gl,
-            shadow_renderer::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         shadow_renderer
@@ -609,9 +568,9 @@ fn main() {
         let fs_bytes = std::fs::read(&vsm_filter_fs_path).unwrap();
         vsm_filter.update(
             &gl,
-            vsm_filter::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         vsm_filter
@@ -623,9 +582,9 @@ fn main() {
         let fs_bytes = std::fs::read(&ao_filter_fs_path).unwrap();
         ao_filter.update(
             &gl,
-            ao_filter::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         ao_filter
@@ -637,9 +596,9 @@ fn main() {
         let fs_bytes = std::fs::read(&basic_renderer_fs_path).unwrap();
         basic_renderer.update(
             &gl,
-            basic_renderer::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         basic_renderer
@@ -651,9 +610,9 @@ fn main() {
         let fs_bytes = std::fs::read(&ao_renderer_fs_path).unwrap();
         ao_renderer.update(
             &gl,
-            ao_renderer::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         ao_renderer
@@ -665,9 +624,9 @@ fn main() {
         let fs_bytes = std::fs::read(&post_renderer_fs_path).unwrap();
         post_renderer.update(
             &gl,
-            post_renderer::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         post_renderer
@@ -679,9 +638,9 @@ fn main() {
         let fs_bytes = std::fs::read(&overlay_renderer_fs_path).unwrap();
         overlay_renderer.update(
             &gl,
-            overlay_renderer::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         overlay_renderer
@@ -693,9 +652,9 @@ fn main() {
         let fs_bytes = std::fs::read(&line_renderer_fs_path).unwrap();
         line_renderer.update(
             &gl,
-            line_renderer::Update {
-                vertex_shader: Some(&vs_bytes),
-                fragment_shader: Some(&fs_bytes),
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
             },
         );
         line_renderer
@@ -766,14 +725,14 @@ fn main() {
         // File watch events.
         {
             let mut configuration_update = false;
-            let mut shadow_renderer_update = shadow_renderer::Update::default();
-            let mut vsm_filter_update = vsm_filter::Update::default();
-            let mut ao_filter_update = ao_filter::Update::default();
-            let mut basic_renderer_update = basic_renderer::Update::default();
-            let mut ao_renderer_update = ao_renderer::Update::default();
-            let mut post_renderer_update = post_renderer::Update::default();
-            let mut overlay_renderer_update = overlay_renderer::Update::default();
-            let mut line_renderer_update = line_renderer::Update::default();
+            let mut shadow_renderer_update = rendering::VSFSProgramUpdate::default();
+            let mut vsm_filter_update = rendering::VSFSProgramUpdate::default();
+            let mut ao_filter_update = rendering::VSFSProgramUpdate::default();
+            let mut basic_renderer_update = rendering::VSFSProgramUpdate::default();
+            let mut ao_renderer_update = rendering::VSFSProgramUpdate::default();
+            let mut post_renderer_update = rendering::VSFSProgramUpdate::default();
+            let mut overlay_renderer_update = rendering::VSFSProgramUpdate::default();
+            let mut line_renderer_update = rendering::VSFSProgramUpdate::default();
 
             for event in rx_fs.try_iter() {
                 if let Some(ref path) = event.path {
@@ -848,37 +807,14 @@ fn main() {
                 }
             }
 
-            if shadow_renderer_update.should_update() {
-                shadow_renderer.update(&gl, shadow_renderer_update);
-            }
-
-            if vsm_filter_update.should_update() {
-                vsm_filter.update(&gl, vsm_filter_update);
-            }
-
-            if ao_filter_update.should_update() {
-                ao_filter.update(&gl, ao_filter_update);
-            }
-
-            if basic_renderer_update.should_update() {
-                basic_renderer.update(&gl, basic_renderer_update);
-            }
-
-            if ao_renderer_update.should_update() {
-                ao_renderer.update(&gl, ao_renderer_update);
-            }
-
-            if post_renderer_update.should_update() {
-                post_renderer.update(&gl, post_renderer_update);
-            }
-
-            if overlay_renderer_update.should_update() {
-                overlay_renderer.update(&gl, overlay_renderer_update);
-            }
-
-            if line_renderer_update.should_update() {
-                line_renderer.update(&gl, line_renderer_update);
-            }
+            shadow_renderer.update(&gl, &shadow_renderer_update);
+            vsm_filter.update(&gl, &vsm_filter_update);
+            ao_filter.update(&gl, &ao_filter_update);
+            basic_renderer.update(&gl, &basic_renderer_update);
+            ao_renderer.update(&gl, &ao_renderer_update);
+            post_renderer.update(&gl, &post_renderer_update);
+            overlay_renderer.update(&gl, &overlay_renderer_update);
+            line_renderer.update(&gl, &line_renderer_update);
         }
 
         let simulation_start_nanos = start_instant.elapsed().as_nanos() as u64;
