@@ -25,7 +25,7 @@ pub struct Parameters {
 }
 
 impl Renderer {
-    pub fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, resources: &Resources) {
+    pub fn render(&self, gl: &gl::Gl, params: &Parameters, _world: &World, resources: &Resources) {
         unsafe {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -91,17 +91,15 @@ impl Renderer {
     }
 
     pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            Renderer {
-                program: rendering::VSFSProgram::new(gl),
-                width_loc: gl::OptionUniformLocation::NONE,
-                height_loc: gl::OptionUniformLocation::NONE,
-                color_sampler_loc: gl::OptionUniformLocation::NONE,
-                depth_sampler_loc: gl::OptionUniformLocation::NONE,
-                nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
-                ao_sampler_loc: gl::OptionUniformLocation::NONE,
-                vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
-            }
+        Renderer {
+            program: rendering::VSFSProgram::new(gl),
+            width_loc: gl::OptionUniformLocation::NONE,
+            height_loc: gl::OptionUniformLocation::NONE,
+            color_sampler_loc: gl::OptionUniformLocation::NONE,
+            depth_sampler_loc: gl::OptionUniformLocation::NONE,
+            nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
+            ao_sampler_loc: gl::OptionUniformLocation::NONE,
+            vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
         }
     }
 }

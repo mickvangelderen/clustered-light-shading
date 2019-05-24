@@ -22,7 +22,7 @@ mod overlay_renderer;
 mod post_renderer;
 mod random_unit_sphere_dense;
 mod random_unit_sphere_surface;
-pub mod rendering;
+mod rendering;
 mod resources;
 mod shadow_renderer;
 mod vsm_filter;

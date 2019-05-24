@@ -91,14 +91,12 @@ impl Renderer {
     }
 
     pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            Renderer {
-                program: rendering::VSFSProgram::new(gl),
-                delta_loc: gl::OptionUniformLocation::NONE,
-                color_sampler_loc: gl::OptionUniformLocation::NONE,
-                depth_sampler_loc: gl::OptionUniformLocation::NONE,
-                vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
-            }
+        Renderer {
+            program: rendering::VSFSProgram::new(gl),
+            delta_loc: gl::OptionUniformLocation::NONE,
+            color_sampler_loc: gl::OptionUniformLocation::NONE,
+            depth_sampler_loc: gl::OptionUniformLocation::NONE,
+            vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
         }
     }
 }

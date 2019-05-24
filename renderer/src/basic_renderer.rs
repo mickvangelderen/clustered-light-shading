@@ -1,4 +1,3 @@
-use crate::gl_ext::*;
 use crate::keyboard_model;
 use crate::rendering;
 use crate::resources::Resources;

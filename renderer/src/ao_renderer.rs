@@ -27,7 +27,7 @@ pub struct Parameters {
 }
 
 impl Renderer {
-    pub fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, resources: &Resources) {
+    pub fn render(&self, gl: &gl::Gl, params: &Parameters, _world: &World, resources: &Resources) {
         unsafe {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);

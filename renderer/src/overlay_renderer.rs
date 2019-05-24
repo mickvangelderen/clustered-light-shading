@@ -81,13 +81,11 @@ impl Renderer {
     }
 
     pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            Renderer {
-                program: rendering::VSFSProgram::new(gl),
-                color_sampler_loc: gl::OptionUniformLocation::NONE,
-                default_colors_loc: gl::OptionUniformLocation::NONE,
-                color_matrix_loc: gl::OptionUniformLocation::NONE,
-            }
+        Renderer {
+            program: rendering::VSFSProgram::new(gl),
+            color_sampler_loc: gl::OptionUniformLocation::NONE,
+            default_colors_loc: gl::OptionUniformLocation::NONE,
+            color_matrix_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }
