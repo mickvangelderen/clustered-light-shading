@@ -1,5 +1,6 @@
 use crate::convert::*;
 use crate::rendering;
+use cgmath::*;
 use gl_typed as gl;
 
 pub struct Renderer {
@@ -16,6 +17,7 @@ pub struct Parameters<'a> {
     pub height: i32,
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
+    pub pos_from_obj_to_wld: &'a Matrix4<f32>,
 }
 
 impl Renderer {
@@ -30,15 +32,23 @@ impl Renderer {
 
             gl.use_program(self.program.name);
 
+            if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
+                gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_obj_to_wld.as_ref());
+            }
+
+            gl.named_buffer_data(
+                self.vertex_buffer_name,
+                params.vertices.slice_to_bytes(),
+                gl::STREAM_DRAW,
+            );
+            gl.named_buffer_data(
+                self.element_buffer_name,
+                params.indices.slice_to_bytes(),
+                gl::STREAM_DRAW,
+            );
+
             gl.bind_vertex_array(self.vertex_array_name);
-            gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
-            gl.buffer_data(gl::ARRAY_BUFFER, params.vertices.flatten(), gl::STREAM_DRAW);
-
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
-            gl.buffer_data(gl::ELEMENT_ARRAY_BUFFER, params.indices.flatten(), gl::STATIC_DRAW);
-
             gl.draw_elements(gl::LINES, params.indices.flatten().len(), gl::UNSIGNED_INT, 0);
-
             gl.unbind_vertex_array();
 
             gl.bind_framebuffer(gl::FRAMEBUFFER, None);
