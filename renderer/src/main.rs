@@ -1488,6 +1488,7 @@ fn main() {
                     height: physical_size.height as i32,
                     vertices: &sun_frustrum_vertices[..],
                     indices: &sun_frustrum_indices[..],
+                    pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
                 },
             );
 
