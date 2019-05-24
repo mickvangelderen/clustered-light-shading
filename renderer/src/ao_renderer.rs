@@ -1,23 +1,19 @@
 use crate::convert::*;
 use crate::rendering;
+use crate::resources::*;
 use crate::World;
 use gl_typed as gl;
-static VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
-static INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
-    pub vertex_array_name: gl::VertexArrayName,
-    pub vertex_buffer_name: gl::BufferName,
-    pub element_buffer_name: gl::BufferName,
-    pub time_loc: gl::OptionUniformLocation,
+    pub ao_sample_buffer_name: gl::BufferName,
     pub width_loc: gl::OptionUniformLocation,
     pub height_loc: gl::OptionUniformLocation,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
     pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
     pub random_unit_sphere_surface_sampler_loc: gl::OptionUniformLocation,
-    pub vs_pos_in_qua_loc: gl::OptionAttributeLocation,
+    pub vs_pos_in_tex_loc: gl::OptionAttributeLocation,
 }
 
 pub struct Parameters {
@@ -31,7 +27,7 @@ pub struct Parameters {
 }
 
 impl Renderer {
-    pub fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World) {
+    pub fn render(&self, gl: &gl::Gl, params: &Parameters, world: &World, resources: &Resources) {
         unsafe {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -41,10 +37,6 @@ impl Renderer {
             gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
             gl.use_program(self.program.name);
-
-            if let Some(loc) = self.time_loc.into() {
-                gl.uniform_1f(loc, world.time);
-            }
 
             if let Some(loc) = self.width_loc.into() {
                 gl.uniform_1i(loc, params.width);
@@ -78,11 +70,9 @@ impl Renderer {
                 gl.bind_texture(gl::TEXTURE_2D, params.random_unit_sphere_surface_texture_name);
             };
 
-            gl.bind_vertex_array(self.vertex_array_name);
-            // // NOTE: Help renderdoc
-            // gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.element_buffer_name);
+            gl.bind_vertex_array(resources.full_screen_vao);
 
-            gl.draw_elements(gl::TRIANGLES, INDICES.len() * 3, gl::UNSIGNED_INT, 0);
+            gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
 
             gl.unbind_vertex_array();
 
@@ -97,7 +87,6 @@ impl Renderer {
             if self.program.update(gl, update) {
                 gl.use_program(self.program.name);
 
-                self.time_loc = get_uniform_location!(gl, self.program.name, "time");
                 self.width_loc = get_uniform_location!(gl, self.program.name, "width");
                 self.height_loc = get_uniform_location!(gl, self.program.name, "height");
                 self.color_sampler_loc = get_uniform_location!(gl, self.program.name, "color_sampler");
@@ -106,32 +95,6 @@ impl Renderer {
                 self.random_unit_sphere_surface_sampler_loc =
                     get_uniform_location!(gl, self.program.name, "random_unit_sphere_surface_sampler");
 
-                // Disable old locations.
-                gl.bind_vertex_array(self.vertex_array_name);
-
-                if let Some(loc) = self.vs_pos_in_qua_loc.into() {
-                    gl.disable_vertex_attrib_array(loc);
-                }
-
-                gl.unbind_vertex_array();
-
-                // Obtain new locations.
-                self.vs_pos_in_qua_loc = get_attribute_location!(gl, self.program.name, "vs_pos_in_qua");
-
-                // Set up attributes.
-
-                gl.bind_buffer(gl::ARRAY_BUFFER, self.vertex_buffer_name);
-                gl.bind_vertex_array(self.vertex_array_name);
-
-                if let Some(loc) = self.vs_pos_in_qua_loc.into() {
-                    gl.vertex_attrib_pointer(loc, 2, gl::FLOAT, gl::FALSE, std::mem::size_of::<[f32; 2]>(), 0);
-
-                    gl.enable_vertex_attrib_array(loc);
-                }
-
-                gl.unbind_vertex_array();
-                gl.unbind_buffer(gl::ARRAY_BUFFER);
-
                 gl.unuse_program();
             }
         }
@@ -139,9 +102,6 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let vertex_array_name = gl.create_vertex_array();
-            let vertex_buffer_name = gl.create_buffer();
-            let element_buffer_name = gl.create_buffer();
             let ao_sample_buffer_name = gl.create_buffer();
 
             gl.named_buffer_data(
@@ -155,28 +115,16 @@ impl Renderer {
                 ao_sample_buffer_name,
             );
 
-            gl.bind_vertex_array(vertex_array_name);
-            gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
-            gl.named_buffer_data(vertex_buffer_name, VERTICES.slice_to_bytes(), gl::STATIC_DRAW);
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
-            gl.named_buffer_data(element_buffer_name, INDICES.slice_to_bytes(), gl::STATIC_DRAW);
-            gl.unbind_vertex_array();
-            gl.unbind_buffer(gl::ARRAY_BUFFER);
-            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
-
             Renderer {
                 program: rendering::VSFSProgram::new(gl),
-                vertex_array_name,
-                vertex_buffer_name,
-                element_buffer_name,
-                time_loc: gl::OptionUniformLocation::NONE,
+                ao_sample_buffer_name,
                 width_loc: gl::OptionUniformLocation::NONE,
                 height_loc: gl::OptionUniformLocation::NONE,
                 color_sampler_loc: gl::OptionUniformLocation::NONE,
                 depth_sampler_loc: gl::OptionUniformLocation::NONE,
                 nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,
                 random_unit_sphere_surface_sampler_loc: gl::OptionUniformLocation::NONE,
-                vs_pos_in_qua_loc: gl::OptionAttributeLocation::NONE,
+                vs_pos_in_tex_loc: gl::OptionAttributeLocation::NONE,
             }
         }
     }

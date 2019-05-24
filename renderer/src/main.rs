@@ -1273,6 +1273,7 @@ fn main() {
                 color: view_ind_res.shadow_texture.name(),
                 color_x: view_ind_res.shadow_2_texture.name(),
             },
+            &resources,
         );
 
         let view_datas: ArrayVec<[_; 2]> = views
@@ -1374,6 +1375,7 @@ fn main() {
                         random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
                     },
                     &world,
+                    &resources,
                 );
 
                 ao_filter.render(
@@ -1387,6 +1389,7 @@ fn main() {
                         color_x: view_dep_res.ao_x_texture.name(),
                         depth: view_dep_res.depth_texture.name(),
                     },
+                    &resources,
                 );
 
                 post_renderer.render(
@@ -1401,6 +1404,7 @@ fn main() {
                         ao_texture_name: view_dep_res.ao_texture.name(),
                     },
                     &world,
+                    &resources,
                 );
 
                 overlay_renderer.render(
@@ -1420,6 +1424,7 @@ fn main() {
                             [0.0, 0.0, 0.0, 1.0],
                         ],
                     },
+                    &resources,
                 );
             }
 
@@ -1498,6 +1503,7 @@ fn main() {
                     random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
                 },
                 &world,
+                &resources,
             );
 
             ao_filter.render(
@@ -1511,6 +1517,7 @@ fn main() {
                     color_x: view_dep_res.ao_x_texture.name(),
                     depth: view_dep_res.depth_texture.name(),
                 },
+                &resources,
             );
 
             post_renderer.render(
@@ -1525,6 +1532,7 @@ fn main() {
                     ao_texture_name: view_dep_res.ao_texture.name(),
                 },
                 &world,
+                &resources,
             );
 
             // overlay_renderer.render(

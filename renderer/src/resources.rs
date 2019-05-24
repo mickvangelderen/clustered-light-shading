@@ -18,6 +18,9 @@ pub struct Texture {
     pub dimensions: [f32; 2],
 }
 
+pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
+pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
+
 #[allow(unused)]
 pub struct Resources {
     pub meshes: Vec<Mesh>,
@@ -31,6 +34,10 @@ pub struct Resources {
     pub element_counts: Vec<usize>,
     pub key_indices: Vec<keyboard_model::UncheckedIndex>,
     pub point_lights: [PointLight; rendering::POINT_LIGHT_CAPACITY as usize],
+
+    pub full_screen_vao: gl::VertexArrayName,
+    pub full_screen_vb: gl::BufferName,
+    pub full_screen_eb: gl::BufferName,
 }
 
 #[inline]
@@ -56,11 +63,7 @@ fn rgba_f32_to_rgba_u8(input: [f32; 4]) -> [u8; 4] {
 #[inline]
 fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
     unsafe {
-        let name = {
-            let mut names: [Option<gl::TextureName>; 1] = std::mem::uninitialized();
-            gl.gen_textures(&mut names);
-            names[0].expect("Failed to acquire texture name.")
-        };
+        let name = gl.create_texture(gl::TEXTURE_2D);
 
         gl.bind_texture(gl::TEXTURE_2D, name);
         gl.tex_image_2d(
@@ -413,6 +416,32 @@ impl Resources {
             }
         }
 
+        let (full_screen_vao, full_screen_vb, full_screen_eb) = unsafe {
+            let vao = gl.create_vertex_array();
+            let vb = gl.create_buffer();
+            let eb = gl.create_buffer();
+
+            gl.bind_vertex_array(vao);
+            gl.bind_buffer(gl::ARRAY_BUFFER, vb);
+            gl.named_buffer_data(vb, FULL_SCREEN_VERTICES.slice_to_bytes(), gl::STATIC_DRAW);
+            gl.vertex_attrib_pointer(
+                rendering::VS_POS_IN_TEX_LOC,
+                2,
+                gl::FLOAT,
+                gl::FALSE,
+                std::mem::size_of::<[f32; 2]>(),
+                0,
+            );
+            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
+            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
+            gl.named_buffer_data(eb, FULL_SCREEN_INDICES.slice_to_bytes(), gl::STATIC_DRAW);
+            gl.unbind_vertex_array();
+            gl.unbind_buffer(gl::ARRAY_BUFFER);
+            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
+
+            (vao, vb, eb)
+        };
+
         Resources {
             meshes,
             materials,
@@ -424,6 +453,9 @@ impl Resources {
             ebs,
             element_counts,
             key_indices,
+            full_screen_vao,
+            full_screen_vb,
+            full_screen_eb,
             point_lights: [
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
