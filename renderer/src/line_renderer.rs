@@ -1,7 +1,6 @@
 use crate::convert::*;
 use crate::rendering;
 use gl_typed as gl;
-use gl_typed::convert::*;
 
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
@@ -17,18 +16,6 @@ pub struct Parameters<'a> {
     pub height: i32,
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
-}
-
-#[derive(Default)]
-pub struct Update<B: AsRef<[u8]>> {
-    pub vertex_shader: Option<B>,
-    pub fragment_shader: Option<B>,
-}
-
-impl<B: AsRef<[u8]>> Update<B> {
-    pub fn should_update(&self) -> bool {
-        self.vertex_shader.is_some() || self.fragment_shader.is_some()
-    }
 }
 
 impl Renderer {
@@ -72,17 +59,9 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            let [vertex_array_name]: [gl::VertexArrayName; 1] = {
-                let mut names: [Option<gl::VertexArrayName>; 1] = std::mem::uninitialized();
-                gl.gen_vertex_arrays(&mut names);
-                names.try_transmute_each().unwrap()
-            };
-
-            let [vertex_buffer_name, element_buffer_name]: [gl::BufferName; 2] = {
-                let mut names: [Option<gl::BufferName>; 2] = std::mem::uninitialized();
-                gl.gen_buffers(&mut names);
-                names.try_transmute_each().unwrap()
-            };
+            let vertex_array_name = gl.create_vertex_array();
+            let vertex_buffer_name = gl.create_buffer();
+            let element_buffer_name = gl.create_buffer();
 
             gl.bind_vertex_array(vertex_array_name);
             gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);

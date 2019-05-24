@@ -62,11 +62,9 @@ impl Renderer {
     }
 
     pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            Renderer {
-                program: rendering::VSFSProgram::new(gl),
-                pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-            }
+        Renderer {
+            program: rendering::VSFSProgram::new(gl),
+            pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }

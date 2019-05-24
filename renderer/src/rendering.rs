@@ -273,62 +273,60 @@ pub struct VSFSProgramUpdate {
 
 impl VSFSProgram {
     pub fn update(&mut self, gl: &gl::Gl, update: &VSFSProgramUpdate) -> bool {
-        unsafe {
-            let mut should_link = false;
+        let mut should_link = false;
 
-            if let Some(ref bytes) = update.vertex_shader {
-                self.vertex_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            rendering::COMMON_DECLARATION.as_bytes(),
-                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
-                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
-                            "#line 1 1\n".as_bytes(),
-                            bytes.as_ref(),
-                        ],
+        if let Some(ref bytes) = update.vertex_shader {
+            self.vertex_shader_name
+                .compile(
+                    gl,
+                    &[
+                        rendering::COMMON_DECLARATION.as_bytes(),
+                        rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                        rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                        "#line 1 1\n".as_bytes(),
+                        bytes.as_ref(),
+                    ],
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!(
+                        "In vertex shader: {}\nCompilation error:\n{}",
+                        std::str::from_utf8(bytes.as_ref()).unwrap(),
+                        e
                     )
-                    .unwrap_or_else(|e| {
-                        eprintln!(
-                            "In vertex shader: {}\nCompilation error:\n{}",
-                            std::str::from_utf8(bytes.as_ref()).unwrap(),
-                            e
-                        )
-                    });
-                should_link = true;
-            }
+                });
+            should_link = true;
+        }
 
-            if let Some(ref bytes) = update.fragment_shader {
-                self.fragment_shader_name
-                    .compile(
-                        gl,
-                        &[
-                            rendering::COMMON_DECLARATION.as_bytes(),
-                            rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
-                            rendering::VIEW_DATA_DECLARATION.as_bytes(),
-                            rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
-                            "#line 1 1\n".as_bytes(),
-                            bytes.as_ref(),
-                        ],
+        if let Some(ref bytes) = update.fragment_shader {
+            self.fragment_shader_name
+                .compile(
+                    gl,
+                    &[
+                        rendering::COMMON_DECLARATION.as_bytes(),
+                        rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
+                        rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                        rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
+                        "#line 1 1\n".as_bytes(),
+                        bytes.as_ref(),
+                    ],
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!(
+                        "In fragment shader: {}\nCompilation error:\n{}",
+                        std::str::from_utf8(bytes.as_ref()).unwrap(),
+                        e
                     )
-                    .unwrap_or_else(|e| {
-                        eprintln!(
-                            "In fragment shader: {}\nCompilation error:\n{}",
-                            std::str::from_utf8(bytes.as_ref()).unwrap(),
-                            e
-                        )
-                    });
-                should_link = true;
-            }
+                });
+            should_link = true;
+        }
 
-            if should_link {
-                self.name.link(gl).map(|_| true).unwrap_or_else(|e| {
-                    eprintln!("{} (program):\n{}", file!(), e);
-                    false
-                })
-            } else {
+        if should_link {
+            self.name.link(gl).map(|_| true).unwrap_or_else(|e| {
+                eprintln!("{} (program):\n{}", file!(), e);
                 false
-            }
+            })
+        } else {
+            false
         }
     }
 
