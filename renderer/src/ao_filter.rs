@@ -38,7 +38,7 @@ impl Renderer {
 
             // X pass.
             {
-                gl.bind_framebuffer(gl::FRAMEBUFFER, Some(params.framebuffer_x));
+                gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer_x);
                 gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
@@ -56,7 +56,7 @@ impl Renderer {
 
             // Y pass.
             {
-                gl.bind_framebuffer(gl::FRAMEBUFFER, Some(params.framebuffer_xy));
+                gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer_xy);
                 gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
@@ -72,7 +72,6 @@ impl Renderer {
                 gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
             }
 
-            gl.bind_framebuffer(gl::FRAMEBUFFER, None);
             gl.unbind_vertex_array();
             gl.unuse_program();
         }

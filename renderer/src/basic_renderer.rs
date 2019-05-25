@@ -25,7 +25,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub framebuffer: Option<gl::FramebufferName>,
+    pub framebuffer: gl::FramebufferName,
     pub width: i32,
     pub height: i32,
     pub material_resources: rendering::MaterialResources,
@@ -137,8 +137,6 @@ impl Renderer {
             }
 
             gl.unbind_vertex_array();
-
-            gl.bind_framebuffer(gl::FRAMEBUFFER, None);
             gl.unuse_program();
         }
     }
