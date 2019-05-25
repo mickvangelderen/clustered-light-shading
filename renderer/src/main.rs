@@ -76,11 +76,11 @@ impl World {
 
 pub struct ViewIndependentResources {
     // Main shadow resources.
-    pub shadow_framebuffer_name: gl::FramebufferName,
+    pub shadow_framebuffer_name: gl::NonDefaultFramebufferName,
     pub shadow_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg32f>,
     pub shadow_depth_renderbuffer_name: gl::RenderbufferName,
     // Filter shadow resources.
-    pub shadow_2_framebuffer_name: gl::FramebufferName,
+    pub shadow_2_framebuffer_name: gl::NonDefaultFramebufferName,
     pub shadow_2_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg32f>,
     // Storage buffers.
     pub cls_buffer_name: gl::BufferName,
@@ -114,52 +114,42 @@ impl ViewIndependentResources {
             // Framebuffers.
 
             let shadow_framebuffer_name = gl.create_framebuffer();
+            gl.bind_framebuffer(gl::FRAMEBUFFER, shadow_framebuffer_name);
+
+            gl.named_framebuffer_texture(shadow_framebuffer_name, gl::COLOR_ATTACHMENT0, shadow_texture.name(), 0);
+
+            gl.named_framebuffer_renderbuffer(
+                shadow_framebuffer_name,
+                gl::DEPTH_ATTACHMENT,
+                gl::RENDERBUFFER,
+                shadow_depth_renderbuffer_name,
+            );
+
+            assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE.into()
+            );
+
             let shadow_2_framebuffer_name = gl.create_framebuffer();
 
-            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(shadow_framebuffer_name));
-            {
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::TEXTURE_2D,
-                    shadow_texture.name(),
-                    0,
-                );
+            gl.named_framebuffer_texture(
+                shadow_2_framebuffer_name,
+                gl::COLOR_ATTACHMENT0,
+                shadow_2_texture.name(),
+                0,
+            );
 
-                gl.framebuffer_renderbuffer(
-                    gl::FRAMEBUFFER,
-                    gl::DEPTH_ATTACHMENT,
-                    gl::RENDERBUFFER,
-                    shadow_depth_renderbuffer_name,
-                );
-                assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
-                    gl::FRAMEBUFFER_COMPLETE.into()
-                );
-            }
+            gl.named_framebuffer_renderbuffer(
+                shadow_2_framebuffer_name,
+                gl::DEPTH_ATTACHMENT,
+                gl::RENDERBUFFER,
+                shadow_depth_renderbuffer_name,
+            );
 
-            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(shadow_2_framebuffer_name));
-            {
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::TEXTURE_2D,
-                    shadow_2_texture.name(),
-                    0,
-                );
-
-                gl.framebuffer_renderbuffer(
-                    gl::FRAMEBUFFER,
-                    gl::DEPTH_ATTACHMENT,
-                    gl::RENDERBUFFER,
-                    shadow_depth_renderbuffer_name,
-                );
-
-                assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
-                    gl::FRAMEBUFFER_COMPLETE.into()
-                );
-            }
+            assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE.into()
+            );
 
             // Storage buffers,
 
@@ -179,18 +169,18 @@ impl ViewIndependentResources {
 
 pub struct ViewDependentResources {
     // Main frame resources.
-    pub framebuffer_name: gl::FramebufferName,
+    pub framebuffer_name: gl::NonDefaultFramebufferName,
     pub color_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rgba8>,
     pub depth_texture: Texture<gl::symbols::Texture2D, gl::symbols::Depth24Stencil8>,
     pub nor_in_cam_texture: Texture<gl::symbols::Texture2D, gl::symbols::R11fG11fB10f>,
     // AO resources.
-    pub ao_framebuffer_name: gl::FramebufferName,
-    pub ao_x_framebuffer_name: gl::FramebufferName,
+    pub ao_framebuffer_name: gl::NonDefaultFramebufferName,
+    pub ao_x_framebuffer_name: gl::NonDefaultFramebufferName,
     pub ao_texture: Texture<gl::symbols::Texture2D, gl::symbols::R8>,
     pub ao_x_texture: Texture<gl::symbols::Texture2D, gl::symbols::R8>,
     pub ao_depth_renderbuffer_name: gl::RenderbufferName,
     // Post resources.
-    pub post_framebuffer_name: gl::FramebufferName,
+    pub post_framebuffer_name: gl::NonDefaultFramebufferName,
     pub post_color_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rgba8>,
     pub post_depth_texture: Texture<gl::symbols::Texture2D, gl::symbols::Depth24Stencil8>,
     // Uniform buffers.
@@ -237,112 +227,68 @@ impl ViewDependentResources {
             // Framebuffers.
 
             let framebuffer_name = gl.create_framebuffer();
-            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(framebuffer_name));
-            {
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::TEXTURE_2D,
-                    color_texture.name(),
-                    0,
-                );
+            gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, color_texture.name(), 0);
 
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
-                    gl::TEXTURE_2D,
-                    depth_texture.name(),
-                    0,
-                );
+            gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT1, nor_in_cam_texture.name(), 0);
 
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT1,
-                    gl::TEXTURE_2D,
-                    nor_in_cam_texture.name(),
-                    0,
-                );
+            gl.named_framebuffer_texture(framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name(), 0);
+            assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE.into()
+            );
 
-                assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
-                    gl::FRAMEBUFFER_COMPLETE.into()
-                );
-            }
+            let ao_framebuffer_name = gl.create_framebuffer().into();
 
-            let ao_framebuffer_name = gl.create_framebuffer();
-            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(ao_framebuffer_name));
-            {
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::TEXTURE_2D,
-                    ao_texture.name(),
-                    0,
-                );
+            gl.named_framebuffer_texture(ao_framebuffer_name, gl::COLOR_ATTACHMENT0, ao_texture.name(), 0);
 
-                gl.framebuffer_renderbuffer(
-                    gl::FRAMEBUFFER,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
-                    gl::RENDERBUFFER,
-                    ao_depth_renderbuffer_name,
-                );
+            gl.named_framebuffer_renderbuffer(
+                ao_framebuffer_name,
+                gl::DEPTH_STENCIL_ATTACHMENT,
+                gl::RENDERBUFFER,
+                ao_depth_renderbuffer_name,
+            );
 
-                assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
-                    gl::FRAMEBUFFER_COMPLETE.into()
-                );
-            }
+            assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE.into()
+            );
 
-            let ao_x_framebuffer_name = gl.create_framebuffer();
-            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(ao_x_framebuffer_name));
-            {
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::TEXTURE_2D,
-                    ao_x_texture.name(),
-                    0,
-                );
+            let ao_x_framebuffer_name = gl.create_framebuffer().into();
 
-                gl.framebuffer_renderbuffer(
-                    gl::FRAMEBUFFER,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
-                    gl::RENDERBUFFER,
-                    ao_depth_renderbuffer_name,
-                );
+            gl.named_framebuffer_texture(ao_x_framebuffer_name, gl::COLOR_ATTACHMENT0, ao_x_texture.name(), 0);
 
-                assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
-                    gl::FRAMEBUFFER_COMPLETE.into()
-                );
-            }
+            gl.named_framebuffer_renderbuffer(
+                ao_x_framebuffer_name,
+                gl::DEPTH_STENCIL_ATTACHMENT,
+                gl::RENDERBUFFER,
+                ao_depth_renderbuffer_name,
+            );
+
+            assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE.into()
+            );
 
             let post_framebuffer_name = gl.create_framebuffer();
-            gl.bind_framebuffer(gl::FRAMEBUFFER, Some(post_framebuffer_name));
-            {
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::COLOR_ATTACHMENT0,
-                    gl::TEXTURE_2D,
-                    post_color_texture.name(),
-                    0,
-                );
 
-                gl.framebuffer_texture_2d(
-                    gl::FRAMEBUFFER,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
-                    gl::TEXTURE_2D,
-                    post_depth_texture.name(),
-                    0,
-                );
+            gl.named_framebuffer_texture(
+                post_framebuffer_name,
+                gl::COLOR_ATTACHMENT0,
+                post_color_texture.name(),
+                0,
+            );
 
-                assert_eq!(
-                    gl.check_framebuffer_status(gl::FRAMEBUFFER),
-                    gl::FRAMEBUFFER_COMPLETE.into()
-                );
-            }
+            gl.named_framebuffer_texture(
+                post_framebuffer_name,
+                gl::DEPTH_STENCIL_ATTACHMENT,
+                post_depth_texture.name(),
+                0,
+            );
 
-            gl.bind_framebuffer(gl::FRAMEBUFFER, None);
+            assert_eq!(
+                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl::FRAMEBUFFER_COMPLETE.into()
+            );
 
             // Uniform block buffers,
 
@@ -1255,7 +1201,7 @@ fn main() {
         shadow_renderer.render(
             &gl,
             &shadow_renderer::Parameters {
-                framebuffer: Some(view_ind_res.shadow_framebuffer_name),
+                framebuffer: view_ind_res.shadow_framebuffer_name.into(),
                 width: SHADOW_W,
                 height: SHADOW_H,
             },
@@ -1268,8 +1214,8 @@ fn main() {
             &vsm_filter::Parameters {
                 width: SHADOW_W,
                 height: SHADOW_H,
-                framebuffer_x: view_ind_res.shadow_2_framebuffer_name,
-                framebuffer_xy: view_ind_res.shadow_framebuffer_name,
+                framebuffer_x: view_ind_res.shadow_2_framebuffer_name.into(),
+                framebuffer_xy: view_ind_res.shadow_framebuffer_name.into(),
                 color: view_ind_res.shadow_texture.name(),
                 color_x: view_ind_res.shadow_2_texture.name(),
             },
@@ -1352,7 +1298,7 @@ fn main() {
                 basic_renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
-                        framebuffer: Some(view_dep_res.framebuffer_name),
+                        framebuffer: view_dep_res.framebuffer_name.into(),
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
                         material_resources,
@@ -1366,7 +1312,7 @@ fn main() {
                 ao_renderer.render(
                     &gl,
                     &ao_renderer::Parameters {
-                        framebuffer: Some(view_dep_res.ao_framebuffer_name),
+                        framebuffer: view_dep_res.ao_framebuffer_name.into(),
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
                         color_texture_name: view_dep_res.color_texture.name(),
@@ -1383,8 +1329,8 @@ fn main() {
                     &ao_filter::Parameters {
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
-                        framebuffer_x: view_dep_res.ao_x_framebuffer_name,
-                        framebuffer_xy: view_dep_res.ao_framebuffer_name,
+                        framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
+                        framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
                         color: view_dep_res.ao_texture.name(),
                         color_x: view_dep_res.ao_x_texture.name(),
                         depth: view_dep_res.depth_texture.name(),
@@ -1395,7 +1341,7 @@ fn main() {
                 post_renderer.render(
                     &gl,
                     &post_renderer::Parameters {
-                        framebuffer: Some(view_dep_res.post_framebuffer_name),
+                        framebuffer: view_dep_res.post_framebuffer_name.into(),
                         width: vr_resources.dims.width as i32,
                         height: vr_resources.dims.height as i32,
                         color_texture_name: view_dep_res.color_texture.name(),
@@ -1410,7 +1356,7 @@ fn main() {
                 overlay_renderer.render(
                     &gl,
                     &overlay_renderer::Parameters {
-                        framebuffer: None,
+                        framebuffer: gl::FramebufferName::Default,
                         x0: viewport.0,
                         x1: viewport.1,
                         y0: viewport.2,
@@ -1469,7 +1415,7 @@ fn main() {
             basic_renderer.render(
                 &gl,
                 &basic_renderer::Parameters {
-                    framebuffer: Some(view_dep_res.framebuffer_name),
+                    framebuffer: view_dep_res.framebuffer_name.into(),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     material_resources,
@@ -1483,7 +1429,7 @@ fn main() {
             line_renderer.render(
                 &gl,
                 &line_renderer::Parameters {
-                    framebuffer: Some(view_dep_res.framebuffer_name),
+                    framebuffer: view_dep_res.framebuffer_name.into(),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     vertices: &sun_frustrum_vertices[..],
@@ -1495,7 +1441,7 @@ fn main() {
             ao_renderer.render(
                 &gl,
                 &ao_renderer::Parameters {
-                    framebuffer: Some(view_dep_res.ao_framebuffer_name),
+                    framebuffer: view_dep_res.ao_framebuffer_name.into(),
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     color_texture_name: view_dep_res.color_texture.name(),
@@ -1512,8 +1458,8 @@ fn main() {
                 &ao_filter::Parameters {
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
-                    framebuffer_x: view_dep_res.ao_x_framebuffer_name,
-                    framebuffer_xy: view_dep_res.ao_framebuffer_name,
+                    framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
+                    framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
                     color: view_dep_res.ao_texture.name(),
                     color_x: view_dep_res.ao_x_texture.name(),
                     depth: view_dep_res.depth_texture.name(),
@@ -1524,7 +1470,7 @@ fn main() {
             post_renderer.render(
                 &gl,
                 &post_renderer::Parameters {
-                    framebuffer: None,
+                    framebuffer: gl::FramebufferName::Default,
                     width: physical_size.width as i32,
                     height: physical_size.height as i32,
                     color_texture_name: view_dep_res.color_texture.name(),
@@ -1590,6 +1536,10 @@ fn main() {
     drop(tx_log);
 
     timing_thread.join().unwrap();
+}
+
+struct RenderPass {
+    pub framebuffer_name: gl::FramebufferName,
 }
 
 struct VrResources {

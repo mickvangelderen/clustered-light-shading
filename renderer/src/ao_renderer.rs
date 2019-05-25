@@ -17,7 +17,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub framebuffer: Option<gl::FramebufferName>,
+    pub framebuffer: gl::FramebufferName,
     pub width: i32,
     pub height: i32,
     pub color_texture_name: gl::TextureName,
@@ -75,8 +75,6 @@ impl Renderer {
             gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
 
             gl.unbind_vertex_array();
-
-            gl.bind_framebuffer(gl::FRAMEBUFFER, None);
 
             gl.unuse_program();
         }
