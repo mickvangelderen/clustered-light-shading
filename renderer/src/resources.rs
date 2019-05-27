@@ -4,7 +4,6 @@ use crate::light::*;
 use crate::rendering;
 use cgmath::*;
 use gl_typed as gl;
-use gl_typed::convert::*;
 use std::collections::HashMap;
 use std::mem;
 use std::path::Path;
@@ -77,8 +76,8 @@ fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
             img.as_ptr() as *const std::os::raw::c_void,
         );
         gl.generate_mipmap(gl::TEXTURE_2D);
-        gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-        gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+        gl.tex_parameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+        gl.tex_parameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
         Texture {
             name,
@@ -298,26 +297,9 @@ impl Resources {
             }));
         }
 
-        let vaos = unsafe {
-            let mut names = Vec::with_capacity(meshes.len());
-            names.set_len(meshes.len());
-            gl.gen_vertex_arrays(&mut names);
-            names.try_transmute_each().unwrap()
-        };
-
-        let vbs = unsafe {
-            let mut names = Vec::with_capacity(meshes.len());
-            names.set_len(meshes.len());
-            gl.gen_buffers(&mut names);
-            names.try_transmute_each().unwrap()
-        };
-
-        let ebs = unsafe {
-            let mut names = Vec::with_capacity(meshes.len());
-            names.set_len(meshes.len());
-            gl.gen_buffers(&mut names);
-            names.try_transmute_each().unwrap()
-        };
+        let mut vaos = Vec::with_capacity(meshes.len());
+        let mut vbs = Vec::with_capacity(meshes.len());
+        let mut ebs = Vec::with_capacity(meshes.len());
 
         let element_counts: Vec<usize> = meshes.iter().map(|mesh| mesh.triangles.len() * 3).collect();
 
@@ -326,12 +308,16 @@ impl Resources {
             .map(|mesh| model_name_to_keyboard_index(&mesh.name))
             .collect();
 
-        for (i, mesh) in meshes.iter().enumerate() {
-            let vao = vaos[i];
-            let vb = vbs[i];
-            let eb = ebs[i];
+        unsafe {
+            for mesh in meshes.iter() {
+                let vao = gl.create_vertex_array();
+                let vb = gl.create_buffer();
+                let eb = gl.create_buffer();
 
-            unsafe {
+                vaos.push(vao);
+                vbs.push(vb);
+                ebs.push(eb);
+
                 let pos_in_obj_size = mem::size_of_val(&mesh.pos_in_obj[..]);
                 let pos_in_tex_size = mem::size_of_val(&mesh.pos_in_tex[..]);
                 let nor_in_obj_size = mem::size_of_val(&mesh.nor_in_obj[..]);
@@ -370,7 +356,7 @@ impl Resources {
                     rendering::VS_POS_IN_OBJ_LOC,
                     3,
                     gl::FLOAT,
-                    gl::FALSE,
+                    false,
                     mem::size_of::<[f32; 3]>(),
                     pos_in_obj_offset,
                 );
@@ -381,7 +367,7 @@ impl Resources {
                     rendering::VS_POS_IN_TEX_LOC,
                     2,
                     gl::FLOAT,
-                    gl::FALSE,
+                    false,
                     mem::size_of::<[f32; 2]>(),
                     pos_in_tex_offset,
                 );
@@ -392,7 +378,7 @@ impl Resources {
                     rendering::VS_NOR_IN_OBJ_LOC,
                     3,
                     gl::FLOAT,
-                    gl::FALSE,
+                    false,
                     mem::size_of::<[f32; 3]>(),
                     nor_in_obj_offset,
                 );
@@ -403,7 +389,7 @@ impl Resources {
                     rendering::VS_TAN_IN_OBJ_LOC,
                     3,
                     gl::FLOAT,
-                    gl::FALSE,
+                    false,
                     mem::size_of::<[f32; 3]>(),
                     tan_in_obj_offset,
                 );
@@ -428,7 +414,7 @@ impl Resources {
                 rendering::VS_POS_IN_TEX_LOC,
                 2,
                 gl::FLOAT,
-                gl::FALSE,
+                false,
                 std::mem::size_of::<[f32; 2]>(),
                 0,
             );

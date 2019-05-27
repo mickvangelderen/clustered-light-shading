@@ -77,11 +77,11 @@ impl World {
 pub struct ViewIndependentResources {
     // Main shadow resources.
     pub shadow_framebuffer_name: gl::NonDefaultFramebufferName,
-    pub shadow_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg32f>,
+    pub shadow_texture: Texture<gl::TEXTURE_2D, gl::RG32F>,
     pub shadow_depth_renderbuffer_name: gl::RenderbufferName,
     // Filter shadow resources.
     pub shadow_2_framebuffer_name: gl::NonDefaultFramebufferName,
-    pub shadow_2_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rg32f>,
+    pub shadow_2_texture: Texture<gl::TEXTURE_2D, gl::RG32F>,
     // Storage buffers.
     pub cls_buffer_name: gl::BufferName,
 }
@@ -126,7 +126,7 @@ impl ViewIndependentResources {
             );
 
             assert_eq!(
-                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl.check_named_framebuffer_status(shadow_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
@@ -147,7 +147,7 @@ impl ViewIndependentResources {
             );
 
             assert_eq!(
-                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl.check_named_framebuffer_status(shadow_2_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
@@ -170,19 +170,19 @@ impl ViewIndependentResources {
 pub struct ViewDependentResources {
     // Main frame resources.
     pub framebuffer_name: gl::NonDefaultFramebufferName,
-    pub color_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rgba8>,
-    pub depth_texture: Texture<gl::symbols::Texture2D, gl::symbols::Depth24Stencil8>,
-    pub nor_in_cam_texture: Texture<gl::symbols::Texture2D, gl::symbols::R11fG11fB10f>,
+    pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA8>,
+    pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
+    pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
     // AO resources.
     pub ao_framebuffer_name: gl::NonDefaultFramebufferName,
     pub ao_x_framebuffer_name: gl::NonDefaultFramebufferName,
-    pub ao_texture: Texture<gl::symbols::Texture2D, gl::symbols::R8>,
-    pub ao_x_texture: Texture<gl::symbols::Texture2D, gl::symbols::R8>,
+    pub ao_texture: Texture<gl::TEXTURE_2D, gl::R8>,
+    pub ao_x_texture: Texture<gl::TEXTURE_2D, gl::R8>,
     pub ao_depth_renderbuffer_name: gl::RenderbufferName,
     // Post resources.
     pub post_framebuffer_name: gl::NonDefaultFramebufferName,
-    pub post_color_texture: Texture<gl::symbols::Texture2D, gl::symbols::Rgba8>,
-    pub post_depth_texture: Texture<gl::symbols::Texture2D, gl::symbols::Depth24Stencil8>,
+    pub post_color_texture: Texture<gl::TEXTURE_2D, gl::RGBA8>,
+    pub post_depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     // Uniform buffers.
     pub lighting_buffer_name: gl::BufferName,
 }
@@ -233,7 +233,7 @@ impl ViewDependentResources {
 
             gl.named_framebuffer_texture(framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name(), 0);
             assert_eq!(
-                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl.check_named_framebuffer_status(framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
@@ -249,7 +249,7 @@ impl ViewDependentResources {
             );
 
             assert_eq!(
-                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl.check_named_framebuffer_status(ao_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
@@ -265,7 +265,7 @@ impl ViewDependentResources {
             );
 
             assert_eq!(
-                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl.check_named_framebuffer_status(ao_x_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
@@ -286,7 +286,7 @@ impl ViewDependentResources {
             );
 
             assert_eq!(
-                gl.check_framebuffer_status(gl::FRAMEBUFFER),
+                gl.check_named_framebuffer_status(post_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
@@ -470,7 +470,7 @@ fn main() {
 
         // Reverse-Z.
         gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
-        gl.depth_func(gl::GT);
+        gl.depth_func(gl::GREATER);
     }
 
     let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
@@ -1536,10 +1536,6 @@ fn main() {
     drop(tx_log);
 
     timing_thread.join().unwrap();
-}
-
-struct RenderPass {
-    pub framebuffer_name: gl::FramebufferName,
 }
 
 struct VrResources {
