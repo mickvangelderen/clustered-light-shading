@@ -39,8 +39,9 @@ pub struct Camera {
 #[derive(Debug)]
 pub struct SmoothCamera {
     pub properties: CameraProperties,
+    pub smooth_enabled: bool,
     pub current_smoothness: f32,
-    pub target_smoothness: f32,
+    pub maximum_smoothness: f32,
     pub current_state: CameraState,
     pub target_state: CameraState,
 }
@@ -71,16 +72,13 @@ impl CameraState {
             delta_fovy,
         } = *update;
         // Direct delta_position along yaw angle.
-        let delta_position =
-            Quaternion::from_axis_angle(Vector3::unit_y(), self.yaw) * delta_position;
+        let delta_position = Quaternion::from_axis_angle(Vector3::unit_y(), self.yaw) * delta_position;
 
         *self = CameraState {
             position: self.position + delta_position * positional_velocity * delta_time,
             yaw: (self.yaw + delta_yaw * angular_velocity * delta_time),
-            pitch: (self.pitch + delta_pitch * angular_velocity * delta_time)
-                .clamp_range(Self::pitch_range()),
-            fovy: (self.fovy + delta_fovy * zoom_velocity * delta_time)
-                .clamp_range(Self::fovy_range()),
+            pitch: (self.pitch + delta_pitch * angular_velocity * delta_time).clamp_range(Self::pitch_range()),
+            fovy: (self.fovy + delta_fovy * zoom_velocity * delta_time).clamp_range(Self::fovy_range()),
         };
     }
 
@@ -160,12 +158,13 @@ impl Camera {
 
 impl SmoothCamera {
     #[inline]
-    pub fn new(smoothness: f32, camera: Camera) -> Self {
+    pub fn new(maximum_smoothness: f32, camera: Camera) -> Self {
         let Camera { properties, state } = camera;
         SmoothCamera {
             properties,
-            current_smoothness: smoothness,
-            target_smoothness: smoothness,
+            smooth_enabled: true,
+            current_smoothness: maximum_smoothness,
+            maximum_smoothness,
             current_state: state,
             target_state: state,
         }
@@ -173,14 +172,23 @@ impl SmoothCamera {
 
     #[inline]
     pub fn update(&mut self, update: &CameraUpdate) {
-        self.current_smoothness = self.target_smoothness * 0.8 + self.current_smoothness * 0.2;
-        self.target_state
-            .update_without_correction(&self.properties, update);
+        let target_smoothness = if self.smooth_enabled {
+            self.maximum_smoothness
+        } else {
+            0.0
+        };
+        self.current_smoothness = target_smoothness * 0.2 + self.current_smoothness * 0.8;
+        self.target_state.update_without_correction(&self.properties, update);
         let correction = self.target_state.compute_correction();
         self.target_state.correct(&correction);
         self.current_state
             .interpolate(&self.target_state, self.current_smoothness);
         self.current_state.correct(&correction);
+    }
+
+    #[inline]
+    pub fn toggle_smoothness(&mut self) {
+        self.smooth_enabled = !self.smooth_enabled;
     }
 
     #[inline]

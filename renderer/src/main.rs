@@ -392,16 +392,18 @@ fn main() {
 
     watcher.watch("resources", notify::RecursiveMode::Recursive).unwrap();
 
+    let mut configuration: configuration::Root = Default::default();
+
     let mut world = World {
         time: 0.0,
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::SmoothCamera::new(
-            0.8,
+            configuration.main_camera.maximum_smoothness,
             camera::Camera {
                 properties: camera::CameraProperties {
-                    positional_velocity: 2.0,
-                    angular_velocity: 0.4,
-                    zoom_velocity: 1.0,
+                    positional_velocity: configuration.main_camera.positional_velocity,
+                    angular_velocity: configuration.main_camera.angular_velocity,
+                    zoom_velocity: configuration.main_camera.zoom_velocity,
                 },
                 state: camera::CameraState {
                     position: Vector3::new(0.0, 1.0, 1.5),
@@ -602,8 +604,6 @@ fn main() {
         line_renderer
     };
 
-    let mut configuration: configuration::Root = Default::default();
-
     let resources = resources::Resources::new(&gl, &resource_dir);
 
     let global_resources = rendering::GlobalResources::new(&gl);
@@ -730,6 +730,13 @@ fn main() {
                         Ok(new_configuration) => {
                             println!("Updated configuration {:#?}", new_configuration);
                             configuration = new_configuration;
+
+                            world.camera.maximum_smoothness = configuration.main_camera.maximum_smoothness;
+                            world.camera.properties = camera::CameraProperties {
+                                positional_velocity: configuration.main_camera.positional_velocity,
+                                angular_velocity: configuration.main_camera.angular_velocity,
+                                zoom_velocity: configuration.main_camera.zoom_velocity,
+                            };
                         }
                         Err(err) => eprintln!("Failed to parse configuration file {:?}: {}.", configuration_path, err),
                     },
@@ -788,11 +795,7 @@ fn main() {
                                 match vk {
                                     VirtualKeyCode::C => {
                                         if keyboard_input.state == ElementState::Pressed && focus {
-                                            world.camera.target_smoothness = if world.camera.target_smoothness == 0.0 {
-                                                0.8
-                                            } else {
-                                                0.0
-                                            };
+                                            world.camera.toggle_smoothness();
                                         }
                                     }
                                     VirtualKeyCode::Escape => {
