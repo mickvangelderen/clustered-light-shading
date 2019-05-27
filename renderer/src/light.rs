@@ -66,7 +66,7 @@ impl PointLightBufferEntry {
 }
 
 #[derive(Debug)]
-#[repr(C)]
+#[repr(C, align(256))]
 pub struct LightingBuffer {
     pub point_lights: [PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize],
 }
