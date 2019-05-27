@@ -1,5 +1,6 @@
 use crate::rendering;
 use crate::resources::*;
+use std::convert::TryFrom;
 use gl_typed as gl;
 
 pub struct Renderer {
@@ -51,7 +52,7 @@ impl Renderer {
                     gl.uniform_2f(loc, [1.0 / params.width as f32, 0.0]);
                 }
 
-                gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
+                gl.draw_elements(gl::TRIANGLES, u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(), gl::UNSIGNED_INT, 0);
             }
 
             // Y pass.
@@ -69,7 +70,7 @@ impl Renderer {
                     gl.uniform_2f(loc, [0.0, 1.0 / params.height as f32]);
                 }
 
-                gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
+                gl.draw_elements(gl::TRIANGLES, u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(), gl::UNSIGNED_INT, 0);
             }
 
             gl.unbind_vertex_array();
