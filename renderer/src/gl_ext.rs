@@ -83,58 +83,58 @@ impl<'a> TextureUpdate<'a> {
     }
 }
 
-impl From<gl::symbols::Rgba8> for TextureFormat {
+impl From<gl::RGBA8> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::Rgba8) -> Self {
+    fn from(_: gl::RGBA8) -> Self {
         TextureFormat::Rgba8
     }
 }
 
-impl From<gl::symbols::Rgb8> for TextureFormat {
+impl From<gl::RGB8> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::Rgb8) -> Self {
+    fn from(_: gl::RGB8) -> Self {
         TextureFormat::Rgb8
     }
 }
 
-impl From<gl::symbols::Rg8> for TextureFormat {
+impl From<gl::RG8> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::Rg8) -> Self {
+    fn from(_: gl::RG8) -> Self {
         TextureFormat::Rg8
     }
 }
 
-impl From<gl::symbols::R8> for TextureFormat {
+impl From<gl::R8> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::R8) -> Self {
+    fn from(_: gl::R8) -> Self {
         TextureFormat::R8
     }
 }
 
-impl From<gl::symbols::Depth24Stencil8> for TextureFormat {
+impl From<gl::DEPTH24_STENCIL8> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::Depth24Stencil8) -> Self {
+    fn from(_: gl::DEPTH24_STENCIL8) -> Self {
         TextureFormat::Depth24Stencil8
     }
 }
 
-impl From<gl::symbols::R11fG11fB10f> for TextureFormat {
+impl From<gl::R11F_G11F_B10F> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::R11fG11fB10f) -> Self {
+    fn from(_: gl::R11F_G11F_B10F) -> Self {
         TextureFormat::R11fG11fB10f
     }
 }
 
-impl From<gl::symbols::Rg8ui> for TextureFormat {
+impl From<gl::RG8UI> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::Rg8ui) -> Self {
+    fn from(_: gl::RG8UI) -> Self {
         TextureFormat::Rg8ui
     }
 }
 
-impl From<gl::symbols::Rg32f> for TextureFormat {
+impl From<gl::RG32F> for TextureFormat {
     #[inline]
-    fn from(_: gl::symbols::Rg32f) -> Self {
+    fn from(_: gl::RG32F) -> Self {
         TextureFormat::Rg32f
     }
 }
@@ -252,31 +252,31 @@ where
             }
 
             if let Some(max_level) = update.max_level {
-                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_MAX_LEVEL, max_level as i32);
+                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_MAX_LEVEL, max_level);
             }
 
             if let Some(min_filter) = update.min_filter {
-                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_MIN_FILTER, min_filter);
+                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_MIN_FILTER, min_filter);
             }
 
             if let Some(mag_filter) = update.mag_filter {
-                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_MAG_FILTER, mag_filter);
+                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_MAG_FILTER, mag_filter);
             }
 
             if let Some(wrap) = update.wrap_s {
-                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_S, wrap);
+                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_WRAP_S, wrap);
             }
 
             if let Some(wrap) = update.wrap_t {
-                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_T, wrap);
+                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_WRAP_T, wrap);
             }
 
             if let Some(wrap) = update.wrap_r {
-                gl.tex_parameter_i(self.shape.into(), gl::TEXTURE_WRAP_R, wrap);
+                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_WRAP_R, wrap);
             }
 
             if let Some(max_anisotropy) = update.max_anisotropy {
-                gl.tex_parameter_f(self.shape.into(), gl::TEXTURE_MAX_ANISOTROPY, max_anisotropy);
+                gl.tex_parameterf(self.shape.into(), gl::TEXTURE_MAX_ANISOTROPY, max_anisotropy);
             }
 
             gl.unbind_texture(self.shape.into());
@@ -311,11 +311,9 @@ impl ShaderNameExt for gl::ShaderName {
         unsafe {
             gl.shader_source(*self, sources);
             gl.compile_shader(*self);
-            let status = gl.get_shaderiv(*self, gl::COMPILE_STATUS);
-            if status == gl::ShaderCompileStatus::Compiled.into() {
-                Ok(())
-            } else {
-                Err(gl.get_shader_info_log(*self))
+            match gl.get_shaderiv(*self, gl::COMPILE_STATUS) {
+                gl::CompileStatus::Uncompiled => Err(gl.get_shader_info_log(*self)),
+                gl::CompileStatus::Compiled => Ok(()),
             }
         }
     }
@@ -354,10 +352,9 @@ impl ProgramNameExt for gl::ProgramName {
         unsafe {
             gl.link_program(*self);
 
-            if gl.get_programiv(*self, gl::LINK_STATUS) == gl::UncheckedProgramLinkStatus::from(gl::LINKED) {
-                Ok(())
-            } else {
-                Err(gl.get_program_info_log(*self))
+            match gl.get_programiv(*self, gl::LINK_STATUS) {
+                gl::LinkStatus::Unlinked => Err(gl.get_program_info_log(*self)),
+                gl::LinkStatus::Linked => Ok(()),
             }
         }
     }

@@ -79,7 +79,7 @@ impl Renderer {
                 rendering::VS_POS_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
-                gl::FALSE,
+                false,
                 std::mem::size_of::<[f32; 3]>(),
                 0,
             );
