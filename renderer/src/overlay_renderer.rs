@@ -1,6 +1,7 @@
 use crate::rendering;
 use crate::resources::*;
 use gl_typed as gl;
+use std::convert::TryFrom;
 
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
@@ -48,7 +49,12 @@ impl Renderer {
             };
 
             gl.bind_vertex_array(resources.full_screen_vao);
-            gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 4, gl::UNSIGNED_INT, 0);
+            gl.draw_elements(
+                gl::TRIANGLES,
+                u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(),
+                gl::UNSIGNED_INT,
+                0,
+            );
             gl.unbind_vertex_array();
             gl.unuse_program();
             gl.depth_mask(gl::WriteMask::Enabled);

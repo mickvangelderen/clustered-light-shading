@@ -5,7 +5,8 @@ use crate::rendering;
 use cgmath::*;
 use gl_typed as gl;
 use std::collections::HashMap;
-use std::mem;
+use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -15,6 +16,13 @@ pub type MaterialIndex = u32;
 pub struct Texture {
     pub name: gl::TextureName,
     pub dimensions: [f32; 2],
+}
+
+pub struct MeshMeta {
+    pub element_count: u32,
+    pub element_offset: usize,
+    pub vertex_base: u32,
+    pub vertex_count: u32,
 }
 
 pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
@@ -27,10 +35,10 @@ pub struct Resources {
     pub textures: Vec<Texture>,
     pub path_to_texture_index: HashMap<PathBuf, TextureIndex>,
     pub color_to_texture_index: HashMap<[u8; 4], TextureIndex>,
-    pub vaos: Vec<gl::VertexArrayName>,
-    pub vbs: Vec<gl::BufferName>,
-    pub ebs: Vec<gl::BufferName>,
-    pub element_counts: Vec<usize>,
+    pub scene_vao: gl::VertexArrayName,
+    pub scene_vb: gl::BufferName,
+    pub scene_eb: gl::BufferName,
+    pub mesh_metas: Vec<MeshMeta>,
     pub key_indices: Vec<keyboard_model::UncheckedIndex>,
     pub point_lights: [PointLight; rendering::POINT_LIGHT_CAPACITY as usize],
 
@@ -297,110 +305,126 @@ impl Resources {
             }));
         }
 
-        let mut vaos = Vec::with_capacity(meshes.len());
-        let mut vbs = Vec::with_capacity(meshes.len());
-        let mut ebs = Vec::with_capacity(meshes.len());
-
-        let element_counts: Vec<usize> = meshes.iter().map(|mesh| mesh.triangles.len() * 3).collect();
-
         let key_indices: Vec<keyboard_model::UncheckedIndex> = meshes
             .iter()
             .map(|mesh| model_name_to_keyboard_index(&mesh.name))
             .collect();
 
-        unsafe {
-            for mesh in meshes.iter() {
-                let vao = gl.create_vertex_array();
-                let vb = gl.create_buffer();
-                let eb = gl.create_buffer();
+        #[repr(C)]
+        struct Vertex {
+            pub pos_in_obj: [f32; 3],
+            pub pos_in_tex: [f32; 2],
+            pub nor_in_obj: [f32; 3],
+            pub tan_in_obj: [f32; 3],
+        };
 
-                vaos.push(vao);
-                vbs.push(vb);
-                ebs.push(eb);
+        let mut vertex_data: Vec<Vertex> = Vec::new();
+        let mut element_data: Vec<[u32; 3]> = Vec::new();
+        let mut mesh_metas: Vec<MeshMeta> = Vec::new();
 
-                let pos_in_obj_size = mem::size_of_val(&mesh.pos_in_obj[..]);
-                let pos_in_tex_size = mem::size_of_val(&mesh.pos_in_tex[..]);
-                let nor_in_obj_size = mem::size_of_val(&mesh.nor_in_obj[..]);
-                let tan_in_obj_size = mem::size_of_val(&mesh.tan_in_obj[..]);
+        for mesh in meshes.iter() {
+            let vertex_count = mesh.pos_in_obj.len();
+            assert_eq!(vertex_count, mesh.pos_in_obj.len());
+            assert_eq!(vertex_count, mesh.pos_in_tex.len());
+            assert_eq!(vertex_count, mesh.nor_in_obj.len());
+            assert_eq!(vertex_count, mesh.tan_in_obj.len());
 
-                let pos_in_obj_offset = 0;
-                let pos_in_tex_offset = pos_in_obj_offset + pos_in_obj_size;
-                let nor_in_obj_offset = pos_in_tex_offset + pos_in_tex_size;
-                let tan_in_obj_offset = nor_in_obj_offset + nor_in_obj_size;
-                let total_size = tan_in_obj_offset + tan_in_obj_size;
+            // Get this BEFORE appending.
+            let vertex_base = u32::try_from(vertex_data.len()).unwrap();
 
-                gl.bind_vertex_array(vao);
-                gl.bind_buffer(gl::ARRAY_BUFFER, vb);
-                gl.named_buffer_reserve(vb, total_size, gl::STATIC_DRAW);
-                gl.named_buffer_sub_data(vb, pos_in_obj_offset, (&mesh.pos_in_obj[..]).slice_to_bytes());
-                gl.named_buffer_sub_data(vb, pos_in_tex_offset, (&mesh.pos_in_tex[..]).slice_to_bytes());
-                gl.named_buffer_sub_data(vb, nor_in_obj_offset, (&mesh.nor_in_obj[..]).slice_to_bytes());
-                gl.named_buffer_sub_data(vb, tan_in_obj_offset, (&mesh.tan_in_obj[..]).slice_to_bytes());
-
-                gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
-                // NOTE: Add this to have renderdoc show the BufferData calls.
-                // See https://github.com/baldurk/renderdoc/issues/1307.
-                // gl.buffer_reserve(
-                //     gl::ELEMENT_ARRAY_BUFFER,
-                //     std::mem::size_of_val(&mesh.triangles[..]),
-                //     gl::STATIC_DRAW,
-                // );
-                gl.named_buffer_data(
-                    eb,
-                    (&mesh.triangles[..]).slice_to_bytes(),
-                    gl::STATIC_DRAW,
-                );
-
-                // AOS layout.
-                gl.vertex_attrib_pointer(
-                    rendering::VS_POS_IN_OBJ_LOC,
-                    3,
-                    gl::FLOAT,
-                    false,
-                    mem::size_of::<[f32; 3]>(),
-                    pos_in_obj_offset,
-                );
-
-                gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
-
-                gl.vertex_attrib_pointer(
-                    rendering::VS_POS_IN_TEX_LOC,
-                    2,
-                    gl::FLOAT,
-                    false,
-                    mem::size_of::<[f32; 2]>(),
-                    pos_in_tex_offset,
-                );
-
-                gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
-
-                gl.vertex_attrib_pointer(
-                    rendering::VS_NOR_IN_OBJ_LOC,
-                    3,
-                    gl::FLOAT,
-                    false,
-                    mem::size_of::<[f32; 3]>(),
-                    nor_in_obj_offset,
-                );
-
-                gl.enable_vertex_attrib_array(rendering::VS_NOR_IN_OBJ_LOC);
-
-                gl.vertex_attrib_pointer(
-                    rendering::VS_TAN_IN_OBJ_LOC,
-                    3,
-                    gl::FLOAT,
-                    false,
-                    mem::size_of::<[f32; 3]>(),
-                    tan_in_obj_offset,
-                );
-
-                gl.enable_vertex_attrib_array(rendering::VS_TAN_IN_OBJ_LOC);
-
-                gl.unbind_vertex_array();
-                gl.unbind_buffer(gl::ARRAY_BUFFER);
-                gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
+            for i in 0..vertex_count {
+                vertex_data.push(Vertex {
+                    pos_in_obj: mesh.pos_in_obj[i],
+                    pos_in_tex: mesh.pos_in_tex[i],
+                    nor_in_obj: mesh.nor_in_obj[i],
+                    tan_in_obj: mesh.tan_in_obj[i],
+                });
             }
+
+            // Get this BEFORE appending.
+            let element_offset = std::mem::size_of_val(&element_data[..]);
+
+            element_data.extend(mesh.triangles.iter());
+
+            mesh_metas.push(MeshMeta {
+                element_count: (mesh.triangles.len() * 3).try_into().unwrap(),
+                element_offset,
+                vertex_base,
+                vertex_count: vertex_count.try_into().unwrap(),
+            });
         }
+
+        macro_rules! field_offset {
+            ($Struct:ty, $field:ident) => {
+                &(*(std::ptr::null::<$Struct>())).$field as *const _ as usize
+            };
+        }
+
+        let (scene_vao, scene_vb, scene_eb) = unsafe {
+            let vao = gl.create_vertex_array();
+            let vb = gl.create_buffer();
+            let eb = gl.create_buffer();
+
+            gl.bind_vertex_array(vao);
+            gl.bind_buffer(gl::ARRAY_BUFFER, vb);
+            gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
+
+            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
+            gl.named_buffer_data(eb, element_data.vec_as_bytes(), gl::STATIC_DRAW);
+
+            let stride = std::mem::size_of::<Vertex>();
+
+            // AOS layout.
+            gl.vertex_attrib_pointer(
+                rendering::VS_POS_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                false,
+                stride,
+                field_offset!(Vertex, pos_in_obj),
+            );
+
+            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
+
+            gl.vertex_attrib_pointer(
+                rendering::VS_POS_IN_TEX_LOC,
+                2,
+                gl::FLOAT,
+                false,
+                stride,
+                field_offset!(Vertex, pos_in_tex),
+            );
+
+            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
+
+            gl.vertex_attrib_pointer(
+                rendering::VS_NOR_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                false,
+                stride,
+                field_offset!(Vertex, nor_in_obj),
+            );
+
+            gl.enable_vertex_attrib_array(rendering::VS_NOR_IN_OBJ_LOC);
+
+            gl.vertex_attrib_pointer(
+                rendering::VS_TAN_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                false,
+                stride,
+                field_offset!(Vertex, tan_in_obj),
+            );
+
+            gl.enable_vertex_attrib_array(rendering::VS_TAN_IN_OBJ_LOC);
+
+            gl.unbind_vertex_array();
+            gl.unbind_buffer(gl::ARRAY_BUFFER);
+            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
+
+            (vao, vb, eb)
+        };
 
         let (full_screen_vao, full_screen_vb, full_screen_eb) = unsafe {
             let vao = gl.create_vertex_array();
@@ -434,10 +458,10 @@ impl Resources {
             textures,
             path_to_texture_index,
             color_to_texture_index,
-            vaos,
-            vbs,
-            ebs,
-            element_counts,
+            scene_vao,
+            scene_vb,
+            scene_eb,
+            mesh_metas,
             key_indices,
             full_screen_vao,
             full_screen_vb,

@@ -2,6 +2,7 @@ use crate::convert::*;
 use crate::rendering;
 use cgmath::*;
 use gl_typed as gl;
+use std::convert::TryFrom;
 
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
@@ -48,7 +49,12 @@ impl Renderer {
             );
 
             gl.bind_vertex_array(self.vertex_array_name);
-            gl.draw_elements(gl::LINES, params.indices.flatten().len(), gl::UNSIGNED_INT, 0);
+            gl.draw_elements(
+                gl::LINES,
+                u32::try_from(params.indices.flatten().len()).unwrap(),
+                gl::UNSIGNED_INT,
+                0,
+            );
             gl.unbind_vertex_array();
 
             gl.unuse_program();

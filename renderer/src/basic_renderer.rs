@@ -76,7 +76,9 @@ impl Renderer {
             // Cache texture binding.
             let mut bound_material = None;
 
-            for i in 0..resources.vaos.len() {
+            gl.bind_vertex_array(resources.scene_vao);
+
+            for (i, mesh_meta) in resources.mesh_metas.iter().enumerate() {
                 let maybe_material_index = resources.meshes[i].material_index;
                 if bound_material != maybe_material_index {
                     bound_material = maybe_material_index;
@@ -127,9 +129,13 @@ impl Renderer {
                     gl.uniform_1f(loc, highlight);
                 }
 
-                gl.bind_vertex_array(resources.vaos[i]);
-
-                gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
+                gl.draw_elements_base_vertex(
+                    gl::TRIANGLES,
+                    mesh_meta.element_count,
+                    gl::UNSIGNED_INT,
+                    mesh_meta.element_offset,
+                    mesh_meta.vertex_base,
+                );
             }
 
             if self.shadow_sampler_loc.is_some() {

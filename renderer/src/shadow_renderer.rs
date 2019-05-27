@@ -31,15 +31,22 @@ impl Renderer {
 
             gl.use_program(self.program.name);
 
-            for i in 0..resources.vaos.len() {
+            gl.bind_vertex_array(resources.scene_vao);
+
+            for (i, mesh_meta) in resources.mesh_metas.iter().enumerate() {
                 if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
                     let pos_from_obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
 
                     gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
                 }
 
-                gl.bind_vertex_array(resources.vaos[i]);
-                gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
+                gl.draw_elements_base_vertex(
+                    gl::TRIANGLES,
+                    mesh_meta.element_count,
+                    gl::UNSIGNED_INT,
+                    mesh_meta.element_offset,
+                    mesh_meta.vertex_base,
+                );
             }
 
             gl.unbind_vertex_array();

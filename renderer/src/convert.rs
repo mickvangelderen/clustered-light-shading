@@ -156,3 +156,14 @@ impl<T> SliceToBytes for [T] {
         }
     }
 }
+
+pub trait VecToBytes {
+    fn vec_as_bytes(&self) -> &[u8];
+}
+
+impl<T> VecToBytes for Vec<T> {
+    fn vec_as_bytes(&self) -> &[u8] {
+        (&self[..]).slice_to_bytes()
+    }
+}
+
