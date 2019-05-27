@@ -1402,14 +1402,16 @@ fn main() {
                     );
                 }
                 let lighting_buffer = light::LightingBuffer { point_lights };
-                gl.bind_buffer(gl::UNIFORM_BUFFER, view_dep_res.lighting_buffer_name);
-                gl.buffer_data(gl::UNIFORM_BUFFER, lighting_buffer.as_ref(), gl::STREAM_DRAW);
+                gl.named_buffer_data(
+                    view_dep_res.lighting_buffer_name,
+                    lighting_buffer.as_ref(),
+                    gl::STREAM_DRAW,
+                );
                 gl.bind_buffer_base(
                     gl::UNIFORM_BUFFER,
                     rendering::LIGHTING_BUFFER_BINDING,
                     view_dep_res.lighting_buffer_name,
                 );
-                gl.unbind_buffer(gl::UNIFORM_BUFFER);
             }
 
             basic_renderer.render(
