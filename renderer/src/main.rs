@@ -390,7 +390,7 @@ fn main() {
         time: 0.0,
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::SmoothCamera::new(
-            0.6,
+            0.8,
             camera::Camera {
                 properties: camera::CameraProperties {
                     positional_velocity: 2.0,
@@ -786,10 +786,10 @@ fn main() {
                                 match vk {
                                     VirtualKeyCode::C => {
                                         if keyboard_input.state == ElementState::Pressed && focus {
-                                            world.camera.target_smoothness = if world.camera.target_smoothness == 1.0 {
-                                                0.6
+                                            world.camera.target_smoothness = if world.camera.target_smoothness == 0.0 {
+                                                0.8
                                             } else {
-                                                1.0
+                                                0.0
                                             };
                                         }
                                     }
