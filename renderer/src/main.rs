@@ -15,6 +15,8 @@ mod convert;
 mod filters;
 pub mod frustrum;
 mod gl_ext;
+mod glutin_ext;
+mod keyboard;
 mod keyboard_model;
 mod light;
 mod line_renderer;
@@ -34,6 +36,8 @@ use cgmath::*;
 use convert::*;
 use gl_typed as gl;
 use glutin::GlContext;
+use glutin_ext::*;
+use keyboard::*;
 use notify::Watcher;
 use openvr as vr;
 use openvr::enums::Enum;
@@ -56,22 +60,10 @@ const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
 pub struct World {
     time: f32,
     clear_color: [f32; 3],
-    camera: camera::Camera,
-    smooth_camera: camera::Camera,
+    camera: camera::SmoothCamera,
     sun_pos: Vector3<f32>,
     sun_rot: Rad<f32>,
-    use_smooth_camera: bool,
     keyboard_model: keyboard_model::KeyboardModel,
-}
-
-impl World {
-    fn get_camera(&self) -> &camera::Camera {
-        if self.use_smooth_camera {
-            &self.smooth_camera
-        } else {
-            &self.camera
-        }
-    }
 }
 
 pub struct ViewIndependentResources {
@@ -397,29 +389,28 @@ fn main() {
     let mut world = World {
         time: 0.0,
         clear_color: [0.0, 0.0, 0.0],
-        camera: camera::Camera {
-            position: Vector3::new(0.0, 1.0, 1.5),
-            yaw: Rad(0.0),
-            pitch: Rad(0.0),
-            fovy: Deg(90.0).into(),
-            positional_velocity: 2.0,
-            angular_velocity: 0.4,
-            zoom_velocity: 1.0,
-        },
-        smooth_camera: camera::Camera {
-            position: Vector3::new(0.0, 1.0, 1.5),
-            yaw: Rad(0.0),
-            pitch: Rad(0.0),
-            fovy: Deg(90.0).into(),
-            positional_velocity: 2.0,
-            angular_velocity: 0.4,
-            zoom_velocity: 1.0,
-        },
+        camera: camera::SmoothCamera::new(
+            0.6,
+            camera::Camera {
+                properties: camera::CameraProperties {
+                    positional_velocity: 2.0,
+                    angular_velocity: 0.4,
+                    zoom_velocity: 1.0,
+                },
+                state: camera::CameraState {
+                    position: Vector3::new(0.0, 1.0, 1.5),
+                    yaw: Rad(0.0),
+                    pitch: Rad(0.0),
+                    fovy: Deg(90.0).into(),
+                },
+            },
+        ),
         sun_pos: Vector3::new(0.0, 0.0, 0.0),
         sun_rot: Deg(85.2).into(),
-        use_smooth_camera: true,
         keyboard_model: keyboard_model::KeyboardModel::new(),
     };
+
+    let mut keyboard_state = KeyboardState::default();
 
     let mut events_loop = glutin::EventsLoop::new();
 
@@ -654,15 +645,6 @@ fn main() {
     // --- VR ---
 
     let mut focus = false;
-    let mut input_forward = glutin::ElementState::Released;
-    let mut input_backward = glutin::ElementState::Released;
-    let mut input_left = glutin::ElementState::Released;
-    let mut input_right = glutin::ElementState::Released;
-    let mut input_up = glutin::ElementState::Released;
-    let mut input_down = glutin::ElementState::Released;
-    let mut input_sun_up = glutin::ElementState::Released;
-    let mut input_sun_down = glutin::ElementState::Released;
-
     let mut fps_average = filters::MovingAverageF32::new(DESIRED_FPS);
     let mut last_frame_start = std::time::Instant::now();
 
@@ -793,6 +775,8 @@ fn main() {
                     use glutin::DeviceEvent;
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
+                            keyboard_state.update(keyboard_input);
+
                             if let Some(vk) = keyboard_input.virtual_keycode {
                                 // This has to update regardless of focus.
                                 world.keyboard_model.process_event(vk, keyboard_input.state);
@@ -800,15 +784,13 @@ fn main() {
                                 // use glutin::ElementState;
                                 use glutin::VirtualKeyCode;
                                 match vk {
-                                    VirtualKeyCode::W => input_forward = keyboard_input.state,
-                                    VirtualKeyCode::S => input_backward = keyboard_input.state,
-                                    VirtualKeyCode::A => input_left = keyboard_input.state,
-                                    VirtualKeyCode::D => input_right = keyboard_input.state,
-                                    VirtualKeyCode::Q => input_up = keyboard_input.state,
-                                    VirtualKeyCode::Z => input_down = keyboard_input.state,
                                     VirtualKeyCode::C => {
                                         if keyboard_input.state == ElementState::Pressed && focus {
-                                            world.use_smooth_camera = !world.use_smooth_camera;
+                                            world.camera.target_smoothness = if world.camera.target_smoothness == 1.0 {
+                                                0.6
+                                            } else {
+                                                1.0
+                                            };
                                         }
                                     }
                                     VirtualKeyCode::Escape => {
@@ -816,8 +798,6 @@ fn main() {
                                             running = false;
                                         }
                                     }
-                                    VirtualKeyCode::Up => input_sun_up = keyboard_input.state,
-                                    VirtualKeyCode::Down => input_sun_down = keyboard_input.state,
                                     _ => (),
                                 }
                             }
@@ -850,57 +830,35 @@ fn main() {
 
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
-        world.camera.update(&camera::CameraUpdate {
-            delta_time,
-            delta_position: if focus {
-                Vector3 {
-                    x: match input_left {
-                        ElementState::Pressed => -1.0,
-                        ElementState::Released => 0.0,
-                    } + match input_right {
-                        ElementState::Pressed => 1.0,
-                        ElementState::Released => 0.0,
-                    },
-                    y: match input_up {
-                        ElementState::Pressed => 1.0,
-                        ElementState::Released => 0.0,
-                    } + match input_down {
-                        ElementState::Pressed => -1.0,
-                        ElementState::Released => 0.0,
-                    },
-                    z: match input_forward {
-                        ElementState::Pressed => -1.0,
-                        ElementState::Released => 0.0,
-                    } + match input_backward {
-                        ElementState::Pressed => 1.0,
-                        ElementState::Released => 0.0,
-                    },
-                }
-            } else {
-                Vector3::zero()
-            },
-            delta_yaw: Rad(-mouse_dx as f32),
-            delta_pitch: Rad(-mouse_dy as f32),
-            delta_scroll: mouse_dscroll as f32,
+        world.camera.update(&if focus {
+            camera::CameraUpdate {
+                delta_time,
+                delta_position: Vector3::new(
+                    keyboard_state.d.to_f32() - keyboard_state.a.to_f32(),
+                    keyboard_state.q.to_f32() - keyboard_state.z.to_f32(),
+                    keyboard_state.s.to_f32() - keyboard_state.w.to_f32(),
+                ),
+                delta_yaw: Rad(-mouse_dx as f32),
+                delta_pitch: Rad(-mouse_dy as f32),
+                delta_fovy: Rad(mouse_dscroll as f32),
+            }
+        } else {
+            camera::CameraUpdate {
+                delta_time,
+                delta_position: Vector3::zero(),
+                delta_yaw: Rad(0.0),
+                delta_pitch: Rad(0.0),
+                delta_fovy: Rad(0.0),
+            }
         });
-        world.smooth_camera.interpolate(&world.camera, 0.80);
 
         if vr_resources.is_some() {
             // Pitch makes me dizzy.
-            world.camera.pitch = Rad(0.0);
-            world.smooth_camera.pitch = Rad(0.0);
+            world.camera.target_state.pitch = Rad(0.0);
         }
 
         if focus {
-            world.sun_rot += Rad(0.5)
-                * (match input_sun_up {
-                    ElementState::Pressed => -1.0,
-                    ElementState::Released => 0.0,
-                } + match input_sun_down {
-                    ElementState::Pressed => 1.0,
-                    ElementState::Released => 0.0,
-                })
-                * delta_time;
+            world.sun_rot += Rad(0.5) * (keyboard_state.up.to_f32() - keyboard_state.down.to_f32()) * delta_time;
         }
 
         world.keyboard_model.simulate(delta_time);
@@ -934,8 +892,7 @@ fn main() {
         let pose_end_render_start_nanos = start_instant.elapsed().as_nanos() as u64;
 
         let pos_from_hmd_to_wld = {
-            // TODO: Rename camera functions. Something like from_pnt_to_chd?
-            let pos_from_bdy_to_wld = world.camera.pos_from_cam_to_wld().cast().unwrap();
+            let pos_from_bdy_to_wld = world.camera.pos_to_parent().cast().unwrap();
 
             match pos_from_hmd_to_bdy {
                 Some(pos_from_hmd_to_bdy) => pos_from_bdy_to_wld * pos_from_hmd_to_bdy,
@@ -1005,7 +962,7 @@ fn main() {
             let physical_size = win_size.to_physical(win_dpi);
             let frustrum = {
                 let z0 = -0.1;
-                let dy = -z0 * Rad::tan(Rad(Rad::from(world.get_camera().fovy).0 as f64) / 2.0);
+                let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.current_state.fovy).0 as f64) / 2.0);
                 let dx = dy * physical_size.width as f64 / physical_size.height as f64;
                 frustrum::Frustrum::<f64> {
                     x0: -dx,
@@ -1097,18 +1054,21 @@ fn main() {
                 let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
 
                 // NOTE: We must clamp as f32 because the value might actually overflow.
-                let x0 = Clamp::clamp(f32::floor(pos_in_cls.x - l.radius * cbb_sx), (0.0, cbb_cx as f32)) as usize;
+                let x0 =
+                    Clamp::clamp_range(f32::floor(pos_in_cls.x - l.radius * cbb_sx), (0.0, cbb_cx as f32)) as usize;
                 let x1 = f32::floor(pos_in_cls.x) as usize;
-                let x2 =
-                    Clamp::clamp(f32::floor(pos_in_cls.x + l.radius * cbb_sx) + 1.0, (0.0, cbb_cx as f32)) as usize;
-                let y0 = Clamp::clamp(f32::floor(pos_in_cls.y - l.radius * cbb_sy), (0.0, cbb_cy as f32)) as usize;
+                let x2 = Clamp::clamp_range(f32::floor(pos_in_cls.x + l.radius * cbb_sx) + 1.0, (0.0, cbb_cx as f32))
+                    as usize;
+                let y0 =
+                    Clamp::clamp_range(f32::floor(pos_in_cls.y - l.radius * cbb_sy), (0.0, cbb_cy as f32)) as usize;
                 let y1 = f32::floor(pos_in_cls.y) as usize;
-                let y2 =
-                    Clamp::clamp(f32::floor(pos_in_cls.y + l.radius * cbb_sy) + 1.0, (0.0, cbb_cy as f32)) as usize;
-                let z0 = Clamp::clamp(f32::floor(pos_in_cls.z - l.radius * cbb_sz), (0.0, cbb_cz as f32)) as usize;
+                let y2 = Clamp::clamp_range(f32::floor(pos_in_cls.y + l.radius * cbb_sy) + 1.0, (0.0, cbb_cy as f32))
+                    as usize;
+                let z0 =
+                    Clamp::clamp_range(f32::floor(pos_in_cls.z - l.radius * cbb_sz), (0.0, cbb_cz as f32)) as usize;
                 let z1 = f32::floor(pos_in_cls.z) as usize;
-                let z2 =
-                    Clamp::clamp(f32::floor(pos_in_cls.z + l.radius * cbb_sz) + 1.0, (0.0, cbb_cz as f32)) as usize;
+                let z2 = Clamp::clamp_range(f32::floor(pos_in_cls.z + l.radius * cbb_sz) + 1.0, (0.0, cbb_cz as f32))
+                    as usize;
 
                 // println!(
                 //     "lights[{}] pos_in_cls: {:?}, radius: {}, x: ({}, {}, {}), y: ({}, {}, {}), z: ({}, {}, {})",
@@ -1167,7 +1127,11 @@ fn main() {
                 let total_size = header_size + body_size;
                 gl.named_buffer_reserve(view_ind_res.cls_buffer_name, total_size, gl::STREAM_DRAW);
                 gl.named_buffer_sub_data(view_ind_res.cls_buffer_name, 0, cls_header.value_as_bytes());
-                gl.named_buffer_sub_data(view_ind_res.cls_buffer_name, header_size, (&clustering[..]).slice_to_bytes());
+                gl.named_buffer_sub_data(
+                    view_ind_res.cls_buffer_name,
+                    header_size,
+                    (&clustering[..]).slice_to_bytes(),
+                );
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     rendering::CLS_BUFFER_BINDING,
