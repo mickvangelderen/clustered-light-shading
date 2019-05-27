@@ -1242,10 +1242,10 @@ fn main() {
 
                 rendering::ViewData {
                     pos_from_wld_to_cam: pos_from_wld_to_cam.cast().unwrap(),
-                    pos_from_cam_to_wld: pos_from_wld_to_cam.cast().unwrap(),
+                    pos_from_cam_to_wld: pos_from_cam_to_wld.cast().unwrap(),
 
                     pos_from_cam_to_clp: pos_from_cam_to_clp.cast().unwrap(),
-                    pos_from_clp_to_cam: pos_from_cam_to_clp.cast().unwrap(),
+                    pos_from_clp_to_cam: pos_from_clp_to_cam.cast().unwrap(),
 
                     pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
                     pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
