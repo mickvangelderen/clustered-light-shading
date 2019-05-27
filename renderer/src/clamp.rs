@@ -1,5 +1,5 @@
 pub trait Clamp: Sized {
-    fn clamp(self, range: (Self, Self)) -> Self;
+    fn clamp_range(self, range: (Self, Self)) -> Self;
 }
 
 impl<T> Clamp for T
@@ -7,7 +7,7 @@ where
     T: PartialOrd,
     T: Copy,
 {
-    fn clamp(self, range: (Self, Self)) -> Self {
+    fn clamp_range(self, range: (Self, Self)) -> Self {
         let (min, max) = range;
         if self > max {
             max
