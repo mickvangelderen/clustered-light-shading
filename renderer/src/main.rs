@@ -160,6 +160,8 @@ impl ViewIndependentResources {
 }
 
 pub struct ViewDependentResources {
+    pub width: i32,
+    pub height: i32,
     // Main frame resources.
     pub framebuffer_name: gl::NonDefaultFramebufferName,
     pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA8>,
@@ -287,6 +289,8 @@ impl ViewDependentResources {
             let lighting_buffer_name = gl.create_buffer();
 
             ViewDependentResources {
+                width,
+                height,
                 framebuffer_name,
                 color_texture,
                 nor_in_cam_texture,
@@ -304,8 +308,10 @@ impl ViewDependentResources {
         }
     }
 
-    pub fn resize(&self, gl: &gl::Gl, width: i32, height: i32) {
+    pub fn resize(&mut self, gl: &gl::Gl, width: i32, height: i32) {
         unsafe {
+            self.width = width;
+            self.height = height;
             gl.named_renderbuffer_storage(self.ao_depth_renderbuffer_name, gl::DEPTH24_STENCIL8, width, height);
 
             let texture_update = TextureUpdate::new().data(width, height, None);
@@ -467,7 +473,6 @@ fn main() {
     let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
 
     let view_ind_res = ViewIndependentResources::new(&gl, SHADOW_W, SHADOW_H);
-    let view_dep_res = ViewDependentResources::new(&gl, width as i32, height as i32);
 
     let random_unit_sphere_surface_texture = Texture::new(&gl, gl::TEXTURE_2D, gl::RGB8);
     random_unit_sphere_surface_texture.update(
@@ -618,31 +623,28 @@ fn main() {
 
     let view_resources = rendering::ViewResources::new(&gl);
 
-    // === VR ===
-    let vr_resources = match vr::Context::new(vr::ApplicationType::Scene) {
-        Ok(context) => {
-            let dims = context.system().get_recommended_render_target_size();
-            println!("Recommended render target size: {:?}", dims);
-            let eye_left = ViewDependentResources::new(&gl, dims.width as i32, dims.height as i32);
-            let eye_right = ViewDependentResources::new(&gl, dims.width as i32, dims.height as i32);
-
-            Some(VrResources {
-                context,
-                dims,
-                eye_left,
-                eye_right,
-            })
-        }
-        Err(error) => {
+    let vr_context = vr::Context::new(vr::ApplicationType::Scene)
+        .map_err(|error| {
             eprintln!(
                 "Failed to acquire context: {:?}",
                 vr::InitError::from_unchecked(error).unwrap()
             );
-            None
-        }
-    };
+        })
+        .ok();
 
-    // --- VR ---
+    let mut view_dep_res: ArrayVec<[ViewDependentResources; 2]> = match &vr_context {
+        Some(context) => {
+            let dims = context.system().get_recommended_render_target_size();
+
+            ArrayVec::from(EYES)
+                .into_iter()
+                .map(|_| ViewDependentResources::new(&gl, dims.width as i32, dims.height as i32))
+                .collect()
+        }
+        None => ArrayVec::from([ViewDependentResources::new(&gl, width as i32, height as i32)])
+            .into_iter()
+            .collect(),
+    };
 
     let mut focus = false;
     let mut fps_average = filters::MovingAverageF32::new(DESIRED_FPS);
@@ -823,7 +825,11 @@ fn main() {
             let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
             println!("win_size: {:?}", win_size);
             println!("win_size: {:?}", glutin::dpi::PhysicalSize { width, height });
-            view_dep_res.resize(&gl, width as i32, height as i32);
+            if let Some(_) = &vr_context {
+                // VR display size is determined elsewhere.
+            } else {
+                view_dep_res[0].resize(&gl, width as i32, height as i32);
+            }
         }
 
         use glutin::ElementState;
@@ -852,7 +858,7 @@ fn main() {
             }
         });
 
-        if vr_resources.is_some() {
+        if vr_context.is_some() {
             // Pitch makes me dizzy.
             world.camera.target_state.pitch = Rad(0.0);
         }
@@ -869,16 +875,16 @@ fn main() {
 
         // Render the scene.
 
-        let pos_from_hmd_to_bdy: Option<Matrix4<f64>> = vr_resources.as_ref().map(|vr_resources| {
+        let pos_from_hmd_to_bdy: Option<Matrix4<f64>> = vr_context.as_ref().map(|vr_context| {
             // TODO: Is this the right place to put this?
-            while let Some(_event) = vr_resources.system().poll_next_event() {
+            while let Some(_event) = vr_context.system().poll_next_event() {
                 // println!("{:?}", &event);
             }
 
             let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
                 unsafe { mem::zeroed() };
 
-            vr_resources.compositor().wait_get_poses(&mut poses[..], None).unwrap();
+            vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
 
             const HMD_POSE_INDEX: usize = vr::sys::k_unTrackedDeviceIndex_Hmd as usize;
             let hmd_pose = poses[HMD_POSE_INDEX];
@@ -904,7 +910,7 @@ fn main() {
         let pos_from_wld_to_hmd = pos_from_hmd_to_wld.invert().unwrap();
 
         // Shadowing.
-        let sun_frustrum = frustrum::Frustrum {
+        let sun_frustrum = frustrum::Frustrum::<f64> {
             x0: -25.0,
             x1: 25.0,
             y0: -25.0,
@@ -913,7 +919,7 @@ fn main() {
             z1: -30.0,
         };
 
-        let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast().unwrap().line_mesh();
+        let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast::<f32>().unwrap().line_mesh();
 
         struct View {
             pos_from_wld_to_cam: Matrix4<f64>,
@@ -923,66 +929,70 @@ fn main() {
             pos_from_clp_to_cam: Matrix4<f64>,
         }
 
-        let views: ArrayVec<[View; 2]> = if let Some(ref vr_resources) = vr_resources {
-            EYES.into_iter()
-                .map(|&eye| {
-                    let frustrum = {
-                        // These are the tangents.
-                        let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
-                        let z0 = -0.1;
-                        let z1 = -100.0;
-                        frustrum::Frustrum::<f64> {
-                            x0: -z0 * l as f64,
-                            x1: -z0 * r as f64,
-                            y0: -z0 * b as f64,
-                            y1: -z0 * t as f64,
-                            z0,
-                            z1,
+        let views: ArrayVec<[View; 2]> = match &vr_context {
+            Some(vr_context) => {
+                ArrayVec::from(EYES)
+                    .into_iter()
+                    .map(|eye| {
+                        let frustrum = {
+                            // These are the tangents.
+                            let [l, r, b, t] = vr_context.system().get_projection_raw(eye);
+                            let z0 = -0.1;
+                            let z1 = -100.0;
+                            frustrum::Frustrum::<f64> {
+                                x0: -z0 * l as f64,
+                                x1: -z0 * r as f64,
+                                y0: -z0 * b as f64,
+                                y1: -z0 * t as f64,
+                                z0,
+                                z1,
+                            }
+                        };
+                        let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+
+                        let pos_from_cam_to_hmd: Matrix4<f64> =
+                            Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
+                                .cast()
+                                .unwrap();
+
+                        let pos_from_cam_to_wld = pos_from_hmd_to_wld * pos_from_cam_to_hmd;
+
+                        View {
+                            pos_from_wld_to_cam: pos_from_cam_to_wld.invert().unwrap(),
+                            pos_from_cam_to_wld,
+
+                            pos_from_cam_to_clp,
+                            pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
                         }
-                    };
-                    let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
-
-                    let pos_from_cam_to_hmd: Matrix4<f64> =
-                        Matrix4::from_hmd(vr_resources.context.system().get_eye_to_head_transform(eye))
-                            .cast()
-                            .unwrap();
-
-                    let pos_from_cam_to_wld = pos_from_hmd_to_wld * pos_from_cam_to_hmd;
-
-                    View {
-                        pos_from_wld_to_cam: pos_from_cam_to_wld.invert().unwrap(),
-                        pos_from_cam_to_wld,
-
-                        pos_from_cam_to_clp,
-                        pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
+                    })
+                    .collect()
+            }
+            None => {
+                let physical_size = win_size.to_physical(win_dpi);
+                let frustrum = {
+                    let z0 = -0.1;
+                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.current_state.fovy).0 as f64) / 2.0);
+                    let dx = dy * physical_size.width as f64 / physical_size.height as f64;
+                    frustrum::Frustrum::<f64> {
+                        x0: -dx,
+                        x1: dx,
+                        y0: -dy,
+                        y1: dy,
+                        z0,
+                        z1: -100.0,
                     }
-                })
-                .collect()
-        } else {
-            let physical_size = win_size.to_physical(win_dpi);
-            let frustrum = {
-                let z0 = -0.1;
-                let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.current_state.fovy).0 as f64) / 2.0);
-                let dx = dy * physical_size.width as f64 / physical_size.height as f64;
-                frustrum::Frustrum::<f64> {
-                    x0: -dx,
-                    x1: dx,
-                    y0: -dy,
-                    y1: dy,
-                    z0,
-                    z1: -100.0,
-                }
-            };
-            let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
-            let mut views = ArrayVec::new();
-            views.push(View {
-                pos_from_wld_to_cam: /* pos_from_hmd_to_cam = I */ pos_from_wld_to_hmd,
-                pos_from_cam_to_wld: /* pos_from_cam_to_hmd = I */ pos_from_hmd_to_wld,
+                };
+                let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                ArrayVec::from([View {
+                    pos_from_wld_to_cam: /* pos_from_hmd_to_cam = I */ pos_from_wld_to_hmd,
+                    pos_from_cam_to_wld: /* pos_from_cam_to_hmd = I */ pos_from_hmd_to_wld,
 
-                pos_from_cam_to_clp,
-                pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
-            });
-            views
+                    pos_from_cam_to_clp,
+                    pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
+                }])
+                .into_iter()
+                .collect()
+            }
         };
 
         let global_data = {
@@ -1222,139 +1232,9 @@ fn main() {
 
         let physical_size = win_size.to_physical(win_dpi);
 
-        if let Some(ref vr_resources) = vr_resources {
-            // === VR ===
-            let viewports = {
-                let w = physical_size.width as i32;
-                let h = physical_size.height as i32;
-                [(0, w / 2, 0, h), (w / 2, w, 0, h)]
-            };
-
-            for (i, &eye) in EYES.into_iter().enumerate() {
-                let viewport = viewports[i];
-                let view_data = view_datas[i];
-                view_resources.bind_index(&gl, i);
-
-                let view_dep_res = &vr_resources[eye];
-
-                unsafe {
-                    let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
-                        std::mem::uninitialized();
-                    for i in 0..rendering::POINT_LIGHT_CAPACITY as usize {
-                        point_lights[i] = light::PointLightBufferEntry::from_point_light(
-                            resources.point_lights[i],
-                            view_data.pos_from_wld_to_cam,
-                        );
-                    }
-                    let lighting_buffer = light::LightingBuffer { point_lights };
-                    gl.named_buffer_data(
-                        view_dep_res.lighting_buffer_name,
-                        lighting_buffer.as_ref(),
-                        gl::STREAM_DRAW,
-                    );
-                    gl.bind_buffer_base(
-                        gl::UNIFORM_BUFFER,
-                        rendering::LIGHTING_BUFFER_BINDING,
-                        view_dep_res.lighting_buffer_name,
-                    );
-                }
-
-                basic_renderer.render(
-                    &gl,
-                    &basic_renderer::Parameters {
-                        framebuffer: view_dep_res.framebuffer_name.into(),
-                        width: vr_resources.dims.width as i32,
-                        height: vr_resources.dims.height as i32,
-                        material_resources,
-                        shadow_texture_name: view_ind_res.shadow_texture.name(),
-                        shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                    },
-                    &world,
-                    &resources,
-                );
-
-                ao_renderer.render(
-                    &gl,
-                    &ao_renderer::Parameters {
-                        framebuffer: view_dep_res.ao_framebuffer_name.into(),
-                        width: vr_resources.dims.width as i32,
-                        height: vr_resources.dims.height as i32,
-                        color_texture_name: view_dep_res.color_texture.name(),
-                        depth_texture_name: view_dep_res.depth_texture.name(),
-                        nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
-                        random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                    },
-                    &world,
-                    &resources,
-                );
-
-                ao_filter.render(
-                    &gl,
-                    &ao_filter::Parameters {
-                        width: vr_resources.dims.width as i32,
-                        height: vr_resources.dims.height as i32,
-                        framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
-                        framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
-                        color: view_dep_res.ao_texture.name(),
-                        color_x: view_dep_res.ao_x_texture.name(),
-                        depth: view_dep_res.depth_texture.name(),
-                    },
-                    &resources,
-                );
-
-                post_renderer.render(
-                    &gl,
-                    &post_renderer::Parameters {
-                        framebuffer: view_dep_res.post_framebuffer_name.into(),
-                        width: vr_resources.dims.width as i32,
-                        height: vr_resources.dims.height as i32,
-                        color_texture_name: view_dep_res.color_texture.name(),
-                        depth_texture_name: view_dep_res.depth_texture.name(),
-                        nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
-                        ao_texture_name: view_dep_res.ao_texture.name(),
-                    },
-                    &world,
-                    &resources,
-                );
-
-                overlay_renderer.render(
-                    &gl,
-                    &overlay_renderer::Parameters {
-                        framebuffer: gl::FramebufferName::Default,
-                        x0: viewport.0,
-                        x1: viewport.1,
-                        y0: viewport.2,
-                        y1: viewport.3,
-                        color_texture_name: view_dep_res.post_color_texture.name(),
-                        default_colors: [0.0, 0.0, 0.0, 0.0],
-                        color_matrix: [
-                            [1.0, 0.0, 0.0, 0.0],
-                            [0.0, 1.0, 0.0, 0.0],
-                            [0.0, 0.0, 1.0, 0.0],
-                            [0.0, 0.0, 0.0, 1.0],
-                        ],
-                    },
-                    &resources,
-                );
-            }
-
-            for &eye in EYES.into_iter() {
-                // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
-                let mut texture_t = gen_texture_t(vr_resources[eye].post_color_texture.name());
-                vr_resources
-                    .compositor()
-                    .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
-                    .unwrap_or_else(|error| {
-                        panic!(
-                            "failed to submit texture: {:?}",
-                            vr::CompositorError::from_unchecked(error).unwrap()
-                        );
-                    });
-            }
-        // --- VR ---
-        } else {
-            let view_data = view_datas[0];
-            view_resources.bind_index(&gl, 0);
+        for (view_index, view_dep_res) in view_dep_res.iter().enumerate() {
+            let view_data = view_datas[view_index];
+            view_resources.bind_index(&gl, view_index);
 
             unsafe {
                 let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
@@ -1382,8 +1262,8 @@ fn main() {
                 &gl,
                 &basic_renderer::Parameters {
                     framebuffer: view_dep_res.framebuffer_name.into(),
-                    width: physical_size.width as i32,
-                    height: physical_size.height as i32,
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
                     material_resources,
                     shadow_texture_name: view_ind_res.shadow_texture.name(),
                     shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
@@ -1396,8 +1276,8 @@ fn main() {
                 &gl,
                 &line_renderer::Parameters {
                     framebuffer: view_dep_res.framebuffer_name.into(),
-                    width: physical_size.width as i32,
-                    height: physical_size.height as i32,
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
                     vertices: &sun_frustrum_vertices[..],
                     indices: &sun_frustrum_indices[..],
                     pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
@@ -1408,8 +1288,8 @@ fn main() {
                 &gl,
                 &ao_renderer::Parameters {
                     framebuffer: view_dep_res.ao_framebuffer_name.into(),
-                    width: physical_size.width as i32,
-                    height: physical_size.height as i32,
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
                     color_texture_name: view_dep_res.color_texture.name(),
                     depth_texture_name: view_dep_res.depth_texture.name(),
                     nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
@@ -1422,8 +1302,8 @@ fn main() {
             ao_filter.render(
                 &gl,
                 &ao_filter::Parameters {
-                    width: physical_size.width as i32,
-                    height: physical_size.height as i32,
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
                     framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
                     framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
                     color: view_dep_res.ao_texture.name(),
@@ -1436,9 +1316,14 @@ fn main() {
             post_renderer.render(
                 &gl,
                 &post_renderer::Parameters {
-                    framebuffer: gl::FramebufferName::Default,
-                    width: physical_size.width as i32,
-                    height: physical_size.height as i32,
+                    // FIXME: Hack, use two versions of view dependent parameters instead.
+                    framebuffer: if vr_context.is_some() {
+                        view_dep_res.post_framebuffer_name.into()
+                    } else {
+                        gl::FramebufferName::Default
+                    },
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
                     color_texture_name: view_dep_res.color_texture.name(),
                     depth_texture_name: view_dep_res.depth_texture.name(),
                     nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
@@ -1447,25 +1332,52 @@ fn main() {
                 &world,
                 &resources,
             );
+        }
 
-            // overlay_renderer.render(
-            //     &gl,
-            //     &overlay_renderer::Parameters {
-            //         framebuffer: None,
-            //         x0: 0,
-            //         x1: (physical_size.height / 3.0) as i32,
-            //         y0: 0,
-            //         y1: (physical_size.height / 3.0) as i32,
-            //         color_texture_name: view_ind_res.shadow_texture.name(),
-            //         default_colors: [0.0, 0.0, 0.0, 1.0],
-            //         color_matrix: [
-            //             [1.0, 0.0, 0.0, 0.0],
-            //             [1.0, 0.0, 0.0, 0.0],
-            //             [1.0, 0.0, 0.0, 0.0],
-            //             [0.0, 0.0, 0.0, 0.0],
-            //         ],
-            //     },
-            // );
+        if let Some(vr_context) = &vr_context {
+            let viewports = {
+                let w = physical_size.width as i32;
+                let h = physical_size.height as i32;
+                [(0, w / 2, 0, h), (w / 2, w, 0, h)]
+            };
+
+            for (view_index, &eye) in EYES.iter().enumerate() {
+                let view_dep_res = &view_dep_res[view_index];
+
+                // Render both eyes to the default framebuffer.
+                let viewport = viewports[view_index];
+                overlay_renderer.render(
+                    &gl,
+                    &overlay_renderer::Parameters {
+                        framebuffer: gl::FramebufferName::Default,
+                        x0: viewport.0,
+                        x1: viewport.1,
+                        y0: viewport.2,
+                        y1: viewport.3,
+                        color_texture_name: view_dep_res.post_color_texture.name(),
+                        default_colors: [0.0, 0.0, 0.0, 0.0],
+                        color_matrix: [
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0],
+                        ],
+                    },
+                    &resources,
+                );
+
+                // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
+                let mut texture_t = gen_texture_t(view_dep_res.post_color_texture.name());
+                vr_context
+                    .compositor()
+                    .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "failed to submit texture: {:?}",
+                            vr::CompositorError::from_unchecked(error).unwrap()
+                        );
+                    });
+            }
         }
 
         let render_end_nanos = start_instant.elapsed().as_nanos() as u64;
@@ -1502,47 +1414,6 @@ fn main() {
     drop(tx_log);
 
     timing_thread.join().unwrap();
-}
-
-struct VrResources {
-    context: vr::Context,
-    dims: vr::Dimensions,
-    eye_left: ViewDependentResources,
-    eye_right: ViewDependentResources,
-}
-
-impl VrResources {
-    #[inline]
-    fn system(&self) -> &vr::System {
-        &self.context.system()
-    }
-
-    #[inline]
-    fn compositor(&self) -> &vr::Compositor {
-        &self.context.compositor()
-    }
-}
-
-impl std::ops::Index<vr::Eye> for VrResources {
-    type Output = ViewDependentResources;
-
-    #[inline]
-    fn index(&self, eye: vr::Eye) -> &Self::Output {
-        match eye {
-            vr::Eye::Left => &self.eye_left,
-            vr::Eye::Right => &self.eye_right,
-        }
-    }
-}
-
-impl std::ops::IndexMut<vr::Eye> for VrResources {
-    #[inline]
-    fn index_mut(&mut self, eye: vr::Eye) -> &mut Self::Output {
-        match eye {
-            vr::Eye::Left => &mut self.eye_left,
-            vr::Eye::Right => &mut self.eye_right,
-        }
-    }
 }
 
 fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
