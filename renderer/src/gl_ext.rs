@@ -252,31 +252,31 @@ where
             }
 
             if let Some(max_level) = update.max_level {
-                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_MAX_LEVEL, max_level);
+                gl.texture_parameteri(self.name, gl::TEXTURE_MAX_LEVEL, max_level);
             }
 
             if let Some(min_filter) = update.min_filter {
-                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_MIN_FILTER, min_filter);
+                gl.texture_parameteri(self.name, gl::TEXTURE_MIN_FILTER, min_filter);
             }
 
             if let Some(mag_filter) = update.mag_filter {
-                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_MAG_FILTER, mag_filter);
+                gl.texture_parameteri(self.name, gl::TEXTURE_MAG_FILTER, mag_filter);
             }
 
             if let Some(wrap) = update.wrap_s {
-                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_WRAP_S, wrap);
+                gl.texture_parameteri(self.name, gl::TEXTURE_WRAP_S, wrap);
             }
 
             if let Some(wrap) = update.wrap_t {
-                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_WRAP_T, wrap);
+                gl.texture_parameteri(self.name, gl::TEXTURE_WRAP_T, wrap);
             }
 
             if let Some(wrap) = update.wrap_r {
-                gl.tex_parameteri(self.shape.into(), gl::TEXTURE_WRAP_R, wrap);
+                gl.texture_parameteri(self.name, gl::TEXTURE_WRAP_R, wrap);
             }
 
             if let Some(max_anisotropy) = update.max_anisotropy {
-                gl.tex_parameterf(self.shape.into(), gl::TEXTURE_MAX_ANISOTROPY, max_anisotropy);
+                gl.texture_parameterf(self.name, gl::TEXTURE_MAX_ANISOTROPY, max_anisotropy);
             }
 
             gl.unbind_texture(self.shape.into());

@@ -1165,16 +1165,14 @@ fn main() {
                 let header_size = std::mem::size_of::<light::CLSBufferHeader>();
                 let body_size = std::mem::size_of_val(&clustering[..]);
                 let total_size = header_size + body_size;
-                gl.bind_buffer(gl::SHADER_STORAGE_BUFFER, view_ind_res.cls_buffer_name);
-                gl.buffer_reserve(gl::SHADER_STORAGE_BUFFER, total_size, gl::STREAM_DRAW);
-                gl.buffer_sub_data(gl::SHADER_STORAGE_BUFFER, 0, &[cls_header]);
-                gl.buffer_sub_data(gl::SHADER_STORAGE_BUFFER, header_size, &clustering[..]);
+                gl.named_buffer_reserve(view_ind_res.cls_buffer_name, total_size, gl::STREAM_DRAW);
+                gl.named_buffer_sub_data(view_ind_res.cls_buffer_name, 0, cls_header.value_as_bytes());
+                gl.named_buffer_sub_data(view_ind_res.cls_buffer_name, header_size, (&clustering[..]).slice_to_bytes());
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     rendering::CLS_BUFFER_BINDING,
                     view_ind_res.cls_buffer_name,
                 );
-                gl.unbind_buffer(gl::SHADER_STORAGE_BUFFER);
             }
 
             rendering::GlobalData {
@@ -1285,14 +1283,16 @@ fn main() {
                         );
                     }
                     let lighting_buffer = light::LightingBuffer { point_lights };
-                    gl.bind_buffer(gl::UNIFORM_BUFFER, view_dep_res.lighting_buffer_name);
-                    gl.buffer_data(gl::UNIFORM_BUFFER, lighting_buffer.as_ref(), gl::STREAM_DRAW);
+                    gl.named_buffer_data(
+                        view_dep_res.lighting_buffer_name,
+                        lighting_buffer.as_ref(),
+                        gl::STREAM_DRAW,
+                    );
                     gl.bind_buffer_base(
                         gl::UNIFORM_BUFFER,
                         rendering::LIGHTING_BUFFER_BINDING,
                         view_dep_res.lighting_buffer_name,
                     );
-                    gl.unbind_buffer(gl::UNIFORM_BUFFER);
                 }
 
                 basic_renderer.render(

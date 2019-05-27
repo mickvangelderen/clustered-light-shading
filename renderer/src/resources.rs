@@ -76,8 +76,8 @@ fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
             img.as_ptr() as *const std::os::raw::c_void,
         );
         gl.generate_mipmap(gl::TEXTURE_2D);
-        gl.tex_parameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-        gl.tex_parameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
         Texture {
             name,
@@ -331,11 +331,11 @@ impl Resources {
 
                 gl.bind_vertex_array(vao);
                 gl.bind_buffer(gl::ARRAY_BUFFER, vb);
-                gl.buffer_reserve(gl::ARRAY_BUFFER, total_size, gl::STATIC_DRAW);
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, pos_in_obj_offset, (&mesh.pos_in_obj[..]).flatten());
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, pos_in_tex_offset, (&mesh.pos_in_tex[..]).flatten());
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, nor_in_obj_offset, (&mesh.nor_in_obj[..]).flatten());
-                gl.buffer_sub_data(gl::ARRAY_BUFFER, tan_in_obj_offset, (&mesh.tan_in_obj[..]).flatten());
+                gl.named_buffer_reserve(vb, total_size, gl::STATIC_DRAW);
+                gl.named_buffer_sub_data(vb, pos_in_obj_offset, (&mesh.pos_in_obj[..]).slice_to_bytes());
+                gl.named_buffer_sub_data(vb, pos_in_tex_offset, (&mesh.pos_in_tex[..]).slice_to_bytes());
+                gl.named_buffer_sub_data(vb, nor_in_obj_offset, (&mesh.nor_in_obj[..]).slice_to_bytes());
+                gl.named_buffer_sub_data(vb, tan_in_obj_offset, (&mesh.tan_in_obj[..]).slice_to_bytes());
 
                 gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
                 // NOTE: Add this to have renderdoc show the BufferData calls.
@@ -345,9 +345,9 @@ impl Resources {
                 //     std::mem::size_of_val(&mesh.triangles[..]),
                 //     gl::STATIC_DRAW,
                 // );
-                gl.buffer_data(
-                    gl::ELEMENT_ARRAY_BUFFER,
-                    (&mesh.triangles[..]).flatten(),
+                gl.named_buffer_data(
+                    eb,
+                    (&mesh.triangles[..]).slice_to_bytes(),
                     gl::STATIC_DRAW,
                 );
 

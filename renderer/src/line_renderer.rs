@@ -74,7 +74,7 @@ impl Renderer {
 
             gl.bind_vertex_array(vertex_array_name);
             gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
-            gl.buffer_reserve(gl::ARRAY_BUFFER, 4, gl::STREAM_DRAW);
+            gl.named_buffer_reserve(vertex_buffer_name, 4, gl::STREAM_DRAW);
             gl.vertex_attrib_pointer(
                 rendering::VS_POS_IN_OBJ_LOC,
                 3,
@@ -85,7 +85,7 @@ impl Renderer {
             );
             gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
             gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
-            gl.buffer_reserve(gl::ELEMENT_ARRAY_BUFFER, 4, gl::STATIC_DRAW);
+            gl.named_buffer_reserve(element_buffer_name, 4, gl::STATIC_DRAW);
             gl.unbind_vertex_array();
             gl.unbind_buffer(gl::ARRAY_BUFFER);
             gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
