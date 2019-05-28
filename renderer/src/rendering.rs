@@ -87,9 +87,6 @@ pub struct GlobalData {
     pub light_pos_from_wld_to_clp: Matrix4<f32>,
     pub light_pos_from_clp_to_wld: Matrix4<f32>,
 
-    pub pos_from_wld_to_cls: Matrix4<f32>,
-    pub pos_from_cls_to_wld: Matrix4<f32>,
-
     pub time: f32,
     pub _pad0: [f32; 3],
 }
@@ -104,9 +101,6 @@ layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
 
     mat4 light_pos_from_wld_to_clp;
     mat4 light_pos_from_clp_to_wld;
-
-    mat4 pos_from_wld_to_cls;
-    mat4 pos_from_cls_to_wld;
 
     float time;
     vec3 _global_data_pad0;
@@ -259,6 +253,58 @@ impl MaterialResources {
     }
 }
 
+#[derive(Debug)]
+#[repr(C)]
+pub struct CLSBufferHeader {
+    pub cluster_dims: Vector4<u32>,
+    pub pos_from_wld_to_cls: Matrix4<f32>,
+    pub pos_from_cls_to_wld: Matrix4<f32>,
+}
+
+pub const CLS_BUFFER_DECLARATION: &'static str = r"
+layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
+    uvec4 cluster_dims;
+    mat4 pos_from_wld_to_cls;
+    mat4 pos_from_cls_to_wld;
+    uint clusters[];
+};
+";
+
+#[derive(Debug, Copy, Clone)]
+pub struct CLSResources {
+    buffer_name: gl::BufferName,
+}
+
+impl CLSResources {
+    #[inline]
+    pub fn new(gl: &gl::Gl) -> Self {
+        unsafe {
+            CLSResources {
+                buffer_name: gl.create_buffer(),
+            }
+        }
+    }
+
+    #[inline]
+    pub fn bind(&self, gl: &gl::Gl) {
+        unsafe {
+            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLS_BUFFER_BINDING, self.buffer_name);
+        }
+    }
+
+    #[inline]
+    pub fn write(&self, gl: &gl::Gl, header: &CLSBufferHeader, body: &Vec<[u32; 16]>) {
+        unsafe {
+            let header_bytes = header.value_as_bytes();
+            let body_bytes = body.vec_as_bytes();
+            let total_size = header_bytes.len() + body_bytes.len();
+            gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
+            gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
+            gl.named_buffer_sub_data(self.buffer_name, header_bytes.len(), body_bytes);
+        }
+    }
+}
+
 pub struct VSFSProgram {
     pub name: gl::ProgramName,
     vertex_shader_name: gl::ShaderName,
@@ -283,6 +329,7 @@ impl VSFSProgram {
                         rendering::COMMON_DECLARATION.as_bytes(),
                         rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
                         rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                        rendering::CLS_BUFFER_DECLARATION.as_bytes(),
                         "#line 1 1\n".as_bytes(),
                         bytes.as_ref(),
                     ],
@@ -305,6 +352,7 @@ impl VSFSProgram {
                         rendering::COMMON_DECLARATION.as_bytes(),
                         rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
                         rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                        rendering::CLS_BUFFER_DECLARATION.as_bytes(),
                         rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
                         "#line 1 1\n".as_bytes(),
                         bytes.as_ref(),

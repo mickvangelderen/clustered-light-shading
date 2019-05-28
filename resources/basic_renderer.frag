@@ -29,11 +29,6 @@ layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
   PointLight point_lights[POINT_LIGHT_CAPACITY];
 };
 
-layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
-  uvec4 cluster_dims;
-  uint clusters[];
-};
-
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
@@ -163,10 +158,10 @@ void main() {
   // frag_color = vec4(vec3(fs_idx_in_cls), 1.0);
 
   // CLUSTER INDICES X, Y, Z mod 2
-  // frag_color =
-  //     vec4(vec3(float((fs_idx_in_cls.x & 1)), float((fs_idx_in_cls.y & 1)),
-  //               float((fs_idx_in_cls.z & 1))),
-  //          1.0);
+  frag_color =
+      vec4(vec3(float((fs_idx_in_cls.x & 1)), float((fs_idx_in_cls.y & 1)),
+                float((fs_idx_in_cls.z & 1))),
+           1.0);
 
   // CLUSTER INDICES X + Y + Z mod 2
   // frag_color = vec4(

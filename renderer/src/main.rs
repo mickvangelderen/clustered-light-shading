@@ -41,16 +41,14 @@ use keyboard::*;
 use notify::Watcher;
 use openvr as vr;
 use openvr::enums::Enum;
-use renderer::log;
 use std::mem;
 use std::os::raw::c_void;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::thread;
+use std::time;
 
-const DESIRED_UPS: f32 = 90.0;
-const DESIRED_FPS: f32 = 90.0;
+const DESIRED_UPS: f64 = 90.0;
 
 const SHADOW_W: i32 = 1024;
 const SHADOW_H: i32 = 1024;
@@ -58,7 +56,7 @@ const SHADOW_H: i32 = 1024;
 const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
 
 pub struct World {
-    time: f32,
+    tick: u64,
     clear_color: [f32; 3],
     camera: camera::SmoothCamera,
     sun_pos: Vector3<f32>,
@@ -75,7 +73,7 @@ pub struct ViewIndependentResources {
     pub shadow_2_framebuffer_name: gl::NonDefaultFramebufferName,
     pub shadow_2_texture: Texture<gl::TEXTURE_2D, gl::RG32F>,
     // Storage buffers.
-    pub cls_buffer_name: gl::BufferName,
+    pub cls_resources: rendering::CLSResources,
 }
 
 impl ViewIndependentResources {
@@ -143,17 +141,13 @@ impl ViewIndependentResources {
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
-            // Storage buffers,
-
-            let cls_buffer_name = gl.create_buffer();
-
             ViewIndependentResources {
                 shadow_framebuffer_name,
                 shadow_texture,
                 shadow_depth_renderbuffer_name,
                 shadow_2_framebuffer_name,
                 shadow_2_texture,
-                cls_buffer_name,
+                cls_resources: rendering::CLSResources::new(gl),
             }
         }
     }
@@ -179,6 +173,69 @@ pub struct ViewDependentResources {
     pub post_depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     // Uniform buffers.
     pub lighting_buffer_name: gl::BufferName,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct Span<T> {
+    pub start: T,
+    pub end: T,
+}
+
+impl<T> Span<T>
+where
+    T: Copy + std::ops::Sub,
+{
+    fn delta(&self) -> <T as std::ops::Sub>::Output {
+        self.end - self.start
+    }
+}
+
+#[derive(Debug)]
+pub struct Timings {
+    pub accumulate_file_updates: Span<time::Instant>,
+    pub execute_file_updates: Span<time::Instant>,
+    pub wait_for_pose: Span<time::Instant>,
+    pub accumulate_window_updates: Span<time::Instant>,
+    pub accumulate_vr_updates: Span<time::Instant>,
+    pub simulate: Span<time::Instant>,
+    pub prepare_render_data: Span<time::Instant>,
+    pub render: Span<time::Instant>,
+    pub swap_buffers: Span<time::Instant>,
+}
+
+impl Timings {
+    fn print_deltas(&self) {
+        println!(
+            "accumulate_file_updates   {:4>}μs",
+            self.accumulate_file_updates.delta().as_micros()
+        );
+        println!(
+            "execute_file_updates      {:4>}μs",
+            self.execute_file_updates.delta().as_micros()
+        );
+        println!(
+            "wait_for_pose             {:4>}μs",
+            self.wait_for_pose.delta().as_micros()
+        );
+        println!(
+            "accumulate_window_updates {:4>}μs",
+            self.accumulate_window_updates.delta().as_micros()
+        );
+        println!(
+            "accumulate_vr_updates     {:4>}μs",
+            self.accumulate_vr_updates.delta().as_micros()
+        );
+        println!("simulate                  {:4>}μs", self.simulate.delta().as_micros());
+        println!(
+            "prepare_render_data       {:4>}μs",
+            self.prepare_render_data.delta().as_micros()
+        );
+        println!("render                    {:4>}μs", self.render.delta().as_micros());
+        println!(
+            "swap_buffers              {:4>}μs",
+            self.swap_buffers.delta().as_micros()
+        );
+    }
 }
 
 impl ViewDependentResources {
@@ -346,7 +403,6 @@ const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
-    let log_dir: PathBuf = [current_dir.as_ref(), Path::new("logs")].into_iter().collect();
     let configuration_path = resource_dir.join(configuration::FILE_PATH);
     let shadow_renderer_vs_path = resource_dir.join("shadow_renderer.vert");
     let shadow_renderer_fs_path = resource_dir.join("shadow_renderer.frag");
@@ -365,27 +421,6 @@ fn main() {
     let line_renderer_vs_path = resource_dir.join("line_renderer.vert");
     let line_renderer_fs_path = resource_dir.join("line_renderer.frag");
 
-    let start_instant = std::time::Instant::now();
-
-    let (tx_log, rx_log) = mpsc::channel::<log::Entry>();
-
-    let timing_thread = thread::Builder::new()
-        .name("log".to_string())
-        .spawn(move || {
-            use std::fs;
-            use std::io;
-            use std::io::Write;
-
-            let mut file = io::BufWriter::new(fs::File::create(log_dir.join("log.bin")).unwrap());
-
-            for entry in rx_log.iter() {
-                file.write_all(&entry.into_ne_bytes()).unwrap();
-            }
-
-            file.flush().unwrap();
-        })
-        .unwrap();
-
     let (tx_fs, rx_fs) = mpsc::channel();
 
     let mut watcher = notify::raw_watcher(tx_fs).unwrap();
@@ -395,7 +430,7 @@ fn main() {
     let mut configuration: configuration::Root = Default::default();
 
     let mut world = World {
-        time: 0.0,
+        tick: 0,
         clear_color: [0.0, 0.0, 0.0],
         camera: camera::SmoothCamera::new(
             configuration.main_camera.maximum_smoothness,
@@ -647,11 +682,21 @@ fn main() {
     };
 
     let mut focus = false;
-    let mut fps_average = filters::MovingAverageF32::new(DESIRED_FPS);
-    let mut last_frame_start = std::time::Instant::now();
+    let mut fps_average = filters::MovingAverageF32::new(0.0);
+    let mut last_frame_start = time::Instant::now();
 
     let mut running = true;
     while running {
+        macro_rules! timing_transition {
+            ($timings: ident, $old: ident, $new: ident) => {
+                $timings.$old.end = time::Instant::now();
+                $timings.$new.start = $timings.$old.end;
+            };
+        }
+
+        let mut timings: Timings = unsafe { std::mem::zeroed() };
+
+        timings.accumulate_file_updates.start = time::Instant::now();
         // File watch events.
         {
             let mut configuration_update = false;
@@ -724,6 +769,8 @@ fn main() {
                 }
             }
 
+            timing_transition!(timings, accumulate_file_updates, execute_file_updates);
+
             if configuration_update {
                 match std::fs::read_to_string(&configuration_path) {
                     Ok(contents) => match toml::from_str(&contents) {
@@ -754,7 +801,30 @@ fn main() {
             line_renderer.update(&gl, &line_renderer_update);
         }
 
-        let simulation_start_nanos = start_instant.elapsed().as_nanos() as u64;
+        timing_transition!(timings, execute_file_updates, wait_for_pose);
+
+        // NOTE: OpenVR will block upon querying the pose for as long as
+        // possible but no longer than it takes to submit the new frame. This is
+        // done to render the most up-to-date application state as possible.
+
+        let pos_from_hmd_to_bdy: Matrix4<f64> = match &vr_context {
+            Some(vr_context) => {
+                let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
+                    unsafe { mem::zeroed() };
+
+                vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
+
+                let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
+                if hmd_pose.bPoseIsValid {
+                    Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap()
+                } else {
+                    panic!("Pose is not valid!");
+                }
+            }
+            None => Matrix4::identity(),
+        };
+
+        timing_transition!(timings, wait_for_pose, accumulate_window_updates);
 
         let mut mouse_dx = 0.0;
         let mut mouse_dy = 0.0;
@@ -794,12 +864,12 @@ fn main() {
                                 use glutin::VirtualKeyCode;
                                 match vk {
                                     VirtualKeyCode::C => {
-                                        if keyboard_input.state == ElementState::Pressed && focus {
+                                        if keyboard_input.state.is_pressed() && focus {
                                             world.camera.toggle_smoothness();
                                         }
                                     }
                                     VirtualKeyCode::Escape => {
-                                        if keyboard_input.state == ElementState::Pressed && focus {
+                                        if keyboard_input.state.is_pressed() && focus {
                                             running = false;
                                         }
                                     }
@@ -824,41 +894,39 @@ fn main() {
             }
         });
 
+        timing_transition!(timings, accumulate_window_updates, accumulate_vr_updates);
+
+        if let Some(vr_context) = &vr_context {
+            while let Some(_event) = vr_context.system().poll_next_event() {
+                // TODO: Handle vr events.
+            }
+        }
+
+        timing_transition!(timings, accumulate_vr_updates, simulate);
+
         if should_resize {
             let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
-            println!("win_size: {:?}", win_size);
-            println!("win_size: {:?}", glutin::dpi::PhysicalSize { width, height });
-            if let Some(_) = &vr_context {
-                // VR display size is determined elsewhere.
-            } else {
+            if vr_context.is_none() {
                 view_dep_res[0].resize(&gl, width as i32, height as i32);
             }
         }
 
-        use glutin::ElementState;
-
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
-        world.camera.update(&if focus {
-            camera::CameraUpdate {
-                delta_time,
-                delta_position: Vector3::new(
+        world.camera.update(&camera::CameraUpdate {
+            delta_time,
+            delta_position: if focus {
+                Vector3::new(
                     keyboard_state.d.to_f32() - keyboard_state.a.to_f32(),
                     keyboard_state.q.to_f32() - keyboard_state.z.to_f32(),
                     keyboard_state.s.to_f32() - keyboard_state.w.to_f32(),
-                ),
-                delta_yaw: Rad(-mouse_dx as f32),
-                delta_pitch: Rad(-mouse_dy as f32),
-                delta_fovy: Rad(mouse_dscroll as f32),
-            }
-        } else {
-            camera::CameraUpdate {
-                delta_time,
-                delta_position: Vector3::zero(),
-                delta_yaw: Rad(0.0),
-                delta_pitch: Rad(0.0),
-                delta_fovy: Rad(0.0),
-            }
+                )
+            } else {
+                Vector3::zero()
+            },
+            delta_yaw: Rad(-mouse_dx as f32),
+            delta_pitch: Rad(-mouse_dy as f32),
+            delta_fovy: Rad(mouse_dscroll as f32),
         });
 
         if vr_context.is_some() {
@@ -872,47 +940,31 @@ fn main() {
 
         world.keyboard_model.simulate(delta_time);
 
-        world.time += delta_time;
+        world.tick += 1;
 
-        let simulation_end_pose_start_nanos = start_instant.elapsed().as_nanos() as u64;
+        timing_transition!(timings, simulate, prepare_render_data);
 
-        // Render the scene.
+        // Space abbreviations:
+        //  - world (wld)
+        //  - camera body (bdy)
+        //  - head (hmd)
+        //  - clustered light shading (cls)
+        //  - camera (cam)
+        //  - clip (clp)
+        //
+        // Space relations:
+        //  - wld --[camera position and orientation]--> bdy
+        //  - bdy --[VR pose]--> hmd
+        //  - hmd --[VR head to eye]--> cam
+        //  - hmd --[clustered light shading dimensions]--> cls
+        //  - cam --[projection]--> clp
 
-        let pos_from_hmd_to_bdy: Option<Matrix4<f64>> = vr_context.as_ref().map(|vr_context| {
-            // TODO: Is this the right place to put this?
-            while let Some(_event) = vr_context.system().poll_next_event() {
-                // println!("{:?}", &event);
-            }
-
-            let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
-                unsafe { mem::zeroed() };
-
-            vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
-
-            const HMD_POSE_INDEX: usize = vr::sys::k_unTrackedDeviceIndex_Hmd as usize;
-            let hmd_pose = poses[HMD_POSE_INDEX];
-            if hmd_pose.bPoseIsValid {
-                Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap()
-            } else {
-                panic!("Pose is not valid!");
-            }
-        });
-
-        let pose_end_render_start_nanos = start_instant.elapsed().as_nanos() as u64;
-
-        let pos_from_hmd_to_wld = {
+        let pos_from_hmd_to_wld: Matrix4<f64> = {
             let pos_from_bdy_to_wld = world.camera.pos_to_parent().cast().unwrap();
-
-            match pos_from_hmd_to_bdy {
-                Some(pos_from_hmd_to_bdy) => pos_from_bdy_to_wld * pos_from_hmd_to_bdy,
-                None => {
-                    pos_from_bdy_to_wld /* pos_from_hmd_to_bdy = I */
-                }
-            }
+            pos_from_bdy_to_wld * pos_from_hmd_to_bdy
         };
         let pos_from_wld_to_hmd = pos_from_hmd_to_wld.invert().unwrap();
 
-        // Shadowing.
         let sun_frustrum = frustrum::Frustrum::<f64> {
             x0: -25.0,
             x1: 25.0,
@@ -925,11 +977,12 @@ fn main() {
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast::<f32>().unwrap().line_mesh();
 
         struct View {
-            pos_from_wld_to_cam: Matrix4<f64>,
-            pos_from_cam_to_wld: Matrix4<f64>,
+            pos_from_cam_to_hmd: Matrix4<f64>,
 
             pos_from_cam_to_clp: Matrix4<f64>,
             pos_from_clp_to_cam: Matrix4<f64>,
+
+            pos_from_clp_to_hmd: Matrix4<f64>,
         }
 
         let views: ArrayVec<[View; 2]> = match &vr_context {
@@ -952,26 +1005,27 @@ fn main() {
                             }
                         };
                         let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                        let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
 
                         let pos_from_cam_to_hmd: Matrix4<f64> =
                             Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
                                 .cast()
                                 .unwrap();
 
-                        let pos_from_cam_to_wld = pos_from_hmd_to_wld * pos_from_cam_to_hmd;
-
                         View {
-                            pos_from_wld_to_cam: pos_from_cam_to_wld.invert().unwrap(),
-                            pos_from_cam_to_wld,
+                            pos_from_cam_to_hmd,
 
                             pos_from_cam_to_clp,
-                            pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
+                            pos_from_clp_to_cam,
+
+                            pos_from_clp_to_hmd: pos_from_cam_to_hmd * pos_from_cam_to_clp.invert().unwrap(),
                         }
                     })
                     .collect()
             }
             None => {
                 let physical_size = win_size.to_physical(win_dpi);
+
                 let frustrum = {
                     let z0 = -0.1;
                     let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.current_state.fovy).0 as f64) / 2.0);
@@ -985,13 +1039,17 @@ fn main() {
                         z1: -100.0,
                     }
                 };
+
                 let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+
                 ArrayVec::from([View {
-                    pos_from_wld_to_cam: /* pos_from_hmd_to_cam = I */ pos_from_wld_to_hmd,
-                    pos_from_cam_to_wld: /* pos_from_cam_to_hmd = I */ pos_from_hmd_to_wld,
+                    pos_from_cam_to_hmd: Matrix4::identity(),
 
                     pos_from_cam_to_clp,
-                    pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
+                    pos_from_clp_to_cam,
+
+                    pos_from_clp_to_hmd: pos_from_clp_to_cam,
                 }])
                 .into_iter()
                 .collect()
@@ -999,20 +1057,38 @@ fn main() {
         };
 
         let global_data = {
-            let pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
+            let light_pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
 
-            let rot_from_wld_to_cam = Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
+            let light_rot_from_wld_to_cam =
+                Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
 
-            let pos_from_wld_to_cam = Matrix4::from(rot_from_wld_to_cam) * Matrix4::from_translation(-world.sun_pos);
-            let pos_from_cam_to_wld =
-                Matrix4::from_translation(world.sun_pos) * Matrix4::from(rot_from_wld_to_cam.invert());
+            let light_pos_from_wld_to_cam =
+                Matrix4::from(light_rot_from_wld_to_cam) * Matrix4::from_translation(-world.sun_pos);
+            let light_pos_from_cam_to_wld =
+                Matrix4::from_translation(world.sun_pos) * Matrix4::from(light_rot_from_wld_to_cam.invert());
 
-            let pos_from_wld_to_clp: Matrix4<f32> = (pos_from_cam_to_clp * pos_from_wld_to_cam.cast().unwrap())
-                .cast()
-                .unwrap();
+            let light_pos_from_wld_to_clp: Matrix4<f32> = (light_pos_from_cam_to_clp
+                * light_pos_from_wld_to_cam.cast().unwrap())
+            .cast()
+            .unwrap();
 
-            // Clustered light shading.
+            rendering::GlobalData {
+                light_pos_from_wld_to_cam,
+                light_pos_from_cam_to_wld,
 
+                light_pos_from_cam_to_clp,
+                light_pos_from_clp_to_cam: light_pos_from_cam_to_clp.invert().unwrap(),
+
+                light_pos_from_wld_to_clp,
+                light_pos_from_clp_to_wld: light_pos_from_wld_to_clp.invert().unwrap(),
+
+                time: (world.tick as f64 / DESIRED_UPS) as f32,
+                _pad0: [0.0; 3],
+            }
+        };
+
+        // Clustered light shading.
+        let (cls_header, clustering) = {
             let cluster_bounding_box = {
                 let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
                 let mut corners_in_cam = views
@@ -1020,7 +1096,7 @@ fn main() {
                     .flat_map(|view| {
                         corners_in_clp
                             .into_iter()
-                            .map(move |&p| view.pos_from_clp_to_cam.transform_point(p))
+                            .map(move |&p| view.pos_from_clp_to_hmd.transform_point(p))
                     })
                     .map(|p| -> Point3<f32> { p.cast().unwrap() });
                 let first = frustrum::BoundingBox::from_point(corners_in_cam.next().unwrap());
@@ -1044,24 +1120,27 @@ fn main() {
             let cbb_cy = cbb_cy as usize;
             let cbb_cz = cbb_cz as usize;
             let cbb_n = cbb_cx * cbb_cy * cbb_cz;
-            let pos_from_cam_to_cls = Matrix4::from_nonuniform_scale(cbb_sx, cbb_sy, cbb_sz)
+            let pos_from_hmd_to_cls = Matrix4::from_nonuniform_scale(cbb_sx, cbb_sy, cbb_sz)
                 * Matrix4::from_translation(Vector3::new(
                     -cluster_bounding_box.x0,
                     -cluster_bounding_box.y0,
                     -cluster_bounding_box.z0,
                 ));
-            let pos_from_wld_to_cls = pos_from_cam_to_cls * pos_from_wld_to_cam;
+
+            let pos_from_wld_to_cls: Matrix4<f64> = pos_from_hmd_to_cls.cast().unwrap() * pos_from_wld_to_hmd;
+            let pos_from_cls_to_wld: Matrix4<f32> = pos_from_wld_to_cls.invert().unwrap().cast().unwrap();
+            let pos_from_wld_to_cls: Matrix4<f32> = pos_from_wld_to_cls.cast().unwrap();
 
             let mut clustering: Vec<[u32; 16]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
 
-            // println!(
-            //     "cluster x * y * z = {} * {} * {} = {} ({} MB)",
-            //     cbb_cx,
-            //     cbb_cy,
-            //     cbb_cz,
-            //     cbb_n,
-            //     std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
-            // );
+            println!(
+                "cluster x * y * z = {} * {} * {} = {} ({} MB)",
+                cbb_cx,
+                cbb_cy,
+                cbb_cz,
+                cbb_n,
+                std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
+            );
 
             for (i, l) in resources.point_lights.iter().enumerate() {
                 let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
@@ -1117,6 +1196,7 @@ fn main() {
                             if dz * dz + dy * dy + dx * dx < r_sq {
                                 // It's a hit!
                                 let thing = &mut clustering[((z * cbb_cy) + y) * cbb_cx + x];
+
                                 thing[0] += 1;
                                 let offset = thing[0] as usize;
                                 if offset < thing.len() {
@@ -1130,47 +1210,21 @@ fn main() {
                 }
             }
 
-            let cls_header = light::CLSBufferHeader {
+            let cls_header = rendering::CLSBufferHeader {
                 cluster_dims: Vector4::new(cbb_cx as u32, cbb_cy as u32, cbb_cz as u32, 16),
+                pos_from_wld_to_cls,
+                pos_from_cls_to_wld,
             };
 
-            unsafe {
-                let header_size = std::mem::size_of::<light::CLSBufferHeader>();
-                let body_size = std::mem::size_of_val(&clustering[..]);
-                let total_size = header_size + body_size;
-                gl.named_buffer_reserve(view_ind_res.cls_buffer_name, total_size, gl::STREAM_DRAW);
-                gl.named_buffer_sub_data(view_ind_res.cls_buffer_name, 0, cls_header.value_as_bytes());
-                gl.named_buffer_sub_data(
-                    view_ind_res.cls_buffer_name,
-                    header_size,
-                    (&clustering[..]).slice_to_bytes(),
-                );
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    rendering::CLS_BUFFER_BINDING,
-                    view_ind_res.cls_buffer_name,
-                );
-            }
-
-            rendering::GlobalData {
-                light_pos_from_wld_to_cam: pos_from_wld_to_cam,
-                light_pos_from_cam_to_wld: pos_from_cam_to_wld,
-
-                light_pos_from_cam_to_clp: pos_from_cam_to_clp,
-                light_pos_from_clp_to_cam: pos_from_cam_to_clp.invert().unwrap(),
-
-                light_pos_from_wld_to_clp: pos_from_wld_to_clp,
-                light_pos_from_clp_to_wld: pos_from_wld_to_clp.invert().unwrap(),
-
-                pos_from_wld_to_cls,
-                pos_from_cls_to_wld: pos_from_wld_to_cls.invert().unwrap(),
-
-                time: world.time,
-                _pad0: [0.0; 3],
-            }
+            (cls_header, clustering)
         };
 
+        timing_transition!(timings, prepare_render_data, render);
+
         global_resources.write(&gl, &global_data);
+
+        view_ind_res.cls_resources.write(&gl, &cls_header, &clustering);
+        view_ind_res.cls_resources.bind(&gl);
 
         // View independent.
         shadow_renderer.render(
@@ -1201,12 +1255,15 @@ fn main() {
             .into_iter()
             .map(|view| {
                 let View {
-                    pos_from_wld_to_cam,
-                    pos_from_cam_to_wld,
+                    pos_from_cam_to_hmd,
 
-                    pos_from_clp_to_cam,
                     pos_from_cam_to_clp,
+                    pos_from_clp_to_cam,
+                    ..
                 } = view;
+
+                let pos_from_cam_to_wld = pos_from_hmd_to_wld * pos_from_cam_to_hmd;
+                let pos_from_wld_to_cam = pos_from_cam_to_wld.invert().unwrap();
 
                 let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
                 let pos_from_clp_to_wld = pos_from_cam_to_wld * pos_from_clp_to_cam;
@@ -1251,7 +1308,7 @@ fn main() {
                 let lighting_buffer = light::LightingBuffer { point_lights };
                 gl.named_buffer_data(
                     view_dep_res.lighting_buffer_name,
-                    lighting_buffer.as_ref(),
+                    lighting_buffer.value_as_bytes(),
                     gl::STREAM_DRAW,
                 );
                 gl.bind_buffer_base(
@@ -1383,24 +1440,19 @@ fn main() {
             }
         }
 
-        let render_end_nanos = start_instant.elapsed().as_nanos() as u64;
+        timing_transition!(timings, render, swap_buffers);
 
         gl_window.swap_buffers().unwrap();
 
-        // std::thread::sleep(std::time::Duration::from_millis(17));
+        timings.swap_buffers.end = time::Instant::now();
 
-        tx_log
-            .send(log::Entry {
-                simulation_start_nanos,
-                simulation_end_pose_start_nanos,
-                pose_end_render_start_nanos,
-                render_end_nanos,
-            })
-            .unwrap();
+        timings.print_deltas();
+
+        // std::thread::sleep(time::Duration::from_millis(17));
 
         {
             let duration = {
-                let now = std::time::Instant::now();
+                let now = time::Instant::now();
                 let duration = now.duration_since(last_frame_start);
                 last_frame_start = now;
                 duration
@@ -1413,10 +1465,6 @@ fn main() {
                 .set_title(&format!("VR Lab - {:02.1} FPS", fps_average.compute()));
         }
     }
-
-    drop(tx_log);
-
-    timing_thread.join().unwrap();
 }
 
 fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {

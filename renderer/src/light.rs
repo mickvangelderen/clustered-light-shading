@@ -65,30 +65,10 @@ impl PointLightBufferEntry {
     }
 }
 
+
+// FIXME: Align only necessary on uniform blocks?
 #[derive(Debug)]
 #[repr(C, align(256))]
 pub struct LightingBuffer {
     pub point_lights: [PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize],
-}
-
-impl AsRef<[u8; std::mem::size_of::<LightingBuffer>()]> for LightingBuffer {
-    fn as_ref(&self) -> &[u8; std::mem::size_of::<LightingBuffer>()] {
-        unsafe {
-            &*(self as *const Self as *const _)
-        }
-    }
-}
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct CLSBufferHeader {
-    pub cluster_dims: Vector4<u32>,
-}
-
-impl AsRef<[u8; std::mem::size_of::<CLSBufferHeader>()]> for CLSBufferHeader {
-    fn as_ref(&self) -> &[u8; std::mem::size_of::<CLSBufferHeader>()] {
-        unsafe {
-            &*(self as *const Self as *const _)
-        }
-    }
 }
