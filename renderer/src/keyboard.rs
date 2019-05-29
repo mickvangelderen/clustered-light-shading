@@ -85,4 +85,5 @@ implement_with_keys!(
     (down, Down),
     (right, Right),
     (left, Left),
+    (lshift, LShift),
 );

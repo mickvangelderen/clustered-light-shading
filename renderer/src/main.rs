@@ -920,7 +920,7 @@ fn main() {
                     keyboard_state.d.to_f32() - keyboard_state.a.to_f32(),
                     keyboard_state.q.to_f32() - keyboard_state.z.to_f32(),
                     keyboard_state.s.to_f32() - keyboard_state.w.to_f32(),
-                )
+                ) * (1.0 + keyboard_state.lshift.to_f32() * 3.0)
             } else {
                 Vector3::zero()
             },
