@@ -400,6 +400,22 @@ impl ViewDependentResources {
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
 
+pub fn read_configuration(configuration_path: &std::path::Path) -> configuration::Root {
+    match std::fs::read_to_string(&configuration_path) {
+        Ok(contents) => match toml::from_str(&contents) {
+            Ok(configuration) => configuration,
+            Err(err) => {
+                eprintln!("Failed to parse configuration file {:?}: {}.", configuration_path, err);
+                Default::default()
+            }
+        },
+        Err(err) => {
+            eprintln!("Failed to read configuration file {:?}: {}.", configuration_path, err);
+            Default::default()
+        }
+    }
+}
+
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
@@ -427,7 +443,7 @@ fn main() {
 
     watcher.watch("resources", notify::RecursiveMode::Recursive).unwrap();
 
-    let mut configuration: configuration::Root = Default::default();
+    let mut configuration: configuration::Root = read_configuration(&configuration_path);
 
     let mut world = World {
         tick: 0,
@@ -772,23 +788,16 @@ fn main() {
             timing_transition!(timings, accumulate_file_updates, execute_file_updates);
 
             if configuration_update {
-                match std::fs::read_to_string(&configuration_path) {
-                    Ok(contents) => match toml::from_str(&contents) {
-                        Ok(new_configuration) => {
-                            println!("Updated configuration {:#?}", new_configuration);
-                            configuration = new_configuration;
+                // Read from file.
+                configuration = read_configuration(&configuration_path);
 
-                            world.camera.maximum_smoothness = configuration.main_camera.maximum_smoothness;
-                            world.camera.properties = camera::CameraProperties {
-                                positional_velocity: configuration.main_camera.positional_velocity,
-                                angular_velocity: configuration.main_camera.angular_velocity,
-                                zoom_velocity: configuration.main_camera.zoom_velocity,
-                            };
-                        }
-                        Err(err) => eprintln!("Failed to parse configuration file {:?}: {}.", configuration_path, err),
-                    },
-                    Err(err) => eprintln!("Failed to read configuration file {:?}: {}.", configuration_path, err),
-                }
+                // Apply updates.
+                world.camera.maximum_smoothness = configuration.main_camera.maximum_smoothness;
+                world.camera.properties = camera::CameraProperties {
+                    positional_velocity: configuration.main_camera.positional_velocity,
+                    angular_velocity: configuration.main_camera.angular_velocity,
+                    zoom_velocity: configuration.main_camera.zoom_velocity,
+                };
             }
 
             shadow_renderer.update(&gl, &shadow_renderer_update);
