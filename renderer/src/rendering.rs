@@ -87,11 +87,18 @@ pub struct GlobalData {
     pub light_pos_from_wld_to_clp: Matrix4<f32>,
     pub light_pos_from_clp_to_wld: Matrix4<f32>,
 
-    pub time: f32,
-    pub _pad0: [f32; 3],
+    pub time: f64,
+    pub attenuation_mode: u32,
 }
 
 pub const GLOBAL_DATA_DECLARATION: &'static str = r"
+#define ATTENUATION_MODE_STEP 1
+#define ATTENUATION_MODE_LINEAR 2
+#define ATTENUATION_MODE_PHYSICAL 3
+#define ATTENUATION_MODE_INTERPOLATED 4
+#define ATTENUATION_MODE_REDUCED 5
+#define ATTENUATION_MODE_SMOOTH 6
+
 layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 light_pos_from_wld_to_cam;
     mat4 light_pos_from_cam_to_wld;
@@ -102,8 +109,8 @@ layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 light_pos_from_wld_to_clp;
     mat4 light_pos_from_clp_to_wld;
 
-    float time;
-    vec3 _global_data_pad0;
+    double time;
+    uint attenuation_mode;
 };
 ";
 

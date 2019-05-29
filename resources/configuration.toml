@@ -1,8 +1,15 @@
 [clustered_light_shading]
-cluster_side = 10.0
+cluster_side = 5.0
+
+[camera]
+maximum_smoothness = 0.80
 
 [main_camera]
-maximum_smoothness = 0.80
+positional_velocity = 8.0
+angular_velocity = 0.4
+zoom_velocity = 0.5
+
+[debug_camera]
 positional_velocity = 8.0
 angular_velocity = 0.4
 zoom_velocity = 0.5

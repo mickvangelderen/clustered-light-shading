@@ -475,7 +475,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 4.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -487,7 +487,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 16.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -499,7 +499,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 4.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -511,7 +511,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 2.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -523,7 +523,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 1.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -535,7 +535,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 2.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -547,7 +547,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 4.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },
@@ -559,7 +559,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 8.0,
                         clip_near: 0.1,
-                        cutoff: 0.01,
+                        cutoff: 0.1,
                     }
                     .into(),
                 },

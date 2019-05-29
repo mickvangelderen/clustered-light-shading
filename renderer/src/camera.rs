@@ -2,7 +2,7 @@ use crate::clamp::*;
 use cgmath::*;
 
 #[derive(Debug, Copy, Clone)]
-pub struct CameraState {
+pub struct CameraTransform {
     pub position: Vector3<f32>,
     pub yaw: Rad<f32>,
     pub pitch: Rad<f32>,
@@ -10,7 +10,7 @@ pub struct CameraState {
 }
 
 #[derive(Debug)]
-pub struct CameraStateCorrection {
+pub struct CameraCorrection {
     pub delta_yaw: Rad<f32>,
 }
 
@@ -22,31 +22,29 @@ pub struct CameraProperties {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct CameraUpdate {
-    pub delta_time: f32,
-    pub delta_position: Vector3<f32>,
-    pub delta_yaw: Rad<f32>,
-    pub delta_pitch: Rad<f32>,
-    pub delta_fovy: Rad<f32>,
+pub struct CameraDelta {
+    pub time: f32,
+    pub position: Vector3<f32>,
+    pub yaw: Rad<f32>,
+    pub pitch: Rad<f32>,
+    pub fovy: Rad<f32>,
 }
 
 #[derive(Debug)]
 pub struct Camera {
+    pub transform: CameraTransform,
     pub properties: CameraProperties,
-    pub state: CameraState,
 }
 
 #[derive(Debug)]
 pub struct SmoothCamera {
-    pub properties: CameraProperties,
+    pub transform: CameraTransform,
     pub smooth_enabled: bool,
     pub current_smoothness: f32,
     pub maximum_smoothness: f32,
-    pub current_state: CameraState,
-    pub target_state: CameraState,
 }
 
-impl CameraState {
+impl CameraTransform {
     #[inline]
     fn pitch_range() -> (Rad<f32>, Rad<f32>) {
         (Rad::from(Deg(-89.0)), Rad::from(Deg(89.0)))
@@ -58,51 +56,37 @@ impl CameraState {
     }
 
     #[inline]
-    fn update_without_correction(&mut self, properties: &CameraProperties, update: &CameraUpdate) {
-        let CameraProperties {
-            positional_velocity,
-            angular_velocity,
-            zoom_velocity,
-        } = *properties;
-        let CameraUpdate {
-            delta_time,
-            delta_position,
-            delta_yaw,
-            delta_pitch,
-            delta_fovy,
-        } = *update;
-        // Direct delta_position along yaw angle.
-        let delta_position = Quaternion::from_axis_angle(Vector3::unit_y(), self.yaw) * delta_position;
-
-        *self = CameraState {
-            position: self.position + delta_position * positional_velocity * delta_time,
-            yaw: (self.yaw + delta_yaw * angular_velocity * delta_time),
-            pitch: (self.pitch + delta_pitch * angular_velocity * delta_time).clamp_range(Self::pitch_range()),
-            fovy: (self.fovy + delta_fovy * zoom_velocity * delta_time).clamp_range(Self::fovy_range()),
+    pub fn update(&mut self, delta: &CameraDelta) {
+        *self = CameraTransform {
+            // Direct delta_position along yaw angle.
+            position: self.position
+                + Quaternion::from_axis_angle(Vector3::unit_y(), self.yaw) * delta.position * delta.time,
+            yaw: (self.yaw + delta.yaw * delta.time),
+            pitch: (self.pitch + delta.pitch * delta.time).clamp_range(Self::pitch_range()),
+            fovy: (self.fovy + delta.fovy * delta.time).clamp_range(Self::fovy_range()),
         };
     }
 
     #[inline]
-    fn compute_correction(&self) -> CameraStateCorrection {
-        let new_yaw = self.yaw % Rad::full_turn();
-        CameraStateCorrection {
-            delta_yaw: new_yaw - self.yaw,
+    pub fn interpolate(&mut self, b: &CameraTransform, t: f32) {
+        let s = 1.0 - t;
+
+        self.position = self.position * s + b.position * t;
+        self.yaw = self.yaw * s + b.yaw * t;
+        self.pitch = self.pitch * s + b.pitch * t;
+        self.fovy = self.fovy * s + b.fovy * t;
+    }
+
+    #[inline]
+    pub fn correction(&self) -> CameraCorrection {
+        CameraCorrection {
+            delta_yaw: (self.yaw % Rad::full_turn()) - self.yaw,
         }
     }
 
     #[inline]
-    fn correct(&mut self, correction: &CameraStateCorrection) {
+    pub fn correct(&mut self, correction: &CameraCorrection) {
         self.yaw += correction.delta_yaw;
-    }
-
-    #[inline]
-    fn interpolate(&mut self, b: &CameraState, t: f32) {
-        let u = 1.0 - t;
-
-        self.position = self.position * t + b.position * u;
-        self.yaw = self.yaw * t + b.yaw * u;
-        self.pitch = (self.pitch * t + b.pitch * u).clamp_range(Self::pitch_range());
-        self.fovy = (self.fovy * t + b.fovy * u).clamp_range(Self::fovy_range());
     }
 
     #[inline]
@@ -130,84 +114,36 @@ impl CameraState {
 
 impl Camera {
     #[inline]
-    pub fn update(&mut self, update: &CameraUpdate) {
-        self.state.update_without_correction(&self.properties, update);
-        self.state.correct(&self.state.compute_correction());
-    }
-
-    #[inline]
-    pub fn rot_to_parent(&self) -> Quaternion<f32> {
-        self.state.rot_to_parent()
-    }
-
-    #[inline]
-    pub fn pos_to_parent(&self) -> Matrix4<f32> {
-        self.state.pos_to_parent()
-    }
-
-    #[inline]
-    pub fn rot_from_parent(&self) -> Quaternion<f32> {
-        self.state.rot_from_parent()
-    }
-
-    #[inline]
-    pub fn pos_from_parent(&self) -> Matrix4<f32> {
-        self.state.pos_from_parent()
+    pub fn update(&mut self, delta: &CameraDelta) {
+        self.transform.update(&CameraDelta {
+            time: delta.time,
+            position: delta.position * self.properties.positional_velocity,
+            yaw: delta.yaw * self.properties.angular_velocity,
+            pitch: delta.pitch * self.properties.angular_velocity,
+            fovy: delta.fovy * self.properties.zoom_velocity,
+        })
     }
 }
 
 impl SmoothCamera {
     #[inline]
-    pub fn new(maximum_smoothness: f32, camera: Camera) -> Self {
-        let Camera { properties, state } = camera;
-        SmoothCamera {
-            properties,
-            smooth_enabled: true,
-            current_smoothness: maximum_smoothness,
-            maximum_smoothness,
-            current_state: state,
-            target_state: state,
-        }
+    pub fn update(&mut self, target: &Camera) {
+        self.current_smoothness = self.target_smoothness() * 0.2 + self.current_smoothness * 0.8;
+        self.transform
+            .interpolate(&target.transform, 1.0 - self.current_smoothness);
     }
 
     #[inline]
-    pub fn update(&mut self, update: &CameraUpdate) {
-        let target_smoothness = if self.smooth_enabled {
+    pub fn target_smoothness(&self) -> f32 {
+        if self.smooth_enabled {
             self.maximum_smoothness
         } else {
             0.0
-        };
-        self.current_smoothness = target_smoothness * 0.2 + self.current_smoothness * 0.8;
-        self.target_state.update_without_correction(&self.properties, update);
-        let correction = self.target_state.compute_correction();
-        self.target_state.correct(&correction);
-        self.current_state
-            .interpolate(&self.target_state, self.current_smoothness);
-        self.current_state.correct(&correction);
+        }
     }
 
     #[inline]
     pub fn toggle_smoothness(&mut self) {
         self.smooth_enabled = !self.smooth_enabled;
-    }
-
-    #[inline]
-    pub fn rot_to_parent(&self) -> Quaternion<f32> {
-        self.current_state.rot_to_parent()
-    }
-
-    #[inline]
-    pub fn pos_to_parent(&self) -> Matrix4<f32> {
-        self.current_state.pos_to_parent()
-    }
-
-    #[inline]
-    pub fn rot_from_parent(&self) -> Quaternion<f32> {
-        self.current_state.rot_from_parent()
-    }
-
-    #[inline]
-    pub fn pos_from_parent(&self) -> Matrix4<f32> {
-        self.current_state.pos_from_parent()
     }
 }

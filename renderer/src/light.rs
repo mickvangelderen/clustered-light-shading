@@ -17,35 +17,28 @@ impl<S> RGB<S> {
 
 pub struct AttenParams<S> {
     pub intensity: S,
-    pub clip_near: S,
     pub cutoff: S,
+    pub clip_near: S,
 }
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct AttenCoefs<S> {
-    pub inv_quadratic: S,
-    pub constant: S,
-    pub linear: S,
+    pub intensity: S,
+    pub cutoff: S,
     pub clip_near: S,
     pub clip_far: S,
-    pub _pad: [S; 3],
 }
 
 impl<S> From<AttenParams<S>> for AttenCoefs<S> where S: num_traits::Float {
     fn from(value: AttenParams<S>) -> Self {
-        let AttenParams { intensity, clip_near, cutoff } = value;
-
-        let n3 = S::from(-3.0).unwrap();
-        let p2 = S::from(2.0).unwrap();
+        let AttenParams { intensity, cutoff, clip_near } = value;
 
         AttenCoefs {
-            inv_quadratic: intensity,
-            constant: n3 * cutoff,
-            linear: p2 * S::sqrt(S::powi(cutoff, 3)/intensity),
+            intensity,
+            cutoff,
             clip_near,
             clip_far: S::sqrt(intensity/cutoff),
-            _pad: [S::zero(), S::zero(), S::zero()],
         }
     }
 }

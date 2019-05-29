@@ -81,6 +81,7 @@ implement_with_keys!(
     (a, A),
     (q, Q),
     (z, Z),
+    (p, P),
     (up, Up),
     (down, Down),
     (right, Right),
