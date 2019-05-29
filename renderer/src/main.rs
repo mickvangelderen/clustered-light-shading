@@ -1145,29 +1145,19 @@ fn main() {
             for (i, l) in resources.point_lights.iter().enumerate() {
                 let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
 
+                let r = l.attenuation.clip_far;
+                let r_sq = r * r;
+
                 // NOTE: We must clamp as f32 because the value might actually overflow.
-                let x0 =
-                    Clamp::clamp_range(f32::floor(pos_in_cls.x - l.radius * cbb_sx), (0.0, cbb_cx as f32)) as usize;
+                let x0 = Clamp::clamp_range(f32::floor(pos_in_cls.x - r * cbb_sx), (0.0, cbb_cx as f32)) as usize;
                 let x1 = f32::floor(pos_in_cls.x) as usize;
-                let x2 = Clamp::clamp_range(f32::floor(pos_in_cls.x + l.radius * cbb_sx) + 1.0, (0.0, cbb_cx as f32))
-                    as usize;
-                let y0 =
-                    Clamp::clamp_range(f32::floor(pos_in_cls.y - l.radius * cbb_sy), (0.0, cbb_cy as f32)) as usize;
+                let x2 = Clamp::clamp_range(f32::floor(pos_in_cls.x + r * cbb_sx) + 1.0, (0.0, cbb_cx as f32)) as usize;
+                let y0 = Clamp::clamp_range(f32::floor(pos_in_cls.y - r * cbb_sy), (0.0, cbb_cy as f32)) as usize;
                 let y1 = f32::floor(pos_in_cls.y) as usize;
-                let y2 = Clamp::clamp_range(f32::floor(pos_in_cls.y + l.radius * cbb_sy) + 1.0, (0.0, cbb_cy as f32))
-                    as usize;
-                let z0 =
-                    Clamp::clamp_range(f32::floor(pos_in_cls.z - l.radius * cbb_sz), (0.0, cbb_cz as f32)) as usize;
+                let y2 = Clamp::clamp_range(f32::floor(pos_in_cls.y + r * cbb_sy) + 1.0, (0.0, cbb_cy as f32)) as usize;
+                let z0 = Clamp::clamp_range(f32::floor(pos_in_cls.z - r * cbb_sz), (0.0, cbb_cz as f32)) as usize;
                 let z1 = f32::floor(pos_in_cls.z) as usize;
-                let z2 = Clamp::clamp_range(f32::floor(pos_in_cls.z + l.radius * cbb_sz) + 1.0, (0.0, cbb_cz as f32))
-                    as usize;
-
-                // println!(
-                //     "lights[{}] pos_in_cls: {:?}, radius: {}, x: ({}, {}, {}), y: ({}, {}, {}), z: ({}, {}, {})",
-                //     i, pos_in_cls, l.radius, x0, x1, x2, y0, y1, y2, z0, z1, z2
-                // );
-
-                let r_sq = l.radius * l.radius;
+                let z2 = Clamp::clamp_range(f32::floor(pos_in_cls.z + r * cbb_sz) + 1.0, (0.0, cbb_cz as f32)) as usize;
 
                 for z in z0..z2 {
                     let dz = if z < z1 {
