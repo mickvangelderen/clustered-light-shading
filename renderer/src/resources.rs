@@ -472,96 +472,96 @@ impl Resources {
                     diffuse: RGB::new(4.0000, 4.0000, 4.0000),
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(-12.9671, 1.8846, -4.4980),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 4.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(4.0000, 4.0000, 4.0000),
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(-11.9563, 2.6292, 3.8412),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 16.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(4.0000, 4.0000, 4.0000),
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(13.6090, 2.6292, 3.3216),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 4.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(4.0000, 4.0000, 4.0000),
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(12.5982, 1.8846, -5.0176),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 2.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(4.0000, 4.0000, 4.0000),
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(3.3116, 4.3440, 5.1447),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 1.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(0.0367, 4.0000, 0.0000),
                     specular: RGB::new(0.0092, 1.0000, 0.0000),
                     pos_in_pnt: Point3::new(8.8820, 6.7391, -1.0279),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 2.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(4.0000, 0.1460, 0.1006),
                     specular: RGB::new(1.0000, 0.0365, 0.0251),
                     pos_in_pnt: Point3::new(-4.6988, 10.0393, 0.8667),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 4.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(0.8952, 0.8517, 4.0000),
                     specular: RGB::new(0.2238, 0.2129, 1.0000),
                     pos_in_pnt: Point3::new(-4.6816, 1.0259, -2.1767),
-                    attenuation: AttenCoefs {
-                        constant: 1.0000,
-                        linear: 0.3500,
-                        quadratic: 0.4400,
-                    },
-                    radius: 13.0,
+                    attenuation: AttenParams {
+                        intensity: 8.0,
+                        clip_near: 0.1,
+                        cutoff: 0.01,
+                    }
+                    .into(),
                 },
             ],
         }

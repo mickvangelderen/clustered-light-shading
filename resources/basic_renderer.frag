@@ -22,7 +22,8 @@ struct PointLight {
   vec4 diffuse;
   vec4 specular;
   vec4 pos_in_cam;
-  vec4 attenuation;
+  vec4 att1;
+  vec4 att2;
 };
 
 layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
@@ -81,10 +82,24 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   vec3 pos_from_frag_to_light = point_light.pos_in_cam.xyz - frag_pos_in_cam;
   vec3 light_dir_in_cam_norm = normalize(pos_from_frag_to_light);
 
+  float inv_quadratic = point_light.att1[0];
+  float constant = point_light.att1[1];
+  float linear = point_light.att1[2];
+  float clip_near = point_light.att1[3];
+  float clip_far = point_light.att2[0];
+
   // Attenuation.
-  float d_sq = dot(pos_from_frag_to_light, pos_from_frag_to_light);
-  float light_weight =
-      1.0 / dot(point_light.attenuation.xyz, vec3(1.0, sqrt(d_sq), d_sq));
+  float d_sq_unclamped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
+  float d_sq = clamp(d_sq_unclamped, clip_near*clip_near, clip_far*clip_far);
+  float d = sqrt(d_sq);
+
+  // PHYSICAL: f(x) = 1/x^2
+  // float light_weight = inv_quadratic / d_sq;
+  // CUT OFF: f2(x) = 1/x^2 - C
+  // INTERPOLATED: f3(x) = (1 - t)*f(x) + t*f2(x)
+  float light_weight = inv_quadratic / d_sq - 0.5 * linear * d;
+  // SMOOTH: f4(x) = f(x) + a + bx so that f4(clip_far) = f4'(clip_far) = 0.
+  // float light_weight = inv_quadratic / d_sq + constant + linear * d;
 
   // Ambient.
   float ambient_weight = 1.0;
@@ -98,6 +113,17 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
                    reflect(-light_dir_in_cam_norm, nor_in_cam)));
   float specular_weight = pow(specular_angle, shininess);
 
+  // LIGHT RANGE.
+  // if (d_sq_unclamped < clip_far*clip_far) {
+  //   return vec3(1.0 / 8.0);
+  // } else {
+  //   return vec3(0.0);
+  // }
+
+  // LIGHT ATTENUATION.
+  // return vec3(light_weight);
+
+  // LIGHT CONTRIBUTION.
   return
       // Ambient
       (light_weight * ambient_weight) * point_light.ambient.rgb *
