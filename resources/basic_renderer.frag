@@ -22,8 +22,7 @@ struct PointLight {
   vec4 diffuse;
   vec4 specular;
   vec4 pos_in_cam;
-  vec4 att1;
-  vec4 att2;
+  vec4 att;
 };
 
 layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
@@ -111,24 +110,38 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   vec3 pos_from_frag_to_light = point_light.pos_in_cam.xyz - frag_pos_in_cam;
   vec3 light_dir_in_cam_norm = normalize(pos_from_frag_to_light);
 
-  float inv_quadratic = point_light.att1[0];
-  float constant = point_light.att1[1];
-  float linear = point_light.att1[2];
-  float clip_near = point_light.att1[3];
-  float clip_far = point_light.att2[0];
+  float I = point_light.att[0];
+  float C = point_light.att[1];
+  float R0 = point_light.att[2];
+  float R1 = point_light.att[3];
 
   // Attenuation.
-  float d_sq_unclamped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
-  float d_sq = clamp(d_sq_unclamped, clip_near*clip_near, clip_far*clip_far);
-  float d = sqrt(d_sq);
+  float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
+  float d_unclipped = sqrt(d_sq_unclipped);
+  float d_sq = max(R0, d_sq_unclipped);
+  float d = max(R0, d_unclipped);
 
-  // PHYSICAL: f(x) = 1/x^2
-  // float light_weight = inv_quadratic / d_sq;
-  // CUT OFF: f2(x) = 1/x^2 - C
-  // INTERPOLATED: f3(x) = (1 - t)*f(x) + t*f2(x)
-  float light_weight = inv_quadratic / d_sq - 0.5 * linear * d;
-  // SMOOTH: f4(x) = f(x) + a + bx so that f4(clip_far) = f4'(clip_far) = 0.
-  // float light_weight = inv_quadratic / d_sq + constant + linear * d;
+  float light_weight;
+
+  if (d_unclipped < R1) {
+    if (attenuation_mode == ATTENUATION_MODE_STEP) {
+      light_weight = I*(1.0 - (1.0/R1))/(R1 - 1.0);
+    } else if (attenuation_mode == ATTENUATION_MODE_LINEAR) {
+      // Linear doesn't go infinite so we can use the unclipped distance.
+      light_weight = I - (I/R1) * d_unclipped;
+    } else if (attenuation_mode == ATTENUATION_MODE_PHYSICAL) {
+      light_weight = I / d_sq;
+    } else if (attenuation_mode == ATTENUATION_MODE_INTERPOLATED) {
+      light_weight = I / d_sq - (C / R1) * d;
+      // light_weight = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
+    } else if (attenuation_mode == ATTENUATION_MODE_REDUCED) {
+      light_weight = I / d_sq - C;
+    } else if (attenuation_mode == ATTENUATION_MODE_SMOOTH) {
+      light_weight = I / d_sq - 3.0*C + (2.0*C/R1) * d;
+    }
+  } else {
+    light_weight = 0.0;
+  }
 
   // Ambient.
   float ambient_weight = 1.0;
@@ -141,13 +154,6 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
       max(0.0, dot(cam_dir_in_cam_norm,
                    reflect(-light_dir_in_cam_norm, nor_in_cam)));
   float specular_weight = pow(specular_angle, shininess);
-
-  // LIGHT RANGE.
-  // if (d_sq_unclamped < clip_far*clip_far) {
-  //   return vec3(1.0 / 8.0);
-  // } else {
-  //   return vec3(0.0);
-  // }
 
   // LIGHT ATTENUATION.
   // return vec3(light_weight);
@@ -210,13 +216,11 @@ void main() {
   uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
 
   // CLUSTER INDICES X, Y, Z
-  // frag_color = vec4(vec3(fs_idx_in_cls), 1.0);
+  // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
 
-  // CLUSTER INDICES X, Y, Z mod 2
-  frag_color =
-      vec4(vec3(float((fs_idx_in_cls.x & 1)), float((fs_idx_in_cls.y & 1)),
-                float((fs_idx_in_cls.z & 1))),
-           1.0);
+  // CLUSTER INDICES X, Y, Z mod 3
+  vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
+  frag_color = vec4(cluster_index_colors.xyz, 1.0);
 
   // CLUSTER INDICES X + Y + Z mod 2
   // frag_color = vec4(
@@ -235,20 +239,29 @@ void main() {
        fs_idx_in_cls.x) *
       cluster_dims.w;
 
-  uint cluster_length = clusters[cluster_index];
+  // uint cluster_length = clusters[cluster_index];
+  uint cluster_length = 8;
 
   // CLUSTER LENGHTS
-  // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
+  frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
 
   // CLUSTERED SHADING
-  // vec3 color_accumulator = vec3(0.0);
-  // for (uint i = 0; i < cluster_length; i += 1) {
-  //   uint light_index = clusters[cluster_index + 1 + i];
-  //   color_accumulator +=
-  //       point_light_contribution(point_lights[light_index], nor_in_cam,
-  //                                fs_pos_in_cam, cam_dir_in_cam_norm);
-  // }
-  // frag_color = vec4(color_accumulator, 1.0);
+  vec3 color_accumulator = vec3(0.0);
+  for (uint i = 0; i < cluster_length; i++) {
+    // uint light_index = clusters[cluster_index + 1 + i];
+    uint light_index = i;
+
+    float t_on = 5.0;
+    float t = float(cluster_length);
+    float tf = fract((float(time*point_lights[i].att.x/4.0) - float(i))/t)*t/t_on;
+    float anim = step(tf, 1.0) * (cos((tf*2.0 - 1.0)*3.1415)*0.5 + 0.5);
+
+    color_accumulator += 
+    // color_accumulator += anim *
+        point_light_contribution(point_lights[light_index], nor_in_cam,
+                                 fs_pos_in_cam, cam_dir_in_cam_norm);
+  }
+  frag_color = vec4(color_accumulator, 1.0);
 
   // DIFFUSE TEXTURE
   // frag_color = texture(diffuse_sampler, fs_pos_in_tex);

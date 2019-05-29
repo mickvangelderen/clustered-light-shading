@@ -1,3 +1,4 @@
+#![feature(euclidean_division)]
 #![allow(non_snake_case)]
 
 // Has to go first.
@@ -29,7 +30,7 @@ mod resources;
 mod shadow_renderer;
 mod vsm_filter;
 
-use crate::clamp::Clamp;
+use crate::cgmath_ext::*;
 use crate::gl_ext::*;
 use arrayvec::ArrayVec;
 use cgmath::*;
@@ -55,13 +56,73 @@ const SHADOW_H: i32 = 1024;
 
 const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u32)]
+pub enum CameraIndex {
+    Main = 1,
+    Debug = 2,
+}
+
+impl CameraIndex {
+    fn rotate(self) -> Self {
+        match self {
+            CameraIndex::Main => CameraIndex::Debug,
+            CameraIndex::Debug => CameraIndex::Main,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u32)]
+pub enum AttenuationMode {
+    Step = 1,
+    Linear = 2,
+    Physical = 3,
+    Interpolated = 4,
+    Reduced = 5,
+    Smooth = 6,
+}
+
+impl AttenuationMode {
+    fn rotate(self) -> Self {
+        match self {
+            AttenuationMode::Step => AttenuationMode::Linear,
+            AttenuationMode::Linear => AttenuationMode::Physical,
+            AttenuationMode::Physical => AttenuationMode::Interpolated,
+            AttenuationMode::Interpolated => AttenuationMode::Reduced,
+            AttenuationMode::Reduced => AttenuationMode::Smooth,
+            AttenuationMode::Smooth => AttenuationMode::Step,
+        }
+    }
+}
+
 pub struct World {
     tick: u64,
     clear_color: [f32; 3],
-    camera: camera::SmoothCamera,
+    attenuation_mode: AttenuationMode,
+    target_camera_index: CameraIndex,
+    smooth_camera: camera::SmoothCamera,
+    main_camera: camera::Camera,
+    debug_camera: camera::Camera,
     sun_pos: Vector3<f32>,
     sun_rot: Rad<f32>,
     keyboard_model: keyboard_model::KeyboardModel,
+}
+
+impl World {
+    fn target_camera(&self) -> &camera::Camera {
+        match self.target_camera_index {
+            CameraIndex::Main => &self.main_camera,
+            CameraIndex::Debug => &self.debug_camera,
+        }
+    }
+
+    fn target_camera_mut(&mut self) -> &mut camera::Camera {
+        match self.target_camera_index {
+            CameraIndex::Main => &mut self.main_camera,
+            CameraIndex::Debug => &mut self.debug_camera,
+        }
+    }
 }
 
 pub struct ViewIndependentResources {
@@ -445,28 +506,37 @@ fn main() {
 
     let mut configuration: configuration::Root = read_configuration(&configuration_path);
 
-    let mut world = World {
-        tick: 0,
-        clear_color: [0.0, 0.0, 0.0],
-        camera: camera::SmoothCamera::new(
-            configuration.main_camera.maximum_smoothness,
-            camera::Camera {
-                properties: camera::CameraProperties {
-                    positional_velocity: configuration.main_camera.positional_velocity,
-                    angular_velocity: configuration.main_camera.angular_velocity,
-                    zoom_velocity: configuration.main_camera.zoom_velocity,
-                },
-                state: camera::CameraState {
-                    position: Vector3::new(0.0, 1.0, 1.5),
-                    yaw: Rad(0.0),
-                    pitch: Rad(0.0),
-                    fovy: Deg(90.0).into(),
-                },
+    let mut world = {
+        let initial_transform = camera::CameraTransform {
+            position: Vector3::new(0.0, 1.0, 1.5),
+            yaw: Rad(0.0),
+            pitch: Rad(0.0),
+            fovy: Deg(90.0).into(),
+        };
+
+        World {
+            tick: 0,
+            clear_color: [0.0, 0.0, 0.0],
+            attenuation_mode: AttenuationMode::Interpolated,
+            target_camera_index: CameraIndex::Main,
+            smooth_camera: camera::SmoothCamera {
+                transform: initial_transform,
+                smooth_enabled: true,
+                current_smoothness: configuration.camera.maximum_smoothness,
+                maximum_smoothness: configuration.camera.maximum_smoothness,
             },
-        ),
-        sun_pos: Vector3::new(0.0, 0.0, 0.0),
-        sun_rot: Deg(85.2).into(),
-        keyboard_model: keyboard_model::KeyboardModel::new(),
+            main_camera: camera::Camera {
+                transform: initial_transform,
+                properties: configuration.main_camera.into(),
+            },
+            debug_camera: camera::Camera {
+                transform: initial_transform,
+                properties: configuration.debug_camera.into(),
+            },
+            sun_pos: Vector3::new(0.0, 0.0, 0.0),
+            sun_rot: Deg(85.2).into(),
+            keyboard_model: keyboard_model::KeyboardModel::new(),
+        }
     };
 
     let mut keyboard_state = KeyboardState::default();
@@ -475,7 +545,7 @@ fn main() {
 
     let gl_window = glutin::GlWindow::new(
         glutin::WindowBuilder::new()
-            .with_title("Hello world!")
+            .with_title("VR Lab - Loading...")
             .with_dimensions(
                 // Jump through some hoops to ensure a physical size, which is
                 // what I want in case I'm recording at a specific resolution.
@@ -792,12 +862,9 @@ fn main() {
                 configuration = read_configuration(&configuration_path);
 
                 // Apply updates.
-                world.camera.maximum_smoothness = configuration.main_camera.maximum_smoothness;
-                world.camera.properties = camera::CameraProperties {
-                    positional_velocity: configuration.main_camera.positional_velocity,
-                    angular_velocity: configuration.main_camera.angular_velocity,
-                    zoom_velocity: configuration.main_camera.zoom_velocity,
-                };
+                world.smooth_camera.maximum_smoothness = configuration.camera.maximum_smoothness;
+                world.main_camera.properties = configuration.main_camera.into();
+                world.debug_camera.properties = configuration.debug_camera.into();
             }
 
             shadow_renderer.update(&gl, &shadow_renderer_update);
@@ -839,6 +906,9 @@ fn main() {
         let mut mouse_dy = 0.0;
         let mut mouse_dscroll = 0.0;
         let mut should_resize = false;
+        let mut should_export_state = false;
+        let mut new_target_camera_index = world.target_camera_index;
+        let mut new_attenuation_mode = world.attenuation_mode;
 
         events_loop.poll_events(|event| {
             use glutin::Event;
@@ -869,20 +939,33 @@ fn main() {
                                 // This has to update regardless of focus.
                                 world.keyboard_model.process_event(vk, keyboard_input.state);
 
-                                // use glutin::ElementState;
-                                use glutin::VirtualKeyCode;
-                                match vk {
-                                    VirtualKeyCode::C => {
-                                        if keyboard_input.state.is_pressed() && focus {
-                                            world.camera.toggle_smoothness();
+                                let glutin::ModifiersState { shift, ctrl, alt, logo } = keyboard_input.modifiers;
+                                let any_modifier = shift || ctrl || alt || logo;
+
+                                if keyboard_input.state.is_pressed() && focus {
+                                    use glutin::VirtualKeyCode;
+                                    match vk {
+                                        VirtualKeyCode::Tab => {
+                                            if !any_modifier {
+                                                new_target_camera_index = new_target_camera_index.rotate();
+                                            }
                                         }
-                                    }
-                                    VirtualKeyCode::Escape => {
-                                        if keyboard_input.state.is_pressed() && focus {
+                                        VirtualKeyCode::Key1 => {
+                                            if !any_modifier {
+                                                new_attenuation_mode = new_attenuation_mode.rotate();
+                                            }
+                                        }
+                                        VirtualKeyCode::C => {
+                                            world.smooth_camera.toggle_smoothness();
+                                        }
+                                        VirtualKeyCode::F5 => {
+                                            should_export_state = true;
+                                        }
+                                        VirtualKeyCode::Escape => {
                                             running = false;
                                         }
+                                        _ => (),
                                     }
-                                    _ => (),
                                 }
                             }
                         }
@@ -922,25 +1005,49 @@ fn main() {
 
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
-        world.camera.update(&camera::CameraUpdate {
-            delta_time,
-            delta_position: if focus {
-                Vector3::new(
-                    keyboard_state.d.to_f32() - keyboard_state.a.to_f32(),
-                    keyboard_state.q.to_f32() - keyboard_state.z.to_f32(),
-                    keyboard_state.s.to_f32() - keyboard_state.w.to_f32(),
-                ) * (1.0 + keyboard_state.lshift.to_f32() * 3.0)
-            } else {
-                Vector3::zero()
-            },
-            delta_yaw: Rad(-mouse_dx as f32),
-            delta_pitch: Rad(-mouse_dy as f32),
-            delta_fovy: Rad(mouse_dscroll as f32),
-        });
+        world.attenuation_mode = new_attenuation_mode;
+
+        // Camera update.
+        {
+            if new_target_camera_index != world.target_camera_index {
+                world.target_camera_index = new_target_camera_index;
+                // Bring current_yaw within (-half turn, half turn) of
+                // target_yaw without changing the actual angle.
+                let current_yaw = world.smooth_camera.transform.yaw;
+                let target_yaw = world.target_camera().transform.yaw;
+                world.smooth_camera.transform.yaw = target_yaw
+                    + Rad((current_yaw - target_yaw + Rad::turn_div_2()).0.rem_euclid(Rad::full_turn().0))
+                    - Rad::turn_div_2();
+            }
+
+            world.target_camera_mut().update(&camera::CameraDelta {
+                time: delta_time,
+                position: if focus {
+                    Vector3::new(
+                        keyboard_state.d.to_f32() - keyboard_state.a.to_f32(),
+                        keyboard_state.q.to_f32() - keyboard_state.z.to_f32(),
+                        keyboard_state.s.to_f32() - keyboard_state.w.to_f32(),
+                    ) * (1.0 + keyboard_state.lshift.to_f32() * 3.0)
+                } else {
+                    Vector3::zero()
+                },
+                yaw: Rad(-mouse_dx as f32),
+                pitch: Rad(-mouse_dy as f32),
+                fovy: Rad(mouse_dscroll as f32),
+            });
+            world.smooth_camera.update(match world.target_camera_index {
+                CameraIndex::Main => &world.main_camera,
+                CameraIndex::Debug => &world.debug_camera,
+            });
+            let correction = world.smooth_camera.transform.correction();
+            world.smooth_camera.transform.correct(&correction);
+            world.main_camera.transform.correct(&correction);
+            world.debug_camera.transform.correct(&correction);
+        }
 
         if vr_context.is_some() {
             // Pitch makes me dizzy.
-            world.camera.target_state.pitch = Rad(0.0);
+            world.smooth_camera.transform.pitch = Rad(0.0);
         }
 
         if focus {
@@ -969,7 +1076,7 @@ fn main() {
         //  - cam --[projection]--> clp
 
         let pos_from_hmd_to_wld: Matrix4<f64> = {
-            let pos_from_bdy_to_wld = world.camera.pos_to_parent().cast().unwrap();
+            let pos_from_bdy_to_wld = world.smooth_camera.transform.pos_to_parent().cast().unwrap();
             pos_from_bdy_to_wld * pos_from_hmd_to_bdy
         };
         let pos_from_wld_to_hmd = pos_from_hmd_to_wld.invert().unwrap();
@@ -1027,7 +1134,7 @@ fn main() {
                             pos_from_cam_to_clp,
                             pos_from_clp_to_cam,
 
-                            pos_from_clp_to_hmd: pos_from_cam_to_hmd * pos_from_cam_to_clp.invert().unwrap(),
+                            pos_from_clp_to_hmd: pos_from_cam_to_hmd * pos_from_clp_to_cam,
                         }
                     })
                     .collect()
@@ -1037,7 +1144,7 @@ fn main() {
 
                 let frustrum = {
                     let z0 = -0.1;
-                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.camera.current_state.fovy).0 as f64) / 2.0);
+                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.smooth_camera.transform.fovy).0 as f64) / 2.0);
                     let dx = dy * physical_size.width as f64 / physical_size.height as f64;
                     frustrum::Frustrum::<f64> {
                         x0: -dx,
@@ -1058,7 +1165,7 @@ fn main() {
                     pos_from_cam_to_clp,
                     pos_from_clp_to_cam,
 
-                    pos_from_clp_to_hmd: pos_from_clp_to_cam,
+                    pos_from_clp_to_hmd: /* pos_from_cam_to_hmd = I */ pos_from_clp_to_cam,
                 }])
                 .into_iter()
                 .collect()
@@ -1091,8 +1198,8 @@ fn main() {
                 light_pos_from_wld_to_clp,
                 light_pos_from_clp_to_wld: light_pos_from_wld_to_clp.invert().unwrap(),
 
-                time: (world.tick as f64 / DESIRED_UPS) as f32,
-                _pad0: [0.0; 3],
+                time: world.tick as f64 / DESIRED_UPS,
+                attenuation_mode: world.attenuation_mode as u32,
             }
         };
 
@@ -1100,7 +1207,7 @@ fn main() {
         let (cls_header, clustering) = {
             let cluster_bounding_box = {
                 let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
-                let mut corners_in_cam = views
+                let mut corners_in_hmd = views
                     .iter()
                     .flat_map(|view| {
                         corners_in_clp
@@ -1108,33 +1215,26 @@ fn main() {
                             .map(move |&p| view.pos_from_clp_to_hmd.transform_point(p))
                     })
                     .map(|p| -> Point3<f32> { p.cast().unwrap() });
-                let first = frustrum::BoundingBox::from_point(corners_in_cam.next().unwrap());
-                corners_in_cam.fold(first, |b, p| b.enclose(p))
+                let first = frustrum::BoundingBox::from_point(corners_in_hmd.next().unwrap());
+                corners_in_hmd.fold(first, |b, p| b.enclose(p))
             };
 
+            // dbg!(cluster_bounding_box);
             let cluster_side = configuration.clustered_light_shading.cluster_side;
-            let cbb_dx = cluster_bounding_box.x1 - cluster_bounding_box.x0;
-            let cbb_dy = cluster_bounding_box.y1 - cluster_bounding_box.y0;
-            let cbb_dz = cluster_bounding_box.z1 - cluster_bounding_box.z0;
-            let cbb_cx = f32::ceil(cbb_dx / cluster_side);
-            let cbb_cy = f32::ceil(cbb_dy / cluster_side);
-            let cbb_cz = f32::ceil(cbb_dz / cluster_side);
-            let cbb_sx = cbb_cx / cbb_dx;
-            let cbb_sy = cbb_cy / cbb_dy;
-            let cbb_sz = cbb_cz / cbb_dz;
-            let cbb_sx_inv = cbb_dx / cbb_cx;
-            let cbb_sy_inv = cbb_dy / cbb_cy;
-            let cbb_sz_inv = cbb_dz / cbb_cz;
-            let cbb_cx = cbb_cx as usize;
-            let cbb_cy = cbb_cy as usize;
-            let cbb_cz = cbb_cz as usize;
-            let cbb_n = cbb_cx * cbb_cy * cbb_cz;
-            let pos_from_hmd_to_cls = Matrix4::from_nonuniform_scale(cbb_sx, cbb_sy, cbb_sz)
-                * Matrix4::from_translation(Vector3::new(
-                    -cluster_bounding_box.x0,
-                    -cluster_bounding_box.y0,
-                    -cluster_bounding_box.z0,
-                ));
+            let cbb_delta = cluster_bounding_box.delta();
+            // dbg!(cbb_delta);
+            let cbb_dims_f32 = (cbb_delta / cluster_side).map(f32::ceil);
+            // cluster side scale to world
+            let cbb_side = cbb_delta.div_element_wise(cbb_dims_f32);
+            // dbg!(cbb_side);
+            // cluster side scale to cls
+            let cbb_side_inv = cbb_dims_f32.div_element_wise(cbb_delta);
+            let cbb_dims = cbb_dims_f32.map(|e| e as usize);
+            // dbg!(cbb_dims);
+            let cbb_n = cbb_dims.x * cbb_dims.y * cbb_dims.z;
+
+            let pos_from_hmd_to_cls = Matrix4::from_nonuniform_scale(cbb_side_inv.x, cbb_side_inv.y, cbb_side_inv.z)
+                * Matrix4::from_translation(Point3::origin() - cluster_bounding_box.min);
 
             let pos_from_wld_to_cls: Matrix4<f64> = pos_from_hmd_to_cls.cast().unwrap() * pos_from_wld_to_hmd;
             let pos_from_cls_to_wld: Matrix4<f32> = pos_from_wld_to_cls.invert().unwrap().cast().unwrap();
@@ -1142,14 +1242,14 @@ fn main() {
 
             let mut clustering: Vec<[u32; 16]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
 
-            println!(
-                "cluster x * y * z = {} * {} * {} = {} ({} MB)",
-                cbb_cx,
-                cbb_cy,
-                cbb_cz,
-                cbb_n,
-                std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
-            );
+            // println!(
+            //     "cluster x * y * z = {} * {} * {} = {} ({} MB)",
+            //     cbb_dims.x,
+            //     cbb_dims.y,
+            //     cbb_dims.z,
+            //     cbb_n,
+            //     std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
+            // );
 
             for (i, l) in resources.point_lights.iter().enumerate() {
                 let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
@@ -1157,44 +1257,53 @@ fn main() {
                 let r = l.attenuation.clip_far;
                 let r_sq = r * r;
 
-                // NOTE: We must clamp as f32 because the value might actually overflow.
-                let x0 = Clamp::clamp_range(f32::floor(pos_in_cls.x - r * cbb_sx), (0.0, cbb_cx as f32)) as usize;
-                let x1 = f32::floor(pos_in_cls.x) as usize;
-                let x2 = Clamp::clamp_range(f32::floor(pos_in_cls.x + r * cbb_sx) + 1.0, (0.0, cbb_cx as f32)) as usize;
-                let y0 = Clamp::clamp_range(f32::floor(pos_in_cls.y - r * cbb_sy), (0.0, cbb_cy as f32)) as usize;
-                let y1 = f32::floor(pos_in_cls.y) as usize;
-                let y2 = Clamp::clamp_range(f32::floor(pos_in_cls.y + r * cbb_sy) + 1.0, (0.0, cbb_cy as f32)) as usize;
-                let z0 = Clamp::clamp_range(f32::floor(pos_in_cls.z - r * cbb_sz), (0.0, cbb_cz as f32)) as usize;
-                let z1 = f32::floor(pos_in_cls.z) as usize;
-                let z2 = Clamp::clamp_range(f32::floor(pos_in_cls.z + r * cbb_sz) + 1.0, (0.0, cbb_cz as f32)) as usize;
+                let r0 = Point3::partial_clamp_element_wise(
+                    (pos_in_cls - cbb_side_inv * r).map(f32::floor),
+                    Point3::origin(),
+                    Point3::from_vec(cbb_dims_f32),
+                )
+                .map(|e| e as usize);
+                let Point3 { x: x0, y: y0, z: z0 } = r0;
 
-                for z in z0..z2 {
-                    let dz = if z < z1 {
-                        pos_in_cls.z - (z + 1) as f32
-                    } else if z > z1 {
-                        pos_in_cls.z - z as f32
-                    } else {
-                        0.0
-                    } * cbb_sz_inv;
-                    for y in y0..y2 {
-                        let dy = if y < y1 {
-                            pos_in_cls.y - (y + 1) as f32
-                        } else if y > y1 {
-                            pos_in_cls.y - y as f32
+                let r1 = Point3::partial_clamp_element_wise(
+                    (pos_in_cls).map(f32::floor),
+                    Point3::origin(),
+                    Point3::from_vec(cbb_dims_f32),
+                )
+                .map(|e| e as usize);
+                let Point3 { x: x1, y: y1, z: z1 } = r1;
+
+                let r2 = Point3::partial_clamp_element_wise(
+                    (pos_in_cls + cbb_side_inv * r).map(f32::floor),
+                    Point3::origin(),
+                    Point3::from_vec(cbb_dims_f32),
+                )
+                .map(|e| e as usize);
+                let Point3 { x: x2, y: y2, z: z2 } = r2;
+
+                // NOTE: We must clamp as f32 because the value might actually overflow.
+
+                macro_rules! closest_face_dist {
+                    ($x: ident, $x1: ident, $pos: ident) => {
+                        if $x < $x1 {
+                            ($x + 1) as f32 - $pos.$x
+                        } else if $x > $x1 {
+                            $x as f32 - $pos.$x
                         } else {
                             0.0
-                        } * cbb_sy_inv;
+                        }
+                    };
+                }
+
+                for z in z0..z2 {
+                    let dz = closest_face_dist!(z, z1, pos_in_cls) * cbb_side.z;
+                    for y in y0..y2 {
+                        let dy = closest_face_dist!(y, y1, pos_in_cls) * cbb_side.y;
                         for x in x0..x2 {
-                            let dx = if x < x1 {
-                                pos_in_cls.x - (x + 1) as f32
-                            } else if x > x1 {
-                                pos_in_cls.x - x as f32
-                            } else {
-                                0.0
-                            } * cbb_sx_inv;
+                            let dx = closest_face_dist!(x, x1, pos_in_cls) * cbb_side.x;
                             if dz * dz + dy * dy + dx * dx < r_sq {
                                 // It's a hit!
-                                let thing = &mut clustering[((z * cbb_cy) + y) * cbb_cx + x];
+                                let thing = &mut clustering[((z * cbb_dims.y) + y) * cbb_dims.x + x];
 
                                 thing[0] += 1;
                                 let offset = thing[0] as usize;
@@ -1207,13 +1316,21 @@ fn main() {
                         }
                     }
                 }
+                break;
             }
 
             let cls_header = rendering::CLSBufferHeader {
-                cluster_dims: Vector4::new(cbb_cx as u32, cbb_cy as u32, cbb_cz as u32, 16),
+                cluster_dims: cbb_dims.map(|e: usize| e as u32).extend(16),
                 pos_from_wld_to_cls,
                 pos_from_cls_to_wld,
             };
+
+            if should_export_state {
+                use std::io::Write;
+                let mut f = std::fs::File::create("cls.bin").unwrap();
+                f.write_all(cls_header.value_as_bytes()).unwrap();
+                f.write_all(clustering.vec_as_bytes()).unwrap();
+            }
 
             (cls_header, clustering)
         };
@@ -1445,7 +1562,9 @@ fn main() {
 
         timings.swap_buffers.end = time::Instant::now();
 
-        timings.print_deltas();
+        if keyboard_state.p.is_pressed() {
+            timings.print_deltas();
+        }
 
         // std::thread::sleep(time::Duration::from_millis(17));
 
@@ -1459,9 +1578,11 @@ fn main() {
             const NANOS_PER_SEC: f32 = 1_000_000_000.0;
             let fps = NANOS_PER_SEC / (duration.as_secs() as f32 * NANOS_PER_SEC + duration.subsec_nanos() as f32);
             fps_average.submit(fps);
-            gl_window
-                .window()
-                .set_title(&format!("VR Lab - {:02.1} FPS", fps_average.compute()));
+            gl_window.window().set_title(&format!(
+                "VR Lab - {:?} - {:02.1} FPS",
+                world.target_camera_index,
+                fps_average.compute()
+            ));
         }
     }
 }

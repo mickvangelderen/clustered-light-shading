@@ -1,4 +1,5 @@
 use cgmath::*;
+use crate::cgmath_ext::*;
 use num_traits::{Float, NumCast, ToPrimitive};
 
 unsafe fn reinterpret<A, B>(a: &A) -> &B {
@@ -247,42 +248,28 @@ impl<S: ToPrimitive> Frustrum<S> {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BoundingBox<S> {
-    pub x0: S,
-    pub y0: S,
-    pub z0: S,
-    pub x1: S,
-    pub y1: S,
-    pub z1: S,
-}
-
-fn partial_min<S: std::cmp::PartialOrd>(a: S, b: S) -> S {
-    if a < b { a } else { b}
-}
-
-fn partial_max<S: std::cmp::PartialOrd>(a: S, b: S) -> S {
-    if a > b { a } else { b}
+    pub min: Point3<S>,
+    pub max: Point3<S>,
 }
 
 impl<S: Float> BoundingBox<S> {
     pub fn from_point(p: Point3<S>) -> Self {
         BoundingBox {
-            x0: p.x,
-            y0: p.y,
-            z0: p.z,
-            x1: p.x,
-            y1: p.y,
-            z1: p.z,
+            min: p,
+            max: p,
         }
     }
 
     pub fn enclose(self, p: Point3<S>) -> Self {
         BoundingBox {
-            x0: partial_min(self.x0, p.x),
-            y0: partial_min(self.y0, p.y),
-            z0: partial_min(self.z0, p.z),
-            x1: partial_max(self.x1, p.x),
-            y1: partial_max(self.y1, p.y),
-            z1: partial_max(self.z1, p.z),
+            min: Point3::partial_min_element_wise(self.min, p),
+            max: Point3::partial_max_element_wise(self.max, p),
         }
+    }
+}
+
+impl<S: cgmath::BaseFloat> BoundingBox<S> {
+    pub fn delta(&self) -> Vector3<S> {
+        self.max - self.min
     }
 }
