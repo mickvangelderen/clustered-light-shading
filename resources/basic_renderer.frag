@@ -33,6 +33,35 @@ layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_cam;
 
+uvec3 separate_bits_by_2(uvec3 x) {
+  // x       = 0b??????????????????????jihgfedcba
+  // mask    = 0b00000000000000000000001111111111
+  x &= 0x000003ff;
+  // x       = 0b0000000000000000000000jihgfedcba
+  // x << 10 = 0b000000000000jihgfedcba0000000000
+  // mask    = 0b00000000000011111000000000011111
+  x = (x | (x << 10)) & 0x00f8001f;
+  // x       = 0b000000000000jihgf0000000000edcba
+  // x << 04 = 0b00000000jihgf0000000000edcba0000
+  // mask    = 0b00000000111000011000000111000011
+  x = (x | (x << 04)) & 0x001e81c3;
+  // x       = 0b00000000jih0000gf000000edc0000ba
+  // x << 02 = 0b000000jih0000gf000000edc0000ba00
+  // mask    = 0b00000011001001001000011001001001
+  x = (x | (x << 02)) & 0x03248649;
+  // x       = 0b000000ji00h00g00f0000ed00c00b00a
+  // x << 02 = 0b0000ji00h00g00f0000ed00c00b00a00
+  // mask    = 0b00001001001001001001001001001001
+  x = (x | (x << 02)) & 0x09249249;
+  // x       = 0b0000j00i00h00g00f00e00d00c00b00a
+  return x;
+}
+
+uint to_morton_3(uvec3 p) {
+  uvec3 q = separate_bits_by_2(p);
+  return (q.z << 2) | (q.y << 1) | q.x;
+}
+
 float compute_visibility_classic(vec3 pos_in_lgt) {
   // Can make the bias depend on the angle between the light direction and the
   // surface normal but does that really help? The worst case scenario is not
@@ -193,6 +222,13 @@ void main() {
   // frag_color = vec4(
   //     vec3(float((fs_idx_in_cls.x + fs_idx_in_cls.y + fs_idx_in_cls.z) & 1)),
   //     1.0);
+
+  // CLUSTER MORTON INDEX
+  // uint cluster_morton_index = to_morton_3(fs_idx_in_cls);
+  // frag_color = vec4(                              //
+  //     float((cluster_morton_index >> 16) & 0xff) / 255.0, //
+  //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
+  //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
 
   uint cluster_index =
       (((fs_idx_in_cls.z * cluster_dims.y) + fs_idx_in_cls.y) * cluster_dims.x +
