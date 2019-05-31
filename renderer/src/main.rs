@@ -939,21 +939,17 @@ fn main() {
                                 // This has to update regardless of focus.
                                 world.keyboard_model.process_event(vk, keyboard_input.state);
 
-                                let glutin::ModifiersState { shift, ctrl, alt, logo } = keyboard_input.modifiers;
-                                let any_modifier = shift || ctrl || alt || logo;
-
                                 if keyboard_input.state.is_pressed() && focus {
                                     use glutin::VirtualKeyCode;
                                     match vk {
                                         VirtualKeyCode::Tab => {
-                                            if !any_modifier {
+                                            // Don't trigger when we ALT TAB.
+                                            if keyboard_state.lalt.is_released() {
                                                 new_target_camera_index = new_target_camera_index.rotate();
                                             }
                                         }
                                         VirtualKeyCode::Key1 => {
-                                            if !any_modifier {
-                                                new_attenuation_mode = new_attenuation_mode.rotate();
-                                            }
+                                            new_attenuation_mode = new_attenuation_mode.rotate();
                                         }
                                         VirtualKeyCode::C => {
                                             world.smooth_camera.toggle_smoothness();
@@ -1016,7 +1012,9 @@ fn main() {
                 let current_yaw = world.smooth_camera.transform.yaw;
                 let target_yaw = world.target_camera().transform.yaw;
                 world.smooth_camera.transform.yaw = target_yaw
-                    + Rad((current_yaw - target_yaw + Rad::turn_div_2()).0.rem_euclid(Rad::full_turn().0))
+                    + Rad((current_yaw - target_yaw + Rad::turn_div_2())
+                        .0
+                        .rem_euclid(Rad::full_turn().0))
                     - Rad::turn_div_2();
             }
 
