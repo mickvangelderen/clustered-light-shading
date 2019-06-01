@@ -20,3 +20,8 @@ macro_rules! get_attribute_location {
     }};
 }
 
+macro_rules! field_offset {
+    ($Struct:ty, $field:ident) => {
+        &(*(std::ptr::null::<$Struct>())).$field as *const _ as usize
+    };
+}

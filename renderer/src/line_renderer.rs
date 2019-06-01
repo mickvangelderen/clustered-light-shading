@@ -21,6 +21,16 @@ pub struct Parameters<'a> {
     pub pos_from_obj_to_wld: &'a Matrix4<f32>,
 }
 
+// TODO: Actually use this?
+#[repr(C)]
+struct Vertex {
+    pub pos_in_obj: [f32; 3],
+}
+
+// We can draw vertex array data from 0..N (N is at least 16, can be queried) buffers.
+const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
+    gl::VertexArrayBufferBindingIndex::from_u32(0);
+
 impl Renderer {
     pub fn render<'a>(&self, gl: &gl::Gl, params: &Parameters<'a>) {
         unsafe {
@@ -78,23 +88,24 @@ impl Renderer {
             let vertex_buffer_name = gl.create_buffer();
             let element_buffer_name = gl.create_buffer();
 
-            gl.bind_vertex_array(vertex_array_name);
-            gl.bind_buffer(gl::ARRAY_BUFFER, vertex_buffer_name);
-            gl.named_buffer_reserve(vertex_buffer_name, 4, gl::STREAM_DRAW);
-            gl.vertex_attrib_pointer(
-                rendering::VS_POS_IN_OBJ_LOC,
+            gl.vertex_array_attrib_format(
+                vertex_array_name,
+                // The index of the buffer we'll bind to.
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX,
                 3,
                 gl::FLOAT,
                 false,
-                std::mem::size_of::<[f32; 3]>(),
-                0,
+                field_offset!(Vertex, pos_in_obj) as u32,
             );
-            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, element_buffer_name);
-            gl.named_buffer_reserve(element_buffer_name, 4, gl::STATIC_DRAW);
-            gl.unbind_vertex_array();
-            gl.unbind_buffer(gl::ARRAY_BUFFER);
-            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
+            gl.enable_vertex_array_attrib(vertex_array_name, rendering::VS_POS_IN_OBJ_LOC);
+            gl.vertex_array_vertex_buffer(
+                vertex_array_name,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX,
+                vertex_buffer_name,
+                0,
+                std::mem::size_of::<Vertex>() as u32,
+            );
+            gl.vertex_array_element_buffer(vertex_array_name, element_buffer_name);
 
             Renderer {
                 program: rendering::VSFSProgram::new(gl),
