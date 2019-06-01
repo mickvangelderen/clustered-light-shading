@@ -53,8 +53,7 @@ impl Renderer {
             if let Some(loc) = self.shadow_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
                 gl.bind_sampler(0, self.shadow_sampler);
-                gl.active_texture(gl::TEXTURE0);
-                gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
+                gl.bind_texture_unit(0, params.shadow_texture_name);
             }
 
             if let Some(loc) = self.diffuse_sampler_loc.into() {
@@ -89,14 +88,9 @@ impl Renderer {
                         let normal_texture = &resources.textures[material.normal as usize];
                         let specular_texture = &resources.textures[material.specular as usize];
 
-                        gl.active_texture(gl::TEXTURE1);
-                        gl.bind_texture(gl::TEXTURE_2D, diffuse_texture.name);
-
-                        gl.active_texture(gl::TEXTURE2);
-                        gl.bind_texture(gl::TEXTURE_2D, normal_texture.name);
-
-                        gl.active_texture(gl::TEXTURE3);
-                        gl.bind_texture(gl::TEXTURE_2D, specular_texture.name);
+                        gl.bind_texture_unit(1, diffuse_texture.name);
+                        gl.bind_texture_unit(2, normal_texture.name);
+                        gl.bind_texture_unit(3, specular_texture.name);
 
                         if let Some(loc) = self.diffuse_dimensions_loc.into() {
                             gl.uniform_2f(loc, diffuse_texture.dimensions);

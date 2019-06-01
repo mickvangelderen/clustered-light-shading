@@ -33,8 +33,7 @@ impl Renderer {
 
             if let Some(loc) = self.depth_sampler_loc.into() {
                 gl.uniform_1i(loc, 1);
-                gl.active_texture(gl::TEXTURE1);
-                gl.bind_texture(gl::TEXTURE_2D, params.depth);
+                gl.bind_texture_unit(1, params.depth);
             };
 
             // X pass.
@@ -44,8 +43,7 @@ impl Renderer {
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, params.color);
+                    gl.bind_texture_unit(0, params.color);
                 };
 
                 if let Some(loc) = self.delta_loc.into() {
@@ -62,8 +60,7 @@ impl Renderer {
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, params.color_x);
+                    gl.bind_texture_unit(0, params.color_x);
                 };
 
                 if let Some(loc) = self.delta_loc.into() {

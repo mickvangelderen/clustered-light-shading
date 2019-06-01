@@ -83,7 +83,7 @@ fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
             gl::UNSIGNED_BYTE,
             img.as_ptr() as *const std::os::raw::c_void,
         );
-        gl.generate_mipmap(gl::TEXTURE_2D);
+        gl.generate_texture_mipmap(name);
         gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
         gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
@@ -124,6 +124,9 @@ pub struct Material {
     pub specular: TextureIndex,
     pub shininess: f32,
 }
+
+const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
+    gl::VertexArrayBufferBindingIndex::from_u32(0);
 
 impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P) -> Self {
@@ -359,63 +362,59 @@ impl Resources {
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            gl.bind_vertex_array(vao);
-            gl.bind_buffer(gl::ARRAY_BUFFER, vb);
-            gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
-
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
-            gl.named_buffer_data(eb, element_data.vec_as_bytes(), gl::STATIC_DRAW);
-
-            let stride = std::mem::size_of::<Vertex>();
-
             // AOS layout.
-            gl.vertex_attrib_pointer(
+            gl.vertex_array_attrib_format(
+                vao,
                 rendering::VS_POS_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
                 false,
-                stride,
-                field_offset!(Vertex, pos_in_obj),
+                field_offset!(Vertex, pos_in_obj) as u32,
             );
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
 
-            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_OBJ_LOC);
-
-            gl.vertex_attrib_pointer(
+            gl.vertex_array_attrib_format(
+                vao,
                 rendering::VS_POS_IN_TEX_LOC,
                 2,
                 gl::FLOAT,
                 false,
-                stride,
-                field_offset!(Vertex, pos_in_tex),
+                field_offset!(Vertex, pos_in_tex) as u32,
             );
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
 
-            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
-
-            gl.vertex_attrib_pointer(
+            gl.vertex_array_attrib_format(
+                vao,
                 rendering::VS_NOR_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
                 false,
-                stride,
-                field_offset!(Vertex, nor_in_obj),
+                field_offset!(Vertex, nor_in_obj) as u32,
             );
+            gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_NOR_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
 
-            gl.enable_vertex_attrib_array(rendering::VS_NOR_IN_OBJ_LOC);
-
-            gl.vertex_attrib_pointer(
+            gl.vertex_array_attrib_format(
+                vao,
                 rendering::VS_TAN_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
                 false,
-                stride,
-                field_offset!(Vertex, tan_in_obj),
+                field_offset!(Vertex, tan_in_obj) as u32,
             );
+            gl.enable_vertex_array_attrib(vao, rendering::VS_TAN_IN_OBJ_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_TAN_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
 
-            gl.enable_vertex_attrib_array(rendering::VS_TAN_IN_OBJ_LOC);
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<Vertex>() as u32;
+            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
 
-            gl.unbind_vertex_array();
-            gl.unbind_buffer(gl::ARRAY_BUFFER);
-            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
+            // Upload data.
+            gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, element_data.vec_as_bytes(), gl::STATIC_DRAW);
 
             (vao, vb, eb)
         };
@@ -425,23 +424,19 @@ impl Resources {
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            gl.bind_vertex_array(vao);
-            gl.bind_buffer(gl::ARRAY_BUFFER, vb);
+            // Set up attributes.
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
+
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<[f32; 2]>() as u32;
+            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
+
+            // Upload data.
             gl.named_buffer_data(vb, FULL_SCREEN_VERTICES.slice_to_bytes(), gl::STATIC_DRAW);
-            gl.vertex_attrib_pointer(
-                rendering::VS_POS_IN_TEX_LOC,
-                2,
-                gl::FLOAT,
-                false,
-                std::mem::size_of::<[f32; 2]>(),
-                0,
-            );
-            gl.enable_vertex_attrib_array(rendering::VS_POS_IN_TEX_LOC);
-            gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, eb);
             gl.named_buffer_data(eb, FULL_SCREEN_INDICES.slice_to_bytes(), gl::STATIC_DRAW);
-            gl.unbind_vertex_array();
-            gl.unbind_buffer(gl::ARRAY_BUFFER);
-            gl.unbind_buffer(gl::ELEMENT_ARRAY_BUFFER);
 
             (vao, vb, eb)
         };
@@ -468,7 +463,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(-12.9671, 1.8846, -4.4980),
                     attenuation: AttenParams {
                         intensity: 4.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -480,7 +475,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(-11.9563, 2.6292, 3.8412),
                     attenuation: AttenParams {
                         intensity: 16.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -492,7 +487,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(13.6090, 2.6292, 3.3216),
                     attenuation: AttenParams {
                         intensity: 4.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -504,7 +499,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(12.5982, 1.8846, -5.0176),
                     attenuation: AttenParams {
                         intensity: 2.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -516,7 +511,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(3.3116, 4.3440, 5.1447),
                     attenuation: AttenParams {
                         intensity: 1.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -528,7 +523,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(8.8820, 6.7391, -1.0279),
                     attenuation: AttenParams {
                         intensity: 2.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -540,7 +535,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(-4.6988, 10.0393, 0.8667),
                     attenuation: AttenParams {
                         intensity: 4.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
@@ -552,7 +547,7 @@ impl Resources {
                     pos_in_pnt: Point3::new(-4.6816, 1.0259, -2.1767),
                     attenuation: AttenParams {
                         intensity: 8.0,
-                        clip_near: 0.1,
+                        clip_near: 0.5,
                         cutoff: 0.1,
                     }
                     .into(),
