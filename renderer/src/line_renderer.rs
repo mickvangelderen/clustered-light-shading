@@ -90,14 +90,19 @@ impl Renderer {
 
             gl.vertex_array_attrib_format(
                 vertex_array_name,
-                // The index of the buffer we'll bind to.
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX,
+                rendering::VS_POS_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
                 false,
                 field_offset!(Vertex, pos_in_obj) as u32,
             );
             gl.enable_vertex_array_attrib(vertex_array_name, rendering::VS_POS_IN_OBJ_LOC);
+            gl.vertex_array_attrib_binding(
+                vertex_array_name,
+                rendering::VS_POS_IN_OBJ_LOC,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX,
+            );
+
             gl.vertex_array_vertex_buffer(
                 vertex_array_name,
                 VERTEX_ARRAY_BUFFER_BINDING_INDEX,

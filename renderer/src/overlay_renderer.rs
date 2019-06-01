@@ -36,8 +36,7 @@ impl Renderer {
 
             if let Some(loc) = self.color_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
-                gl.active_texture(gl::TEXTURE0);
-                gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
+                gl.bind_texture_unit(0, params.color_texture_name);
             };
 
             if let Some(loc) = self.default_colors_loc.into() {

@@ -46,26 +46,22 @@ impl Renderer {
 
             if let Some(loc) = self.color_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
-                gl.active_texture(gl::TEXTURE0);
-                gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
+                gl.bind_texture_unit(0, params.color_texture_name);
             };
 
             if let Some(loc) = self.depth_sampler_loc.into() {
                 gl.uniform_1i(loc, 1);
-                gl.active_texture(gl::TEXTURE1);
-                gl.bind_texture(gl::TEXTURE_2D, params.depth_texture_name);
+                gl.bind_texture_unit(1, params.depth_texture_name);
             };
 
             if let Some(loc) = self.nor_in_cam_sampler_loc.into() {
                 gl.uniform_1i(loc, 2);
-                gl.active_texture(gl::TEXTURE2);
-                gl.bind_texture(gl::TEXTURE_2D, params.nor_in_cam_texture_name);
+                gl.bind_texture_unit(2, params.nor_in_cam_texture_name);
             };
 
             if let Some(loc) = self.ao_sampler_loc.into() {
                 gl.uniform_1i(loc, 3);
-                gl.active_texture(gl::TEXTURE3);
-                gl.bind_texture(gl::TEXTURE_2D, params.ao_texture_name);
+                gl.bind_texture_unit(3, params.ao_texture_name);
             };
 
             gl.bind_vertex_array(resources.full_screen_vao);

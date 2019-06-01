@@ -1,7 +1,7 @@
 use crate::rendering;
-use std::convert::TryFrom;
 use crate::resources::*;
 use gl_typed as gl;
+use std::convert::TryFrom;
 
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
@@ -36,15 +36,19 @@ impl Renderer {
 
                 if let Some(loc) = self.sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, params.color);
+                    gl.bind_texture_unit(0, params.color);
                 };
 
                 if let Some(loc) = self.delta_loc.into() {
                     gl.uniform_2f(loc, [1.0 / params.width as f32, 0.0]);
                 }
 
-                gl.draw_elements(gl::TRIANGLES, u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(), gl::UNSIGNED_INT, 0);
+                gl.draw_elements(
+                    gl::TRIANGLES,
+                    u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(),
+                    gl::UNSIGNED_INT,
+                    0,
+                );
             }
 
             // Y pass.
@@ -54,22 +58,25 @@ impl Renderer {
 
                 if let Some(loc) = self.sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, params.color_x);
+                    gl.bind_texture_unit(0, params.color_x);
                 };
 
                 if let Some(loc) = self.delta_loc.into() {
                     gl.uniform_2f(loc, [0.0, 1.0 / params.height as f32]);
                 }
 
-                gl.draw_elements(gl::TRIANGLES, u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(), gl::UNSIGNED_INT, 0);
+                gl.draw_elements(
+                    gl::TRIANGLES,
+                    u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(),
+                    gl::UNSIGNED_INT,
+                    0,
+                );
             }
 
             gl.unbind_vertex_array();
             gl.unuse_program();
 
-            gl.bind_texture(gl::TEXTURE_2D, params.color);
-            gl.generate_mipmap(gl::TEXTURE_2D);
+            gl.generate_texture_mipmap(params.color);
         }
     }
 
