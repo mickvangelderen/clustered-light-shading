@@ -354,12 +354,6 @@ impl Resources {
             });
         }
 
-        macro_rules! field_offset {
-            ($Struct:ty, $field:ident) => {
-                &(*(std::ptr::null::<$Struct>())).$field as *const _ as usize
-            };
-        }
-
         let (scene_vao, scene_vb, scene_eb) = unsafe {
             let vao = gl.create_vertex_array();
             let vb = gl.create_buffer();
