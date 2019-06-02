@@ -121,33 +121,33 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float d_sq = max(R0, d_sq_unclipped);
   float d = max(R0, d_unclipped);
 
-  float attenuation;
+  float diffuse_attenuation;
+  float specular_attenuation;
 
   if (d_unclipped < R1) {
     if (attenuation_mode == ATTENUATION_MODE_STEP) {
-      attenuation = I*(1.0/R0 + R0 - 1.0/R1)/R1;
+      diffuse_attenuation = I*(1.0/R0 + R0 - 1.0/R1)/R1;
     } else if (attenuation_mode == ATTENUATION_MODE_LINEAR) {
       // Linear doesn't go infinite so we can use the unclipped distance.
-      attenuation = I - (I/R1) * d_unclipped;
+      diffuse_attenuation = I - (I/R1) * d_unclipped;
     } else if (attenuation_mode == ATTENUATION_MODE_PHYSICAL) {
-      attenuation = I / d_sq;
+      diffuse_attenuation = I / d_sq;
     } else if (attenuation_mode == ATTENUATION_MODE_INTERPOLATED) {
-      attenuation = I / d_sq - (C / R1) * d;
-      // attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
+      diffuse_attenuation = I / d_sq - (C / R1) * d;
+      // diffuse_attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
     } else if (attenuation_mode == ATTENUATION_MODE_REDUCED) {
-      attenuation = I / d_sq - C;
+      diffuse_attenuation = I / d_sq - C;
     } else if (attenuation_mode == ATTENUATION_MODE_SMOOTH) {
-      attenuation = I / d_sq - 3.0*C + (2.0*C/R1) * d;
+      diffuse_attenuation = I / d_sq - 3.0*C + (2.0*C/R1) * d;
     } else {
       // ERROR: Invalid attenuation_mode.
-      attenuation = 0.0;
+      diffuse_attenuation = 0.0;
     }
+    specular_attenuation = I*(1.0 - d_sq/(R1*R1));
   } else {
-    attenuation = 0.0;
+    diffuse_attenuation = 0.0;
+    specular_attenuation = 0.0;
   }
-
-  // Ambient.
-  float ambient_weight = 1.0;
 
   // Diffuse.
   float diffuse_weight = max(0.0, dot(nor_in_cam, light_dir_in_cam_norm));
@@ -159,15 +159,15 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_weight = pow(specular_angle, shininess);
 
   // LIGHT ATTENUATION.
-  return vec3(attenuation);
+  // return vec3(specular_attenuation*specular_weight);
 
   // LIGHT CONTRIBUTION.
   return
       // Diffuse
-      (attenuation * diffuse_weight) * point_light.diffuse.rgb *
+      (diffuse_attenuation * diffuse_weight) * point_light.diffuse.rgb *
           texture(diffuse_sampler, fs_pos_in_tex).rgb +
       // Specular
-      (specular_weight) * point_light.specular.rgb *
+      (specular_attenuation * specular_weight) * point_light.specular.rgb *
           texture(specular_sampler, fs_pos_in_tex).rgb;
 }
 
@@ -189,8 +189,11 @@ void main() {
       mat3(fs_tan_in_cam_norm, fs_bitan_in_cam_norm, fs_nor_in_cam_norm);
   vec3 nor_in_cam = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
 
-  // Ambient.
-  float ambient_weight = 0.2;
+  // Ambient. Fake light bouncing from sun light.
+  float ambient_weight =
+      max(0.0, dot(mat3(pos_from_wld_to_cam) * vec3(0.0, 1.0, 0.0),
+                   light_dir_in_cam) *
+                   0.3);
 
   // Diffuse.
   float diffuse_weight = max(dot(nor_in_cam, light_dir_in_cam_norm), 0.0);
@@ -208,10 +211,11 @@ void main() {
   vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
 
   float visibility = compute_visibility_variance(pos_in_lgt);
-  frag_color = vec4((diffuse_color * ambient_weight) +
-                        visibility * (diffuse_color * diffuse_weight +
-                                      specular_color * specular_weight),
-                    1.0);
+
+  vec3 color_accumulator = vec3(0.0);
+  color_accumulator += (diffuse_color * ambient_weight) +
+                       visibility * (diffuse_color * diffuse_weight +
+                                     specular_color * specular_weight);
 
   uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
 
@@ -246,7 +250,6 @@ void main() {
   // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
 
   // CLUSTERED SHADING
-  vec3 color_accumulator = vec3(0.0);
   for (uint i = 0; i < cluster_length; i++) {
     // uint light_index = clusters[cluster_index + 1 + i];
     uint light_index = i;
