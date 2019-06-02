@@ -268,6 +268,12 @@ pub struct CLSBufferHeader {
     pub pos_from_cls_to_wld: Matrix4<f32>,
 }
 
+#[derive(Debug)]
+pub struct CLSBuffer {
+    pub header: CLSBufferHeader,
+    pub body: Vec<[u32; 8]>,
+}
+
 pub const CLS_BUFFER_DECLARATION: &'static str = r"
 layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
     uvec4 cluster_dims;
@@ -300,10 +306,10 @@ impl CLSResources {
     }
 
     #[inline]
-    pub fn write(&self, gl: &gl::Gl, header: &CLSBufferHeader, body: &Vec<[u32; 16]>) {
+    pub fn write(&self, gl: &gl::Gl, cls_buffer: &CLSBuffer) {
         unsafe {
-            let header_bytes = header.value_as_bytes();
-            let body_bytes = body.vec_as_bytes();
+            let header_bytes = cls_buffer.header.value_as_bytes();
+            let body_bytes = cls_buffer.body.vec_as_bytes();
             let total_size = header_bytes.len() + body_bytes.len();
             gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
             gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
