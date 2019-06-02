@@ -4,10 +4,46 @@ pub const FILE_PATH: &'static str = "configuration.toml";
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, Default)]
 pub struct Root {
+    pub global: Global,
+    pub window: Window,
     pub clustered_light_shading: ClusteredLightShading,
     pub camera: GenericCamera,
     pub main_camera: Camera,
     pub debug_camera: Camera,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
+pub struct Window {
+    pub vsync: bool,
+    pub rgb_bits: u8,
+    pub alpha_bits: u8,
+    pub srgb: bool,
+}
+
+impl Default for Window {
+    fn default() -> Self {
+        Window {
+            vsync: true,
+            rgb_bits: 24,
+            alpha_bits: 8,
+            srgb: true,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
+pub struct Global {
+    pub diffuse_srgb: bool,
+    pub framebuffer_srgb: bool,
+}
+
+impl Default for Global {
+    fn default() -> Self {
+        Global {
+            diffuse_srgb: true,
+            framebuffer_srgb: true,
+        }
+    }
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]

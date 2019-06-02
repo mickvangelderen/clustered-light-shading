@@ -83,115 +83,72 @@ impl<'a> TextureUpdate<'a> {
     }
 }
 
-impl From<gl::RGBA8> for TextureFormat {
-    #[inline]
-    fn from(_: gl::RGBA8) -> Self {
-        TextureFormat::Rgba8
-    }
-}
-
-impl From<gl::RGB8> for TextureFormat {
-    #[inline]
-    fn from(_: gl::RGB8) -> Self {
-        TextureFormat::Rgb8
-    }
-}
-
-impl From<gl::RG8> for TextureFormat {
-    #[inline]
-    fn from(_: gl::RG8) -> Self {
-        TextureFormat::Rg8
-    }
-}
-
-impl From<gl::R8> for TextureFormat {
-    #[inline]
-    fn from(_: gl::R8) -> Self {
-        TextureFormat::R8
-    }
-}
-
-impl From<gl::DEPTH24_STENCIL8> for TextureFormat {
-    #[inline]
-    fn from(_: gl::DEPTH24_STENCIL8) -> Self {
-        TextureFormat::Depth24Stencil8
-    }
-}
-
-impl From<gl::R11F_G11F_B10F> for TextureFormat {
-    #[inline]
-    fn from(_: gl::R11F_G11F_B10F) -> Self {
-        TextureFormat::R11fG11fB10f
-    }
-}
-
-impl From<gl::RG8UI> for TextureFormat {
-    #[inline]
-    fn from(_: gl::RG8UI) -> Self {
-        TextureFormat::Rg8ui
-    }
-}
-
-impl From<gl::RG32F> for TextureFormat {
-    #[inline]
-    fn from(_: gl::RG32F) -> Self {
-        TextureFormat::Rg32f
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum TextureFormat {
-    Rgba8,
-    Rgb8,
-    Rg8,
-    R8,
-    Depth24Stencil8,
-    R11fG11fB10f,
-    Rg8ui,
-    Rg32f,
-}
-
-impl TextureFormat {
-    #[inline]
-    pub fn internal_format(self) -> gl::InternalFormat {
-        match self {
-            TextureFormat::Rgba8 => gl::RGBA8.into(),
-            TextureFormat::Rgb8 => gl::RGB8.into(),
-            TextureFormat::Rg8 => gl::RG8.into(),
-            TextureFormat::R8 => gl::R8.into(),
-            TextureFormat::Depth24Stencil8 => gl::DEPTH24_STENCIL8.into(),
-            TextureFormat::R11fG11fB10f => gl::R11F_G11F_B10F.into(),
-            TextureFormat::Rg8ui => gl::RG8UI.into(),
-            TextureFormat::Rg32f => gl::RG32F.into(),
+macro_rules! impl_texture_format {
+    ($(($InternalFormat: ident, $Format: ident, $ComponentFormat: ident),)*) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Copy, Clone)]
+        pub enum TextureFormat {
+            $(
+                $InternalFormat,
+            )*
         }
-    }
-    #[inline]
-    pub fn format(self) -> gl::Format {
-        match self {
-            TextureFormat::Rgba8 => gl::RGBA.into(),
-            TextureFormat::Rgb8 => gl::RGB.into(),
-            TextureFormat::Rg8 => gl::RG.into(),
-            TextureFormat::R8 => gl::RED.into(),
-            TextureFormat::Depth24Stencil8 => gl::DEPTH_STENCIL.into(),
-            TextureFormat::R11fG11fB10f => gl::RGB.into(),
-            TextureFormat::Rg8ui => gl::RG_INTEGER.into(),
-            TextureFormat::Rg32f => gl::RG.into(),
-        }
-    }
 
-    #[inline]
-    pub fn component_type(self) -> gl::ComponentFormat {
-        match self {
-            TextureFormat::Rgba8 => gl::UNSIGNED_BYTE.into(),
-            TextureFormat::Rgb8 => gl::UNSIGNED_BYTE.into(),
-            TextureFormat::Rg8 => gl::UNSIGNED_BYTE.into(),
-            TextureFormat::R8 => gl::UNSIGNED_BYTE.into(),
-            TextureFormat::Depth24Stencil8 => gl::UNSIGNED_INT_24_8.into(),
-            TextureFormat::R11fG11fB10f => gl::FLOAT.into(),
-            TextureFormat::Rg8ui => gl::UNSIGNED_BYTE.into(),
-            TextureFormat::Rg32f => gl::FLOAT.into(),
+        impl TextureFormat {
+            #[inline]
+            pub fn internal_format(self) -> gl::InternalFormat {
+                match self {
+                    $(
+                        TextureFormat::$InternalFormat => gl::$InternalFormat.into(),
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn format(self) -> gl::Format {
+                match self {
+                    $(
+                        TextureFormat::$InternalFormat => gl::$Format.into(),
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn component_type(self) -> gl::ComponentFormat {
+                match self {
+                    $(
+                        TextureFormat::$InternalFormat => gl::$ComponentFormat.into(),
+                    )*
+                }
+            }
         }
-    }
+
+        $(
+            impl From<gl::$InternalFormat> for TextureFormat {
+                #[inline]
+                fn from(_: gl::$InternalFormat) -> Self {
+                    TextureFormat::$InternalFormat
+                }
+            }
+        )*
+    };
+}
+
+impl_texture_format! {
+    (RGBA8, RGBA, UNSIGNED_BYTE),
+    (RGB8, RGB, UNSIGNED_BYTE),
+    (RG8, RG, UNSIGNED_BYTE),
+    (R8, RED, UNSIGNED_BYTE),
+    (RG8UI, RG_INTEGER, UNSIGNED_BYTE),
+    (DEPTH24_STENCIL8, DEPTH_STENCIL, UNSIGNED_INT_24_8),
+    (R11F_G11F_B10F, RGB, FLOAT),
+    (RGBA16F, RGBA, FLOAT),
+    (RGB16F, RGB, FLOAT),
+    (RG16F, RG, FLOAT),
+    (R16F, RED, FLOAT),
+    (RGBA32F, RGBA, FLOAT),
+    (RGB32F, RGB, FLOAT),
+    (RG32F, RG, FLOAT),
+    (R32F, RED, FLOAT),
 }
 
 pub struct Texture<Shape, Format> {
