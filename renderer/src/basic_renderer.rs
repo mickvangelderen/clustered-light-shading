@@ -41,7 +41,6 @@ impl Renderer {
             gl.cull_face(gl::BACK);
             gl.viewport(0, 0, params.width, params.height);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-            gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()]);
 
             gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
             // Reverse-Z projection.
