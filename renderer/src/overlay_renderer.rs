@@ -30,7 +30,6 @@ impl Renderer {
             gl.depth_mask(gl::WriteMask::Disabled);
             gl.viewport(params.x0, params.y0, params.x1 - params.x0, params.y1 - params.y0);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-            gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
             gl.use_program(self.program.name);
 

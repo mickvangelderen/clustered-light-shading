@@ -176,6 +176,8 @@ impl ViewIndependentResources {
                 shadow_depth_renderbuffer_name,
             );
 
+            gl.named_framebuffer_draw_buffers(shadow_framebuffer_name, &[gl::COLOR_ATTACHMENT0.into()]);
+
             assert_eq!(
                 gl.check_named_framebuffer_status(shadow_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
@@ -196,6 +198,8 @@ impl ViewIndependentResources {
                 gl::RENDERBUFFER,
                 shadow_depth_renderbuffer_name,
             );
+
+            gl.named_framebuffer_draw_buffers(shadow_2_framebuffer_name, &[gl::COLOR_ATTACHMENT0.into()]);
 
             assert_eq!(
                 gl.check_named_framebuffer_status(shadow_2_framebuffer_name, gl::FRAMEBUFFER),
@@ -218,14 +222,14 @@ pub struct ViewDependentResources {
     pub width: i32,
     pub height: i32,
     // Main frame resources.
-    pub framebuffer_name: gl::NonDefaultFramebufferName,
-    pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
-    pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
-    pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
+    pub main_framebuffer_name: gl::NonDefaultFramebufferName,
+    pub main_color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
+    pub main_depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
+    pub main_nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
     // AO resources.
     pub ao_framebuffer_name: gl::NonDefaultFramebufferName,
-    pub ao_x_framebuffer_name: gl::NonDefaultFramebufferName,
     pub ao_texture: Texture<gl::TEXTURE_2D, gl::R8>,
+    pub ao_x_framebuffer_name: gl::NonDefaultFramebufferName,
     pub ao_x_texture: Texture<gl::TEXTURE_2D, gl::R8>,
     pub ao_depth_renderbuffer_name: gl::RenderbufferName,
     // Post resources.
@@ -315,14 +319,14 @@ impl ViewDependentResources {
                 .wrap_s(gl::CLAMP_TO_EDGE.into())
                 .wrap_t(gl::CLAMP_TO_EDGE.into());
 
-            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
-            color_texture.update(gl, texture_update);
+            let main_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
+            main_color_texture.update(gl, texture_update);
 
-            let nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F);
-            nor_in_cam_texture.update(gl, texture_update);
+            let main_nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F);
+            main_nor_in_cam_texture.update(gl, texture_update);
 
-            let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
-            depth_texture.update(gl, texture_update);
+            let main_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
+            main_depth_texture.update(gl, texture_update);
 
             let ao_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8);
             ao_texture.update(gl, texture_update);
@@ -338,32 +342,54 @@ impl ViewDependentResources {
 
             // Framebuffers.
 
-            let framebuffer_name = gl.create_framebuffer();
-            gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, color_texture.name(), 0);
+            let main_framebuffer_name = {
+                let framebuffer_name = gl.create_framebuffer();
+                gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, main_color_texture.name(), 0);
+                gl.named_framebuffer_texture(
+                    framebuffer_name,
+                    gl::COLOR_ATTACHMENT1,
+                    main_nor_in_cam_texture.name(),
+                    0,
+                );
+                gl.named_framebuffer_texture(
+                    framebuffer_name,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    main_depth_texture.name(),
+                    0,
+                );
 
-            gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT1, nor_in_cam_texture.name(), 0);
+                gl.named_framebuffer_draw_buffers(
+                    framebuffer_name,
+                    &[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()],
+                );
+                assert_eq!(
+                    gl.check_named_framebuffer_status(framebuffer_name, gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+                framebuffer_name
+            };
 
-            gl.named_framebuffer_texture(framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name(), 0);
-            assert_eq!(
-                gl.check_named_framebuffer_status(framebuffer_name, gl::FRAMEBUFFER),
-                gl::FRAMEBUFFER_COMPLETE.into()
-            );
+            let ao_framebuffer_name = {
+                let framebuffer_name = gl.create_framebuffer().into();
 
-            let ao_framebuffer_name = gl.create_framebuffer().into();
+                gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, ao_texture.name(), 0);
 
-            gl.named_framebuffer_texture(ao_framebuffer_name, gl::COLOR_ATTACHMENT0, ao_texture.name(), 0);
+                gl.named_framebuffer_renderbuffer(
+                    framebuffer_name,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    gl::RENDERBUFFER,
+                    ao_depth_renderbuffer_name,
+                );
 
-            gl.named_framebuffer_renderbuffer(
-                ao_framebuffer_name,
-                gl::DEPTH_STENCIL_ATTACHMENT,
-                gl::RENDERBUFFER,
-                ao_depth_renderbuffer_name,
-            );
+                gl.named_framebuffer_draw_buffers(framebuffer_name, &[gl::COLOR_ATTACHMENT0.into()]);
 
-            assert_eq!(
-                gl.check_named_framebuffer_status(ao_framebuffer_name, gl::FRAMEBUFFER),
-                gl::FRAMEBUFFER_COMPLETE.into()
-            );
+                assert_eq!(
+                    gl.check_named_framebuffer_status(framebuffer_name, gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+
+                framebuffer_name
+            };
 
             let ao_x_framebuffer_name = gl.create_framebuffer().into();
 
@@ -376,31 +402,32 @@ impl ViewDependentResources {
                 ao_depth_renderbuffer_name,
             );
 
+            gl.named_framebuffer_draw_buffers(ao_x_framebuffer_name, &[gl::COLOR_ATTACHMENT0.into()]);
+
             assert_eq!(
                 gl.check_named_framebuffer_status(ao_x_framebuffer_name, gl::FRAMEBUFFER),
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
-            let post_framebuffer_name = gl.create_framebuffer();
+            let post_framebuffer_name = {
+                let framebuffer_name = gl.create_framebuffer();
 
-            gl.named_framebuffer_texture(
-                post_framebuffer_name,
-                gl::COLOR_ATTACHMENT0,
-                post_color_texture.name(),
-                0,
-            );
+                gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, post_color_texture.name(), 0);
 
-            gl.named_framebuffer_texture(
-                post_framebuffer_name,
-                gl::DEPTH_STENCIL_ATTACHMENT,
-                post_depth_texture.name(),
-                0,
-            );
+                gl.named_framebuffer_texture(
+                    framebuffer_name,
+                    gl::DEPTH_STENCIL_ATTACHMENT,
+                    post_depth_texture.name(),
+                    0,
+                );
 
-            assert_eq!(
-                gl.check_named_framebuffer_status(post_framebuffer_name, gl::FRAMEBUFFER),
-                gl::FRAMEBUFFER_COMPLETE.into()
-            );
+                assert_eq!(
+                    gl.check_named_framebuffer_status(framebuffer_name, gl::FRAMEBUFFER),
+                    gl::FRAMEBUFFER_COMPLETE.into()
+                );
+
+                framebuffer_name
+            };
 
             // Uniform block buffers,
 
@@ -409,10 +436,10 @@ impl ViewDependentResources {
             ViewDependentResources {
                 width,
                 height,
-                framebuffer_name,
-                color_texture,
-                nor_in_cam_texture,
-                depth_texture,
+                main_framebuffer_name,
+                main_color_texture,
+                main_depth_texture,
+                main_nor_in_cam_texture,
                 ao_framebuffer_name,
                 ao_x_framebuffer_name,
                 ao_texture,
@@ -433,9 +460,9 @@ impl ViewDependentResources {
             gl.named_renderbuffer_storage(self.ao_depth_renderbuffer_name, gl::DEPTH24_STENCIL8, width, height);
 
             let texture_update = TextureUpdate::new().data(width, height, None);
-            self.color_texture.update(gl, texture_update);
-            self.depth_texture.update(gl, texture_update);
-            self.nor_in_cam_texture.update(gl, texture_update);
+            self.main_color_texture.update(gl, texture_update);
+            self.main_depth_texture.update(gl, texture_update);
+            self.main_nor_in_cam_texture.update(gl, texture_update);
             self.ao_texture.update(gl, texture_update);
             self.ao_x_texture.update(gl, texture_update);
             self.post_color_texture.update(gl, texture_update);
@@ -445,12 +472,12 @@ impl ViewDependentResources {
 
     pub fn drop(self, gl: &gl::Gl) {
         unsafe {
-            gl.delete_framebuffer(self.framebuffer_name);
+            gl.delete_framebuffer(self.main_framebuffer_name);
             gl.delete_framebuffer(self.ao_framebuffer_name);
             gl.delete_renderbuffer(self.ao_depth_renderbuffer_name);
-            self.color_texture.drop(gl);
-            self.depth_texture.drop(gl);
-            self.nor_in_cam_texture.drop(gl);
+            self.main_color_texture.drop(gl);
+            self.main_depth_texture.drop(gl);
+            self.main_nor_in_cam_texture.drop(gl);
             self.ao_texture.drop(gl);
             self.ao_x_texture.drop(gl);
             self.post_color_texture.drop(gl);
@@ -1218,7 +1245,7 @@ fn main() {
         };
 
         // Clustered light shading.
-        let (cls_header, clustering) = {
+        let cls_buffer = {
             let cluster_bounding_box = {
                 let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
                 let mut corners_in_hmd = views
@@ -1254,7 +1281,7 @@ fn main() {
             let pos_from_cls_to_wld: Matrix4<f32> = pos_from_wld_to_cls.invert().unwrap().cast().unwrap();
             let pos_from_wld_to_cls: Matrix4<f32> = pos_from_wld_to_cls.cast().unwrap();
 
-            let mut clustering: Vec<[u32; 16]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
+            let mut clustering: Vec<[u32; 8]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
 
             // println!(
             //     "cluster x * y * z = {} * {} * {} = {} ({} MB)",
@@ -1333,27 +1360,30 @@ fn main() {
                 break;
             }
 
-            let cls_header = rendering::CLSBufferHeader {
-                cluster_dims: cbb_dims.map(|e: usize| e as u32).extend(16),
-                pos_from_wld_to_cls,
-                pos_from_cls_to_wld,
+            let cls_buffer = rendering::CLSBuffer {
+                header: rendering::CLSBufferHeader {
+                    cluster_dims: cbb_dims.map(|e: usize| e as u32).extend(16),
+                    pos_from_wld_to_cls,
+                    pos_from_cls_to_wld,
+                },
+                body: clustering,
             };
 
             if should_export_state {
                 use std::io::Write;
                 let mut f = std::fs::File::create("cls.bin").unwrap();
-                f.write_all(cls_header.value_as_bytes()).unwrap();
-                f.write_all(clustering.vec_as_bytes()).unwrap();
+                f.write_all(cls_buffer.header.value_as_bytes()).unwrap();
+                f.write_all(cls_buffer.body.vec_as_bytes()).unwrap();
             }
 
-            (cls_header, clustering)
+            cls_buffer
         };
 
         timing_transition!(timings, prepare_render_data, render);
 
         global_resources.write(&gl, &global_data);
 
-        view_ind_res.cls_resources.write(&gl, &cls_header, &clustering);
+        view_ind_res.cls_resources.write(&gl, &cls_buffer);
         view_ind_res.cls_resources.bind(&gl);
 
         // View independent.
@@ -1451,7 +1481,7 @@ fn main() {
             basic_renderer.render(
                 &gl,
                 &basic_renderer::Parameters {
-                    framebuffer: view_dep_res.framebuffer_name.into(),
+                    framebuffer: view_dep_res.main_framebuffer_name.into(),
                     width: view_dep_res.width,
                     height: view_dep_res.height,
                     material_resources,
@@ -1465,7 +1495,7 @@ fn main() {
             line_renderer.render(
                 &gl,
                 &line_renderer::Parameters {
-                    framebuffer: view_dep_res.framebuffer_name.into(),
+                    framebuffer: view_dep_res.main_framebuffer_name.into(),
                     width: view_dep_res.width,
                     height: view_dep_res.height,
                     vertices: &sun_frustrum_vertices[..],
@@ -1480,9 +1510,9 @@ fn main() {
                     framebuffer: view_dep_res.ao_framebuffer_name.into(),
                     width: view_dep_res.width,
                     height: view_dep_res.height,
-                    color_texture_name: view_dep_res.color_texture.name(),
-                    depth_texture_name: view_dep_res.depth_texture.name(),
-                    nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
+                    color_texture_name: view_dep_res.main_color_texture.name(),
+                    depth_texture_name: view_dep_res.main_depth_texture.name(),
+                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
                     random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
                 },
                 &world,
@@ -1498,7 +1528,7 @@ fn main() {
                     framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
                     color: view_dep_res.ao_texture.name(),
                     color_x: view_dep_res.ao_x_texture.name(),
-                    depth: view_dep_res.depth_texture.name(),
+                    depth: view_dep_res.main_depth_texture.name(),
                 },
                 &resources,
             );
@@ -1514,9 +1544,9 @@ fn main() {
                     },
                     width: view_dep_res.width,
                     height: view_dep_res.height,
-                    color_texture_name: view_dep_res.color_texture.name(),
-                    depth_texture_name: view_dep_res.depth_texture.name(),
-                    nor_in_cam_texture_name: view_dep_res.nor_in_cam_texture.name(),
+                    color_texture_name: view_dep_res.main_color_texture.name(),
+                    depth_texture_name: view_dep_res.main_depth_texture.name(),
+                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
                     ao_texture_name: view_dep_res.ao_texture.name(),
                 },
                 &world,

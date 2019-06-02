@@ -39,7 +39,6 @@ impl Renderer {
             // X pass.
             {
                 gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer_x);
-                gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
@@ -56,7 +55,6 @@ impl Renderer {
             // Y pass.
             {
                 gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer_xy);
-                gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
