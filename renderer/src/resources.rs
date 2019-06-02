@@ -46,6 +46,11 @@ pub struct Resources {
     pub full_screen_vao: gl::VertexArrayName,
     pub full_screen_vb: gl::BufferName,
     pub full_screen_eb: gl::BufferName,
+
+    pub cluster_vao: gl::VertexArrayName,
+    pub cluster_vb: gl::BufferName,
+    pub cluster_eb: gl::BufferName,
+    pub cluster_element_count: u32,
 }
 
 #[inline]
@@ -479,6 +484,42 @@ impl Resources {
             (vao, vb, eb)
         };
 
+        let (cluster_vao, cluster_vb, cluster_eb, cluster_element_count) = unsafe {
+            #[repr(C)]
+            struct Vertex {
+                pub pos_in_obj: [f32; 3],
+            };
+
+            let vao = gl.create_vertex_array();
+            let vb = gl.create_buffer();
+            let eb = gl.create_buffer();
+
+            // Set up attributes.
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
+
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<Vertex>() as u32;
+            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
+
+            // Upload data.
+            let vertices = polygen::cube_vertices(
+                (0.0, 1.0),
+                (0.0, 1.0),
+                (0.0, 1.0),
+                1
+            );
+
+            let indices = polygen::cube_tris(1);
+
+            gl.named_buffer_data(vb, vertices.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, indices.vec_as_bytes(), gl::STATIC_DRAW);
+
+            (vao, vb, eb, (indices.len() * 3) as u32)
+        };
+
         Resources {
             meshes,
             materials,
@@ -493,6 +534,10 @@ impl Resources {
             full_screen_vao,
             full_screen_vb,
             full_screen_eb,
+            cluster_vao,
+            cluster_vb,
+            cluster_eb,
+            cluster_element_count,
             point_lights: [
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
