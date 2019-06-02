@@ -113,7 +113,7 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float I = point_light.att[0];
   float C = point_light.att[1];
   float R0 = point_light.att[2];
-  float R1 = point_light.att[3];
+  float R1 = point_light.att[3]; // R1^2 = I/C
 
   // Attenuation.
   float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
@@ -121,26 +121,29 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float d_sq = max(R0, d_sq_unclipped);
   float d = max(R0, d_unclipped);
 
-  float light_weight;
+  float attenuation;
 
   if (d_unclipped < R1) {
     if (attenuation_mode == ATTENUATION_MODE_STEP) {
-      light_weight = I*(1.0 - (1.0/R1))/(R1 - 1.0);
+      attenuation = I*(1.0/R0 + R0 - 1.0/R1)/R1;
     } else if (attenuation_mode == ATTENUATION_MODE_LINEAR) {
       // Linear doesn't go infinite so we can use the unclipped distance.
-      light_weight = I - (I/R1) * d_unclipped;
+      attenuation = I - (I/R1) * d_unclipped;
     } else if (attenuation_mode == ATTENUATION_MODE_PHYSICAL) {
-      light_weight = I / d_sq;
+      attenuation = I / d_sq;
     } else if (attenuation_mode == ATTENUATION_MODE_INTERPOLATED) {
-      light_weight = I / d_sq - (C / R1) * d;
-      // light_weight = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
+      attenuation = I / d_sq - (C / R1) * d;
+      // attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
     } else if (attenuation_mode == ATTENUATION_MODE_REDUCED) {
-      light_weight = I / d_sq - C;
+      attenuation = I / d_sq - C;
     } else if (attenuation_mode == ATTENUATION_MODE_SMOOTH) {
-      light_weight = I / d_sq - 3.0*C + (2.0*C/R1) * d;
+      attenuation = I / d_sq - 3.0*C + (2.0*C/R1) * d;
+    } else {
+      // ERROR: Invalid attenuation_mode.
+      attenuation = 0.0;
     }
   } else {
-    light_weight = 0.0;
+    attenuation = 0.0;
   }
 
   // Ambient.
@@ -156,18 +159,15 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_weight = pow(specular_angle, shininess);
 
   // LIGHT ATTENUATION.
-  // return vec3(light_weight);
+  return vec3(attenuation);
 
   // LIGHT CONTRIBUTION.
   return
-      // Ambient
-      (light_weight * ambient_weight) * point_light.ambient.rgb *
-          texture(diffuse_sampler, fs_pos_in_tex).rgb +
       // Diffuse
-      (light_weight * diffuse_weight) * point_light.diffuse.rgb *
+      (attenuation * diffuse_weight) * point_light.diffuse.rgb *
           texture(diffuse_sampler, fs_pos_in_tex).rgb +
       // Specular
-      (light_weight * specular_weight) * point_light.specular.rgb *
+      (specular_weight) * point_light.specular.rgb *
           texture(specular_sampler, fs_pos_in_tex).rgb;
 }
 
@@ -219,8 +219,8 @@ void main() {
   // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
 
   // CLUSTER INDICES X, Y, Z mod 3
-  vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
-  frag_color = vec4(cluster_index_colors.xyz, 1.0);
+  // vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
+  // frag_color = vec4(cluster_index_colors.xyz, 1.0);
 
   // CLUSTER INDICES X + Y + Z mod 2
   // frag_color = vec4(
@@ -243,7 +243,7 @@ void main() {
   uint cluster_length = 8;
 
   // CLUSTER LENGHTS
-  frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
+  // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
 
   // CLUSTERED SHADING
   vec3 color_accumulator = vec3(0.0);
@@ -253,7 +253,7 @@ void main() {
 
     float t_on = 5.0;
     float t = float(cluster_length);
-    float tf = fract((float(time*point_lights[i].att.x/4.0) - float(i))/t)*t/t_on;
+    float tf = fract((float(time)*point_lights[i].att.x*1.0 - float(i))/t)*t/t_on;
     float anim = step(tf, 1.0) * (cos((tf*2.0 - 1.0)*3.1415)*0.5 + 0.5);
 
     color_accumulator += 

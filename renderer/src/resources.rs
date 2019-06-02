@@ -1,3 +1,4 @@
+use crate::configuration;
 use crate::convert::*;
 use crate::keyboard_model;
 use crate::light::*;
@@ -94,6 +95,33 @@ fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
     }
 }
 
+#[inline]
+fn create_srgb_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
+    unsafe {
+        let name = gl.create_texture(gl::TEXTURE_2D);
+
+        gl.bind_texture(gl::TEXTURE_2D, name);
+        gl.tex_image_2d(
+            gl::TEXTURE_2D,
+            0,
+            gl::SRGB8_ALPHA8,
+            img.width() as i32,
+            img.height() as i32,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            img.as_ptr() as *const std::os::raw::c_void,
+        );
+        gl.generate_texture_mipmap(name);
+        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+
+        Texture {
+            name,
+            dimensions: [img.width() as f32, img.height() as f32],
+        }
+    }
+}
+
 pub struct Mesh {
     pub name: String,
     /// Triangle indices.
@@ -129,7 +157,7 @@ const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
     gl::VertexArrayBufferBindingIndex::from_u32(0);
 
 impl Resources {
-    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P) -> Self {
+    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &configuration::Root) -> Self {
         let resource_dir = resource_dir.as_ref();
 
         // ["two_planes.obj", "bunny.obj"]
@@ -226,7 +254,12 @@ impl Resources {
                             .to_rgba();
                         println!("Loaded diffuse texture {:?}", &file_path);
 
-                        let texture = create_texture(gl, img);
+                        let texture = if configuration.global.diffuse_srgb {
+                            create_srgb_texture(gl, img)
+                        } else {
+                            create_texture(gl, img)
+                        };
+
                         let index = textures.len() as TextureIndex;
                         textures.push(texture);
                         index
@@ -237,7 +270,12 @@ impl Resources {
                     color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
                         let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
-                        let texture = create_texture(gl, img);
+                        let texture = if configuration.global.diffuse_srgb {
+                            create_srgb_texture(gl, img)
+                        } else {
+                            create_texture(gl, img)
+                        };
+
                         let index = textures.len() as TextureIndex;
                         textures.push(texture);
                         index
@@ -462,9 +500,9 @@ impl Resources {
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(-12.9671, 1.8846, -4.4980),
                     attenuation: AttenParams {
-                        intensity: 4.0,
+                        intensity: 2.0,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -474,9 +512,9 @@ impl Resources {
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(-11.9563, 2.6292, 3.8412),
                     attenuation: AttenParams {
-                        intensity: 16.0,
+                        intensity: 3.0,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -486,9 +524,9 @@ impl Resources {
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(13.6090, 2.6292, 3.3216),
                     attenuation: AttenParams {
-                        intensity: 4.0,
+                        intensity: 2.0,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff:0.02,
                     }
                     .into(),
                 },
@@ -498,9 +536,9 @@ impl Resources {
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(12.5982, 1.8846, -5.0176),
                     attenuation: AttenParams {
-                        intensity: 2.0,
+                        intensity: 1.0,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff:0.02,
                     }
                     .into(),
                 },
@@ -510,9 +548,9 @@ impl Resources {
                     specular: RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_pnt: Point3::new(3.3116, 4.3440, 5.1447),
                     attenuation: AttenParams {
-                        intensity: 1.0,
+                        intensity: 1.2,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff:0.02,
                     }
                     .into(),
                 },
@@ -522,9 +560,9 @@ impl Resources {
                     specular: RGB::new(0.0092, 1.0000, 0.0000),
                     pos_in_pnt: Point3::new(8.8820, 6.7391, -1.0279),
                     attenuation: AttenParams {
-                        intensity: 2.0,
+                        intensity: 0.5,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff:0.02,
                     }
                     .into(),
                 },
@@ -534,9 +572,9 @@ impl Resources {
                     specular: RGB::new(1.0000, 0.0365, 0.0251),
                     pos_in_pnt: Point3::new(-4.6988, 10.0393, 0.8667),
                     attenuation: AttenParams {
-                        intensity: 4.0,
+                        intensity: 1.0,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff:0.02,
                     }
                     .into(),
                 },
@@ -546,9 +584,9 @@ impl Resources {
                     specular: RGB::new(0.2238, 0.2129, 1.0000),
                     pos_in_pnt: Point3::new(-4.6816, 1.0259, -2.1767),
                     attenuation: AttenParams {
-                        intensity: 8.0,
+                        intensity: 3.0,
                         clip_near: 0.5,
-                        cutoff: 0.1,
+                        cutoff:0.02,
                     }
                     .into(),
                 },

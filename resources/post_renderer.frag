@@ -61,4 +61,23 @@ void main() {
 
   // AO
   // frag_color = vec4(vec3(ao), 1.0);
+
+  // GAMMA SANITY
+  // if (fs_pos_in_tex.x < 0.5) {
+  //   float x = fs_pos_in_tex.x * 2.0;
+  //   if (fs_pos_in_tex.y < 0.3) {
+  //     frag_color = vec4(vec3(pow(x, 2.4)), 1.0);
+  //   } else if (fs_pos_in_tex.y < 0.6) {
+  //     frag_color = vec4(vec3(x), 1.0);
+  //   } else {
+  //     frag_color = vec4(vec3(pow(x, 1.0/2.4)), 1.0);
+  //   }
+  // } else {
+  //   if (fs_pos_in_tex.y < 0.5) {
+  //     uvec2 fr = uvec2(gl_FragCoord.xy);
+  //     frag_color = vec4(vec3(float((fr.x + fr.y) % 2)), 1.0);
+  //   } else {
+  //     frag_color = vec4(vec3(0.5), 1.0);
+  //   }
+  // }
 }

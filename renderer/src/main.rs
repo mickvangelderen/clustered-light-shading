@@ -219,7 +219,7 @@ pub struct ViewDependentResources {
     pub height: i32,
     // Main frame resources.
     pub framebuffer_name: gl::NonDefaultFramebufferName,
-    pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA8>,
+    pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
     pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
     // AO resources.
@@ -230,7 +230,7 @@ pub struct ViewDependentResources {
     pub ao_depth_renderbuffer_name: gl::RenderbufferName,
     // Post resources.
     pub post_framebuffer_name: gl::NonDefaultFramebufferName,
-    pub post_color_texture: Texture<gl::TEXTURE_2D, gl::RGBA8>,
+    pub post_color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
     pub post_depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     // Uniform buffers.
     pub lighting_buffer_name: gl::BufferName,
@@ -315,7 +315,7 @@ impl ViewDependentResources {
                 .wrap_s(gl::CLAMP_TO_EDGE.into())
                 .wrap_t(gl::CLAMP_TO_EDGE.into());
 
-            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8);
+            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
             color_texture.update(gl, texture_update);
 
             let nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F);
@@ -330,7 +330,7 @@ impl ViewDependentResources {
             let ao_x_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R8);
             ao_x_texture.update(gl, texture_update);
 
-            let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA8);
+            let post_color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
             post_color_texture.update(gl, texture_update);
 
             let post_depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
@@ -560,8 +560,10 @@ fn main() {
             // desktop display frequency which is probably lower than the HMD's
             // 90Hz.
             .with_gl_debug_flag(cfg!(debug_assertions))
-            .with_multisampling(4)
-            .with_vsync(false)
+            .with_vsync(configuration.window.vsync)
+            // .with_multisampling(16)
+            .with_pixel_format(configuration.window.rgb_bits, configuration.window.alpha_bits)
+            .with_srgb(configuration.window.srgb)
             .with_double_buffer(Some(true)),
         &events_loop,
     )
@@ -591,6 +593,12 @@ fn main() {
         // Reverse-Z.
         gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
         gl.depth_func(gl::GREATER);
+
+        if configuration.global.framebuffer_srgb {
+            gl.enable(gl::FRAMEBUFFER_SRGB);
+        } else {
+            gl.disable(gl::FRAMEBUFFER_SRGB);
+        }
     }
 
     let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
@@ -725,7 +733,7 @@ fn main() {
         line_renderer
     };
 
-    let resources = resources::Resources::new(&gl, &resource_dir);
+    let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
 
     let global_resources = rendering::GlobalResources::new(&gl);
     global_resources.bind(&gl);
@@ -865,6 +873,14 @@ fn main() {
                 world.smooth_camera.maximum_smoothness = configuration.camera.maximum_smoothness;
                 world.main_camera.properties = configuration.main_camera.into();
                 world.debug_camera.properties = configuration.debug_camera.into();
+
+                unsafe {
+                    if configuration.global.framebuffer_srgb {
+                        gl.enable(gl::FRAMEBUFFER_SRGB);
+                    } else {
+                        gl.disable(gl::FRAMEBUFFER_SRGB);
+                    }
+                }
             }
 
             shadow_renderer.update(&gl, &shadow_renderer_update);
