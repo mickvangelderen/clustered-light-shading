@@ -1,6 +1,23 @@
 use crate::clamp::*;
 use cgmath::*;
 
+macro_rules! impl_interpolate {
+    ($Self: ident {
+        $($field: ident,)*
+    }) => {
+        impl $Self {
+            fn interpolate(a: Self, b: Self, t: f32) -> Self {
+                let s = 1.0 - t;
+                $Self {
+                    $(
+                        $field: a.$field * s + b.$field * t,
+                    )*
+                }
+            }
+        }
+    };
+}
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct CameraTransform {
@@ -10,40 +27,12 @@ pub struct CameraTransform {
     pub fovy: Rad<f32>,
 }
 
-#[derive(Debug)]
-pub struct CameraCorrection {
-    pub delta_yaw: Rad<f32>,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct CameraProperties {
-    pub positional_velocity: f32,
-    pub angular_velocity: f32,
-    pub zoom_velocity: f32,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct CameraDelta {
-    pub time: f32,
-    pub position: Vector3<f32>,
-    pub yaw: Rad<f32>,
-    pub pitch: Rad<f32>,
-    pub fovy: Rad<f32>,
-}
-
-#[derive(Debug)]
-pub struct Camera {
-    pub transform: CameraTransform,
-    pub properties: CameraProperties,
-}
-
-#[derive(Debug)]
-pub struct SmoothCamera {
-    pub transform: CameraTransform,
-    pub smooth_enabled: bool,
-    pub current_smoothness: f32,
-    pub maximum_smoothness: f32,
-}
+impl_interpolate!(CameraTransform {
+    position,
+    yaw,
+    pitch,
+    fovy,
+});
 
 impl CameraTransform {
     #[inline]
@@ -66,16 +55,6 @@ impl CameraTransform {
             pitch: (self.pitch + delta.pitch * delta.time).clamp_range(Self::pitch_range()),
             fovy: (self.fovy + delta.fovy * delta.time).clamp_range(Self::fovy_range()),
         };
-    }
-
-    #[inline]
-    pub fn interpolate(&mut self, b: &CameraTransform, t: f32) {
-        let s = 1.0 - t;
-
-        self.position = self.position * s + b.position * t;
-        self.yaw = self.yaw * s + b.yaw * t;
-        self.pitch = self.pitch * s + b.pitch * t;
-        self.fovy = self.fovy * s + b.fovy * t;
     }
 
     #[inline]
@@ -113,6 +92,37 @@ impl CameraTransform {
     }
 }
 
+#[derive(Debug)]
+pub struct CameraCorrection {
+    pub delta_yaw: Rad<f32>,
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct CameraProperties {
+    pub z0: f32,
+    pub z1: f32,
+    pub positional_velocity: f32,
+    pub angular_velocity: f32,
+    pub zoom_velocity: f32,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct CameraDelta {
+    pub time: f32,
+    pub position: Vector3<f32>,
+    pub yaw: Rad<f32>,
+    pub pitch: Rad<f32>,
+    pub fovy: Rad<f32>,
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct Camera {
+    pub properties: CameraProperties,
+    pub transform: CameraTransform,
+}
+
 impl Camera {
     #[inline]
     pub fn update(&mut self, delta: &CameraDelta) {
@@ -124,14 +134,48 @@ impl Camera {
             fovy: delta.fovy * self.properties.zoom_velocity,
         })
     }
+
+    #[inline]
+    pub fn interpolate(a: Self, b: Self, t: f32) -> Camera {
+        Camera {
+            properties: b.properties,
+            transform: CameraTransform::interpolate(a.transform, b.transform, t),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SmoothCamera {
+    pub properties: CameraProperties,
+    pub current_transform: CameraTransform,
+    pub target_transform: CameraTransform,
+    pub smooth_enabled: bool,
+    pub current_smoothness: f32,
+    pub maximum_smoothness: f32,
 }
 
 impl SmoothCamera {
     #[inline]
-    pub fn update(&mut self, target: &Camera) {
+    pub fn update(&mut self, delta: &CameraDelta) {
+        self.target_transform.update(&CameraDelta {
+            time: delta.time,
+            position: delta.position * self.properties.positional_velocity,
+            yaw: delta.yaw * self.properties.angular_velocity,
+            pitch: delta.pitch * self.properties.angular_velocity,
+            fovy: delta.fovy * self.properties.zoom_velocity,
+        });
+
+        let correction = self.target_transform.correction();
+        self.target_transform.correct(&correction);
+        self.current_transform.correct(&correction);
+
         self.current_smoothness = self.target_smoothness() * 0.2 + self.current_smoothness * 0.8;
-        self.transform
-            .interpolate(&target.transform, 1.0 - self.current_smoothness);
+
+        self.current_transform = CameraTransform::interpolate(
+            self.current_transform,
+            self.target_transform,
+            1.0 - self.current_smoothness,
+        );
     }
 
     #[inline]
@@ -146,5 +190,56 @@ impl SmoothCamera {
     #[inline]
     pub fn toggle_smoothness(&mut self) {
         self.smooth_enabled = !self.smooth_enabled;
+    }
+
+    #[inline]
+    pub fn current_to_camera(&self) -> Camera {
+        Camera {
+            properties: self.properties,
+            transform: self.current_transform,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TransitionCamera {
+    pub start_camera: Camera,
+    pub current_camera: Camera,
+    pub progress: f32,
+}
+
+pub struct TransitionCameraUpdate<'a> {
+    pub delta_time: f32,
+    pub end_camera: &'a Camera,
+}
+
+impl TransitionCamera {
+    #[inline]
+    pub fn start_transition(&mut self) {
+        self.start_camera = self.current_camera;
+        self.progress = 0.0;
+    }
+
+    #[inline]
+    pub fn update(&mut self, update: TransitionCameraUpdate) {
+        self.progress += update.delta_time * 4.0;
+        if self.progress > 1.0 {
+            self.progress = 1.0;
+        }
+
+        // Bring current yaw within (-half turn, half turn) of
+        // the target yaw without changing the actual angle.
+        let start_yaw = self.start_camera.transform.yaw;
+        let end_yaw = update.end_camera.transform.yaw;
+        self.start_camera.transform.yaw = end_yaw
+            + Rad((start_yaw - end_yaw + Rad::turn_div_2())
+                .0
+                .rem_euclid(Rad::full_turn().0))
+            - Rad::turn_div_2();
+
+        let x = self.progress;
+        let t = x * x * (3.0 - 2.0 * x);
+
+        self.current_camera = Camera::interpolate(self.start_camera, *update.end_camera, t);
     }
 }
