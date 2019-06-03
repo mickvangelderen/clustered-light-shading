@@ -26,6 +26,266 @@ pub struct MeshMeta {
     pub vertex_count: u32,
 }
 
+#[repr(C)]
+pub struct Vertex {
+    pub pos_in_obj: [f32; 3],
+    pub pos_in_tex: [f32; 2],
+    pub nor_in_obj: [f32; 3],
+    pub tan_in_obj: [f32; 3],
+}
+
+impl Vertex {
+    fn set_format(gl: &gl::Gl, vao: gl::VertexArrayName, vb: gl::BufferName, eb: gl::BufferName) {
+        macro_rules! set_attrib {
+            ($vao: ident, $loc: expr, $component_count: expr, $component_type: expr, $Vertex: ident, $field: ident, $bbi: expr) => {
+                gl.vertex_array_attrib_format(
+                    $vao,
+                    $loc,
+                    $component_count,
+                    $component_type,
+                    false,
+                    field_offset!($Vertex, $field) as u32,
+                );
+                gl.enable_vertex_array_attrib(vao, $loc);
+                gl.vertex_array_attrib_binding(vao, $loc, $bbi);
+            };
+        }
+
+        unsafe {
+            set_attrib!(
+                vao,
+                rendering::VS_POS_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                Vertex,
+                pos_in_obj,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+            );
+            set_attrib!(
+                vao,
+                rendering::VS_POS_IN_TEX_LOC,
+                2,
+                gl::FLOAT,
+                Vertex,
+                pos_in_tex,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+            );
+            set_attrib!(
+                vao,
+                rendering::VS_NOR_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                Vertex,
+                nor_in_obj,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+            );
+            set_attrib!(
+                vao,
+                rendering::VS_TAN_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                Vertex,
+                tan_in_obj,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+            );
+
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<Vertex>() as u32;
+            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
+        }
+    }
+}
+
+pub struct RawMesh<V, I> {
+    pub vertices: V,
+    pub indices: I,
+}
+
+pub type Triangle<T> = [T; 3];
+
+fn generate_cube_mesh(x: (f32, f32), y: (f32, f32), z: (f32, f32)) -> RawMesh<[Vertex; 4 * 6], [Triangle<u32>; 2 * 6]> {
+    let (x0, x1) = x;
+    let (y0, y1) = y;
+    let (z0, z1) = z;
+    let (s0, s1) = (0.0, 1.0);
+    let (t0, t1) = (0.0, 1.0);
+    let nx = [-1.0, 0.0, 0.0];
+    let px = [1.0, 0.0, 0.0];
+    let ny = [0.0, -1.0, 0.0];
+    let py = [0.0, 1.0, 0.0];
+    let nz = [0.0, 0.0, -1.0];
+    let pz = [0.0, 0.0, 1.0];
+    RawMesh {
+        vertices: [
+            // -X
+            Vertex {
+                pos_in_obj: [x0, y0, z0],
+                pos_in_tex: [s0, t0],
+                nor_in_obj: nx,
+                tan_in_obj: pz,
+            },
+            Vertex {
+                pos_in_obj: [x0, y0, z1],
+                pos_in_tex: [s0, t1],
+                nor_in_obj: nx,
+                tan_in_obj: pz,
+            },
+            Vertex {
+                pos_in_obj: [x0, y1, z1],
+                pos_in_tex: [s1, t1],
+                nor_in_obj: nx,
+                tan_in_obj: pz,
+            },
+            Vertex {
+                pos_in_obj: [x0, y1, z0],
+                pos_in_tex: [s1, t0],
+                nor_in_obj: nx,
+                tan_in_obj: pz,
+            },
+            // -Y
+            Vertex {
+                pos_in_obj: [x0, y0, z0],
+                pos_in_tex: [s0, t0],
+                nor_in_obj: ny,
+                tan_in_obj: px,
+            },
+            Vertex {
+                pos_in_obj: [x1, y0, z0],
+                pos_in_tex: [s0, t1],
+                nor_in_obj: ny,
+                tan_in_obj: px,
+            },
+            Vertex {
+                pos_in_obj: [x1, y0, z1],
+                pos_in_tex: [s1, t1],
+                nor_in_obj: ny,
+                tan_in_obj: px,
+            },
+            Vertex {
+                pos_in_obj: [x0, y0, z1],
+                pos_in_tex: [s1, t0],
+                nor_in_obj: ny,
+                tan_in_obj: px,
+            },
+            // -Z
+            Vertex {
+                pos_in_obj: [x0, y0, z0],
+                pos_in_tex: [s0, t0],
+                nor_in_obj: nz,
+                tan_in_obj: py,
+            },
+            Vertex {
+                pos_in_obj: [x0, y1, z0],
+                pos_in_tex: [s0, t1],
+                nor_in_obj: nz,
+                tan_in_obj: py,
+            },
+            Vertex {
+                pos_in_obj: [x1, y1, z0],
+                pos_in_tex: [s1, t1],
+                nor_in_obj: nz,
+                tan_in_obj: py,
+            },
+            Vertex {
+                pos_in_obj: [x1, y0, z0],
+                pos_in_tex: [s1, t0],
+                nor_in_obj: nz,
+                tan_in_obj: py,
+            },
+            // +X
+            Vertex {
+                pos_in_obj: [x1, y1, z1],
+                pos_in_tex: [s0, t0],
+                nor_in_obj: px,
+                tan_in_obj: ny,
+            },
+            Vertex {
+                pos_in_obj: [x1, y0, z1],
+                pos_in_tex: [s0, t1],
+                nor_in_obj: px,
+                tan_in_obj: ny,
+            },
+            Vertex {
+                pos_in_obj: [x1, y0, z0],
+                pos_in_tex: [s1, t1],
+                nor_in_obj: px,
+                tan_in_obj: ny,
+            },
+            Vertex {
+                pos_in_obj: [x1, y1, z0],
+                pos_in_tex: [s1, t0],
+                nor_in_obj: px,
+                tan_in_obj: ny,
+            },
+            // +Y
+            Vertex {
+                pos_in_obj: [x1, y1, z1],
+                pos_in_tex: [s0, t0],
+                nor_in_obj: py,
+                tan_in_obj: nx,
+            },
+            Vertex {
+                pos_in_obj: [x1, y1, z0],
+                pos_in_tex: [s0, t1],
+                nor_in_obj: py,
+                tan_in_obj: nx,
+            },
+            Vertex {
+                pos_in_obj: [x0, y1, z0],
+                pos_in_tex: [s1, t1],
+                nor_in_obj: py,
+                tan_in_obj: nx,
+            },
+            Vertex {
+                pos_in_obj: [x0, y1, z1],
+                pos_in_tex: [s1, t0],
+                nor_in_obj: py,
+                tan_in_obj: nx,
+            },
+            // +Z
+            Vertex {
+                pos_in_obj: [x1, y1, z1],
+                pos_in_tex: [s0, t0],
+                nor_in_obj: pz,
+                tan_in_obj: nx,
+            },
+            Vertex {
+                pos_in_obj: [x0, y1, z1],
+                pos_in_tex: [s0, t1],
+                nor_in_obj: pz,
+                tan_in_obj: nx,
+            },
+            Vertex {
+                pos_in_obj: [x0, y0, z1],
+                pos_in_tex: [s1, t1],
+                nor_in_obj: pz,
+                tan_in_obj: nx,
+            },
+            Vertex {
+                pos_in_obj: [x1, y0, z1],
+                pos_in_tex: [s1, t0],
+                nor_in_obj: pz,
+                tan_in_obj: nx,
+            },
+        ],
+        indices: [
+            [0, 1, 2],
+            [2, 3, 0],
+            [4, 5, 6],
+            [6, 7, 4],
+            [8, 9, 10],
+            [10, 11, 8],
+            [12, 13, 14],
+            [14, 15, 12],
+            [16, 17, 18],
+            [18, 19, 16],
+            [20, 21, 22],
+            [22, 23, 20],
+        ],
+    }
+}
+
 pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
 pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
@@ -356,14 +616,6 @@ impl Resources {
             .map(|mesh| model_name_to_keyboard_index(&mesh.name))
             .collect();
 
-        #[repr(C)]
-        struct Vertex {
-            pub pos_in_obj: [f32; 3],
-            pub pos_in_tex: [f32; 2],
-            pub nor_in_obj: [f32; 3],
-            pub tan_in_obj: [f32; 3],
-        };
-
         let mut vertex_data: Vec<Vertex> = Vec::new();
         let mut element_data: Vec<[u32; 3]> = Vec::new();
         let mut mesh_metas: Vec<MeshMeta> = Vec::new();
@@ -405,55 +657,7 @@ impl Resources {
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            // AOS layout.
-            gl.vertex_array_attrib_format(
-                vao,
-                rendering::VS_POS_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                false,
-                field_offset!(Vertex, pos_in_obj) as u32,
-            );
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
-
-            gl.vertex_array_attrib_format(
-                vao,
-                rendering::VS_POS_IN_TEX_LOC,
-                2,
-                gl::FLOAT,
-                false,
-                field_offset!(Vertex, pos_in_tex) as u32,
-            );
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
-
-            gl.vertex_array_attrib_format(
-                vao,
-                rendering::VS_NOR_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                false,
-                field_offset!(Vertex, nor_in_obj) as u32,
-            );
-            gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_NOR_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
-
-            gl.vertex_array_attrib_format(
-                vao,
-                rendering::VS_TAN_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                false,
-                field_offset!(Vertex, tan_in_obj) as u32,
-            );
-            gl.enable_vertex_array_attrib(vao, rendering::VS_TAN_IN_OBJ_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_TAN_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
-
-            // Bind buffers to vao.
-            let stride = std::mem::size_of::<Vertex>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
-            gl.vertex_array_element_buffer(vao, eb);
+            Vertex::set_format(gl, vao, vb, eb);
 
             // Upload data.
             gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
@@ -485,39 +689,18 @@ impl Resources {
         };
 
         let (cluster_vao, cluster_vb, cluster_eb, cluster_element_count) = unsafe {
-            #[repr(C)]
-            struct Vertex {
-                pub pos_in_obj: [f32; 3],
-            };
-
             let vao = gl.create_vertex_array();
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            // Set up attributes.
-            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
-
-            // Bind buffers to vao.
-            let stride = std::mem::size_of::<Vertex>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
-            gl.vertex_array_element_buffer(vao, eb);
+            Vertex::set_format(gl, vao, vb, eb);
 
             // Upload data.
-            let vertices = polygen::cube_vertices(
-                (0.0, 1.0),
-                (0.0, 1.0),
-                (0.0, 1.0),
-                1
-            );
+            let mesh = generate_cube_mesh((0.1, 0.9), (0.1, 0.9), (0.1, 0.9));
+            gl.named_buffer_data(vb, mesh.vertices.value_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, mesh.indices.value_as_bytes(), gl::STATIC_DRAW);
 
-            let indices = polygen::cube_tris(1);
-
-            gl.named_buffer_data(vb, vertices.vec_as_bytes(), gl::STATIC_DRAW);
-            gl.named_buffer_data(eb, indices.vec_as_bytes(), gl::STATIC_DRAW);
-
-            (vao, vb, eb, (indices.len() * 3) as u32)
+            (vao, vb, eb, (mesh.indices.len() * 3) as u32)
         };
 
         Resources {
@@ -571,7 +754,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 2.0,
                         clip_near: 0.5,
-                        cutoff:0.02,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -583,7 +766,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 1.0,
                         clip_near: 0.5,
-                        cutoff:0.02,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -595,7 +778,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 1.2,
                         clip_near: 0.5,
-                        cutoff:0.02,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -607,7 +790,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 0.5,
                         clip_near: 0.5,
-                        cutoff:0.02,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -619,7 +802,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 1.0,
                         clip_near: 0.5,
-                        cutoff:0.02,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },
@@ -631,7 +814,7 @@ impl Resources {
                     attenuation: AttenParams {
                         intensity: 3.0,
                         clip_near: 0.5,
-                        cutoff:0.02,
+                        cutoff: 0.02,
                     }
                     .into(),
                 },

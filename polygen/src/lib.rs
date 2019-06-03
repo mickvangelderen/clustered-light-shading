@@ -240,6 +240,54 @@ impl<T: Copy> FromQuad<T> for [T; 3] {
     }
 }
 
+pub fn quad_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: u32) -> Vec<[f32; 3]> {
+    let n = subdivisions;
+
+    let mut vertices = Vec::with_capacity((8 + 12 * n + 6 * n * n) as usize);
+
+    // Corners vertices.
+    for &zf in FACES.into_iter() {
+        for &yf in FACES.into_iter() {
+            for &xf in FACES.into_iter() {
+                debug_assert_eq!(vertices.len(), corner_index(zf, yf, xf) as usize);
+                vertices.push([xf.select(x), yf.select(y), zf.select(z)]);
+            }
+        }
+    }
+
+    // Edge vertices.
+    for &basis in BASES.into_iter() {
+        let [r1, r2, r3] = basis.from_xyz([x, y, z]);
+        for &i3 in FACES.into_iter() {
+            for &i2 in FACES.into_iter() {
+                for i1 in 1..=n {
+                    debug_assert_eq!(vertices.len(), edge_index(n, basis, i3, i2, i1) as usize);
+                    vertices.push(basis.to_xyz([lerp_u32_f32(i1, (0, n + 1), r1), i2.select(r2), i3.select(r3)]));
+                }
+            }
+        }
+    }
+
+    // Face vertices.
+    for &basis in BASES.into_iter() {
+        let [r1, r2, r3] = basis.from_xyz([x, y, z]);
+        for i3 in 1..=n {
+            for i2 in 1..=n {
+                for &i1 in FACES.into_iter() {
+                    debug_assert_eq!(vertices.len(), face_index(n, basis, i3, i2, i1) as usize);
+                    vertices.push(basis.to_xyz([
+                        i1.select(r1),
+                        lerp_u32_f32(i2, (0, n + 1), r2),
+                        lerp_u32_f32(i3, (0, n + 1), r3),
+                    ]))
+                }
+            }
+        }
+    }
+
+    vertices
+}
+
 fn cube_polygons<P: FromQuad<u32> + Clone>(subdivisions: u32) -> Vec<P> {
     // Safe because we promise i3, i2 and i1 are always less than or equal to n + 1.
     unsafe {
