@@ -1,6 +1,5 @@
-use crate::rendering;
 use crate::resources::Resources;
-use crate::World;
+use crate::*;
 use cgmath::*;
 use gl_typed as gl;
 
@@ -16,6 +15,7 @@ pub struct Parameters<'a> {
     pub height: i32,
     pub cls_buffer: &'a rendering::CLSBuffer,
     pub min_light_count: u32,
+    pub animate_z: Option<f32>,
 }
 
 impl Renderer {
@@ -37,6 +37,11 @@ impl Renderer {
 
             let [xn, yn, zn, _wn]: [u32; 4] = params.cls_buffer.header.dimensions.into();
             for zi in 0..zn {
+                if let Some(animate_z) = params.animate_z {
+                    if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
+                        continue;
+                    }
+                }
                 for yi in 0..yn {
                     for xi in 0..xn {
                         let i = ((zi * yn) + yi) * xn + xi;
