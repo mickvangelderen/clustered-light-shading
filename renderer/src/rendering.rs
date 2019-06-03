@@ -263,7 +263,7 @@ impl MaterialResources {
 #[derive(Debug)]
 #[repr(C)]
 pub struct CLSBufferHeader {
-    pub cluster_dims: Vector4<u32>,
+    pub dimensions: Vector4<u32>,
     pub pos_from_wld_to_cls: Matrix4<f32>,
     pub pos_from_cls_to_wld: Matrix4<f32>,
 }

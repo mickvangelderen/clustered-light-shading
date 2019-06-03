@@ -35,6 +35,8 @@ impl Default for Window {
 pub struct Global {
     pub diffuse_srgb: bool,
     pub framebuffer_srgb: bool,
+    pub z0: f32,
+    pub z1: f32,
 }
 
 impl Default for Global {
@@ -42,6 +44,8 @@ impl Default for Global {
         Global {
             diffuse_srgb: true,
             framebuffer_srgb: true,
+            z0: -0.1,
+            z1: -50.0,
         }
     }
 }
@@ -49,11 +53,13 @@ impl Default for Global {
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct ClusteredLightShading {
     pub cluster_side: f32,
+    pub light_index: Option<u32>,
+    pub min_light_count: u32,
 }
 
 impl Default for ClusteredLightShading {
     fn default() -> Self {
-        ClusteredLightShading { cluster_side: 5.0 }
+        ClusteredLightShading { cluster_side: 5.0, light_index: None, min_light_count: 1 }
     }
 }
 

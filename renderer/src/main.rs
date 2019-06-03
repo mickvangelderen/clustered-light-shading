@@ -11,6 +11,8 @@ mod basic_renderer;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
+mod cls;
+mod cluster_renderer;
 mod configuration;
 mod convert;
 mod filters;
@@ -97,16 +99,16 @@ impl AttenuationMode {
 }
 
 pub struct World {
-    tick: u64,
-    clear_color: [f32; 3],
-    attenuation_mode: AttenuationMode,
-    target_camera_index: CameraIndex,
-    smooth_camera: camera::SmoothCamera,
-    main_camera: camera::Camera,
-    debug_camera: camera::Camera,
-    sun_pos: Vector3<f32>,
-    sun_rot: Rad<f32>,
-    keyboard_model: keyboard_model::KeyboardModel,
+    pub tick: u64,
+    pub clear_color: [f32; 3],
+    pub attenuation_mode: AttenuationMode,
+    pub target_camera_index: CameraIndex,
+    pub smooth_camera: camera::SmoothCamera,
+    pub main_camera: camera::Camera,
+    pub debug_camera: camera::Camera,
+    pub sun_pos: Vector3<f32>,
+    pub sun_rot: Rad<f32>,
+    pub keyboard_model: keyboard_model::KeyboardModel,
 }
 
 impl World {
@@ -123,6 +125,15 @@ impl World {
             CameraIndex::Debug => &mut self.debug_camera,
         }
     }
+}
+
+pub struct View {
+    pub pos_from_cam_to_hmd: Matrix4<f64>,
+
+    pub pos_from_cam_to_clp: Matrix4<f64>,
+    pub pos_from_clp_to_cam: Matrix4<f64>,
+
+    pub pos_from_clp_to_hmd: Matrix4<f64>,
 }
 
 pub struct ViewIndependentResources {
@@ -516,6 +527,8 @@ fn main() {
     let ao_filter_fs_path = resource_dir.join("ao_filter.frag");
     let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
     let basic_renderer_fs_path = resource_dir.join("basic_renderer.frag");
+    let cluster_renderer_vs_path = resource_dir.join("cluster_renderer.vert");
+    let cluster_renderer_fs_path = resource_dir.join("cluster_renderer.frag");
     let ao_renderer_vs_path = resource_dir.join("ao_renderer.vert");
     let ao_renderer_fs_path = resource_dir.join("ao_renderer.frag");
     let post_renderer_vs_path = resource_dir.join("post_renderer.vert");
@@ -532,7 +545,6 @@ fn main() {
     watcher.watch("resources", notify::RecursiveMode::Recursive).unwrap();
 
     let mut configuration: configuration::Root = read_configuration(&configuration_path);
-
 
     let mut world = {
         let mut main_camera_transform = camera::CameraTransform {
@@ -559,7 +571,7 @@ fn main() {
                     let mut file = io::BufReader::new(file);
                     file.read_exact(main_camera_transform.value_as_bytes_mut()).unwrap();
                     file.read_exact(debug_camera_transform.value_as_bytes_mut()).unwrap();
-                },
+                }
                 Err(_) => {
                     // Whatever.
                 }
@@ -729,6 +741,20 @@ fn main() {
         basic_renderer
     };
 
+    let mut cluster_renderer = {
+        let mut cluster_renderer = cluster_renderer::Renderer::new(&gl);
+        let vs_bytes = std::fs::read(&cluster_renderer_vs_path).unwrap();
+        let fs_bytes = std::fs::read(&cluster_renderer_fs_path).unwrap();
+        cluster_renderer.update(
+            &gl,
+            &rendering::VSFSProgramUpdate {
+                vertex_shader: Some(vs_bytes),
+                fragment_shader: Some(fs_bytes),
+            },
+        );
+        cluster_renderer
+    };
+
     let mut ao_renderer = {
         let mut ao_renderer = ao_renderer::Renderer::new(&gl);
         let vs_bytes = std::fs::read(&ao_renderer_vs_path).unwrap();
@@ -850,6 +876,7 @@ fn main() {
             let mut vsm_filter_update = rendering::VSFSProgramUpdate::default();
             let mut ao_filter_update = rendering::VSFSProgramUpdate::default();
             let mut basic_renderer_update = rendering::VSFSProgramUpdate::default();
+            let mut cluster_renderer_update = rendering::VSFSProgramUpdate::default();
             let mut ao_renderer_update = rendering::VSFSProgramUpdate::default();
             let mut post_renderer_update = rendering::VSFSProgramUpdate::default();
             let mut overlay_renderer_update = rendering::VSFSProgramUpdate::default();
@@ -885,6 +912,12 @@ fn main() {
                         }
                         path if path == &basic_renderer_fs_path => {
                             basic_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
+                        }
+                        path if path == &cluster_renderer_vs_path => {
+                            cluster_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
+                        }
+                        path if path == &cluster_renderer_fs_path => {
+                            cluster_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
                         }
                         path if path == &ao_renderer_vs_path => {
                             ao_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
@@ -939,6 +972,7 @@ fn main() {
             vsm_filter.update(&gl, &vsm_filter_update);
             ao_filter.update(&gl, &ao_filter_update);
             basic_renderer.update(&gl, &basic_renderer_update);
+            cluster_renderer.update(&gl, &cluster_renderer_update);
             ao_renderer.update(&gl, &ao_renderer_update);
             post_renderer.update(&gl, &post_renderer_update);
             overlay_renderer.update(&gl, &overlay_renderer_update);
@@ -1145,7 +1179,12 @@ fn main() {
             let pos_from_bdy_to_wld = world.smooth_camera.transform.pos_to_parent().cast().unwrap();
             pos_from_bdy_to_wld * pos_from_hmd_to_bdy
         };
-        let pos_from_wld_to_hmd = pos_from_hmd_to_wld.invert().unwrap();
+
+        let main_camera_pos_from_hmd_to_wld: Matrix4<f64> = {
+            let pos_from_bdy_to_wld = world.main_camera.transform.pos_to_parent().cast().unwrap();
+            pos_from_bdy_to_wld * pos_from_hmd_to_bdy
+        };
+        let main_camera_pos_from_wld_to_hmd = main_camera_pos_from_hmd_to_wld.invert().unwrap();
 
         let sun_frustrum = frustrum::Frustrum::<f64> {
             x0: -25.0,
@@ -1158,15 +1197,6 @@ fn main() {
 
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast::<f32>().unwrap().line_mesh();
 
-        struct View {
-            pos_from_cam_to_hmd: Matrix4<f64>,
-
-            pos_from_cam_to_clp: Matrix4<f64>,
-            pos_from_clp_to_cam: Matrix4<f64>,
-
-            pos_from_clp_to_hmd: Matrix4<f64>,
-        }
-
         let views: ArrayVec<[View; 2]> = match &vr_context {
             Some(vr_context) => {
                 ArrayVec::from(EYES)
@@ -1175,8 +1205,8 @@ fn main() {
                         let frustrum = {
                             // These are the tangents.
                             let [l, r, b, t] = vr_context.system().get_projection_raw(eye);
-                            let z0 = -0.1;
-                            let z1 = -100.0;
+                            let z0 = configuration.global.z0 as f64;
+                            let z1 = configuration.global.z1 as f64;
                             frustrum::Frustrum::<f64> {
                                 x0: -z0 * l as f64,
                                 x1: -z0 * r as f64,
@@ -1209,7 +1239,8 @@ fn main() {
                 let physical_size = win_size.to_physical(win_dpi);
 
                 let frustrum = {
-                    let z0 = -0.1;
+                    let z0 = configuration.global.z0 as f64;
+                    let z1 = configuration.global.z1 as f64;
                     let dy = -z0 * Rad::tan(Rad(Rad::from(world.smooth_camera.transform.fovy).0 as f64) / 2.0);
                     let dx = dy * physical_size.width as f64 / physical_size.height as f64;
                     frustrum::Frustrum::<f64> {
@@ -1218,7 +1249,7 @@ fn main() {
                         y0: -dy,
                         y1: dy,
                         z0,
-                        z1: -100.0,
+                        z1,
                     }
                 };
 
@@ -1269,140 +1300,21 @@ fn main() {
             }
         };
 
-        // Clustered light shading.
-        let cls_buffer = {
-            let cluster_bounding_box = {
-                let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
-                let mut corners_in_hmd = views
-                    .iter()
-                    .flat_map(|view| {
-                        corners_in_clp
-                            .into_iter()
-                            .map(move |&p| view.pos_from_clp_to_hmd.transform_point(p))
-                    })
-                    .map(|p| -> Point3<f32> { p.cast().unwrap() });
-                let first = frustrum::BoundingBox::from_point(corners_in_hmd.next().unwrap());
-                corners_in_hmd.fold(first, |b, p| b.enclose(p))
-            };
+        let cluster_bounding_box = cls::compute_bounding_box(views.iter().map(|view| view.pos_from_clp_to_hmd));
+        let cls_buffer = cls::compute_light_assignment(
+            &main_camera_pos_from_wld_to_hmd,
+            cluster_bounding_box,
+            &resources.point_lights[..],
+            configuration.clustered_light_shading.cluster_side,
+            configuration.clustered_light_shading.light_index,
+        );
 
-            // dbg!(cluster_bounding_box);
-            let cluster_side = configuration.clustered_light_shading.cluster_side;
-            let cbb_delta = cluster_bounding_box.delta();
-            // dbg!(cbb_delta);
-            let cbb_dims_f32 = (cbb_delta / cluster_side).map(f32::ceil);
-            // cluster side scale to world
-            let cbb_side = cbb_delta.div_element_wise(cbb_dims_f32);
-            // dbg!(cbb_side);
-            // cluster side scale to cls
-            let cbb_side_inv = cbb_dims_f32.div_element_wise(cbb_delta);
-            let cbb_dims = cbb_dims_f32.map(|e| e as usize);
-            // dbg!(cbb_dims);
-            let cbb_n = cbb_dims.x * cbb_dims.y * cbb_dims.z;
-
-            let pos_from_hmd_to_cls = Matrix4::from_nonuniform_scale(cbb_side_inv.x, cbb_side_inv.y, cbb_side_inv.z)
-                * Matrix4::from_translation(Point3::origin() - cluster_bounding_box.min);
-
-            let pos_from_wld_to_cls: Matrix4<f64> = pos_from_hmd_to_cls.cast().unwrap() * pos_from_wld_to_hmd;
-            let pos_from_cls_to_wld: Matrix4<f32> = pos_from_wld_to_cls.invert().unwrap().cast().unwrap();
-            let pos_from_wld_to_cls: Matrix4<f32> = pos_from_wld_to_cls.cast().unwrap();
-
-            let mut clustering: Vec<[u32; 8]> = (0..cbb_n).into_iter().map(|_| Default::default()).collect();
-
-            // println!(
-            //     "cluster x * y * z = {} * {} * {} = {} ({} MB)",
-            //     cbb_dims.x,
-            //     cbb_dims.y,
-            //     cbb_dims.z,
-            //     cbb_n,
-            //     std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
-            // );
-
-            for (i, l) in resources.point_lights.iter().enumerate() {
-                let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
-
-                let r = l.attenuation.clip_far;
-                let r_sq = r * r;
-
-                let r0 = Point3::partial_clamp_element_wise(
-                    (pos_in_cls - cbb_side_inv * r).map(f32::floor),
-                    Point3::origin(),
-                    Point3::from_vec(cbb_dims_f32),
-                )
-                .map(|e| e as usize);
-                let Point3 { x: x0, y: y0, z: z0 } = r0;
-
-                let r1 = Point3::partial_clamp_element_wise(
-                    (pos_in_cls).map(f32::floor),
-                    Point3::origin(),
-                    Point3::from_vec(cbb_dims_f32),
-                )
-                .map(|e| e as usize);
-                let Point3 { x: x1, y: y1, z: z1 } = r1;
-
-                let r2 = Point3::partial_clamp_element_wise(
-                    (pos_in_cls + cbb_side_inv * r).map(f32::floor),
-                    Point3::origin(),
-                    Point3::from_vec(cbb_dims_f32),
-                )
-                .map(|e| e as usize);
-                let Point3 { x: x2, y: y2, z: z2 } = r2;
-
-                // NOTE: We must clamp as f32 because the value might actually overflow.
-
-                macro_rules! closest_face_dist {
-                    ($x: ident, $x1: ident, $pos: ident) => {
-                        if $x < $x1 {
-                            ($x + 1) as f32 - $pos.$x
-                        } else if $x > $x1 {
-                            $x as f32 - $pos.$x
-                        } else {
-                            0.0
-                        }
-                    };
-                }
-
-                for z in z0..z2 {
-                    let dz = closest_face_dist!(z, z1, pos_in_cls) * cbb_side.z;
-                    for y in y0..y2 {
-                        let dy = closest_face_dist!(y, y1, pos_in_cls) * cbb_side.y;
-                        for x in x0..x2 {
-                            let dx = closest_face_dist!(x, x1, pos_in_cls) * cbb_side.x;
-                            if dz * dz + dy * dy + dx * dx < r_sq {
-                                // It's a hit!
-                                let thing = &mut clustering[((z * cbb_dims.y) + y) * cbb_dims.x + x];
-
-                                thing[0] += 1;
-                                let offset = thing[0] as usize;
-                                if offset < thing.len() {
-                                    thing[offset] = i as u32;
-                                } else {
-                                    eprintln!("Overflowing clustered light assignment!");
-                                }
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-
-            let cls_buffer = rendering::CLSBuffer {
-                header: rendering::CLSBufferHeader {
-                    cluster_dims: cbb_dims.map(|e: usize| e as u32).extend(16),
-                    pos_from_wld_to_cls,
-                    pos_from_cls_to_wld,
-                },
-                body: clustering,
-            };
-
-            if should_export_state {
-                use std::io::Write;
-                let mut f = std::fs::File::create("cls.bin").unwrap();
-                f.write_all(cls_buffer.header.value_as_bytes()).unwrap();
-                f.write_all(cls_buffer.body.vec_as_bytes()).unwrap();
-            }
-
-            cls_buffer
-        };
+        if should_export_state {
+            use std::io::Write;
+            let mut f = std::fs::File::create("cls.bin").unwrap();
+            f.write_all(cls_buffer.header.value_as_bytes()).unwrap();
+            f.write_all(cls_buffer.body.vec_as_bytes()).unwrap();
+        }
 
         timing_transition!(timings, prepare_render_data, render);
 
@@ -1437,7 +1349,7 @@ fn main() {
         );
 
         let view_datas: ArrayVec<[_; 2]> = views
-            .into_iter()
+            .iter()
             .map(|view| {
                 let View {
                     pos_from_cam_to_hmd,
@@ -1503,80 +1415,117 @@ fn main() {
                 );
             }
 
-            basic_renderer.render(
-                &gl,
-                &basic_renderer::Parameters {
-                    framebuffer: view_dep_res.main_framebuffer_name.into(),
-                    width: view_dep_res.width,
-                    height: view_dep_res.height,
-                    material_resources,
-                    shadow_texture_name: view_ind_res.shadow_texture.name(),
-                    shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                },
-                &world,
-                &resources,
-            );
-
-            line_renderer.render(
-                &gl,
-                &line_renderer::Parameters {
-                    framebuffer: view_dep_res.main_framebuffer_name.into(),
-                    width: view_dep_res.width,
-                    height: view_dep_res.height,
-                    vertices: &sun_frustrum_vertices[..],
-                    indices: &sun_frustrum_indices[..],
-                    pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
-                },
-            );
-
-            ao_renderer.render(
-                &gl,
-                &ao_renderer::Parameters {
-                    framebuffer: view_dep_res.ao_framebuffer_name.into(),
-                    width: view_dep_res.width,
-                    height: view_dep_res.height,
-                    color_texture_name: view_dep_res.main_color_texture.name(),
-                    depth_texture_name: view_dep_res.main_depth_texture.name(),
-                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-                    random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                },
-                &world,
-                &resources,
-            );
-
-            ao_filter.render(
-                &gl,
-                &ao_filter::Parameters {
-                    width: view_dep_res.width,
-                    height: view_dep_res.height,
-                    framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
-                    framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
-                    color: view_dep_res.ao_texture.name(),
-                    color_x: view_dep_res.ao_x_texture.name(),
-                    depth: view_dep_res.main_depth_texture.name(),
-                },
-                &resources,
-            );
-
-            post_renderer.render(
-                &gl,
-                &post_renderer::Parameters {
-                    // FIXME: Hack, use two versions of view dependent parameters instead.
-                    framebuffer: if vr_context.is_some() {
-                        view_dep_res.post_framebuffer_name.into()
-                    } else {
-                        gl::FramebufferName::Default
+            if world.target_camera_index == CameraIndex::Main {
+                basic_renderer.render(
+                    &gl,
+                    &basic_renderer::Parameters {
+                        framebuffer: view_dep_res.main_framebuffer_name.into(),
+                        width: view_dep_res.width,
+                        height: view_dep_res.height,
+                        material_resources,
+                        shadow_texture_name: view_ind_res.shadow_texture.name(),
+                        shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
                     },
-                    width: view_dep_res.width,
-                    height: view_dep_res.height,
-                    color_texture_name: view_dep_res.main_color_texture.name(),
-                    depth_texture_name: view_dep_res.main_depth_texture.name(),
-                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-                    ao_texture_name: view_dep_res.ao_texture.name(),
-                },
-                &world,
-                &resources,
-            );
+                    &world,
+                    &resources,
+                );
+
+                line_renderer.render(
+                    &gl,
+                    &line_renderer::Parameters {
+                        framebuffer: view_dep_res.main_framebuffer_name.into(),
+                        width: view_dep_res.width,
+                        height: view_dep_res.height,
+                        vertices: &sun_frustrum_vertices[..],
+                        indices: &sun_frustrum_indices[..],
+                        pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
+                    },
+                );
+
+                ao_renderer.render(
+                    &gl,
+                    &ao_renderer::Parameters {
+                        framebuffer: view_dep_res.ao_framebuffer_name.into(),
+                        width: view_dep_res.width,
+                        height: view_dep_res.height,
+                        color_texture_name: view_dep_res.main_color_texture.name(),
+                        depth_texture_name: view_dep_res.main_depth_texture.name(),
+                        nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+                        random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
+                    },
+                    &world,
+                    &resources,
+                );
+
+                ao_filter.render(
+                    &gl,
+                    &ao_filter::Parameters {
+                        width: view_dep_res.width,
+                        height: view_dep_res.height,
+                        framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
+                        framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
+                        color: view_dep_res.ao_texture.name(),
+                        color_x: view_dep_res.ao_x_texture.name(),
+                        depth: view_dep_res.main_depth_texture.name(),
+                    },
+                    &resources,
+                );
+
+                post_renderer.render(
+                    &gl,
+                    &post_renderer::Parameters {
+                        // FIXME: Hack, use two versions of view dependent parameters instead.
+                        framebuffer: if vr_context.is_some() {
+                            view_dep_res.post_framebuffer_name.into()
+                        } else {
+                            gl::FramebufferName::Default
+                        },
+                        width: view_dep_res.width,
+                        height: view_dep_res.height,
+                        color_texture_name: view_dep_res.main_color_texture.name(),
+                        depth_texture_name: view_dep_res.main_depth_texture.name(),
+                        nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+                        ao_texture_name: view_dep_res.ao_texture.name(),
+                    },
+                    &world,
+                    &resources,
+                );
+            } else {
+                cluster_renderer.render(
+                    &gl,
+                    &cluster_renderer::Parameters {
+                        framebuffer: gl::FramebufferName::Default,
+                        width: view_dep_res.width,
+                        height: view_dep_res.height,
+                        cls_buffer: &cls_buffer,
+                        min_light_count: configuration.clustered_light_shading.min_light_count,
+                    },
+                    &world,
+                    &resources,
+                );
+
+                for view in views.iter() {
+                    let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
+                    let pos_from_clp_to_wld = main_camera_pos_from_hmd_to_wld * view.pos_from_clp_to_hmd;
+                    let vertices: Vec<[f32; 3]> = corners_in_clp
+                        .iter()
+                        .map(|&p| pos_from_clp_to_wld.transform_point(p))
+                        .map(|p| p.cast::<f32>().unwrap().into())
+                        .collect();
+
+                    line_renderer.render(
+                        &gl,
+                        &line_renderer::Parameters {
+                            framebuffer: gl::FramebufferName::Default,
+                            width: view_dep_res.width,
+                            height: view_dep_res.height,
+                            vertices: &vertices[..],
+                            indices: &sun_frustrum_indices[..],
+                            pos_from_obj_to_wld: &Matrix4::identity(),
+                        },
+                    );
+                }
+            }
         }
 
         if let Some(vr_context) = &vr_context {

@@ -159,7 +159,7 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_weight = pow(specular_angle, shininess);
 
   // LIGHT ATTENUATION.
-  // return vec3(specular_attenuation*specular_weight);
+  return vec3(diffuse_attenuation);
 
   // LIGHT CONTRIBUTION.
   return
@@ -213,9 +213,9 @@ void main() {
   float visibility = compute_visibility_variance(pos_in_lgt);
 
   vec3 color_accumulator = vec3(0.0);
-  color_accumulator += (diffuse_color * ambient_weight) +
-                       visibility * (diffuse_color * diffuse_weight +
-                                     specular_color * specular_weight);
+  // color_accumulator += (diffuse_color * ambient_weight) +
+  //                      visibility * (diffuse_color * diffuse_weight +
+  //                                    specular_color * specular_weight);
 
   uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
 
@@ -243,11 +243,11 @@ void main() {
        fs_idx_in_cls.x) *
       cluster_dims.w;
 
-  // uint cluster_length = clusters[cluster_index];
-  uint cluster_length = 8;
+  uint cluster_length = clusters[cluster_index];
+  // uint cluster_length = 8;
 
   // CLUSTER LENGHTS
-  // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
+  frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
 
   // CLUSTERED SHADING
   for (uint i = 0; i < cluster_length; i++) {
