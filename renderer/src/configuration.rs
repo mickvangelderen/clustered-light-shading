@@ -51,11 +51,17 @@ pub struct ClusteredLightShading {
     pub cluster_side: f32,
     pub light_index: Option<u32>,
     pub min_light_count: u32,
+    pub animate_z: Option<f32>,
 }
 
 impl Default for ClusteredLightShading {
     fn default() -> Self {
-        ClusteredLightShading { cluster_side: 5.0, light_index: None, min_light_count: 1 }
+        ClusteredLightShading {
+            cluster_side: 5.0,
+            light_index: None,
+            min_light_count: 1,
+            animate_z: None,
+        }
     }
 }
 
@@ -95,7 +101,13 @@ impl Default for Camera {
 
 impl Into<camera::CameraProperties> for Camera {
     fn into(self) -> camera::CameraProperties {
-        let Camera { z0, z1, positional_velocity, angular_velocity, zoom_velocity } = self;
+        let Camera {
+            z0,
+            z1,
+            positional_velocity,
+            angular_velocity,
+            zoom_velocity,
+        } = self;
         camera::CameraProperties {
             z0,
             z1,

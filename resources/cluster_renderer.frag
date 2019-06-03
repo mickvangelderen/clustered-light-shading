@@ -31,6 +31,6 @@ void main() {
     frag_color = vec4(vec3(fraction), 1.0);
   } else {
     // frag_color = vec4(diffuse_weight * vec3(fraction) + specular_weight * vec3(1.0), 1.0);
-    frag_color = vec4((diffuse_weight * 1.0 + specular_weight) * vec3(0.0), 1.0);
+    frag_color = vec4((diffuse_weight * 1.0 + specular_weight) * vec3(1.0, 0.5, 0.0), 1.0);
   }
 }

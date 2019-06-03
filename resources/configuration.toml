@@ -12,6 +12,7 @@ alpha_bits = 8
 cluster_side = 2.0
 # light_index = 4
 min_light_count = 1
+# animate_z = 16.0
 
 [camera]
 maximum_smoothness = 0.80

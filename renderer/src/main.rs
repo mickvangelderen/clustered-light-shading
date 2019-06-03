@@ -1495,6 +1495,7 @@ fn main() {
                         height: view_dep_res.height,
                         cls_buffer: &cls_buffer,
                         min_light_count: configuration.clustered_light_shading.min_light_count,
+                        animate_z: configuration.clustered_light_shading.animate_z,
                     },
                     &world,
                     &resources,

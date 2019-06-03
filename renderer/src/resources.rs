@@ -696,7 +696,8 @@ impl Resources {
             Vertex::set_format(gl, vao, vb, eb);
 
             // Upload data.
-            let mesh = generate_cube_mesh((0.1, 0.9), (0.1, 0.9), (0.1, 0.9));
+            let r = (0.001, 0.999);
+            let mesh = generate_cube_mesh(r, r, r);
             gl.named_buffer_data(vb, mesh.vertices.value_as_bytes(), gl::STATIC_DRAW);
             gl.named_buffer_data(eb, mesh.indices.value_as_bytes(), gl::STATIC_DRAW);
 
