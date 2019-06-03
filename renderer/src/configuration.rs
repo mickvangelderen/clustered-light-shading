@@ -35,8 +35,6 @@ impl Default for Window {
 pub struct Global {
     pub diffuse_srgb: bool,
     pub framebuffer_srgb: bool,
-    pub z0: f32,
-    pub z1: f32,
 }
 
 impl Default for Global {
@@ -44,8 +42,6 @@ impl Default for Global {
         Global {
             diffuse_srgb: true,
             framebuffer_srgb: true,
-            z0: -0.1,
-            z1: -50.0,
         }
     }
 }
@@ -78,6 +74,8 @@ impl Default for GenericCamera {
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct Camera {
+    pub z0: f32,
+    pub z1: f32,
     pub positional_velocity: f32,
     pub angular_velocity: f32,
     pub zoom_velocity: f32,
@@ -86,6 +84,8 @@ pub struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         Camera {
+            z0: -0.1,
+            z1: -50.0,
             positional_velocity: 2.0,
             angular_velocity: 0.4,
             zoom_velocity: 1.0,
@@ -95,8 +95,10 @@ impl Default for Camera {
 
 impl Into<camera::CameraProperties> for Camera {
     fn into(self) -> camera::CameraProperties {
-        let Camera { positional_velocity, angular_velocity, zoom_velocity } = self;
+        let Camera { z0, z1, positional_velocity, angular_velocity, zoom_velocity } = self;
         camera::CameraProperties {
+            z0,
+            z1,
             positional_velocity,
             angular_velocity,
             zoom_velocity,

@@ -58,18 +58,19 @@ const SHADOW_H: i32 = 1024;
 
 const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[repr(u32)]
-pub enum CameraIndex {
-    Main = 1,
-    Debug = 2,
+impl_generic_static_map! {
+    (CameraKey, CameraMap),
+    (Main, main),
+    (Debug, debug),
 }
 
-impl CameraIndex {
+pub const CAMERA_KEYS: [CameraKey; 2] = [CameraKey::Main, CameraKey::Debug];
+
+impl CameraKey {
     fn rotate(self) -> Self {
         match self {
-            CameraIndex::Main => CameraIndex::Debug,
-            CameraIndex::Debug => CameraIndex::Main,
+            CameraKey::Main => CameraKey::Debug,
+            CameraKey::Debug => CameraKey::Main,
         }
     }
 }
@@ -102,28 +103,21 @@ pub struct World {
     pub tick: u64,
     pub clear_color: [f32; 3],
     pub attenuation_mode: AttenuationMode,
-    pub target_camera_index: CameraIndex,
-    pub smooth_camera: camera::SmoothCamera,
-    pub main_camera: camera::Camera,
-    pub debug_camera: camera::Camera,
+    pub target_camera_key: CameraKey,
+    pub transition_camera: camera::TransitionCamera,
+    pub cameras: CameraMap<camera::SmoothCamera>,
     pub sun_pos: Vector3<f32>,
     pub sun_rot: Rad<f32>,
     pub keyboard_model: keyboard_model::KeyboardModel,
 }
 
 impl World {
-    fn target_camera(&self) -> &camera::Camera {
-        match self.target_camera_index {
-            CameraIndex::Main => &self.main_camera,
-            CameraIndex::Debug => &self.debug_camera,
-        }
+    fn target_camera(&self) -> &camera::SmoothCamera {
+        &self.cameras[self.target_camera_key]
     }
 
-    fn target_camera_mut(&mut self) -> &mut camera::Camera {
-        match self.target_camera_index {
-            CameraIndex::Main => &mut self.main_camera,
-            CameraIndex::Debug => &mut self.debug_camera,
-        }
+    fn target_camera_mut(&mut self) -> &mut camera::SmoothCamera {
+        &mut self.cameras[self.target_camera_key]
     }
 }
 
@@ -547,19 +541,21 @@ fn main() {
     let mut configuration: configuration::Root = read_configuration(&configuration_path);
 
     let mut world = {
-        let mut main_camera_transform = camera::CameraTransform {
+        let default_camera_transform = camera::CameraTransform {
             position: Vector3::new(0.0, 1.0, 1.5),
             yaw: Rad(0.0),
             pitch: Rad(0.0),
             fovy: Deg(90.0).into(),
         };
 
-        let mut debug_camera_transform = camera::CameraTransform {
-            position: Vector3::new(0.0, 1.0, 1.5),
-            yaw: Rad(0.0),
-            pitch: Rad(0.0),
-            fovy: Deg(90.0).into(),
-        };
+        let mut cameras = CameraMap::new(|key| camera::Camera {
+            properties: match key {
+                CameraKey::Main => configuration.main_camera,
+                CameraKey::Debug => configuration.debug_camera,
+            }
+            .into(),
+            transform: default_camera_transform,
+        });
 
         // Load state.
         {
@@ -569,8 +565,9 @@ fn main() {
             match fs::File::open("state.bin") {
                 Ok(file) => {
                     let mut file = io::BufReader::new(file);
-                    file.read_exact(main_camera_transform.value_as_bytes_mut()).unwrap();
-                    file.read_exact(debug_camera_transform.value_as_bytes_mut()).unwrap();
+                    for &key in CAMERA_KEYS.iter() {
+                        file.read_exact(cameras[key].value_as_bytes_mut()).unwrap();
+                    }
                 }
                 Err(_) => {
                     // Whatever.
@@ -582,21 +579,20 @@ fn main() {
             tick: 0,
             clear_color: [0.0, 0.0, 0.0],
             attenuation_mode: AttenuationMode::Interpolated,
-            target_camera_index: CameraIndex::Main,
-            smooth_camera: camera::SmoothCamera {
-                transform: main_camera_transform,
+            target_camera_key: CameraKey::Main,
+            transition_camera: camera::TransitionCamera {
+                start_camera: cameras.main,
+                current_camera: cameras.main,
+                progress: 0.0,
+            },
+            cameras: cameras.map(|camera| camera::SmoothCamera {
+                properties: camera.properties,
+                current_transform: camera.transform,
+                target_transform: camera.transform,
                 smooth_enabled: true,
                 current_smoothness: configuration.camera.maximum_smoothness,
                 maximum_smoothness: configuration.camera.maximum_smoothness,
-            },
-            main_camera: camera::Camera {
-                transform: main_camera_transform,
-                properties: configuration.main_camera.into(),
-            },
-            debug_camera: camera::Camera {
-                transform: debug_camera_transform,
-                properties: configuration.debug_camera.into(),
-            },
+            }),
             sun_pos: Vector3::new(0.0, 0.0, 0.0),
             sun_rot: Deg(85.2).into(),
             keyboard_model: keyboard_model::KeyboardModel::new(),
@@ -955,9 +951,14 @@ fn main() {
                 configuration = read_configuration(&configuration_path);
 
                 // Apply updates.
-                world.smooth_camera.maximum_smoothness = configuration.camera.maximum_smoothness;
-                world.main_camera.properties = configuration.main_camera.into();
-                world.debug_camera.properties = configuration.debug_camera.into();
+                for &key in CAMERA_KEYS.iter() {
+                    world.cameras[key].properties = match key {
+                        CameraKey::Main => configuration.main_camera,
+                        CameraKey::Debug => configuration.debug_camera,
+                    }
+                    .into();
+                    world.cameras[key].maximum_smoothness = configuration.camera.maximum_smoothness;
+                }
 
                 unsafe {
                     if configuration.global.framebuffer_srgb {
@@ -1009,7 +1010,7 @@ fn main() {
         let mut mouse_dscroll = 0.0;
         let mut should_resize = false;
         let mut should_export_state = false;
-        let mut new_target_camera_index = world.target_camera_index;
+        let mut new_target_camera_key = world.target_camera_key;
         let mut new_attenuation_mode = world.attenuation_mode;
 
         events_loop.poll_events(|event| {
@@ -1047,14 +1048,14 @@ fn main() {
                                         VirtualKeyCode::Tab => {
                                             // Don't trigger when we ALT TAB.
                                             if keyboard_state.lalt.is_released() {
-                                                new_target_camera_index = new_target_camera_index.rotate();
+                                                new_target_camera_key = new_target_camera_key.rotate();
                                             }
                                         }
                                         VirtualKeyCode::Key1 => {
                                             new_attenuation_mode = new_attenuation_mode.rotate();
                                         }
                                         VirtualKeyCode::C => {
-                                            world.smooth_camera.toggle_smoothness();
+                                            world.target_camera_mut().toggle_smoothness();
                                         }
                                         VirtualKeyCode::F5 => {
                                             should_export_state = true;
@@ -1105,24 +1106,11 @@ fn main() {
 
         world.attenuation_mode = new_attenuation_mode;
 
-        // Camera update.
-        {
-            if new_target_camera_index != world.target_camera_index {
-                world.target_camera_index = new_target_camera_index;
-                // Bring current_yaw within (-half turn, half turn) of
-                // target_yaw without changing the actual angle.
-                let current_yaw = world.smooth_camera.transform.yaw;
-                let target_yaw = world.target_camera().transform.yaw;
-                world.smooth_camera.transform.yaw = target_yaw
-                    + Rad((current_yaw - target_yaw + Rad::turn_div_2())
-                        .0
-                        .rem_euclid(Rad::full_turn().0))
-                    - Rad::turn_div_2();
-            }
-
-            world.target_camera_mut().update(&camera::CameraDelta {
+        for &key in &[CameraKey::Main, CameraKey::Debug] {
+            let is_target = world.target_camera_key == key;
+            let delta = camera::CameraDelta {
                 time: delta_time,
-                position: if focus {
+                position: if is_target && focus {
                     Vector3::new(
                         keyboard_state.d.to_f32() - keyboard_state.a.to_f32(),
                         keyboard_state.q.to_f32() - keyboard_state.z.to_f32(),
@@ -1131,23 +1119,26 @@ fn main() {
                 } else {
                     Vector3::zero()
                 },
-                yaw: Rad(-mouse_dx as f32),
-                pitch: Rad(-mouse_dy as f32),
-                fovy: Rad(mouse_dscroll as f32),
-            });
-            world.smooth_camera.update(match world.target_camera_index {
-                CameraIndex::Main => &world.main_camera,
-                CameraIndex::Debug => &world.debug_camera,
-            });
-            let correction = world.smooth_camera.transform.correction();
-            world.smooth_camera.transform.correct(&correction);
-            world.main_camera.transform.correct(&correction);
-            world.debug_camera.transform.correct(&correction);
+                yaw: Rad(if is_target { -mouse_dx as f32 } else { 0.0 }),
+                pitch: Rad(if is_target { -mouse_dy as f32 } else { 0.0 }),
+                fovy: Rad(if is_target { mouse_dscroll as f32 } else { 0.0 }),
+            };
+            world.cameras[key].update(&delta);
         }
+
+        if new_target_camera_key != world.target_camera_key {
+            world.target_camera_key = new_target_camera_key;
+            world.transition_camera.start_transition();
+        }
+
+        world.transition_camera.update(camera::TransitionCameraUpdate {
+            delta_time,
+            end_camera: &world.target_camera().current_to_camera(),
+        });
 
         if vr_context.is_some() {
             // Pitch makes me dizzy.
-            world.smooth_camera.transform.pitch = Rad(0.0);
+            world.transition_camera.current_camera.transform.pitch = Rad(0.0);
         }
 
         if focus {
@@ -1176,12 +1167,12 @@ fn main() {
         //  - cam --[projection]--> clp
 
         let pos_from_hmd_to_wld: Matrix4<f64> = {
-            let pos_from_bdy_to_wld = world.smooth_camera.transform.pos_to_parent().cast().unwrap();
+            let pos_from_bdy_to_wld = world.transition_camera.current_camera.transform.pos_to_parent().cast().unwrap();
             pos_from_bdy_to_wld * pos_from_hmd_to_bdy
         };
 
         let main_camera_pos_from_hmd_to_wld: Matrix4<f64> = {
-            let pos_from_bdy_to_wld = world.main_camera.transform.pos_to_parent().cast().unwrap();
+            let pos_from_bdy_to_wld = world.cameras.main.current_transform.pos_to_parent().cast().unwrap();
             pos_from_bdy_to_wld * pos_from_hmd_to_bdy
         };
         let main_camera_pos_from_wld_to_hmd = main_camera_pos_from_hmd_to_wld.invert().unwrap();
@@ -1197,77 +1188,82 @@ fn main() {
 
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast::<f32>().unwrap().line_mesh();
 
-        let views: ArrayVec<[View; 2]> = match &vr_context {
-            Some(vr_context) => {
-                ArrayVec::from(EYES)
-                    .into_iter()
-                    .map(|eye| {
-                        let frustrum = {
-                            // These are the tangents.
-                            let [l, r, b, t] = vr_context.system().get_projection_raw(eye);
-                            let z0 = configuration.global.z0 as f64;
-                            let z1 = configuration.global.z1 as f64;
-                            frustrum::Frustrum::<f64> {
-                                x0: -z0 * l as f64,
-                                x1: -z0 * r as f64,
-                                y0: -z0 * b as f64,
-                                y1: -z0 * t as f64,
-                                z0,
-                                z1,
+        let compute_views = |camera: camera::Camera| -> ArrayVec<[View; 2]> {
+            match &vr_context {
+                Some(vr_context) => {
+                    ArrayVec::from(EYES)
+                        .into_iter()
+                        .map(|eye| {
+                            let frustrum = {
+                                // These are the tangents.
+                                let [l, r, b, t] = vr_context.system().get_projection_raw(eye);
+                                let z0 = camera.properties.z0 as f64;
+                                let z1 = camera.properties.z1 as f64;
+                                frustrum::Frustrum::<f64> {
+                                    x0: -z0 * l as f64,
+                                    x1: -z0 * r as f64,
+                                    y0: -z0 * b as f64,
+                                    y1: -z0 * t as f64,
+                                    z0,
+                                    z1,
+                                }
+                            };
+                            let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                            let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+
+                            let pos_from_cam_to_hmd: Matrix4<f64> =
+                                Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
+                                    .cast()
+                                    .unwrap();
+
+                            View {
+                                pos_from_cam_to_hmd,
+
+                                pos_from_cam_to_clp,
+                                pos_from_clp_to_cam,
+
+                                pos_from_clp_to_hmd: pos_from_cam_to_hmd * pos_from_clp_to_cam,
                             }
-                        };
-                        let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
-                        let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+                        })
+                        .collect()
+                }
+                None => {
+                    let physical_size = win_size.to_physical(win_dpi);
 
-                        let pos_from_cam_to_hmd: Matrix4<f64> =
-                            Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
-                                .cast()
-                                .unwrap();
-
-                        View {
-                            pos_from_cam_to_hmd,
-
-                            pos_from_cam_to_clp,
-                            pos_from_clp_to_cam,
-
-                            pos_from_clp_to_hmd: pos_from_cam_to_hmd * pos_from_clp_to_cam,
+                    let frustrum = {
+                        let z0 = camera.properties.z0 as f64;
+                        let z1 = camera.properties.z1 as f64;
+                        let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
+                        let dx = dy * physical_size.width as f64 / physical_size.height as f64;
+                        frustrum::Frustrum::<f64> {
+                            x0: -dx,
+                            x1: dx,
+                            y0: -dy,
+                            y1: dy,
+                            z0,
+                            z1,
                         }
-                    })
+                    };
+
+                    let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                    let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+
+                    ArrayVec::from([View {
+                        pos_from_cam_to_hmd: Matrix4::identity(),
+
+                        pos_from_cam_to_clp,
+                        pos_from_clp_to_cam,
+
+                        pos_from_clp_to_hmd: /* pos_from_cam_to_hmd = I */ pos_from_clp_to_cam,
+                    }])
+                    .into_iter()
                     .collect()
-            }
-            None => {
-                let physical_size = win_size.to_physical(win_dpi);
-
-                let frustrum = {
-                    let z0 = configuration.global.z0 as f64;
-                    let z1 = configuration.global.z1 as f64;
-                    let dy = -z0 * Rad::tan(Rad(Rad::from(world.smooth_camera.transform.fovy).0 as f64) / 2.0);
-                    let dx = dy * physical_size.width as f64 / physical_size.height as f64;
-                    frustrum::Frustrum::<f64> {
-                        x0: -dx,
-                        x1: dx,
-                        y0: -dy,
-                        y1: dy,
-                        z0,
-                        z1,
-                    }
-                };
-
-                let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
-                let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
-
-                ArrayVec::from([View {
-                    pos_from_cam_to_hmd: Matrix4::identity(),
-
-                    pos_from_cam_to_clp,
-                    pos_from_clp_to_cam,
-
-                    pos_from_clp_to_hmd: /* pos_from_cam_to_hmd = I */ pos_from_clp_to_cam,
-                }])
-                .into_iter()
-                .collect()
+                }
             }
         };
+
+        let views = compute_views(world.transition_camera.current_camera);
+        let cls_views = compute_views(world.cameras.main.current_to_camera());
 
         let global_data = {
             let light_pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
@@ -1300,7 +1296,7 @@ fn main() {
             }
         };
 
-        let cluster_bounding_box = cls::compute_bounding_box(views.iter().map(|view| view.pos_from_clp_to_hmd));
+        let cluster_bounding_box = cls::compute_bounding_box(cls_views.iter().map(|view| view.pos_from_clp_to_hmd));
         let cls_buffer = cls::compute_light_assignment(
             &main_camera_pos_from_wld_to_hmd,
             cluster_bounding_box,
@@ -1415,7 +1411,7 @@ fn main() {
                 );
             }
 
-            if world.target_camera_index == CameraIndex::Main {
+            if world.target_camera_key == CameraKey::Main {
                 basic_renderer.render(
                     &gl,
                     &basic_renderer::Parameters {
@@ -1504,7 +1500,7 @@ fn main() {
                     &resources,
                 );
 
-                for view in views.iter() {
+                for view in cls_views.iter() {
                     let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
                     let pos_from_clp_to_wld = main_camera_pos_from_hmd_to_wld * view.pos_from_clp_to_hmd;
                     let vertices: Vec<[f32; 3]> = corners_in_clp
@@ -1598,7 +1594,7 @@ fn main() {
             fps_average.submit(fps);
             gl_window.window().set_title(&format!(
                 "VR Lab - {:?} - {:02.1} FPS",
-                world.target_camera_index,
+                world.target_camera_key,
                 fps_average.compute()
             ));
         }
@@ -1610,8 +1606,10 @@ fn main() {
         use std::io;
         use std::io::Write;
         let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
-        file.write_all(world.main_camera.transform.value_as_bytes()).unwrap();
-        file.write_all(world.debug_camera.transform.value_as_bytes()).unwrap();
+        for &key in CAMERA_KEYS.iter() {
+            let camera = world.cameras[key].current_to_camera();
+            file.write_all(camera.value_as_bytes()).unwrap();
+        }
     }
 }
 

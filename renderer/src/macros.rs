@@ -25,3 +25,92 @@ macro_rules! field_offset {
         &(*(std::ptr::null::<$Struct>())).$field as *const _ as usize
     };
 }
+
+macro_rules! impl_generic_static_map {
+    (($Key: ident, $Map: ident), $(($variant: ident, $field: ident),)*) => {
+        #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        pub enum $Key {
+            $(
+                $variant,
+            )*
+        }
+
+        #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        pub struct $Map<T> {
+            $(
+                pub $field: T,
+            )*
+        }
+
+        impl<T> $Map<T> {
+            #[inline]
+            pub fn new<F>(f: F) -> Self where F: Fn($Key) -> T {
+                $Map {
+                    $(
+                        $field: f($Key::$variant),
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn map<U, F>(self, f: F) -> $Map<U> where F: Fn(T) -> U {
+                $Map {
+                    $(
+                        $field: f(self.$field),
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn zip<U, V, F>(self, other: $Map<U>, f: F) -> $Map<V> where F: Fn(T, U) -> V {
+                $Map {
+                    $(
+                        $field: f(self.$field, other.$field),
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn as_ref(&self) -> $Map<&T> {
+                $Map {
+                    $(
+                        $field: &self.$field,
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn as_mut(&mut self) -> $Map<&mut T> {
+                $Map {
+                    $(
+                        $field: &mut self.$field,
+                    )*
+                }
+            }
+        }
+
+        impl<T> std::ops::Index<$Key> for $Map<T> {
+            type Output = T;
+
+            #[inline]
+            fn index<'a>(&'a self, key: $Key) -> &'a Self::Output {
+                match key {
+                    $(
+                        $Key::$variant => &self.$field,
+                    )*
+                }
+            }
+        }
+
+        impl<T> std::ops::IndexMut<$Key> for $Map<T> {
+            #[inline]
+            fn index_mut<'a>(&'a mut self, key: $Key) -> &'a mut Self::Output {
+                match key {
+                    $(
+                        $Key::$variant => &mut self.$field,
+                    )*
+                }
+            }
+        }
+    }
+}
