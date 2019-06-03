@@ -533,13 +533,38 @@ fn main() {
 
     let mut configuration: configuration::Root = read_configuration(&configuration_path);
 
+
     let mut world = {
-        let initial_transform = camera::CameraTransform {
+        let mut main_camera_transform = camera::CameraTransform {
             position: Vector3::new(0.0, 1.0, 1.5),
             yaw: Rad(0.0),
             pitch: Rad(0.0),
             fovy: Deg(90.0).into(),
         };
+
+        let mut debug_camera_transform = camera::CameraTransform {
+            position: Vector3::new(0.0, 1.0, 1.5),
+            yaw: Rad(0.0),
+            pitch: Rad(0.0),
+            fovy: Deg(90.0).into(),
+        };
+
+        // Load state.
+        {
+            use std::fs;
+            use std::io;
+            use std::io::Read;
+            match fs::File::open("state.bin") {
+                Ok(file) => {
+                    let mut file = io::BufReader::new(file);
+                    file.read_exact(main_camera_transform.value_as_bytes_mut()).unwrap();
+                    file.read_exact(debug_camera_transform.value_as_bytes_mut()).unwrap();
+                },
+                Err(_) => {
+                    // Whatever.
+                }
+            }
+        }
 
         World {
             tick: 0,
@@ -547,17 +572,17 @@ fn main() {
             attenuation_mode: AttenuationMode::Interpolated,
             target_camera_index: CameraIndex::Main,
             smooth_camera: camera::SmoothCamera {
-                transform: initial_transform,
+                transform: main_camera_transform,
                 smooth_enabled: true,
                 current_smoothness: configuration.camera.maximum_smoothness,
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             },
             main_camera: camera::Camera {
-                transform: initial_transform,
+                transform: main_camera_transform,
                 properties: configuration.main_camera.into(),
             },
             debug_camera: camera::Camera {
-                transform: initial_transform,
+                transform: debug_camera_transform,
                 properties: configuration.debug_camera.into(),
             },
             sun_pos: Vector3::new(0.0, 0.0, 0.0),
@@ -1628,6 +1653,16 @@ fn main() {
                 fps_average.compute()
             ));
         }
+    }
+
+    // Save state.
+    {
+        use std::fs;
+        use std::io;
+        use std::io::Write;
+        let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
+        file.write_all(world.main_camera.transform.value_as_bytes()).unwrap();
+        file.write_all(world.debug_camera.transform.value_as_bytes()).unwrap();
     }
 }
 
