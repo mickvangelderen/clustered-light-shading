@@ -2,6 +2,7 @@ use crate::clamp::*;
 use cgmath::*;
 
 #[derive(Debug, Copy, Clone)]
+#[repr(C)]
 pub struct CameraTransform {
     pub position: Vector3<f32>,
     pub yaw: Rad<f32>,
