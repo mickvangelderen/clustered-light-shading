@@ -1,5 +1,4 @@
 use cgmath::*;
-use crate::cgmath_ext::*;
 use num_traits::{Float, NumCast, ToPrimitive};
 
 unsafe fn reinterpret<A, B>(a: &A) -> &B {
@@ -243,33 +242,5 @@ impl<S: ToPrimitive> Frustrum<S> {
             z0: T::from(self.z0)?,
             z1: T::from(self.z1)?,
         })
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct BoundingBox<S> {
-    pub min: Point3<S>,
-    pub max: Point3<S>,
-}
-
-impl<S: Float> BoundingBox<S> {
-    pub fn from_point(p: Point3<S>) -> Self {
-        BoundingBox {
-            min: p,
-            max: p,
-        }
-    }
-
-    pub fn enclose(self, p: Point3<S>) -> Self {
-        BoundingBox {
-            min: Point3::partial_min_element_wise(self.min, p),
-            max: Point3::partial_max_element_wise(self.max, p),
-        }
-    }
-}
-
-impl<S: cgmath::BaseFloat> BoundingBox<S> {
-    pub fn delta(&self) -> Vector3<S> {
-        self.max - self.min
     }
 }

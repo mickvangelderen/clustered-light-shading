@@ -8,6 +8,7 @@ mod macros;
 mod ao_filter;
 mod ao_renderer;
 mod basic_renderer;
+mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
@@ -23,6 +24,7 @@ mod keyboard;
 mod keyboard_model;
 mod light;
 mod line_renderer;
+mod mono_stereo;
 mod overlay_renderer;
 mod post_renderer;
 mod random_unit_sphere_dense;
@@ -30,13 +32,23 @@ mod random_unit_sphere_surface;
 mod rendering;
 mod resources;
 mod shadow_renderer;
+mod timings;
+mod viewport;
 mod vsm_filter;
+mod window_mode;
 
+use crate::bounding_box::*;
 use crate::cgmath_ext::*;
+use crate::frustrum::*;
 use crate::gl_ext::*;
+use crate::mono_stereo::*;
+use crate::timings::*;
+use crate::viewport::*;
+use crate::window_mode::*;
 use arrayvec::ArrayVec;
 use cgmath::*;
 use convert::*;
+use derive::EnumNext;
 use gl_typed as gl;
 use glutin::GlContext;
 use glutin_ext::*;
@@ -56,26 +68,53 @@ const DESIRED_UPS: f64 = 90.0;
 const SHADOW_W: i32 = 1024;
 const SHADOW_H: i32 = 1024;
 
-const EYES: [vr::Eye; 2] = [vr::Eye::Left, vr::Eye::Right];
-
-impl_generic_static_map! {
-    (CameraKey, CameraMap),
-    (Main, main),
-    (Debug, debug),
-}
-
-pub const CAMERA_KEYS: [CameraKey; 2] = [CameraKey::Main, CameraKey::Debug];
-
-impl CameraKey {
-    fn rotate(self) -> Self {
-        match self {
-            CameraKey::Main => CameraKey::Debug,
-            CameraKey::Debug => CameraKey::Main,
-        }
+impl_enum_and_enum_map! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+    enum CameraKey => struct CameraMap {
+        Main => main,
+        Debug => debug,
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+impl CameraKey {
+    pub const fn iter() -> CameraKeyIter {
+        CameraKeyIter(CameraKey::Main)
+    }
+}
+
+struct CameraKeyIter(CameraKey);
+
+impl Iterator for CameraKeyIter {
+    type Item = CameraKey;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|next| {
+            self.0 = next;
+            next
+        })
+    }
+}
+
+impl std::iter::FusedIterator for CameraKeyIter {}
+
+impl std::iter::ExactSizeIterator for CameraKeyIter {
+    fn len(&self) -> usize {
+        2
+    }
+}
+
+use vr::Eye;
+
+impl_enum_map! {
+    Eye => struct EyeMap {
+        Left => left,
+        Right => right,
+    }
+}
+
+pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
 #[repr(u32)]
 pub enum AttenuationMode {
     Step = 1,
@@ -86,22 +125,10 @@ pub enum AttenuationMode {
     Smooth = 6,
 }
 
-impl AttenuationMode {
-    fn rotate(self) -> Self {
-        match self {
-            AttenuationMode::Step => AttenuationMode::Linear,
-            AttenuationMode::Linear => AttenuationMode::Physical,
-            AttenuationMode::Physical => AttenuationMode::Interpolated,
-            AttenuationMode::Interpolated => AttenuationMode::Reduced,
-            AttenuationMode::Reduced => AttenuationMode::Smooth,
-            AttenuationMode::Smooth => AttenuationMode::Step,
-        }
-    }
-}
-
 pub struct World {
     pub tick: u64,
     pub clear_color: [f32; 3],
+    pub window_mode: WindowMode,
     pub attenuation_mode: AttenuationMode,
     pub target_camera_key: CameraKey,
     pub transition_camera: camera::TransitionCamera,
@@ -122,6 +149,8 @@ impl World {
 }
 
 pub struct View {
+    pub viewport: Viewport<i32>,
+
     pub pos_from_cam_to_hmd: Matrix4<f64>,
 
     pub pos_from_cam_to_clp: Matrix4<f64>,
@@ -243,69 +272,6 @@ pub struct ViewDependentResources {
     pub post_depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     // Uniform buffers.
     pub lighting_buffer_name: gl::BufferName,
-}
-
-#[derive(Debug, Copy, Clone, Default)]
-pub struct Span<T> {
-    pub start: T,
-    pub end: T,
-}
-
-impl<T> Span<T>
-where
-    T: Copy + std::ops::Sub,
-{
-    fn delta(&self) -> <T as std::ops::Sub>::Output {
-        self.end - self.start
-    }
-}
-
-#[derive(Debug)]
-pub struct Timings {
-    pub accumulate_file_updates: Span<time::Instant>,
-    pub execute_file_updates: Span<time::Instant>,
-    pub wait_for_pose: Span<time::Instant>,
-    pub accumulate_window_updates: Span<time::Instant>,
-    pub accumulate_vr_updates: Span<time::Instant>,
-    pub simulate: Span<time::Instant>,
-    pub prepare_render_data: Span<time::Instant>,
-    pub render: Span<time::Instant>,
-    pub swap_buffers: Span<time::Instant>,
-}
-
-impl Timings {
-    fn print_deltas(&self) {
-        println!(
-            "accumulate_file_updates   {:4>}μs",
-            self.accumulate_file_updates.delta().as_micros()
-        );
-        println!(
-            "execute_file_updates      {:4>}μs",
-            self.execute_file_updates.delta().as_micros()
-        );
-        println!(
-            "wait_for_pose             {:4>}μs",
-            self.wait_for_pose.delta().as_micros()
-        );
-        println!(
-            "accumulate_window_updates {:4>}μs",
-            self.accumulate_window_updates.delta().as_micros()
-        );
-        println!(
-            "accumulate_vr_updates     {:4>}μs",
-            self.accumulate_vr_updates.delta().as_micros()
-        );
-        println!("simulate                  {:4>}μs", self.simulate.delta().as_micros());
-        println!(
-            "prepare_render_data       {:4>}μs",
-            self.prepare_render_data.delta().as_micros()
-        );
-        println!("render                    {:4>}μs", self.render.delta().as_micros());
-        println!(
-            "swap_buffers              {:4>}μs",
-            self.swap_buffers.delta().as_micros()
-        );
-    }
 }
 
 impl ViewDependentResources {
@@ -565,7 +531,7 @@ fn main() {
             match fs::File::open("state.bin") {
                 Ok(file) => {
                     let mut file = io::BufReader::new(file);
-                    for &key in CAMERA_KEYS.iter() {
+                    for key in CameraKey::iter() {
                         file.read_exact(cameras[key].value_as_bytes_mut()).unwrap();
                     }
                 }
@@ -578,6 +544,7 @@ fn main() {
         World {
             tick: 0,
             clear_color: [0.0, 0.0, 0.0],
+            window_mode: WindowMode::Main,
             attenuation_mode: AttenuationMode::Interpolated,
             target_camera_key: CameraKey::Main,
             transition_camera: camera::TransitionCamera {
@@ -839,7 +806,7 @@ fn main() {
         Some(context) => {
             let dims = context.system().get_recommended_render_target_size();
 
-            ArrayVec::from(EYES)
+            ArrayVec::from(EYE_KEYS)
                 .into_iter()
                 .map(|_| ViewDependentResources::new(&gl, dims.width as i32, dims.height as i32))
                 .collect()
@@ -951,7 +918,7 @@ fn main() {
                 configuration = read_configuration(&configuration_path);
 
                 // Apply updates.
-                for &key in CAMERA_KEYS.iter() {
+                for key in CameraKey::iter() {
                     world.cameras[key].properties = match key {
                         CameraKey::Main => configuration.main_camera,
                         CameraKey::Debug => configuration.debug_camera,
@@ -985,22 +952,45 @@ fn main() {
         // NOTE: OpenVR will block upon querying the pose for as long as
         // possible but no longer than it takes to submit the new frame. This is
         // done to render the most up-to-date application state as possible.
+        struct Mono0 {}
 
-        let pos_from_hmd_to_bdy: Matrix4<f64> = match &vr_context {
+        struct Eyes0 {
+            tangents: [f32; 4],
+            pos_from_eye_to_hmd: Matrix4<f64>,
+        }
+
+        struct Stereo0<'a> {
+            vr_context: &'a vr::Context,
+            pos_from_hmd_to_bdy: Matrix4<f64>,
+            pos_from_bdy_to_hmd: Matrix4<f64>,
+            eyes: EyeMap<Eyes0>,
+        }
+
+        let render_data = match &vr_context {
             Some(vr_context) => {
                 let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
                     unsafe { mem::zeroed() };
-
                 vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
-
                 let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
-                if hmd_pose.bPoseIsValid {
-                    Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap()
-                } else {
-                    panic!("Pose is not valid!");
-                }
+                assert!(hmd_pose.bPoseIsValid, "Received invalid pose from VR.");
+                let pos_from_hmd_to_bdy = Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap();
+
+                MonoStereoBox::Stereo(Stereo0 {
+                    vr_context,
+                    pos_from_hmd_to_bdy,
+                    pos_from_bdy_to_hmd: pos_from_hmd_to_bdy.invert().unwrap(),
+                    eyes: EyeMap::new(|eye_key| {
+                        let eye = Eye::from(eye_key);
+                        Eyes0 {
+                            tangents: vr_context.system().get_projection_raw(eye),
+                            pos_from_eye_to_hmd: Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
+                                .cast()
+                                .unwrap(),
+                        }
+                    }),
+                })
             }
-            None => Matrix4::identity(),
+            None => MonoStereoBox::Mono(Mono0 {}),
         };
 
         timing_transition!(timings, wait_for_pose, accumulate_window_updates);
@@ -1011,6 +1001,7 @@ fn main() {
         let mut should_resize = false;
         let mut should_export_state = false;
         let mut new_target_camera_key = world.target_camera_key;
+        let mut new_window_mode = world.window_mode;
         let mut new_attenuation_mode = world.attenuation_mode;
 
         events_loop.poll_events(|event| {
@@ -1048,11 +1039,14 @@ fn main() {
                                         VirtualKeyCode::Tab => {
                                             // Don't trigger when we ALT TAB.
                                             if keyboard_state.lalt.is_released() {
-                                                new_target_camera_key = new_target_camera_key.rotate();
+                                                new_target_camera_key.wrapping_next_assign();
                                             }
                                         }
                                         VirtualKeyCode::Key1 => {
-                                            new_attenuation_mode = new_attenuation_mode.rotate();
+                                            new_attenuation_mode.wrapping_next_assign();
+                                        }
+                                        VirtualKeyCode::Key1 => {
+                                            new_window_mode.wrapping_next_assign();
                                         }
                                         VirtualKeyCode::C => {
                                             world.target_camera_mut().toggle_smoothness();
@@ -1104,9 +1098,10 @@ fn main() {
 
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
+        world.window_mode = new_window_mode;
         world.attenuation_mode = new_attenuation_mode;
 
-        for &key in &[CameraKey::Main, CameraKey::Debug] {
+        for key in CameraKey::iter() {
             let is_target = world.target_camera_key == key;
             let delta = camera::CameraDelta {
                 time: delta_time,
@@ -1166,18 +1161,18 @@ fn main() {
         //  - hmd --[clustered light shading dimensions]--> cls
         //  - cam --[projection]--> clp
 
-        let pos_from_hmd_to_wld: Matrix4<f64> = {
-            let pos_from_bdy_to_wld = world.transition_camera.current_camera.transform.pos_to_parent().cast().unwrap();
-            pos_from_bdy_to_wld * pos_from_hmd_to_bdy
-        };
+        // let pos_from_hmd_to_wld: Matrix4<f64> = {
+        //     let pos_from_bdy_to_wld = world
+        //         .transition_camera
+        //         .current_camera
+        //         .transform
+        //         .pos_to_parent()
+        //         .cast()
+        //         .unwrap();
+        //     pos_from_bdy_to_wld * pos_from_hmd_to_bdy
+        // };
 
-        let main_camera_pos_from_hmd_to_wld: Matrix4<f64> = {
-            let pos_from_bdy_to_wld = world.cameras.main.current_transform.pos_to_parent().cast().unwrap();
-            pos_from_bdy_to_wld * pos_from_hmd_to_bdy
-        };
-        let main_camera_pos_from_wld_to_hmd = main_camera_pos_from_hmd_to_wld.invert().unwrap();
-
-        let sun_frustrum = frustrum::Frustrum::<f64> {
+        let sun_frustrum = Frustrum::<f64> {
             x0: -25.0,
             x1: 25.0,
             y0: -25.0,
@@ -1188,82 +1183,72 @@ fn main() {
 
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast::<f32>().unwrap().line_mesh();
 
-        let compute_views = |camera: camera::Camera| -> ArrayVec<[View; 2]> {
-            match &vr_context {
-                Some(vr_context) => {
-                    ArrayVec::from(EYES)
-                        .into_iter()
-                        .map(|eye| {
-                            let frustrum = {
-                                // These are the tangents.
-                                let [l, r, b, t] = vr_context.system().get_projection_raw(eye);
-                                let z0 = camera.properties.z0 as f64;
-                                let z1 = camera.properties.z1 as f64;
-                                frustrum::Frustrum::<f64> {
-                                    x0: -z0 * l as f64,
-                                    x1: -z0 * r as f64,
-                                    y0: -z0 * b as f64,
-                                    y1: -z0 * t as f64,
-                                    z0,
-                                    z1,
-                                }
-                            };
-                            let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
-                            let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+        fn mono_frustrum(camera: camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
+            let z0 = camera.properties.z0 as f64;
+            let z1 = camera.properties.z1 as f64;
+            let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
+            let dx = dy * viewport.dimensions.x as f64 / viewport.dimensions.y as f64;
+            Frustrum::<f64> {
+                x0: -dx,
+                x1: dx,
+                y0: -dy,
+                y1: dy,
+                z0,
+                z1,
+            }
+        }
 
-                            let pos_from_cam_to_hmd: Matrix4<f64> =
-                                Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
-                                    .cast()
-                                    .unwrap();
+        fn stereo_frustrum(camera_properties: camera::CameraProperties, tangents: [f32; 4]) -> Frustrum<f64> {
+            let [l, r, b, t] = tangents;
+            let z0 = camera_properties.z0 as f64;
+            let z1 = camera_properties.z1 as f64;
+            Frustrum::<f64> {
+                x0: -z0 * l as f64,
+                x1: -z0 * r as f64,
+                y0: -z0 * b as f64,
+                y1: -z0 * t as f64,
+                z0,
+                z1,
+            }
+        }
 
-                            View {
-                                pos_from_cam_to_hmd,
+        let cluster_bounding_box = match &render_data {
+            MonoStereoBox::Mono(mono) => {
+                let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
 
-                                pos_from_cam_to_clp,
-                                pos_from_clp_to_cam,
+                // TODO: DEDUPLICATE
+                let main_viewport = match world.window_mode {
+                    WindowMode::Main => Viewport::from_dimensions(Vector2::new(width as i32, height as i32)),
+                    WindowMode::Debug => Viewport::from_dimensions(Vector2::new(width as i32, height as i32)),
+                    WindowMode::Split => {
+                        Viewport::from_coordinates(Point2::origin(), Point2::new(width as i32 / 2, height as i32))
+                    }
+                };
 
-                                pos_from_clp_to_hmd: pos_from_cam_to_hmd * pos_from_clp_to_cam,
-                            }
-                        })
-                        .collect()
-                }
-                None => {
-                    let physical_size = win_size.to_physical(win_dpi);
+                let frustrum = mono_frustrum(world.cameras.main.current_to_camera(), main_viewport);
 
-                    let frustrum = {
-                        let z0 = camera.properties.z0 as f64;
-                        let z1 = camera.properties.z1 as f64;
-                        let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
-                        let dx = dy * physical_size.width as f64 / physical_size.height as f64;
-                        frustrum::Frustrum::<f64> {
-                            x0: -dx,
-                            x1: dx,
-                            y0: -dy,
-                            y1: dy,
-                            z0,
-                            z1,
-                        }
-                    };
+                let pos_from_hmd_to_clp = frustrum.perspective(DEPTH_RANGE);
+                let matrices = [pos_from_hmd_to_clp.invert().unwrap()];
 
-                    let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
-                    let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+                cls::compute_bounding_box(matrices.iter())
+            }
+            MonoStereoBox::Stereo(stereo) => {
+                let eyes = stereo.eyes.as_ref().map(|eye| {
+                    let frustrum = stereo_frustrum(world.cameras.main.properties, eye.tangents);
 
-                    ArrayVec::from([View {
-                        pos_from_cam_to_hmd: Matrix4::identity(),
+                    let pos_from_eye_to_clp = frustrum.perspective(DEPTH_RANGE);
+                    let pos_from_clp_to_eye = pos_from_eye_to_clp.invert().unwrap();
 
-                        pos_from_cam_to_clp,
-                        pos_from_clp_to_cam,
+                    let pos_from_clp_to_hmd = eye.pos_from_eye_to_hmd * pos_from_clp_to_eye;
 
-                        pos_from_clp_to_hmd: /* pos_from_cam_to_hmd = I */ pos_from_clp_to_cam,
-                    }])
-                    .into_iter()
-                    .collect()
-                }
+                    pos_from_clp_to_hmd
+                });
+
+                let matrices = [eyes.left, eyes.right];
+
+                cls::compute_bounding_box(matrices.iter())
             }
         };
-
-        let views = compute_views(world.transition_camera.current_camera);
-        let cls_views = compute_views(world.cameras.main.current_to_camera());
 
         let global_data = {
             let light_pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
@@ -1296,7 +1281,20 @@ fn main() {
             }
         };
 
-        let cluster_bounding_box = cls::compute_bounding_box(cls_views.iter().map(|view| view.pos_from_clp_to_hmd));
+        let main_camera_pos_from_wld_to_hmd = {
+            let pos_from_wld_to_bdy = world
+                .cameras
+                .main
+                .current_transform
+                .pos_from_parent()
+                .cast::<f64>()
+                .unwrap();
+            match render_data {
+                MonoStereoBox::Mono(_) => pos_from_wld_to_bdy,
+                MonoStereoBox::Stereo(stereo) => pos_from_wld_to_bdy * stereo.pos_from_bdy_to_hmd,
+            }
+        };
+
         let cls_buffer = cls::compute_light_assignment(
             &main_camera_pos_from_wld_to_hmd,
             cluster_bounding_box,
@@ -1502,7 +1500,7 @@ fn main() {
                 );
 
                 for view in cls_views.iter() {
-                    let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
+                    let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
                     let pos_from_clp_to_wld = main_camera_pos_from_hmd_to_wld * view.pos_from_clp_to_hmd;
                     let vertices: Vec<[f32; 3]> = corners_in_clp
                         .iter()
@@ -1532,7 +1530,7 @@ fn main() {
                 [(0, w / 2, 0, h), (w / 2, w, 0, h)]
             };
 
-            for (view_index, &eye) in EYES.iter().enumerate() {
+            for (view_index, &eye) in EYE_KEYS.iter().enumerate() {
                 let view_dep_res = &view_dep_res[view_index];
 
                 // Render both eyes to the default framebuffer.
@@ -1607,7 +1605,7 @@ fn main() {
         use std::io;
         use std::io::Write;
         let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
-        for &key in CAMERA_KEYS.iter() {
+        for key in CameraKey::iter() {
             let camera = world.cameras[key].current_to_camera();
             file.write_all(camera.value_as_bytes()).unwrap();
         }
