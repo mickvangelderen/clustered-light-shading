@@ -2,8 +2,8 @@ use crate::*;
 
 pub const MAX_LIGHTS_PER_CLUSTER: usize = 8;
 
-pub fn compute_bounding_box<I: Iterator<Item = Matrix4<f64>>>(pos_from_clp_to_hmd_iter: I) -> frustrum::BoundingBox<f32> {
-    let corners_in_clp = frustrum::Frustrum::corners_in_clp(DEPTH_RANGE);
+pub fn compute_bounding_box<'a, I: Iterator<Item = &'a Matrix4<f64>>>(pos_from_clp_to_hmd_iter: I) -> BoundingBox<f32> {
+    let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
     let mut corners_in_hmd = pos_from_clp_to_hmd_iter
         .flat_map(|pos_from_clp_to_hmd| {
             corners_in_clp
@@ -11,13 +11,13 @@ pub fn compute_bounding_box<I: Iterator<Item = Matrix4<f64>>>(pos_from_clp_to_hm
                 .map(move |&p| pos_from_clp_to_hmd.transform_point(p))
         })
         .map(|p| p.cast::<f32>().unwrap());
-    let first = frustrum::BoundingBox::from_point(corners_in_hmd.next().unwrap());
+    let first = BoundingBox::from_point(corners_in_hmd.next().unwrap());
     corners_in_hmd.fold(first, |b, p| b.enclose(p))
 }
 
 pub fn compute_light_assignment(
     pos_from_wld_to_hmd: &Matrix4<f64>,
-    cluster_bounding_box: frustrum::BoundingBox<f32>,
+    cluster_bounding_box: BoundingBox<f32>,
     point_lights: &[light::PointLight],
     cluster_side: f32,
     light_index: Option<u32>,

@@ -26,15 +26,12 @@ macro_rules! field_offset {
     };
 }
 
-macro_rules! impl_generic_static_map {
-    (($Key: ident, $Map: ident), $(($variant: ident, $field: ident),)*) => {
-        #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-        pub enum $Key {
-            $(
-                $variant,
-            )*
-        }
-
+macro_rules! impl_enum_map {
+    (
+        $Key: ident => struct $Map: ident { $(
+            $variant: ident => $field: ident,
+        )* }
+    ) => {
         #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $Map<T> {
             $(
@@ -112,5 +109,27 @@ macro_rules! impl_generic_static_map {
                 }
             }
         }
+    };
+}
+
+macro_rules! impl_enum_and_enum_map {
+    (
+        $(#[$($key_meta: tt)*])?
+        enum $Key: ident => struct $Map: ident { $(
+            $variant: ident => $field: ident,
+        )* }
+    ) => {
+        $(#[$($key_meta)*])?
+        pub enum $Key {
+            $(
+                $variant,
+            )*
+        }
+
+        impl_enum_map!(
+            $Key => struct $Map { $(
+                $variant => $field,
+            )* }
+        );
     }
 }

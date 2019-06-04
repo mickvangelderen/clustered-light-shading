@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+derive = { path = "../derive" }
 polygen = { path = "../polygen" }
 cgmath = "0.17.0"
 gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", tag = "0.5.0" }
