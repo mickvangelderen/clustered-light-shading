@@ -1212,25 +1212,65 @@ fn main() {
             }
         }
 
-        let cluster_bounding_box = match &render_data {
+        struct ViewCam {
+            viewport: Viewport<i32>,
+            camera: camera::Camera,
+        }
+
+        struct Mono2 {}
+        struct Stereo2 {}
+        struct RenderData2 {
+            cluster_bounding_box: BoundingBox<f32>,
+            mono_stereo: MonoStereoBox<Mono2, Stereo2>,
+        }
+
+        let RenderData2 { cluster_bounding_box, mono_stereo } = match &render_data {
             MonoStereoBox::Mono(mono) => {
                 let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
 
-                // TODO: DEDUPLICATE
-                let main_viewport = match world.window_mode {
-                    WindowMode::Main => Viewport::from_dimensions(Vector2::new(width as i32, height as i32)),
-                    WindowMode::Debug => Viewport::from_dimensions(Vector2::new(width as i32, height as i32)),
+                let full_viewport = Viewport::from_dimensions(Vector2::new(width as i32, height as i32));
+
+                let split_viewports = CameraMap {
+                    main: Viewport::from_coordinates(Point2::origin(), Point2::new(width as i32 / 2, height as i32)),
+                    debug: Viewport::from_coordinates(
+                        Point2::new(width as i32 / 2, 0),
+                        Point2::new(width as i32, height as i32),
+                    ),
+                };
+
+                let cls_viewport = match world.window_mode {
+                    WindowMode::Main | WindowMode::Debug => full_viewport,
+                    WindowMode::Split => split_viewports.main,
+                };
+
+                let view_cams = match world.window_mode {
+                    WindowMode::Main => WindowModeBox::Main(ViewCam {
+                        viewport: full_viewport,
+                        camera: world.transition_camera.current_camera,
+                    }),
+                    WindowMode::Debug => WindowModeBox::Debug(ViewCam {
+                        viewport: full_viewport,
+                        camera: world.transition_camera.current_camera,
+                    }),
                     WindowMode::Split => {
-                        Viewport::from_coordinates(Point2::origin(), Point2::new(width as i32 / 2, height as i32))
+                        WindowModeBox::Split(split_viewports.zip(world.cameras.as_ref(), |viewport, camera| ViewCam {
+                            viewport,
+                            camera: camera.current_to_camera(),
+                        }))
                     }
                 };
 
-                let frustrum = mono_frustrum(world.cameras.main.current_to_camera(), main_viewport);
+                let frustrum = mono_frustrum(world.cameras.main.current_to_camera(), cls_viewport);
 
                 let pos_from_hmd_to_clp = frustrum.perspective(DEPTH_RANGE);
                 let matrices = [pos_from_hmd_to_clp.invert().unwrap()];
 
-                cls::compute_bounding_box(matrices.iter())
+                RenderData2 {
+                    cluster_bounding_box: cls::compute_bounding_box(matrices.iter()),
+                    mono_stereo: MonoStereoBox::Mono(
+                        Mono2 {}
+                    ),
+                }
             }
             MonoStereoBox::Stereo(stereo) => {
                 let eyes = stereo.eyes.as_ref().map(|eye| {
@@ -1246,7 +1286,12 @@ fn main() {
 
                 let matrices = [eyes.left, eyes.right];
 
-                cls::compute_bounding_box(matrices.iter())
+                RenderData2 {
+                    cluster_bounding_box: cls::compute_bounding_box(matrices.iter()),
+                    mono_stereo: MonoStereoBox::Stereo(
+                        Stereo2 {}
+                    )
+                }
             }
         };
 
