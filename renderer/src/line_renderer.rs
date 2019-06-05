@@ -1,3 +1,4 @@
+use crate::*;
 use crate::convert::*;
 use crate::rendering;
 use cgmath::*;
@@ -13,9 +14,8 @@ pub struct Renderer {
 }
 
 pub struct Parameters<'a> {
+    pub viewport: Viewport<i32>,
     pub framebuffer: gl::FramebufferName,
-    pub width: i32,
-    pub height: i32,
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
     pub pos_from_obj_to_wld: &'a Matrix4<f32>,
@@ -37,7 +37,7 @@ impl Renderer {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-            gl.viewport(0, 0, params.width, params.height);
+            params.viewport.set(gl);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
 
             gl.use_program(self.program.name);

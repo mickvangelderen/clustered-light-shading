@@ -10,9 +10,8 @@ pub struct Renderer {
 }
 
 pub struct Parameters<'a> {
+    pub viewport: Viewport<i32>,
     pub framebuffer: gl::FramebufferName,
-    pub width: i32,
-    pub height: i32,
     pub cls_buffer: &'a rendering::CLSBuffer,
     pub min_light_count: u32,
     pub animate_z: Option<f32>,
@@ -24,13 +23,8 @@ impl Renderer {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-            gl.viewport(0, 0, params.width, params.height);
+            params.viewport.set(gl);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-
-            gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
-            // Reverse-Z projection.
-            gl.clear_depth(0.0);
-            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
             gl.use_program(self.program.name);
             gl.bind_vertex_array(resources.cluster_vao);
