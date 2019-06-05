@@ -2,9 +2,10 @@ use crate::*;
 
 pub const MAX_LIGHTS_PER_CLUSTER: usize = 8;
 
-pub fn compute_bounding_box<'a, I: Iterator<Item = &'a Matrix4<f64>>>(pos_from_clp_to_hmd_iter: I) -> BoundingBox<f32> {
+fn compute_bounding_box(pos_from_clp_to_hmd: &[Matrix4<f64>]) -> BoundingBox<f32> {
     let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-    let mut corners_in_hmd = pos_from_clp_to_hmd_iter
+    let mut corners_in_hmd = pos_from_clp_to_hmd
+        .iter()
         .flat_map(|pos_from_clp_to_hmd| {
             corners_in_clp
                 .into_iter()
@@ -16,12 +17,17 @@ pub fn compute_bounding_box<'a, I: Iterator<Item = &'a Matrix4<f64>>>(pos_from_c
 }
 
 pub fn compute_light_assignment(
-    pos_from_wld_to_hmd: &Matrix4<f64>,
-    cluster_bounding_box: BoundingBox<f32>,
+    pos_from_clp_to_hmd: &[Matrix4<f64>],
+    pos_from_wld_to_hmd: Matrix4<f64>,
     point_lights: &[light::PointLight],
-    cluster_side: f32,
-    light_index: Option<u32>,
+    configuration: &configuration::ClusteredLightShading,
 ) -> rendering::CLSBuffer {
+    // Get configuration.
+    let cluster_side = configuration.cluster_side;
+    let light_index = configuration.light_index;
+
+    let cluster_bounding_box = compute_bounding_box(pos_from_clp_to_hmd);
+
     let cbb_delta = cluster_bounding_box.delta();
     let cbb_dims_f32 = (cbb_delta / cluster_side).map(f32::ceil);
     // cluster side scale to world
@@ -52,7 +58,9 @@ pub fn compute_light_assignment(
 
     for (i, l) in point_lights.iter().enumerate() {
         if let Some(light_index) = light_index {
-            if i as u32 != light_index { continue; }
+            if i as u32 != light_index {
+                continue;
+            }
         }
 
         let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);

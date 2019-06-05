@@ -157,7 +157,6 @@ pub struct ViewData {
     pub pos_from_clp_to_wld: Matrix4<f32>,
 
     pub light_dir_in_cam: Vector3<f32>,
-    pub _pad0: f32,
 }
 
 pub const VIEW_DATA_DECLARATION: &'static str = r"
@@ -172,7 +171,6 @@ layout(std140, binding = VIEW_DATA_BINDING) uniform ViewData {
     mat4 pos_from_clp_to_wld;
 
     vec3 light_dir_in_cam;
-    float _view_data_pad0;
 };
 ";
 
@@ -201,6 +199,17 @@ impl ViewResources {
                 std::mem::size_of::<ViewData>() * index,
                 std::mem::size_of::<ViewData>(),
             );
+        }
+    }
+
+    /// Use when the data isn't laid out in memory consecutively.
+    pub fn write_iter<I>(&self, gl: &gl::Gl, iter: I) where I: Iterator<Item = ViewData> {
+        unsafe {
+            let total_bytes = std::mem::size_of::<ViewData>() * iter.count();
+            gl.named_buffer_reserve(self.buffer_name, total_bytes, gl::DYNAMIC_DRAW);
+            for data in iter {
+                gl.named_buffer_sub_data(self.buffer_name, data.value_as_bytes());
+            }
         }
     }
 
