@@ -148,17 +148,6 @@ impl World {
     }
 }
 
-pub struct View {
-    pub viewport: Viewport<i32>,
-
-    pub pos_from_cam_to_hmd: Matrix4<f64>,
-
-    pub pos_from_cam_to_clp: Matrix4<f64>,
-    pub pos_from_clp_to_cam: Matrix4<f64>,
-
-    pub pos_from_clp_to_hmd: Matrix4<f64>,
-}
-
 pub struct ViewIndependentResources {
     // Main shadow resources.
     pub shadow_framebuffer_name: gl::NonDefaultFramebufferName,
@@ -169,6 +158,8 @@ pub struct ViewIndependentResources {
     pub shadow_2_texture: Texture<gl::TEXTURE_2D, gl::RG32F>,
     // Storage buffers.
     pub cls_resources: rendering::CLSResources,
+
+    pub global_resources: rendering::GlobalResources,
 }
 
 impl ViewIndependentResources {
@@ -240,13 +231,22 @@ impl ViewIndependentResources {
                 gl::FRAMEBUFFER_COMPLETE.into()
             );
 
+            // Nested resources.
+
+            let cls_resources = rendering::CLSResources::new(gl);
+            cls_resources.bind(gl);
+
+            let global_resources = rendering::GlobalResources::new(&gl);
+            global_resources.bind(gl);
+
             ViewIndependentResources {
                 shadow_framebuffer_name,
                 shadow_texture,
                 shadow_depth_renderbuffer_name,
                 shadow_2_framebuffer_name,
                 shadow_2_texture,
-                cls_resources: rendering::CLSResources::new(gl),
+                global_resources,
+                cls_resources,
             }
         }
     }
@@ -776,9 +776,6 @@ fn main() {
 
     let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
 
-    let global_resources = rendering::GlobalResources::new(&gl);
-    global_resources.bind(&gl);
-
     let material_resources = rendering::MaterialResources::new(&gl);
     let material_datas: Vec<rendering::MaterialData> = resources
         .materials
@@ -956,13 +953,16 @@ fn main() {
 
         struct Eyes0 {
             tangents: [f32; 4],
-            pos_from_eye_to_hmd: Matrix4<f64>,
+            // Input
+            pos_from_cam_to_hmd: Matrix4<f64>,
+            // Derived
+            pos_from_cam_to_bdy: Matrix4<f64>,
         }
 
         struct Stereo0<'a> {
             vr_context: &'a vr::Context,
+            // Input
             pos_from_hmd_to_bdy: Matrix4<f64>,
-            pos_from_bdy_to_hmd: Matrix4<f64>,
             eyes: EyeMap<Eyes0>,
         }
 
@@ -978,14 +978,15 @@ fn main() {
                 MonoStereoBox::Stereo(Stereo0 {
                     vr_context,
                     pos_from_hmd_to_bdy,
-                    pos_from_bdy_to_hmd: pos_from_hmd_to_bdy.invert().unwrap(),
                     eyes: EyeMap::new(|eye_key| {
                         let eye = Eye::from(eye_key);
+                        let pos_from_cam_to_hmd = Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
+                            .cast()
+                            .unwrap();
                         Eyes0 {
                             tangents: vr_context.system().get_projection_raw(eye),
-                            pos_from_eye_to_hmd: Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
-                                .cast()
-                                .unwrap(),
+                            pos_from_cam_to_hmd: pos_from_cam_to_hmd,
+                            pos_from_cam_to_bdy: pos_from_hmd_to_bdy * pos_from_cam_to_hmd,
                         }
                     }),
                 })
@@ -1161,17 +1162,6 @@ fn main() {
         //  - hmd --[clustered light shading dimensions]--> cls
         //  - cam --[projection]--> clp
 
-        // let pos_from_hmd_to_wld: Matrix4<f64> = {
-        //     let pos_from_bdy_to_wld = world
-        //         .transition_camera
-        //         .current_camera
-        //         .transform
-        //         .pos_to_parent()
-        //         .cast()
-        //         .unwrap();
-        //     pos_from_bdy_to_wld * pos_from_hmd_to_bdy
-        // };
-
         let sun_frustrum = Frustrum::<f64> {
             x0: -25.0,
             x1: 25.0,
@@ -1182,118 +1172,6 @@ fn main() {
         };
 
         let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast::<f32>().unwrap().line_mesh();
-
-        fn mono_frustrum(camera: camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
-            let z0 = camera.properties.z0 as f64;
-            let z1 = camera.properties.z1 as f64;
-            let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
-            let dx = dy * viewport.dimensions.x as f64 / viewport.dimensions.y as f64;
-            Frustrum::<f64> {
-                x0: -dx,
-                x1: dx,
-                y0: -dy,
-                y1: dy,
-                z0,
-                z1,
-            }
-        }
-
-        fn stereo_frustrum(camera_properties: camera::CameraProperties, tangents: [f32; 4]) -> Frustrum<f64> {
-            let [l, r, b, t] = tangents;
-            let z0 = camera_properties.z0 as f64;
-            let z1 = camera_properties.z1 as f64;
-            Frustrum::<f64> {
-                x0: -z0 * l as f64,
-                x1: -z0 * r as f64,
-                y0: -z0 * b as f64,
-                y1: -z0 * t as f64,
-                z0,
-                z1,
-            }
-        }
-
-        struct ViewCam {
-            viewport: Viewport<i32>,
-            camera: camera::Camera,
-        }
-
-        struct Mono2 {}
-        struct Stereo2 {}
-        struct RenderData2 {
-            cluster_bounding_box: BoundingBox<f32>,
-            mono_stereo: MonoStereoBox<Mono2, Stereo2>,
-        }
-
-        let RenderData2 { cluster_bounding_box, mono_stereo } = match &render_data {
-            MonoStereoBox::Mono(mono) => {
-                let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
-
-                let full_viewport = Viewport::from_dimensions(Vector2::new(width as i32, height as i32));
-
-                let split_viewports = CameraMap {
-                    main: Viewport::from_coordinates(Point2::origin(), Point2::new(width as i32 / 2, height as i32)),
-                    debug: Viewport::from_coordinates(
-                        Point2::new(width as i32 / 2, 0),
-                        Point2::new(width as i32, height as i32),
-                    ),
-                };
-
-                let cls_viewport = match world.window_mode {
-                    WindowMode::Main | WindowMode::Debug => full_viewport,
-                    WindowMode::Split => split_viewports.main,
-                };
-
-                let view_cams = match world.window_mode {
-                    WindowMode::Main => WindowModeBox::Main(ViewCam {
-                        viewport: full_viewport,
-                        camera: world.transition_camera.current_camera,
-                    }),
-                    WindowMode::Debug => WindowModeBox::Debug(ViewCam {
-                        viewport: full_viewport,
-                        camera: world.transition_camera.current_camera,
-                    }),
-                    WindowMode::Split => {
-                        WindowModeBox::Split(split_viewports.zip(world.cameras.as_ref(), |viewport, camera| ViewCam {
-                            viewport,
-                            camera: camera.current_to_camera(),
-                        }))
-                    }
-                };
-
-                let frustrum = mono_frustrum(world.cameras.main.current_to_camera(), cls_viewport);
-
-                let pos_from_hmd_to_clp = frustrum.perspective(DEPTH_RANGE);
-                let matrices = [pos_from_hmd_to_clp.invert().unwrap()];
-
-                RenderData2 {
-                    cluster_bounding_box: cls::compute_bounding_box(matrices.iter()),
-                    mono_stereo: MonoStereoBox::Mono(
-                        Mono2 {}
-                    ),
-                }
-            }
-            MonoStereoBox::Stereo(stereo) => {
-                let eyes = stereo.eyes.as_ref().map(|eye| {
-                    let frustrum = stereo_frustrum(world.cameras.main.properties, eye.tangents);
-
-                    let pos_from_eye_to_clp = frustrum.perspective(DEPTH_RANGE);
-                    let pos_from_clp_to_eye = pos_from_eye_to_clp.invert().unwrap();
-
-                    let pos_from_clp_to_hmd = eye.pos_from_eye_to_hmd * pos_from_clp_to_eye;
-
-                    pos_from_clp_to_hmd
-                });
-
-                let matrices = [eyes.left, eyes.right];
-
-                RenderData2 {
-                    cluster_bounding_box: cls::compute_bounding_box(matrices.iter()),
-                    mono_stereo: MonoStereoBox::Stereo(
-                        Stereo2 {}
-                    )
-                }
-            }
-        };
 
         let global_data = {
             let light_pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
@@ -1326,27 +1204,232 @@ fn main() {
             }
         };
 
-        let main_camera_pos_from_wld_to_hmd = {
-            let pos_from_wld_to_bdy = world
-                .cameras
-                .main
-                .current_transform
-                .pos_from_parent()
-                .cast::<f64>()
-                .unwrap();
-            match render_data {
-                MonoStereoBox::Mono(_) => pos_from_wld_to_bdy,
-                MonoStereoBox::Stereo(stereo) => pos_from_wld_to_bdy * stereo.pos_from_bdy_to_hmd,
+        fn mono_frustrum(camera: camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
+            let z0 = camera.properties.z0 as f64;
+            let z1 = camera.properties.z1 as f64;
+            let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
+            let dx = dy * viewport.dimensions.x as f64 / viewport.dimensions.y as f64;
+            Frustrum::<f64> {
+                x0: -dx,
+                x1: dx,
+                y0: -dy,
+                y1: dy,
+                z0,
+                z1,
+            }
+        }
+
+        fn stereo_frustrum(camera_properties: camera::CameraProperties, tangents: [f32; 4]) -> Frustrum<f64> {
+            let [l, r, b, t] = tangents;
+            let z0 = camera_properties.z0 as f64;
+            let z1 = camera_properties.z1 as f64;
+            Frustrum::<f64> {
+                x0: -z0 * l as f64,
+                x1: -z0 * r as f64,
+                y0: -z0 * b as f64,
+                y1: -z0 * t as f64,
+                z0,
+                z1,
+            }
+        }
+
+        pub struct PreViewData {
+            pub viewport: Viewport<i32>,
+
+            pub pos_from_cam_to_clp: Matrix4<f64>,
+            pub pos_from_clp_to_cam: Matrix4<f64>,
+
+            pub pos_from_wld_to_cam: Matrix4<f64>,
+            pub pos_from_cam_to_wld: Matrix4<f64>,
+
+            // CLS
+            pub pos_from_wld_to_hmd: Matrix4<f64>,
+            pub pos_from_clp_to_hmd: Matrix4<f64>,
+        }
+
+        impl PreViewData {
+            pub fn mono(viewport: Viewport<i32>, camera: camera::Camera) -> Self {
+                let frustrum = mono_frustrum(camera, viewport);
+
+                let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+
+                let pos_from_wld_to_cam = camera.transform.pos_from_parent().cast::<f64>().unwrap();
+                let pos_from_cam_to_wld = camera.transform.pos_to_parent().cast::<f64>().unwrap();
+
+                PreViewData {
+                    viewport,
+
+                    pos_from_cam_to_clp,
+                    pos_from_clp_to_cam,
+
+                    pos_from_wld_to_cam,
+                    pos_from_cam_to_wld,
+
+                    pos_from_wld_to_hmd: pos_from_wld_to_cam,
+                    pos_from_clp_to_hmd: pos_from_clp_to_cam,
+                }
+            }
+
+            pub fn stereo(
+                viewport: Viewport<i32>,
+                pos_from_hmd_to_bdy: Matrix4<f64>,
+                eye: Eyes0,
+                camera: camera::Camera,
+            ) -> Self {
+                let Eyes0 {
+                    tangents,
+                    pos_from_cam_to_hmd,
+                    pos_from_cam_to_bdy,
+                } = eye;
+                let frustrum = stereo_frustrum(camera.properties, tangents);
+
+                let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                let pos_from_clp_to_cam = pos_from_cam_to_clp.invert().unwrap();
+
+                let pos_from_bdy_to_wld = camera.transform.pos_to_parent().cast().unwrap();
+                let pos_from_cam_to_wld = pos_from_bdy_to_wld * pos_from_cam_to_bdy;
+
+                let pos_from_hmd_to_wld = pos_from_hmd_to_bdy * pos_from_bdy_to_wld;
+
+                PreViewData {
+                    viewport,
+
+                    pos_from_cam_to_clp,
+                    pos_from_clp_to_cam,
+
+                    pos_from_wld_to_cam: pos_from_cam_to_wld.invert().unwrap(),
+                    pos_from_cam_to_wld,
+
+                    pos_from_wld_to_hmd: pos_from_hmd_to_wld.invert().unwrap(),
+                    pos_from_clp_to_hmd: pos_from_clp_to_cam * pos_from_cam_to_hmd,
+                }
+            }
+
+            fn to_view_data(&self, global_data: &rendering::GlobalData) -> rendering::ViewData {
+                let pos_from_wld_to_clp = self.pos_from_cam_to_clp * self.pos_from_wld_to_cam;
+                let pos_from_clp_to_wld = self.pos_from_cam_to_wld * self.pos_from_clp_to_cam;
+
+                let light_pos_from_cam_to_wld = global_data.light_pos_from_cam_to_wld.cast::<f64>().unwrap();
+                let light_dir_in_cam = self
+                    .pos_from_wld_to_cam
+                    .transform_vector(light_pos_from_cam_to_wld.transform_vector(Vector3::unit_z()));
+
+                rendering::ViewData {
+                    pos_from_wld_to_cam: self.pos_from_wld_to_cam.cast().unwrap(),
+                    pos_from_cam_to_wld: self.pos_from_cam_to_wld.cast().unwrap(),
+
+                    pos_from_cam_to_clp: self.pos_from_cam_to_clp.cast().unwrap(),
+                    pos_from_clp_to_cam: self.pos_from_clp_to_cam.cast().unwrap(),
+
+                    pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
+                    pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
+
+                    light_dir_in_cam: light_dir_in_cam.cast().unwrap(),
+                }
+            }
+        }
+
+        struct RenderData2 {
+            cls_buffer: rendering::CLSBuffer,
+            mode_data: WindowModeBox<PreViewData, CameraMap<PreViewData>, CameraMap<PreViewData>>,
+        }
+
+        let RenderData2 { cls_buffer, mode_data } = {
+            let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
+
+            let full_viewport = Viewport::from_dimensions(Vector2::new(width as i32, height as i32));
+
+            match &render_data {
+                MonoStereoBox::Mono(mono) => {
+                    // Window mode independent data would be computed here.
+
+                    let mode_data = match world.window_mode {
+                        WindowMode::Main => WindowModeBox::Main(PreViewData::mono(
+                            full_viewport,
+                            world.transition_camera.current_camera,
+                        )),
+                        WindowMode::Debug => WindowModeBox::Debug(
+                            CameraMap {
+                                main: world.cameras.main.current_to_camera(),
+                                debug: world.transition_camera.current_camera,
+                            }
+                            .map(|camera| PreViewData::mono(full_viewport, camera)),
+                        ),
+                        WindowMode::Split => WindowModeBox::Split(
+                            CameraMap {
+                                main: Viewport::from_coordinates(
+                                    Point2::origin(),
+                                    Point2::new(width as i32 / 2, height as i32),
+                                ),
+                                debug: Viewport::from_coordinates(
+                                    Point2::new(width as i32 / 2, 0),
+                                    Point2::new(width as i32, height as i32),
+                                ),
+                            }
+                            .zip(world.cameras.as_ref(), |viewport, camera| {
+                                PreViewData::mono(viewport, camera.current_to_camera())
+                            }),
+                        ),
+                    };
+
+                    RenderData2 {
+                        cls_buffer: {
+                            let pre_view_data = match &mode_data {
+                                WindowModeBox::Main(single) => single,
+                                WindowModeBox::Debug(split) => &split.main,
+                                WindowModeBox::Split(split) => &split.main,
+                            };
+
+                            cls::compute_light_assignment(
+                                &[pre_view_data.pos_from_clp_to_hmd],
+                                pre_view_data.pos_from_wld_to_hmd,
+                                &resources.point_lights[..],
+                                &configuration.clustered_light_shading,
+                            )
+                        },
+                        mode_data,
+                    }
+                }
+                MonoStereoBox::Stereo(stereo) => {
+                    unimplemented!()
+                    // let view_cams = match world.window_mode {
+                    //     WindowMode::Main => {
+                    //         // Blit eyes to main
+                    //         WindowModeBox::Main(())
+                    //     },
+                    //     WindowMode::Debug => WindowModeBox::Debug(ViewCam {
+                    //         viewport: full_viewport,
+                    //         camera: world.transition_camera.current_camera,
+                    //     }),
+                    //     WindowMode::Split => {
+                    //         WindowModeBox::Split(split_viewports.zip(world.cameras.as_ref(), |viewport, camera| ViewCam {
+                    //             viewport,
+                    //             camera: camera.current_to_camera(),
+                    //         }))
+                    //     }
+                    // };
+
+                    // let eyes = stereo.eyes.as_ref().map(|eye| {
+                    //     let frustrum = stereo_frustrum(world.cameras.main.properties, eye.tangents);
+
+                    //     let pos_from_eye_to_clp = frustrum.perspective(DEPTH_RANGE);
+                    //     let pos_from_clp_to_eye = pos_from_eye_to_clp.invert().unwrap();
+
+                    //     let pos_from_clp_to_hmd = eye.pos_from_eye_to_hmd * pos_from_clp_to_eye;
+
+                    //     pos_from_clp_to_hmd
+                    // });
+
+                    // let matrices = [eyes.left, eyes.right];
+
+                    // RenderData2 {
+                    //     cluster_bounding_box: cls::compute_bounding_box(matrices.iter()),
+                    //     mono_stereo: MonoStereoBox::Stereo(Stereo2 {}),
+                    // }
+                }
             }
         };
-
-        let cls_buffer = cls::compute_light_assignment(
-            &main_camera_pos_from_wld_to_hmd,
-            cluster_bounding_box,
-            &resources.point_lights[..],
-            configuration.clustered_light_shading.cluster_side,
-            configuration.clustered_light_shading.light_index,
-        );
 
         if should_export_state {
             use std::io::Write;
@@ -1357,10 +1440,17 @@ fn main() {
 
         timing_transition!(timings, prepare_render_data, render);
 
-        global_resources.write(&gl, &global_data);
-
+        view_ind_res.global_resources.write(&gl, &global_data);
         view_ind_res.cls_resources.write(&gl, &cls_buffer);
-        view_ind_res.cls_resources.bind(&gl);
+        view_resources.write_iter(
+            &gl,
+            match mode_data {
+                WindowModeBox::Main(single) => [&single].iter(),
+                WindowModeBox::Debug(split) => [&split.main, &split.debug].iter(),
+                WindowModeBox::Split(split) => [&split.main, &split.debug].iter(),
+            }
+            .map(|x| x.to_view_data(&global_data))
+        );
 
         // View independent.
         shadow_renderer.render(
@@ -1387,231 +1477,189 @@ fn main() {
             &resources,
         );
 
-        let view_datas: ArrayVec<[_; 2]> = views
-            .iter()
-            .map(|view| {
-                let View {
-                    pos_from_cam_to_hmd,
-
-                    pos_from_cam_to_clp,
-                    pos_from_clp_to_cam,
-                    ..
-                } = view;
-
-                let pos_from_cam_to_wld = pos_from_hmd_to_wld * pos_from_cam_to_hmd;
-                let pos_from_wld_to_cam = pos_from_cam_to_wld.invert().unwrap();
-
-                let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
-                let pos_from_clp_to_wld = pos_from_cam_to_wld * pos_from_clp_to_cam;
-
-                let light_pos_from_cam_to_wld: Matrix4<f64> = global_data.light_pos_from_cam_to_wld.cast().unwrap();
-                let light_dir_in_cam =
-                    pos_from_wld_to_cam.transform_vector(light_pos_from_cam_to_wld.transform_vector(Vector3::unit_z()));
-
-                rendering::ViewData {
-                    pos_from_wld_to_cam: pos_from_wld_to_cam.cast().unwrap(),
-                    pos_from_cam_to_wld: pos_from_cam_to_wld.cast().unwrap(),
-
-                    pos_from_cam_to_clp: pos_from_cam_to_clp.cast().unwrap(),
-                    pos_from_clp_to_cam: pos_from_clp_to_cam.cast().unwrap(),
-
-                    pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
-                    pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
-
-                    light_dir_in_cam: light_dir_in_cam.cast().unwrap(),
-                    _pad0: 0.0,
-                }
-            })
-            .collect();
-
-        view_resources.write_all(&gl, &*view_datas);
-
         let physical_size = win_size.to_physical(win_dpi);
 
-        for (view_index, view_dep_res) in view_dep_res.iter().enumerate() {
-            let view_data = view_datas[view_index];
+        let compute_and_upload_light_positions = |view_dep_res, pos_from_wld_to_cam| unsafe {
+            let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
+                std::mem::uninitialized();
+            for i in 0..rendering::POINT_LIGHT_CAPACITY as usize {
+                point_lights[i] =
+                    light::PointLightBufferEntry::from_point_light(resources.point_lights[i], pos_from_wld_to_cam);
+            }
+            let lighting_buffer = light::LightingBuffer { point_lights };
+            gl.named_buffer_data(
+                view_dep_res.lighting_buffer_name,
+                lighting_buffer.value_as_bytes(),
+                gl::STREAM_DRAW,
+            );
+            gl.bind_buffer_base(
+                gl::UNIFORM_BUFFER,
+                rendering::LIGHTING_BUFFER_BINDING,
+                view_dep_res.lighting_buffer_name,
+            );
+        };
+
+        let render_main = |view_index, view_ind_res, view_dep_res| {
             view_resources.bind_index(&gl, view_index);
 
-            unsafe {
-                let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
-                    std::mem::uninitialized();
-                for i in 0..rendering::POINT_LIGHT_CAPACITY as usize {
-                    point_lights[i] = light::PointLightBufferEntry::from_point_light(
-                        resources.point_lights[i],
-                        view_data.pos_from_wld_to_cam,
-                    );
-                }
-                let lighting_buffer = light::LightingBuffer { point_lights };
-                gl.named_buffer_data(
-                    view_dep_res.lighting_buffer_name,
-                    lighting_buffer.value_as_bytes(),
-                    gl::STREAM_DRAW,
-                );
-                gl.bind_buffer_base(
-                    gl::UNIFORM_BUFFER,
-                    rendering::LIGHTING_BUFFER_BINDING,
-                    view_dep_res.lighting_buffer_name,
-                );
-            }
+            basic_renderer.render(
+                &gl,
+                &basic_renderer::Parameters {
+                    framebuffer: view_dep_res.main_framebuffer_name.into(),
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    material_resources,
+                    shadow_texture_name: view_ind_res.shadow_texture.name(),
+                    shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
+                },
+                &world,
+                &resources,
+            );
 
-            if world.target_camera_key == CameraKey::Main {
-                basic_renderer.render(
-                    &gl,
-                    &basic_renderer::Parameters {
-                        framebuffer: view_dep_res.main_framebuffer_name.into(),
-                        width: view_dep_res.width,
-                        height: view_dep_res.height,
-                        material_resources,
-                        shadow_texture_name: view_ind_res.shadow_texture.name(),
-                        shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
+            line_renderer.render(
+                &gl,
+                &line_renderer::Parameters {
+                    framebuffer: view_dep_res.main_framebuffer_name.into(),
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    vertices: &sun_frustrum_vertices[..],
+                    indices: &sun_frustrum_indices[..],
+                    pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
+                },
+            );
+
+            ao_renderer.render(
+                &gl,
+                &ao_renderer::Parameters {
+                    framebuffer: view_dep_res.ao_framebuffer_name.into(),
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    color_texture_name: view_dep_res.main_color_texture.name(),
+                    depth_texture_name: view_dep_res.main_depth_texture.name(),
+                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+                    random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
+                },
+                &world,
+                &resources,
+            );
+
+            ao_filter.render(
+                &gl,
+                &ao_filter::Parameters {
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
+                    framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
+                    color: view_dep_res.ao_texture.name(),
+                    color_x: view_dep_res.ao_x_texture.name(),
+                    depth: view_dep_res.main_depth_texture.name(),
+                },
+                &resources,
+            );
+
+            post_renderer.render(
+                &gl,
+                &post_renderer::Parameters {
+                    // FIXME: Hack, use two versions of view dependent parameters instead.
+                    framebuffer: if vr_context.is_some() {
+                        view_dep_res.post_framebuffer_name.into()
+                    } else {
+                        gl::FramebufferName::Default
                     },
-                    &world,
-                    &resources,
-                );
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    color_texture_name: view_dep_res.main_color_texture.name(),
+                    depth_texture_name: view_dep_res.main_depth_texture.name(),
+                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+                    ao_texture_name: view_dep_res.ao_texture.name(),
+                },
+                &world,
+                &resources,
+            );
+        };
 
-                line_renderer.render(
-                    &gl,
-                    &line_renderer::Parameters {
-                        framebuffer: view_dep_res.main_framebuffer_name.into(),
-                        width: view_dep_res.width,
-                        height: view_dep_res.height,
-                        vertices: &sun_frustrum_vertices[..],
-                        indices: &sun_frustrum_indices[..],
-                        pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
-                    },
-                );
+        let render_debug = |view_dep_res, pre_view_data_map| {
+            cluster_renderer.render(
+                &gl,
+                &cluster_renderer::Parameters {
+                    framebuffer: gl::FramebufferName::Default,
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    cls_buffer: &cls_buffer,
+                    min_light_count: configuration.clustered_light_shading.min_light_count,
+                    animate_z: configuration.clustered_light_shading.animate_z,
+                },
+                &world,
+                &resources,
+            );
 
-                ao_renderer.render(
-                    &gl,
-                    &ao_renderer::Parameters {
-                        framebuffer: view_dep_res.ao_framebuffer_name.into(),
-                        width: view_dep_res.width,
-                        height: view_dep_res.height,
-                        color_texture_name: view_dep_res.main_color_texture.name(),
-                        depth_texture_name: view_dep_res.main_depth_texture.name(),
-                        nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-                        random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                    },
-                    &world,
-                    &resources,
-                );
+            let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+            let pos_from_cls_clp_to_wld = pre_view_data_map.main.pos_from_clp_to_wld;
+            let vertices: Vec<[f32; 3]> = corners_in_clp
+                .iter()
+                .map(|&p| pos_from_cls_clp_to_wld.transform_point(p))
+                .map(|p| p.cast::<f32>().unwrap().into())
+                .collect();
 
-                ao_filter.render(
-                    &gl,
-                    &ao_filter::Parameters {
-                        width: view_dep_res.width,
-                        height: view_dep_res.height,
-                        framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
-                        framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
-                        color: view_dep_res.ao_texture.name(),
-                        color_x: view_dep_res.ao_x_texture.name(),
-                        depth: view_dep_res.main_depth_texture.name(),
-                    },
-                    &resources,
-                );
-
-                post_renderer.render(
-                    &gl,
-                    &post_renderer::Parameters {
-                        // FIXME: Hack, use two versions of view dependent parameters instead.
-                        framebuffer: if vr_context.is_some() {
-                            view_dep_res.post_framebuffer_name.into()
-                        } else {
-                            gl::FramebufferName::Default
-                        },
-                        width: view_dep_res.width,
-                        height: view_dep_res.height,
-                        color_texture_name: view_dep_res.main_color_texture.name(),
-                        depth_texture_name: view_dep_res.main_depth_texture.name(),
-                        nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-                        ao_texture_name: view_dep_res.ao_texture.name(),
-                    },
-                    &world,
-                    &resources,
-                );
-            } else {
-                cluster_renderer.render(
-                    &gl,
-                    &cluster_renderer::Parameters {
-                        framebuffer: gl::FramebufferName::Default,
-                        width: view_dep_res.width,
-                        height: view_dep_res.height,
-                        cls_buffer: &cls_buffer,
-                        min_light_count: configuration.clustered_light_shading.min_light_count,
-                        animate_z: configuration.clustered_light_shading.animate_z,
-                    },
-                    &world,
-                    &resources,
-                );
-
-                for view in cls_views.iter() {
-                    let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-                    let pos_from_clp_to_wld = main_camera_pos_from_hmd_to_wld * view.pos_from_clp_to_hmd;
-                    let vertices: Vec<[f32; 3]> = corners_in_clp
-                        .iter()
-                        .map(|&p| pos_from_clp_to_wld.transform_point(p))
-                        .map(|p| p.cast::<f32>().unwrap().into())
-                        .collect();
-
-                    line_renderer.render(
-                        &gl,
-                        &line_renderer::Parameters {
-                            framebuffer: gl::FramebufferName::Default,
-                            width: view_dep_res.width,
-                            height: view_dep_res.height,
-                            vertices: &vertices[..],
-                            indices: &sun_frustrum_indices[..],
-                            pos_from_obj_to_wld: &Matrix4::identity(),
-                        },
-                    );
-                }
-            }
-        }
+            line_renderer.render(
+                &gl,
+                &line_renderer::Parameters {
+                    framebuffer: gl::FramebufferName::Default,
+                    width: view_dep_res.width,
+                    height: view_dep_res.height,
+                    vertices: &vertices[..],
+                    indices: &sun_frustrum_indices[..],
+                    pos_from_obj_to_wld: &Matrix4::identity(),
+                },
+            );
+        };
 
         if let Some(vr_context) = &vr_context {
-            let viewports = {
-                let w = physical_size.width as i32;
-                let h = physical_size.height as i32;
-                [(0, w / 2, 0, h), (w / 2, w, 0, h)]
-            };
+            // FIXME
+            unimplemented!()
+            // let viewports = {
+            //     let w = physical_size.width as i32;
+            //     let h = physical_size.height as i32;
+            //     [(0, w / 2, 0, h), (w / 2, w, 0, h)]
+            // };
 
-            for (view_index, &eye) in EYE_KEYS.iter().enumerate() {
-                let view_dep_res = &view_dep_res[view_index];
+            // for (view_index, &eye) in EYE_KEYS.iter().enumerate() {
+            //     let view_dep_res = &view_dep_res[view_index];
 
-                // Render both eyes to the default framebuffer.
-                let viewport = viewports[view_index];
-                overlay_renderer.render(
-                    &gl,
-                    &overlay_renderer::Parameters {
-                        framebuffer: gl::FramebufferName::Default,
-                        x0: viewport.0,
-                        x1: viewport.1,
-                        y0: viewport.2,
-                        y1: viewport.3,
-                        color_texture_name: view_dep_res.post_color_texture.name(),
-                        default_colors: [0.0, 0.0, 0.0, 0.0],
-                        color_matrix: [
-                            [1.0, 0.0, 0.0, 0.0],
-                            [0.0, 1.0, 0.0, 0.0],
-                            [0.0, 0.0, 1.0, 0.0],
-                            [0.0, 0.0, 0.0, 1.0],
-                        ],
-                    },
-                    &resources,
-                );
+            //     // Render both eyes to the default framebuffer.
+            //     let viewport = viewports[view_index];
+            //     overlay_renderer.render(
+            //         &gl,
+            //         &overlay_renderer::Parameters {
+            //             framebuffer: gl::FramebufferName::Default,
+            //             x0: viewport.0,
+            //             x1: viewport.1,
+            //             y0: viewport.2,
+            //             y1: viewport.3,
+            //             color_texture_name: view_dep_res.post_color_texture.name(),
+            //             default_colors: [0.0, 0.0, 0.0, 0.0],
+            //             color_matrix: [
+            //                 [1.0, 0.0, 0.0, 0.0],
+            //                 [0.0, 1.0, 0.0, 0.0],
+            //                 [0.0, 0.0, 1.0, 0.0],
+            //                 [0.0, 0.0, 0.0, 1.0],
+            //             ],
+            //         },
+            //         &resources,
+            //     );
 
-                // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
-                let mut texture_t = gen_texture_t(view_dep_res.post_color_texture.name());
-                vr_context
-                    .compositor()
-                    .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
-                    .unwrap_or_else(|error| {
-                        panic!(
-                            "failed to submit texture: {:?}",
-                            vr::CompositorError::from_unchecked(error).unwrap()
-                        );
-                    });
-            }
+            //     // NOTE(mickvangelderen): Binding the color attachments causes SIGSEGV!!!
+            //     let mut texture_t = gen_texture_t(view_dep_res.post_color_texture.name());
+            //     vr_context
+            //         .compositor()
+            //         .submit(eye, &mut texture_t, None, vr::SubmitFlag::Default)
+            //         .unwrap_or_else(|error| {
+            //             panic!(
+            //                 "failed to submit texture: {:?}",
+            //                 vr::CompositorError::from_unchecked(error).unwrap()
+            //             );
+            //         });
+            // }
         }
 
         timing_transition!(timings, render, swap_buffers);
