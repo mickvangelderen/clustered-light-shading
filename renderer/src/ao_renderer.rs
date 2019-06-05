@@ -1,3 +1,4 @@
+use crate::*;
 use crate::convert::*;
 use crate::rendering;
 use crate::resources::*;
@@ -8,8 +9,6 @@ use std::convert::TryFrom;
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
     pub ao_sample_buffer_name: gl::BufferName,
-    pub width_loc: gl::OptionUniformLocation,
-    pub height_loc: gl::OptionUniformLocation,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub depth_sampler_loc: gl::OptionUniformLocation,
     pub nor_in_cam_sampler_loc: gl::OptionUniformLocation,
@@ -18,9 +17,8 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
+    pub viewport: Viewport<i32>,
     pub framebuffer: gl::FramebufferName,
-    pub width: i32,
-    pub height: i32,
     pub color_texture_name: gl::TextureName,
     pub depth_texture_name: gl::TextureName,
     pub nor_in_cam_texture_name: gl::TextureName,
@@ -33,18 +31,10 @@ impl Renderer {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-            gl.viewport(0, 0, params.width, params.height);
+            params.viewport.set(gl);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
 
             gl.use_program(self.program.name);
-
-            if let Some(loc) = self.width_loc.into() {
-                gl.uniform_1i(loc, params.width);
-            }
-
-            if let Some(loc) = self.height_loc.into() {
-                gl.uniform_1i(loc, params.height);
-            }
 
             if let Some(loc) = self.color_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
@@ -86,8 +76,6 @@ impl Renderer {
             if self.program.update(gl, update) {
                 gl.use_program(self.program.name);
 
-                self.width_loc = get_uniform_location!(gl, self.program.name, "width");
-                self.height_loc = get_uniform_location!(gl, self.program.name, "height");
                 self.color_sampler_loc = get_uniform_location!(gl, self.program.name, "color_sampler");
                 self.depth_sampler_loc = get_uniform_location!(gl, self.program.name, "depth_sampler");
                 self.nor_in_cam_sampler_loc = get_uniform_location!(gl, self.program.name, "nor_in_cam_sampler");
@@ -117,8 +105,6 @@ impl Renderer {
             Renderer {
                 program: rendering::VSFSProgram::new(gl),
                 ao_sample_buffer_name,
-                width_loc: gl::OptionUniformLocation::NONE,
-                height_loc: gl::OptionUniformLocation::NONE,
                 color_sampler_loc: gl::OptionUniformLocation::NONE,
                 depth_sampler_loc: gl::OptionUniformLocation::NONE,
                 nor_in_cam_sampler_loc: gl::OptionUniformLocation::NONE,

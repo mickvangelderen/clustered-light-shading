@@ -1,3 +1,4 @@
+use crate::*;
 use crate::rendering;
 use crate::resources::Resources;
 use cgmath::*;
@@ -9,9 +10,8 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
+    pub viewport: Viewport<i32>,
     pub framebuffer: gl::FramebufferName,
-    pub width: i32,
-    pub height: i32,
 }
 
 impl Renderer {
@@ -20,7 +20,7 @@ impl Renderer {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-            gl.viewport(0, 0, params.width, params.height);
+            params.viewport.set(gl);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
 
             gl.clear_color(1.0, 1.0, 1.0, 1.0);

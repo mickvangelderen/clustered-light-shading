@@ -174,6 +174,48 @@ layout(std140, binding = VIEW_DATA_BINDING) uniform ViewData {
 };
 ";
 
+#[derive(Debug)]
+pub struct ViewData0 {
+    pub pos_from_wld_to_cam: Matrix4<f64>,
+    pub pos_from_cam_to_wld: Matrix4<f64>,
+
+    pub pos_from_cam_to_clp: Matrix4<f64>,
+    pub pos_from_clp_to_cam: Matrix4<f64>,
+}
+
+impl ViewData0 {
+    pub fn into_view_data(self, global_data: &GlobalData) -> ViewData {
+        let ViewData0 {
+            pos_from_wld_to_cam,
+            pos_from_cam_to_wld,
+
+            pos_from_cam_to_clp,
+            pos_from_clp_to_cam,
+        } = self;
+
+        let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
+        let pos_from_clp_to_wld = pos_from_cam_to_wld * pos_from_clp_to_cam;
+
+        let light_pos_from_cam_to_wld = global_data.light_pos_from_cam_to_wld.cast::<f64>().unwrap();
+        let light_dir_in_cam = self
+            .pos_from_wld_to_cam
+            .transform_vector(light_pos_from_cam_to_wld.transform_vector(Vector3::unit_z()));
+
+        rendering::ViewData {
+            pos_from_wld_to_cam: pos_from_wld_to_cam.cast().unwrap(),
+            pos_from_cam_to_wld: pos_from_cam_to_wld.cast().unwrap(),
+
+            pos_from_cam_to_clp: pos_from_cam_to_clp.cast().unwrap(),
+            pos_from_clp_to_cam: pos_from_clp_to_cam.cast().unwrap(),
+
+            pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
+            pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
+
+            light_dir_in_cam: light_dir_in_cam.cast().unwrap(),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct ViewResources {
     buffer_name: gl::BufferName,
@@ -203,12 +245,12 @@ impl ViewResources {
     }
 
     /// Use when the data isn't laid out in memory consecutively.
-    pub fn write_iter<I>(&self, gl: &gl::Gl, iter: I) where I: Iterator<Item = ViewData> {
+    pub fn write_all_ref(&self, gl: &gl::Gl, data: &[&ViewData]) {
         unsafe {
-            let total_bytes = std::mem::size_of::<ViewData>() * iter.count();
+            let total_bytes = data.len() * std::mem::size_of::<ViewData>();
             gl.named_buffer_reserve(self.buffer_name, total_bytes, gl::DYNAMIC_DRAW);
-            for data in iter {
-                gl.named_buffer_sub_data(self.buffer_name, data.value_as_bytes());
+            for (index, &item) in data.iter().enumerate() {
+                gl.named_buffer_sub_data(self.buffer_name, index * std::mem::size_of::<ViewData>(), item.value_as_bytes());
             }
         }
     }
