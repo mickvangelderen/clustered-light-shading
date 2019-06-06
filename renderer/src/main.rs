@@ -1240,6 +1240,7 @@ fn main() {
 
             // CLS
             pub pos_from_wld_to_hmd: Matrix4<f64>,
+            pub pos_from_hmd_to_wld: Matrix4<f64>,
             pub pos_from_clp_to_hmd: Matrix4<f64>,
         }
 
@@ -1268,6 +1269,7 @@ fn main() {
                     },
 
                     pos_from_wld_to_hmd: pos_from_wld_to_cam,
+                    pos_from_hmd_to_wld: pos_from_cam_to_wld,
                     pos_from_clp_to_hmd: pos_from_clp_to_cam,
                 }
             }
@@ -1305,6 +1307,8 @@ fn main() {
                     },
 
                     pos_from_wld_to_hmd: pos_from_hmd_to_wld.invert().unwrap(),
+                    pos_from_hmd_to_wld,
+
                     pos_from_clp_to_hmd: pos_from_clp_to_cam * pos_from_cam_to_hmd,
                 }
             }
@@ -1316,6 +1320,8 @@ fn main() {
                     view_data,
 
                     pos_from_wld_to_hmd,
+                    pos_from_hmd_to_wld,
+
                     pos_from_clp_to_hmd,
                 } = self;
 
@@ -1325,7 +1331,10 @@ fn main() {
                     view_data: view_data.into_view_data(global_data),
 
                     pos_from_wld_to_hmd,
+                    pos_from_hmd_to_wld,
+
                     pos_from_clp_to_hmd,
+
                 }
             }
         }
@@ -1344,19 +1353,28 @@ fn main() {
             mode_data,
         } = {
             let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
+            let (width, height) = (width as i32, height as i32);
 
-            let full_viewport = Viewport::from_dimensions(Vector2::new(width as i32, height as i32));
+            let full_viewport = Viewport::from_dimensions(Vector2::new(width, height));
 
             match &render_data {
                 MonoStereoBox::Mono(_) => {
                     let viewport_map = CameraMap {
                         main: Viewport::from_coordinates(
                             Point2::origin(),
-                            Point2::new(width as i32 / 2, height as i32),
+                            if width > height {
+                                Point2::new(width / 2, height)
+                            } else {
+                                Point2::new(width, height / 2)
+                            },
                         ),
                         debug: Viewport::from_coordinates(
-                            Point2::new(width as i32 / 2, 0),
-                            Point2::new(width as i32, height as i32),
+                            if width > height {
+                                Point2::new(width / 2, 0)
+                            } else {
+                                Point2::new(0, height / 2)
+                            },
+                            Point2::new(width, height),
                         ),
                     };
 
@@ -1392,6 +1410,7 @@ fn main() {
                             cls::compute_light_assignment(
                                 &[cls_view_data_ext.pos_from_clp_to_hmd],
                                 cls_view_data_ext.pos_from_wld_to_hmd,
+                                cls_view_data_ext.pos_from_hmd_to_wld,
                                 &resources.point_lights[..],
                                 &configuration.clustered_light_shading,
                             )
@@ -1589,28 +1608,23 @@ fn main() {
                         viewport,
                         framebuffer,
                         cls_buffer: &cls_buffer,
-                        min_light_count: configuration.clustered_light_shading.min_light_count,
-                        animate_z: configuration.clustered_light_shading.animate_z,
+                        configuration: &configuration.clustered_light_shading,
                     },
                     &world,
                     &resources,
                 );
 
                 let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-                let pos_from_cls_clp_to_wld = cls_view_data_ext.view_data.pos_from_clp_to_wld;
-                let vertices: Vec<[f32; 3]> = corners_in_clp
-                    .iter()
-                    .map(|&p| pos_from_cls_clp_to_wld.transform_point(p.cast::<f32>().unwrap()).into())
-                    .collect();
+                let vertices: Vec<[f32; 3]> = corners_in_clp.iter().map(|point| point.cast().unwrap().into()).collect();
 
                 line_renderer.render(
                     &gl,
                     &line_renderer::Parameters {
                         viewport,
-                        framebuffer: gl::FramebufferName::Default,
+                        framebuffer,
                         vertices: &vertices[..],
                         indices: &sun_frustrum_indices[..],
-                        pos_from_obj_to_wld: &Matrix4::identity(),
+                        pos_from_obj_to_wld: &cls_view_data_ext.view_data.pos_from_clp_to_wld.cast().unwrap()
                     },
                 );
             };

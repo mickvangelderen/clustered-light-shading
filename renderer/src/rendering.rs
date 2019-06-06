@@ -322,7 +322,7 @@ pub struct CLSBufferHeader {
 #[derive(Debug)]
 pub struct CLSBuffer {
     pub header: CLSBufferHeader,
-    pub body: Vec<[u32; 8]>,
+    pub body: Vec<[u32; crate::cls::MAX_LIGHTS_PER_CLUSTER]>,
 }
 
 pub const CLS_BUFFER_DECLARATION: &'static str = r"

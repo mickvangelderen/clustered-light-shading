@@ -13,8 +13,7 @@ pub struct Parameters<'a> {
     pub viewport: Viewport<i32>,
     pub framebuffer: gl::FramebufferName,
     pub cls_buffer: &'a rendering::CLSBuffer,
-    pub min_light_count: u32,
-    pub animate_z: Option<f32>,
+    pub configuration: &'a configuration::ClusteredLightShading,
 }
 
 impl Renderer {
@@ -29,19 +28,29 @@ impl Renderer {
             gl.use_program(self.program.name);
             gl.bind_vertex_array(resources.cluster_vao);
 
+            let configuration = params.configuration;
+
             let [xn, yn, zn, _wn]: [u32; 4] = params.cls_buffer.header.dimensions.into();
             for zi in 0..zn {
-                if let Some(animate_z) = params.animate_z {
+                if let Some(animate_z) = configuration.animate_z {
                     if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
                         continue;
                     }
                 }
+                let mut min_light_count = configuration.min_light_count;
+
+                if let Some(animate_light_count) = configuration.animate_light_count {
+                    let time = world.tick as f64 / DESIRED_UPS;
+                    let delta = crate::cls::MAX_LIGHTS_PER_CLUSTER as u32 - min_light_count;
+                    min_light_count = ((time * animate_light_count as f64) as u64 % delta as u64) as u32;
+                }
+
                 for yi in 0..yn {
                     for xi in 0..xn {
                         let i = ((zi * yn) + yi) * xn + xi;
                         let cluster = &params.cls_buffer.body[i as usize];
                         let light_count = cluster[0];
-                        if light_count >= params.min_light_count {
+                        if light_count >= min_light_count {
                             if let Some(loc) = self.light_count_loc.into() {
                                 gl.uniform_1ui(loc, light_count);
                             }

@@ -52,6 +52,7 @@ pub struct ClusteredLightShading {
     pub light_index: Option<u32>,
     pub min_light_count: u32,
     pub animate_z: Option<f32>,
+    pub animate_light_count: Option<f32>,
 }
 
 impl Default for ClusteredLightShading {
@@ -61,6 +62,7 @@ impl Default for ClusteredLightShading {
             light_index: None,
             min_light_count: 1,
             animate_z: None,
+            animate_light_count: None,
         }
     }
 }

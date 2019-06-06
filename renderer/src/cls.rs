@@ -19,39 +19,41 @@ fn compute_bounding_box(pos_from_clp_to_hmd: &[Matrix4<f64>]) -> BoundingBox<f32
 pub fn compute_light_assignment(
     pos_from_clp_to_hmd: &[Matrix4<f64>],
     pos_from_wld_to_hmd: Matrix4<f64>,
+    pos_from_hmd_to_wld: Matrix4<f64>,
     point_lights: &[light::PointLight],
     configuration: &configuration::ClusteredLightShading,
 ) -> rendering::CLSBuffer {
     // Get configuration.
-    let cluster_side = configuration.cluster_side;
+    let cluster_side_max = configuration.cluster_side;
     let light_index = configuration.light_index;
 
     let cluster_bounding_box = compute_bounding_box(pos_from_clp_to_hmd);
 
     let cbb_delta = cluster_bounding_box.delta();
-    let cbb_dims_f32 = (cbb_delta / cluster_side).map(f32::ceil);
-    // cluster side scale to world
-    let cbb_side = cbb_delta.div_element_wise(cbb_dims_f32);
-    // cluster side scale to cls
-    let cbb_side_inv = cbb_dims_f32.div_element_wise(cbb_delta);
-    let cbb_dims = cbb_dims_f32.map(|e| e as usize);
-    let cbb_n = cbb_dims.x * cbb_dims.y * cbb_dims.z;
+    let dimensions_f32 = (cbb_delta / cluster_side_max).map(f32::ceil);
+    let scale_from_cls_to_hmd = cbb_delta.div_element_wise(dimensions_f32);
+    let scale_from_hmd_to_cls = dimensions_f32.div_element_wise(cbb_delta);
+    let dimensions_u32 = dimensions_f32.map(|e| e as u32);
+    let cluster_count = dimensions_u32.product();
 
-    let pos_from_hmd_to_cls = Matrix4::from_nonuniform_scale(cbb_side_inv.x, cbb_side_inv.y, cbb_side_inv.z)
-        * Matrix4::from_translation(Point3::origin() - cluster_bounding_box.min);
+    let pos_from_hmd_to_cls: Matrix4<f64> =
+        Matrix4::from_scale_vector(scale_from_hmd_to_cls.cast().unwrap())
+         * Matrix4::from_translation(-cluster_bounding_box.min.cast().unwrap().to_vec());
+    let pos_from_cls_to_hmd: Matrix4<f64> =
+        Matrix4::from_translation(cluster_bounding_box.min.cast().unwrap().to_vec())*
+        Matrix4::from_scale_vector(scale_from_cls_to_hmd.cast().unwrap());
 
-    let pos_from_wld_to_cls: Matrix4<f64> = pos_from_hmd_to_cls.cast().unwrap() * pos_from_wld_to_hmd;
-    let pos_from_cls_to_wld: Matrix4<f32> = pos_from_wld_to_cls.invert().unwrap().cast().unwrap();
-    let pos_from_wld_to_cls: Matrix4<f32> = pos_from_wld_to_cls.cast().unwrap();
+    let pos_from_wld_to_cls: Matrix4<f32> = (pos_from_hmd_to_cls * pos_from_wld_to_hmd).cast().unwrap();
+    let pos_from_cls_to_wld: Matrix4<f32> = (pos_from_hmd_to_wld * pos_from_cls_to_hmd).cast().unwrap();
 
     let mut clustering: Vec<[u32; MAX_LIGHTS_PER_CLUSTER]> =
-        (0..cbb_n).into_iter().map(|_| Default::default()).collect();
+        (0..cluster_count).into_iter().map(|_| Default::default()).collect();
 
     // println!(
     //     "cluster x * y * z = {} * {} * {} = {} ({} MB)",
-    //     cbb_dims.x,
-    //     cbb_dims.y,
-    //     cbb_dims.z,
+    //     bounding_box_scale_in_cls_usize.x,
+    //     bounding_box_scale_in_cls_usize.y,
+    //     bounding_box_scale_in_cls_usize.z,
     //     cbb_n,
     //     std::mem::size_of_val(&clustering[..]) as f32 / 1_000_000.0
     // );
@@ -68,29 +70,30 @@ pub fn compute_light_assignment(
         let r = l.attenuation.clip_far;
         let r_sq = r * r;
 
-        let r0 = Point3::partial_clamp_element_wise(
-            (pos_in_cls - cbb_side_inv * r).map(f32::floor),
+        let minima = Point3::partial_clamp_element_wise(
+            (pos_in_cls - scale_from_hmd_to_cls * r).map(f32::floor),
             Point3::origin(),
-            Point3::from_vec(cbb_dims_f32),
+            Point3::from_vec(dimensions_f32),
         )
-        .map(|e| e as usize);
-        let Point3 { x: x0, y: y0, z: z0 } = r0;
+        .map(|e| e as u32);
 
-        let r1 = Point3::partial_clamp_element_wise(
+        let centers = Point3::partial_clamp_element_wise(
             (pos_in_cls).map(f32::floor),
             Point3::origin(),
-            Point3::from_vec(cbb_dims_f32),
+            Point3::from_vec(dimensions_f32),
         )
-        .map(|e| e as usize);
-        let Point3 { x: x1, y: y1, z: z1 } = r1;
+        .map(|e| e as u32);
 
-        let r2 = Point3::partial_clamp_element_wise(
-            (pos_in_cls + cbb_side_inv * r).map(f32::floor),
+        let maxima = Point3::partial_clamp_element_wise(
+            (pos_in_cls + scale_from_hmd_to_cls * r).map(f32::ceil),
             Point3::origin(),
-            Point3::from_vec(cbb_dims_f32),
+            Point3::from_vec(dimensions_f32),
         )
-        .map(|e| e as usize);
-        let Point3 { x: x2, y: y2, z: z2 } = r2;
+        .map(|e| e as u32);
+
+        let Point3 { x: x0, y: y0, z: z0 } = minima;
+        let Point3 { x: x1, y: y1, z: z1 } = centers;
+        let Point3 { x: x2, y: y2, z: z2 } = maxima;
 
         // NOTE: We must clamp as f32 because the value might actually overflow.
 
@@ -107,14 +110,15 @@ pub fn compute_light_assignment(
         }
 
         for z in z0..z2 {
-            let dz = closest_face_dist!(z, z1, pos_in_cls) * cbb_side.z;
+            let dz = closest_face_dist!(z, z1, pos_in_cls) * scale_from_cls_to_hmd.z;
             for y in y0..y2 {
-                let dy = closest_face_dist!(y, y1, pos_in_cls) * cbb_side.y;
+                let dy = closest_face_dist!(y, y1, pos_in_cls) * scale_from_cls_to_hmd.y;
                 for x in x0..x2 {
-                    let dx = closest_face_dist!(x, x1, pos_in_cls) * cbb_side.x;
+                    let dx = closest_face_dist!(x, x1, pos_in_cls) * scale_from_cls_to_hmd.x;
                     if dz * dz + dy * dy + dx * dx < r_sq {
                         // It's a hit!
-                        let thing = &mut clustering[((z * cbb_dims.y) + y) * cbb_dims.x + x];
+                        let index = ((z * dimensions_u32.y) + y) * dimensions_u32.x + x;
+                        let thing = &mut clustering[index as usize];
 
                         thing[0] += 1;
                         let offset = thing[0] as usize;
@@ -129,14 +133,12 @@ pub fn compute_light_assignment(
         }
     }
 
-    let cls_buffer = rendering::CLSBuffer {
+    rendering::CLSBuffer {
         header: rendering::CLSBufferHeader {
-            dimensions: cbb_dims.map(|e: usize| e as u32).extend(MAX_LIGHTS_PER_CLUSTER as u32),
+            dimensions: dimensions_u32.extend(MAX_LIGHTS_PER_CLUSTER as u32),
             pos_from_wld_to_cls,
             pos_from_cls_to_wld,
         },
         body: clustering,
-    };
-
-    cls_buffer
+    }
 }
