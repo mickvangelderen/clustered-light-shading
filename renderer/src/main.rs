@@ -147,14 +147,6 @@ impl World {
     }
 }
 
-pub struct MainRenderData {
-
-}
-
-pub struct DebugRenderData {
-
-}
-
 pub struct ViewIndependentResources {
     // Main shadow resources.
     pub shadow_framebuffer_name: gl::NonDefaultFramebufferName,
@@ -1341,12 +1333,14 @@ fn main() {
         struct RenderData2 {
             cls_buffer: rendering::CLSBuffer,
             cls_view_data_ext: ViewDataExt,
+            full_viewport: Viewport<i32>,
             mode_data: WindowModeBox<ViewDataExt, ViewDataExt, CameraMap<ViewDataExt>>,
         }
 
         let RenderData2 {
             cls_buffer,
             cls_view_data_ext,
+            full_viewport,
             mode_data,
         } = {
             let glutin::dpi::PhysicalSize { width, height } = win_size.to_physical(win_dpi);
@@ -1402,6 +1396,7 @@ fn main() {
                                 &configuration.clustered_light_shading,
                             )
                         },
+                        full_viewport,
                         cls_view_data_ext,
                         mode_data,
                     }
@@ -1541,10 +1536,9 @@ fn main() {
                     pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
                 },
             );
-                           };
+        };
 
-        let render_end = |viewport: Viewport<i32>,
-        view_dep_res: &ViewDependentResources| {
+        let render_end = |viewport: Viewport<i32>, view_dep_res: &ViewDependentResources| {
             ao_renderer.render(
                 &gl,
                 &ao_renderer::Parameters {
@@ -1587,38 +1581,39 @@ fn main() {
             );
         };
 
-        let render_debug = |viewport: Viewport<i32>, framebuffer: gl::FramebufferName, cls_view_data_ext: &ViewDataExt| {
-            cluster_renderer.render(
-                &gl,
-                &cluster_renderer::Parameters {
-                    viewport,
-                    framebuffer,
-                    cls_buffer: &cls_buffer,
-                    min_light_count: configuration.clustered_light_shading.min_light_count,
-                    animate_z: configuration.clustered_light_shading.animate_z,
-                },
-                &world,
-                &resources,
-            );
+        let render_debug =
+            |viewport: Viewport<i32>, framebuffer: gl::FramebufferName, cls_view_data_ext: &ViewDataExt| {
+                cluster_renderer.render(
+                    &gl,
+                    &cluster_renderer::Parameters {
+                        viewport,
+                        framebuffer,
+                        cls_buffer: &cls_buffer,
+                        min_light_count: configuration.clustered_light_shading.min_light_count,
+                        animate_z: configuration.clustered_light_shading.animate_z,
+                    },
+                    &world,
+                    &resources,
+                );
 
-            let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-            let pos_from_cls_clp_to_wld = cls_view_data_ext.view_data.pos_from_clp_to_wld;
-            let vertices: Vec<[f32; 3]> = corners_in_clp
-                .iter()
-                .map(|&p| pos_from_cls_clp_to_wld.transform_point(p.cast::<f32>().unwrap()).into())
-                .collect();
+                let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                let pos_from_cls_clp_to_wld = cls_view_data_ext.view_data.pos_from_clp_to_wld;
+                let vertices: Vec<[f32; 3]> = corners_in_clp
+                    .iter()
+                    .map(|&p| pos_from_cls_clp_to_wld.transform_point(p.cast::<f32>().unwrap()).into())
+                    .collect();
 
-            line_renderer.render(
-                &gl,
-                &line_renderer::Parameters {
-                    viewport,
-                    framebuffer: gl::FramebufferName::Default,
-                    vertices: &vertices[..],
-                    indices: &sun_frustrum_indices[..],
-                    pos_from_obj_to_wld: &Matrix4::identity(),
-                },
-            );
-        };
+                line_renderer.render(
+                    &gl,
+                    &line_renderer::Parameters {
+                        viewport,
+                        framebuffer: gl::FramebufferName::Default,
+                        vertices: &vertices[..],
+                        indices: &sun_frustrum_indices[..],
+                        pos_from_obj_to_wld: &Matrix4::identity(),
+                    },
+                );
+            };
 
         if let Some(vr_context) = &vr_context {
             // FIXME
@@ -1673,45 +1668,36 @@ fn main() {
 
         render_start(&gl, view_dep_res.main_framebuffer_name.into(), &world);
 
-        match mode_data {
+        let (maybe_main, maybe_debug) = match mode_data {
             WindowModeBox::Main(view_data_ext) => {
                 view_resources.write_all(&gl, &[view_data_ext.view_data]);
-                view_resources.bind_index(&gl, 0);
-
-                compute_and_upload_light_positions(view_dep_res, view_data_ext.view_data.pos_from_wld_to_cam);
-
-
-                render_main(view_data_ext.viewport, &view_ind_res, &view_dep_res);
+                (Some((0, view_data_ext)), None)
             }
             WindowModeBox::Debug(view_data_ext) => {
                 view_resources.write_all(&gl, &[view_data_ext.view_data]);
-                view_resources.bind_index(&gl, 0);
-
-                // FIXME: Does debug need light positions?
-                compute_and_upload_light_positions(view_dep_res, view_data_ext.view_data.pos_from_wld_to_cam);
-
-                render_debug(view_data_ext.viewport, view_dep_res.main_framebuffer_name.into(), &cls_view_data_ext);
+                (None, Some((0, view_data_ext)))
             }
             WindowModeBox::Split(view_data_ext_map) => {
                 view_resources.write_all_ref(
                     &gl,
                     &[&view_data_ext_map.main.view_data, &view_data_ext_map.debug.view_data],
                 );
-
-                for (view_index, key) in CameraKey::iter().enumerate() {
-                    let view_data_ext = &view_data_ext_map[key];
-
-                    view_resources.bind_index(&gl, view_index);
-
-                    // FIXME: Is this required for debug?
-                    compute_and_upload_light_positions(view_dep_res, view_data_ext.view_data.pos_from_wld_to_cam);
-                    match key {
-                        CameraKey::Main => render_main(view_data_ext.viewport, &view_ind_res, &view_dep_res),
-                        CameraKey::Debug => render_debug(view_data_ext.viewport, &cls_view_data_ext),
-                    }
-                }
+                (Some((0, view_data_ext_map.main)), Some((1, view_data_ext_map.debug)))
             }
+        };
+
+        if let Some((index, main_view_data)) = maybe_main {
+            view_resources.bind_index(&gl, index);
+            compute_and_upload_light_positions(&view_dep_res, main_view_data.view_data.pos_from_wld_to_cam);
+            render_main(main_view_data.viewport, &view_ind_res, &view_dep_res);
         }
+
+        if let Some((index, debug_view_data)) = maybe_debug {
+            view_resources.bind_index(&gl, index);
+            render_debug(debug_view_data.viewport, view_dep_res.main_framebuffer_name.into(), &cls_view_data_ext);
+        }
+
+        render_end(full_viewport, view_dep_res);
 
         timing_transition!(timings, render, swap_buffers);
 
