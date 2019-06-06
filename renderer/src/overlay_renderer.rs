@@ -1,6 +1,7 @@
 use crate::rendering;
 use crate::resources::*;
 use gl_typed as gl;
+use std::convert::TryFrom;
 
 pub struct Renderer {
     pub program: rendering::VSFSProgram,
@@ -29,14 +30,12 @@ impl Renderer {
             gl.depth_mask(gl::WriteMask::Disabled);
             gl.viewport(params.x0, params.y0, params.x1 - params.x0, params.y1 - params.y0);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-            gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
             gl.use_program(self.program.name);
 
             if let Some(loc) = self.color_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
-                gl.active_texture(gl::TEXTURE0);
-                gl.bind_texture(gl::TEXTURE_2D, params.color_texture_name);
+                gl.bind_texture_unit(0, params.color_texture_name);
             };
 
             if let Some(loc) = self.default_colors_loc.into() {
@@ -48,7 +47,12 @@ impl Renderer {
             };
 
             gl.bind_vertex_array(resources.full_screen_vao);
-            gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 4, gl::UNSIGNED_INT, 0);
+            gl.draw_elements(
+                gl::TRIANGLES,
+                u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(),
+                gl::UNSIGNED_INT,
+                0,
+            );
             gl.unbind_vertex_array();
             gl.unuse_program();
             gl.depth_mask(gl::WriteMask::Enabled);

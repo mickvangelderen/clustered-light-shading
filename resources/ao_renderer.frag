@@ -1,6 +1,3 @@
-uniform int width;
-uniform int height;
-
 uniform sampler2D color_sampler;
 uniform sampler2D depth_sampler;
 uniform sampler2D nor_in_cam_sampler;

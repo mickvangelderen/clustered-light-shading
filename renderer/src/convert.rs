@@ -135,12 +135,19 @@ impl_flatten_unflatten!(1, 2, 3, 4,);
 
 pub trait ValueAsBytes {
     fn value_as_bytes(&self) -> &[u8];
+    fn value_as_bytes_mut(&mut self) -> &mut [u8];
 }
 
 impl<T> ValueAsBytes for T {
     fn value_as_bytes(&self) -> &[u8] {
         unsafe {
             std::slice::from_raw_parts(self as *const Self as *const u8, std::mem::size_of::<Self>())
+        }
+    }
+
+    fn value_as_bytes_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self as *mut Self as *mut u8, std::mem::size_of::<Self>())
         }
     }
 }
@@ -156,3 +163,14 @@ impl<T> SliceToBytes for [T] {
         }
     }
 }
+
+pub trait VecToBytes {
+    fn vec_as_bytes(&self) -> &[u8];
+}
+
+impl<T> VecToBytes for Vec<T> {
+    fn vec_as_bytes(&self) -> &[u8] {
+        (&self[..]).slice_to_bytes()
+    }
+}
+
