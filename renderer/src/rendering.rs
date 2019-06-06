@@ -87,14 +87,18 @@ pub struct GlobalData {
     pub light_pos_from_wld_to_clp: Matrix4<f32>,
     pub light_pos_from_clp_to_wld: Matrix4<f32>,
 
-    pub pos_from_wld_to_cls: Matrix4<f32>,
-    pub pos_from_cls_to_wld: Matrix4<f32>,
-
-    pub time: f32,
-    pub _pad0: [f32; 3],
+    pub time: f64,
+    pub attenuation_mode: u32,
 }
 
 pub const GLOBAL_DATA_DECLARATION: &'static str = r"
+#define ATTENUATION_MODE_STEP 1
+#define ATTENUATION_MODE_LINEAR 2
+#define ATTENUATION_MODE_PHYSICAL 3
+#define ATTENUATION_MODE_INTERPOLATED 4
+#define ATTENUATION_MODE_REDUCED 5
+#define ATTENUATION_MODE_SMOOTH 6
+
 layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 light_pos_from_wld_to_cam;
     mat4 light_pos_from_cam_to_wld;
@@ -105,11 +109,8 @@ layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 light_pos_from_wld_to_clp;
     mat4 light_pos_from_clp_to_wld;
 
-    mat4 pos_from_wld_to_cls;
-    mat4 pos_from_cls_to_wld;
-
-    float time;
-    vec3 _global_data_pad0;
+    double time;
+    uint attenuation_mode;
 };
 ";
 
@@ -156,7 +157,6 @@ pub struct ViewData {
     pub pos_from_clp_to_wld: Matrix4<f32>,
 
     pub light_dir_in_cam: Vector3<f32>,
-    pub _pad0: f32,
 }
 
 pub const VIEW_DATA_DECLARATION: &'static str = r"
@@ -171,9 +171,50 @@ layout(std140, binding = VIEW_DATA_BINDING) uniform ViewData {
     mat4 pos_from_clp_to_wld;
 
     vec3 light_dir_in_cam;
-    float _view_data_pad0;
 };
 ";
+
+#[derive(Debug)]
+pub struct ViewData0 {
+    pub pos_from_wld_to_cam: Matrix4<f64>,
+    pub pos_from_cam_to_wld: Matrix4<f64>,
+
+    pub pos_from_cam_to_clp: Matrix4<f64>,
+    pub pos_from_clp_to_cam: Matrix4<f64>,
+}
+
+impl ViewData0 {
+    pub fn into_view_data(self, global_data: &GlobalData) -> ViewData {
+        let ViewData0 {
+            pos_from_wld_to_cam,
+            pos_from_cam_to_wld,
+
+            pos_from_cam_to_clp,
+            pos_from_clp_to_cam,
+        } = self;
+
+        let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
+        let pos_from_clp_to_wld = pos_from_cam_to_wld * pos_from_clp_to_cam;
+
+        let light_pos_from_cam_to_wld = global_data.light_pos_from_cam_to_wld.cast::<f64>().unwrap();
+        let light_dir_in_cam = self
+            .pos_from_wld_to_cam
+            .transform_vector(light_pos_from_cam_to_wld.transform_vector(Vector3::unit_z()));
+
+        rendering::ViewData {
+            pos_from_wld_to_cam: pos_from_wld_to_cam.cast().unwrap(),
+            pos_from_cam_to_wld: pos_from_cam_to_wld.cast().unwrap(),
+
+            pos_from_cam_to_clp: pos_from_cam_to_clp.cast().unwrap(),
+            pos_from_clp_to_cam: pos_from_clp_to_cam.cast().unwrap(),
+
+            pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
+            pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
+
+            light_dir_in_cam: light_dir_in_cam.cast().unwrap(),
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct ViewResources {
@@ -200,6 +241,17 @@ impl ViewResources {
                 std::mem::size_of::<ViewData>() * index,
                 std::mem::size_of::<ViewData>(),
             );
+        }
+    }
+
+    /// Use when the data isn't laid out in memory consecutively.
+    pub fn write_all_ref(&self, gl: &gl::Gl, data: &[&ViewData]) {
+        unsafe {
+            let total_bytes = data.len() * std::mem::size_of::<ViewData>();
+            gl.named_buffer_reserve(self.buffer_name, total_bytes, gl::DYNAMIC_DRAW);
+            for (index, &item) in data.iter().enumerate() {
+                gl.named_buffer_sub_data(self.buffer_name, index * std::mem::size_of::<ViewData>(), item.value_as_bytes());
+            }
         }
     }
 
@@ -259,6 +311,64 @@ impl MaterialResources {
     }
 }
 
+#[derive(Debug)]
+#[repr(C)]
+pub struct CLSBufferHeader {
+    pub dimensions: Vector4<u32>,
+    pub pos_from_wld_to_cls: Matrix4<f32>,
+    pub pos_from_cls_to_wld: Matrix4<f32>,
+}
+
+#[derive(Debug)]
+pub struct CLSBuffer {
+    pub header: CLSBufferHeader,
+    pub body: Vec<[u32; crate::cls::MAX_LIGHTS_PER_CLUSTER]>,
+}
+
+pub const CLS_BUFFER_DECLARATION: &'static str = r"
+layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
+    uvec4 cluster_dims;
+    mat4 pos_from_wld_to_cls;
+    mat4 pos_from_cls_to_wld;
+    uint clusters[];
+};
+";
+
+#[derive(Debug, Copy, Clone)]
+pub struct CLSResources {
+    buffer_name: gl::BufferName,
+}
+
+impl CLSResources {
+    #[inline]
+    pub fn new(gl: &gl::Gl) -> Self {
+        unsafe {
+            CLSResources {
+                buffer_name: gl.create_buffer(),
+            }
+        }
+    }
+
+    #[inline]
+    pub fn bind(&self, gl: &gl::Gl) {
+        unsafe {
+            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLS_BUFFER_BINDING, self.buffer_name);
+        }
+    }
+
+    #[inline]
+    pub fn write(&self, gl: &gl::Gl, cls_buffer: &CLSBuffer) {
+        unsafe {
+            let header_bytes = cls_buffer.header.value_as_bytes();
+            let body_bytes = cls_buffer.body.vec_as_bytes();
+            let total_size = header_bytes.len() + body_bytes.len();
+            gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
+            gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
+            gl.named_buffer_sub_data(self.buffer_name, header_bytes.len(), body_bytes);
+        }
+    }
+}
+
 pub struct VSFSProgram {
     pub name: gl::ProgramName,
     vertex_shader_name: gl::ShaderName,
@@ -283,6 +393,7 @@ impl VSFSProgram {
                         rendering::COMMON_DECLARATION.as_bytes(),
                         rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
                         rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                        rendering::CLS_BUFFER_DECLARATION.as_bytes(),
                         "#line 1 1\n".as_bytes(),
                         bytes.as_ref(),
                     ],
@@ -305,6 +416,7 @@ impl VSFSProgram {
                         rendering::COMMON_DECLARATION.as_bytes(),
                         rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
                         rendering::VIEW_DATA_DECLARATION.as_bytes(),
+                        rendering::CLS_BUFFER_DECLARATION.as_bytes(),
                         rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
                         "#line 1 1\n".as_bytes(),
                         bytes.as_ref(),

@@ -9,6 +9,18 @@ in vec2 fs_pos_in_tex;
 
 out vec4 frag_color;
 
+struct PointLight {
+  vec4 ambient;
+  vec4 diffuse;
+  vec4 specular;
+  vec4 pos_in_cam;
+  vec4 att;
+};
+
+layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
+  PointLight point_lights[POINT_LIGHT_CAPACITY];
+};
+
 float lerp(float x, float x0, float x1, float y0, float y1) {
   return ((x - x0) * y1 + (x1 - x) * y0) / (x1 - x0);
 }
@@ -54,11 +66,41 @@ void main() {
   // frag_color = vec4(nor_in_cam * 0.5 + vec3(0.5), 1.0);
 
   // NO AO
-  // frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  frag_color = vec4(texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // APPLIED AO
-  frag_color = vec4(ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
+  // frag_color = vec4(ao * texture(color_sampler, fs_pos_in_tex).rgb, 1.0);
 
   // AO
   // frag_color = vec4(vec3(ao), 1.0);
+
+  // LIGHT OVERLAY
+  // PointLight light0 = point_lights[0];
+  // vec3 pos_from_frag_to_light0_in_cam = pos_in_cam - light0.pos_in_cam.xyz;
+  // if (length(pos_from_frag_to_light0_in_cam) < light0.att.w) {
+  //   if ((frag_color.x + frag_color.y + frag_color.z) < 0.01) {
+  //     frag_color += vec4(0.1, 0.0, 0.0, 0.0);
+  //     } else {
+  //   frag_color += vec4(0.0, 0.1, 0.0, 0.0);
+  //     }
+  // }
+
+  // GAMMA SANITY
+  // if (fs_pos_in_tex.x < 0.5) {
+  //   float x = fs_pos_in_tex.x * 2.0;
+  //   if (fs_pos_in_tex.y < 0.3) {
+  //     frag_color = vec4(vec3(pow(x, 2.4)), 1.0);
+  //   } else if (fs_pos_in_tex.y < 0.6) {
+  //     frag_color = vec4(vec3(x), 1.0);
+  //   } else {
+  //     frag_color = vec4(vec3(pow(x, 1.0/2.4)), 1.0);
+  //   }
+  // } else {
+  //   if (fs_pos_in_tex.y < 0.5) {
+  //     uvec2 fr = uvec2(gl_FragCoord.xy);
+  //     frag_color = vec4(vec3(float((fr.x + fr.y) % 2)), 1.0);
+  //   } else {
+  //     frag_color = vec4(vec3(0.5), 1.0);
+  //   }
+  // }
 }

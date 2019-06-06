@@ -1,2 +1,33 @@
+[global]
+diffuse_srgb = true
+framebuffer_srgb = true
+
+[window]
+vsync = true
+srgb = true
+rgb_bits = 24
+alpha_bits = 8
+
 [clustered_light_shading]
-cluster_side = 10q.0
+cluster_side = 4.0
+# light_index = 4
+min_light_count = 1
+# animate_z = 2.0
+# animate_light_count = 2.0
+
+[camera]
+maximum_smoothness = 0.80
+
+[main_camera]
+z0 = -0.1
+z1 = -40.0
+positional_velocity = 8.0
+angular_velocity = 0.4
+zoom_velocity = 0.5
+
+[debug_camera]
+z0 = -2.0
+z1 = -200.0
+positional_velocity = 16.0
+angular_velocity = 0.4
+zoom_velocity = 0.5

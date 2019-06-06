@@ -69,7 +69,7 @@ blended with GL_BLEND_MIN/ max?
 ### Light assignment
 
 CPU: for each light, for each cluster
-CPU: for each cluster, for each light
+~~CPU: for each cluster, for each light~~ Can't determine the clusters
 GPU: for each light, for each cluster?
 GPU: for each cluster, for each light (markus did this with bounding volume hierarchy)?
 
@@ -85,3 +85,16 @@ GPU: for each cluster, for each light (markus did this with bounding volume hier
 What is the optimal cluster size? What are we trying to achieve? 
 
 We only want to iterate over the lightsk
+
+# Mark 2
+
+variables
+ - light count
+ - light radius
+
+techniques
+ - naive
+ - tiled
+ - clustered
+   - pre/post-projective clustering
+   - cpu/gpu-based light assigment

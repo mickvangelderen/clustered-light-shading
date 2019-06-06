@@ -1,3 +1,4 @@
+use crate::*;
 use crate::keyboard_model;
 use crate::rendering;
 use crate::resources::Resources;
@@ -25,9 +26,8 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
+    pub viewport: Viewport<i32>,
     pub framebuffer: gl::FramebufferName,
-    pub width: i32,
-    pub height: i32,
     pub material_resources: rendering::MaterialResources,
     pub shadow_texture_name: gl::TextureName,
     pub shadow_texture_dimensions: [f32; 2],
@@ -39,22 +39,15 @@ impl Renderer {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-            gl.viewport(0, 0, params.width, params.height);
+            params.viewport.set(gl);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-            gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()]);
-
-            gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
-            // Reverse-Z projection.
-            gl.clear_depth(0.0);
-            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
 
             gl.use_program(self.program.name);
 
             if let Some(loc) = self.shadow_sampler_loc.into() {
                 gl.uniform_1i(loc, 0);
                 gl.bind_sampler(0, self.shadow_sampler);
-                gl.active_texture(gl::TEXTURE0);
-                gl.bind_texture(gl::TEXTURE_2D, params.shadow_texture_name);
+                gl.bind_texture_unit(0, params.shadow_texture_name);
             }
 
             if let Some(loc) = self.diffuse_sampler_loc.into() {
@@ -76,7 +69,9 @@ impl Renderer {
             // Cache texture binding.
             let mut bound_material = None;
 
-            for i in 0..resources.vaos.len() {
+            gl.bind_vertex_array(resources.scene_vao);
+
+            for (i, mesh_meta) in resources.mesh_metas.iter().enumerate() {
                 let maybe_material_index = resources.meshes[i].material_index;
                 if bound_material != maybe_material_index {
                     bound_material = maybe_material_index;
@@ -87,14 +82,9 @@ impl Renderer {
                         let normal_texture = &resources.textures[material.normal as usize];
                         let specular_texture = &resources.textures[material.specular as usize];
 
-                        gl.active_texture(gl::TEXTURE1);
-                        gl.bind_texture(gl::TEXTURE_2D, diffuse_texture.name);
-
-                        gl.active_texture(gl::TEXTURE2);
-                        gl.bind_texture(gl::TEXTURE_2D, normal_texture.name);
-
-                        gl.active_texture(gl::TEXTURE3);
-                        gl.bind_texture(gl::TEXTURE_2D, specular_texture.name);
+                        gl.bind_texture_unit(1, diffuse_texture.name);
+                        gl.bind_texture_unit(2, normal_texture.name);
+                        gl.bind_texture_unit(3, specular_texture.name);
 
                         if let Some(loc) = self.diffuse_dimensions_loc.into() {
                             gl.uniform_2f(loc, diffuse_texture.dimensions);
@@ -127,9 +117,13 @@ impl Renderer {
                     gl.uniform_1f(loc, highlight);
                 }
 
-                gl.bind_vertex_array(resources.vaos[i]);
-
-                gl.draw_elements(gl::TRIANGLES, resources.element_counts[i], gl::UNSIGNED_INT, 0);
+                gl.draw_elements_base_vertex(
+                    gl::TRIANGLES,
+                    mesh_meta.element_count,
+                    gl::UNSIGNED_INT,
+                    mesh_meta.element_offset,
+                    mesh_meta.vertex_base,
+                );
             }
 
             if self.shadow_sampler_loc.is_some() {

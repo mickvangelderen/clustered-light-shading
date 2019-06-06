@@ -48,7 +48,8 @@ fn main() {
     let radius = 1.0;
     for subdivisions in 0..=4 {
         let spherical = polygen::cubic_sphere_vertices(radius, subdivisions);
-        let mut projected = polygen::cube_vertices(radius, subdivisions);
+        let mut projected =
+            polygen::cube_vertices((-radius, radius), (-radius, radius), (-radius, radius), subdivisions);
         for vertex in projected.iter_mut() {
             *vertex = normalize_to(*vertex, radius)
         }

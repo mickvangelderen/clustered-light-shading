@@ -1,5 +1,7 @@
+use crate::*;
 use crate::rendering;
 use crate::resources::*;
+use std::convert::TryFrom;
 use gl_typed as gl;
 
 pub struct Renderer {
@@ -11,8 +13,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub width: i32,
-    pub height: i32,
+    pub viewport: Viewport<i32>,
     pub framebuffer_x: gl::FramebufferName,
     pub framebuffer_xy: gl::FramebufferName,
     pub color: gl::TextureName,
@@ -26,50 +27,45 @@ impl Renderer {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-            gl.viewport(0, 0, params.width, params.height);
+            params.viewport.set(gl);
             gl.use_program(self.program.name);
             gl.bind_vertex_array(resources.full_screen_vao);
 
             if let Some(loc) = self.depth_sampler_loc.into() {
                 gl.uniform_1i(loc, 1);
-                gl.active_texture(gl::TEXTURE1);
-                gl.bind_texture(gl::TEXTURE_2D, params.depth);
+                gl.bind_texture_unit(1, params.depth);
             };
 
             // X pass.
             {
                 gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer_x);
-                gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, params.color);
+                    gl.bind_texture_unit(0, params.color);
                 };
 
                 if let Some(loc) = self.delta_loc.into() {
-                    gl.uniform_2f(loc, [1.0 / params.width as f32, 0.0]);
+                    gl.uniform_2f(loc, [1.0 / params.viewport.dimensions.x as f32, 0.0]);
                 }
 
-                gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
+                gl.draw_elements(gl::TRIANGLES, u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(), gl::UNSIGNED_INT, 0);
             }
 
             // Y pass.
             {
                 gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer_xy);
-                gl.draw_buffers(&[gl::COLOR_ATTACHMENT0.into()]);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
-                    gl.active_texture(gl::TEXTURE0);
-                    gl.bind_texture(gl::TEXTURE_2D, params.color_x);
+                    gl.bind_texture_unit(0, params.color_x);
                 };
 
                 if let Some(loc) = self.delta_loc.into() {
-                    gl.uniform_2f(loc, [0.0, 1.0 / params.height as f32]);
+                    gl.uniform_2f(loc, [0.0, 1.0 / params.viewport.dimensions.y as f32]);
                 }
 
-                gl.draw_elements(gl::TRIANGLES, FULL_SCREEN_INDICES.len() * 3, gl::UNSIGNED_INT, 0);
+                gl.draw_elements(gl::TRIANGLES, u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(), gl::UNSIGNED_INT, 0);
             }
 
             gl.unbind_vertex_array();
