@@ -1,13 +1,24 @@
 use cgmath::*;
 
-pub trait Matrix4Ext<S> {
+pub trait Matrix4BaseNumExt<S> {
     fn truncate(self) -> Matrix3<S>;
 }
 
-impl<S: cgmath::BaseNum> Matrix4Ext<S> for Matrix4<S> {
+impl<S: BaseNum> Matrix4BaseNumExt<S> for Matrix4<S> {
     fn truncate(self) -> Matrix3<S> {
         Matrix3::from_cols(self[0].truncate(), self[1].truncate(), self[2].truncate())
     }
+}
+
+pub trait Matrix4BaseFloatExt<S>: Sized {
+    fn from_scale_vector(vector: Vector3<S>) -> Self;
+}
+
+impl<S: BaseFloat> Matrix4BaseFloatExt<S> for Matrix4<S> {
+    fn from_scale_vector(vector: Vector3<S>) -> Self {
+        Matrix4::from_nonuniform_scale(vector.x, vector.y, vector.z)
+    }
+
 }
 
 pub trait PartialOrdExt {

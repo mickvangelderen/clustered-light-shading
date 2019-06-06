@@ -247,12 +247,17 @@ void main() {
   // uint cluster_length = 8;
 
   // CLUSTER LENGHTS
-  frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
+  // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
+
+  // COLORED CLUSTER LENGTHS
+  // if (cluster_length == 0) {
+  //   discard;
+  // }
+  // frag_color = vec4(vec3(float(cluster_length)/2.0) * cluster_index_colors, 1.0);
 
   // CLUSTERED SHADING
   for (uint i = 0; i < cluster_length; i++) {
-    // uint light_index = clusters[cluster_index + 1 + i];
-    uint light_index = i;
+    uint light_index = clusters[cluster_index + 1 + i];
 
     float t_on = 5.0;
     float t = float(cluster_length);
