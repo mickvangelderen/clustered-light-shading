@@ -98,3 +98,15 @@ techniques
  - clustered
    - pre/post-projective clustering
    - cpu/gpu-based light assigment
+
+
+glTF model loader
+basis image format compressed textures
+
+compare cls to stereo tile based
+implement degenerate cls single tile
+
+cheap depth pre pass forward shader architecture
+learnopengl PBR
+
+
