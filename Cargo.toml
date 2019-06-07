@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "derive",
+    "incremental",
     "polygen",
     "renderer",
     "log-viewer",
