@@ -6,6 +6,14 @@ impl Current {
     pub fn new() -> Self {
         Current(0)
     }
+
+    pub fn versioned<T>(&self, value: T) -> Versioned<T> where T: Versionable {
+        Versioned {
+            value,
+            verified: Verified(self.0),
+            modified: Modified(self.0),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -38,6 +46,37 @@ impl Verified {
 
     pub fn before(&self, current: &Current) -> bool {
         self.0 < current.0
+    }
+}
+
+pub trait Versionable {
+    type Environment: ?Sized;
+
+    fn update_dependencies(&mut self, current: &Current, environment: &mut Self::Environment) -> Modified;
+
+    fn update_self(&mut self, environment: &mut Self::Environment);
+}
+
+pub struct Versioned<T> where T: Versionable {
+    value: T,
+    verified: Verified,
+    modified: Modified,
+}
+
+impl<T> Versioned<T> where T: Versionable {
+    pub fn update(&mut self, current: &Current, environment: &mut T::Environment) -> Modified {
+        if self.verified.before(current) {
+            let modified = self.value.update_dependencies(current, environment);
+
+            if modified > self.modified {
+                self.value.update_self(environment);
+                self.modified.0 = modified.0;
+            }
+
+            self.verified.0 = current.0;
+        }
+
+        self.modified
     }
 }
 
@@ -85,15 +124,13 @@ mod tests {
     struct ShaderName<I> {
         contents: String,
         source_indices: I,
-        verified: Verified,
-        modified: Modified,
     }
 
     impl<I> ShaderName<I>
     where
         I: AsRef<[SourceIndex]>,
     {
-        fn new(current: &Current, source_indices: I, sources: &[Source]) -> Self {
+        fn new(source_indices: I, sources: &[Source]) -> Self {
             ShaderName {
                 contents: {
                     let mut contents = String::new();
@@ -101,8 +138,6 @@ mod tests {
                     contents
                 },
                 source_indices,
-                verified: Verified::new(current),
-                modified: Modified::new(current),
             }
         }
 
@@ -111,25 +146,40 @@ mod tests {
                 contents.push_str(&sources[index].contents);
             }
         }
+    }
 
-        fn update(&mut self, current: &Current, sources: &mut [Source]) -> Modified {
-            if self.verified.before(current) {
-                // Verify dependencies.
-                for source in self.source_indices.as_ref().iter().map(|&i| &sources[i]) {
-                    if source.modified > self.modified {
-                        self.modified = source.modified;
-                    }
-                }
+    impl<I> Versionable for ShaderName<I> where I: AsRef<[SourceIndex]> {
+        type Environment = [Source];
 
-                if self.modified.after(&self.verified) {
-                    self.contents.clear();
-                    Self::compute(&mut self.contents, &self.source_indices, sources);
-                }
+        fn update_dependencies(&mut self, _current: &Current, sources: &mut [Source]) -> Modified {
+            self.source_indices.as_ref().iter().map(|&i| sources[i].modified).max().unwrap()
+        }
 
-                self.verified.0 = current.0;
-            }
+        fn update_self(&mut self, sources: &mut [Source]) {
+            self.contents.clear();
+            ShaderName::compute(&mut self.contents, &self.source_indices, sources);
+        }
+    }
 
-            self.modified
+    struct ProgramName<V, S> where V: AsRef<[SourceIndex]>, S: AsRef<[SourceIndex]> {
+        contents: String,
+        vertex_shader_name: Versioned<ShaderName<V>>,
+        fragment_shader_name: Versioned<ShaderName<S>>,
+    }
+
+    impl<V, S> Versionable for ProgramName<V, S> where V: AsRef<[SourceIndex]>, S: AsRef<[SourceIndex]> {
+        type Environment = [Source];
+
+        fn update_dependencies(&mut self, current: &Current, sources: &mut [Source]) -> Modified {
+            let modified1 = self.vertex_shader_name.update(current, sources);
+            let modified2 = self.fragment_shader_name.update(current, sources);
+            return std::cmp::max(modified1, modified2)
+        }
+
+        fn update_self(&mut self, _sources: &mut [Source]) {
+            self.contents.clear();
+            self.contents.push_str(&self.vertex_shader_name.value.contents);
+            self.contents.push_str(&self.fragment_shader_name.value.contents);
         }
     }
 
@@ -143,42 +193,64 @@ mod tests {
             Source::new(current, "shared 0\n".to_string()),
         ];
 
-        let vs = &mut ShaderName::new(
-            current,
+        let vs = &mut current.versioned(ShaderName::new(
             VertexSourceIndices,
             sources,
-        );
+        ));
 
-        let fs = &mut ShaderName::new(
-            current,
+        let fs = &mut current.versioned(ShaderName::new(
             FragmentSourceIndices,
             sources,
-        );
+        ));
 
         assert_eq!(Modified(0), vs.update(current, sources));
-        assert_eq!("shared 0\nvertex 0\n", &vs.contents);
+        assert_eq!("shared 0\nvertex 0\n", &vs.value.contents);
 
         assert_eq!(Modified(0), fs.update(current, sources));
-        assert_eq!("shared 0\nfragment 0\n", &fs.contents);
+        assert_eq!("shared 0\nfragment 0\n", &fs.value.contents);
 
         sources[0].contents.clear();
         sources[0].contents.push_str("vertex 1\n");
         sources[0].modified.mark(current);
 
         assert_eq!(Modified(1), vs.update(current, sources));
-        assert_eq!("shared 0\nvertex 1\n", &vs.contents);
+        assert_eq!("shared 0\nvertex 1\n", &vs.value.contents);
 
         assert_eq!(Modified(0), fs.update(current, sources));
-        assert_eq!("shared 0\nfragment 0\n", &fs.contents);
+        assert_eq!("shared 0\nfragment 0\n", &fs.value.contents);
 
         sources[2].contents.clear();
         sources[2].contents.push_str("shared 1\n");
         sources[2].modified.mark(current);
 
         assert_eq!(Modified(2), vs.update(current, sources));
-        assert_eq!("shared 1\nvertex 1\n", &vs.contents);
+        assert_eq!("shared 1\nvertex 1\n", &vs.value.contents);
 
         assert_eq!(Modified(2), fs.update(current, sources));
-        assert_eq!("shared 1\nfragment 0\n", &fs.contents);
+        assert_eq!("shared 1\nfragment 0\n", &fs.value.contents);
+    }
+
+    #[test]
+    fn verify_program_works() {
+        let current = &mut Current::new();
+
+        let sources = &mut [
+            Source::new(current, "vertex 0\n".to_string()),
+            Source::new(current, "fragment 0\n".to_string()),
+            Source::new(current, "shared 0\n".to_string()),
+        ];
+
+        let pr = &mut ProgramName {
+            contents: String::new(),
+            vertex_shader_name: current.versioned(ShaderName::new(
+                VertexSourceIndices,
+                sources,
+            )),
+            fragment_shader_name: current.versioned(ShaderName::new(
+                FragmentSourceIndices,
+                sources,
+            )),
+        };
+
     }
 }
