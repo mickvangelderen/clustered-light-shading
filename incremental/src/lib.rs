@@ -17,6 +17,16 @@ impl Current {
             modified: Modified(self.0),
         }
     }
+
+    pub fn compute<'a, T>(&'a self, versioned: &'a mut Versioned<T>, environment: &mut T::Environment) -> Ref<'a, T> where T: Versionable {
+        if versioned.verified.0 < self.0 {
+            // compute dependencies.
+
+            // compute self if dependencies have been modified since last time.
+
+        }
+        Ref::new(self, &versioned.value)
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -26,6 +36,11 @@ pub struct Modified(usize);
 impl Modified {
     pub fn new(current: &Current) -> Self {
         Modified(current.0)
+    }
+
+    pub fn never() -> Self {
+        // TODO: The value 0 is fine since verified cannot be less than 0?
+        Modified(0)
     }
 
     pub fn mark(&mut self, current: &mut Current) {
@@ -60,6 +75,7 @@ pub trait Versionable {
     fn update_self(&mut self, environment: &mut Self::Environment);
 }
 
+// TODO: Rename to derived?
 pub struct Versioned<T>
 where
     T: Versionable,
@@ -69,12 +85,84 @@ where
     modified: Modified,
 }
 
+/// Prevents Current from being used for modification while this reference exists.
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+#[must_use]
+pub struct Ref<'a, T: ?Sized + 'a> {
+    value: &'a T,
+    _current: ::std::marker::PhantomData<&'a Current>,
+}
+
+impl<T: ?Sized> ::std::ops::Deref for Ref<'_, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &T {
+        self.value
+    }
+}
+
+impl<'a, T: ?Sized + 'a> Ref<'a, T> {
+    fn new(current: &'a Current, value: &'a T) -> Self {
+        Ref {
+            value,
+            _current: ::std::marker::PhantomData,
+        }
+    }
+}
+
+/// Prevents Current from being used for verification while this reference exists.
+#[derive(Debug)]
+#[repr(transparent)]
+#[must_use]
+pub struct Mut<'a, T: ?Sized + 'a> {
+    value: &'a mut T,
+    _current: ::std::marker::PhantomData<&'a mut Current>,
+}
+
+impl<'a, T: ?Sized + 'a> Mut<'a, T> {
+    fn new(current: &'a mut Current, value: &'a mut T) -> Self {
+        Mut {
+            value,
+            _current: ::std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: ?Sized> ::std::ops::Deref for Mut<'_, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &T {
+        self.value
+    }
+}
+
+impl<T: ?Sized> ::std::ops::DerefMut for Mut<'_, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        self.value
+    }
+}
+
+pub struct Leaf<T> {
+    value: T,
+    modified: Modified,
+}
+
+impl<T> Leaf<T> {
+    pub fn get_mut<'a>(&'a mut self, current: &'a mut Current) -> Mut<'a, T> {
+        Mut::new(current, &mut self.value)
+    }
+}
+
 impl<T> Versioned<T>
 where
     T: Versionable,
 {
     pub fn update(&mut self, current: &Current, environment: &mut T::Environment) -> Modified {
-        if self.verified.before(current) {
+        if self.verified.0 < current.0 {
             let modified = self.value.update_dependencies(current, environment);
 
             if modified > self.modified {
@@ -100,14 +188,12 @@ mod tests {
 
     struct Source {
         contents: String,
-        modified: Modified,
     }
 
     impl Source {
-        fn new(current: &Current, contents: String) -> Self {
+        fn new(contents: String) -> Self {
             Source {
                 contents,
-                modified: Modified::new(current),
             }
         }
     }
@@ -257,6 +343,7 @@ mod tests {
         assert_eq!(Modified(0), fs.update(current, sources));
         assert_eq!("shared 0\nfragment 0\n", &fs.value.contents);
 
+        let source = sources[0].get_mut()
         sources[0].contents.clear();
         sources[0].contents.push_str("vertex 1\n");
         sources[0].modified.mark(current);
