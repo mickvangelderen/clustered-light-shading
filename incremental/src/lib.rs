@@ -1,180 +1,169 @@
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
-pub struct Current(usize);
+pub struct Revision(u64);
 
-impl Current {
-    pub fn new() -> Self {
-        Current(0)
-    }
-
-    pub fn versioned<T>(&self, value: T) -> Versioned<T>
-    where
-        T: Versionable,
-    {
-        Versioned {
-            value,
-            verified: Verified(self.0),
-            modified: Modified(self.0),
-        }
-    }
-
-    pub fn compute<'a, T>(&'a self, versioned: &'a mut Versioned<T>, environment: &mut T::Environment) -> Ref<'a, T> where T: Versionable {
-        if versioned.verified.0 < self.0 {
-            // compute dependencies.
-
-            // compute self if dependencies have been modified since last time.
-
-        }
-        Ref::new(self, &versioned.value)
+impl Revision {
+    fn increment(&mut self) {
+        self.0 += 1;
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct Modified(usize);
-
-impl Modified {
-    pub fn new(current: &Current) -> Self {
-        Modified(current.0)
-    }
-
-    pub fn never() -> Self {
-        // TODO: The value 0 is fine since verified cannot be less than 0?
-        Modified(0)
-    }
-
-    pub fn mark(&mut self, current: &mut Current) {
-        current.0 += 1;
-        self.0 = current.0;
-    }
-
-    pub fn after(&self, verified: &Verified) -> bool {
-        self.0 > verified.0
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct Verified(usize);
-
-impl Verified {
-    pub fn new(current: &Current) -> Self {
-        Verified(current.0)
-    }
-
-    pub fn before(&self, current: &Current) -> bool {
-        self.0 < current.0
-    }
-}
-
-pub trait Versionable {
-    type Environment: ?Sized;
-
-    fn update_dependencies(&mut self, current: &Current, environment: &mut Self::Environment) -> Modified;
-
-    fn update_self(&mut self, environment: &mut Self::Environment);
-}
-
-// TODO: Rename to derived?
-pub struct Versioned<T>
-where
-    T: Versionable,
-{
-    value: T,
-    verified: Verified,
-    modified: Modified,
-}
-
-/// Prevents Current from being used for modification while this reference exists.
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-#[must_use]
-pub struct Ref<'a, T: ?Sized + 'a> {
-    value: &'a T,
-    _current: ::std::marker::PhantomData<&'a Current>,
-}
-
-impl<T: ?Sized> ::std::ops::Deref for Ref<'_, T> {
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &T {
-        self.value
-    }
-}
-
-impl<'a, T: ?Sized + 'a> Ref<'a, T> {
-    fn new(current: &'a Current, value: &'a T) -> Self {
-        Ref {
-            value,
-            _current: ::std::marker::PhantomData,
-        }
-    }
-}
-
-/// Prevents Current from being used for verification while this reference exists.
 #[derive(Debug)]
 #[repr(transparent)]
-#[must_use]
-pub struct Mut<'a, T: ?Sized + 'a> {
-    value: &'a mut T,
-    _current: ::std::marker::PhantomData<&'a mut Current>,
-}
+pub struct Global(Revision);
 
-impl<'a, T: ?Sized + 'a> Mut<'a, T> {
-    fn new(current: &'a mut Current, value: &'a mut T) -> Self {
-        Mut {
-            value,
-            _current: ::std::marker::PhantomData,
-        }
+impl Global {
+    pub fn new() -> Self {
+        // Start at one so we can use 0 as dirty.
+        Global(Revision(1))
+    }
+
+    pub fn mark(&mut self, modified: &mut Modified) {
+        self.0.increment();
+        modified.0 = self.0;
     }
 }
 
-impl<T: ?Sized> ::std::ops::Deref for Mut<'_, T> {
-    type Target = T;
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(transparent)]
+pub struct Modified(Revision);
 
-    #[inline]
-    fn deref(&self) -> &T {
-        self.value
-    }
+impl Modified {
+    pub const NONE: Self = Self(Revision(0));
 }
 
-impl<T: ?Sized> ::std::ops::DerefMut for Mut<'_, T> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut T {
-        self.value
-    }
-}
+#[derive(Debug)]
+#[repr(transparent)]
+struct Verified(Revision);
+
+#[derive(Debug)]
+#[repr(transparent)]
+struct Computed(Revision);
 
 pub struct Leaf<T> {
-    value: T,
     modified: Modified,
+    value: T,
 }
 
 impl<T> Leaf<T> {
-    pub fn get_mut<'a>(&'a mut self, current: &'a mut Current) -> Mut<'a, T> {
-        Mut::new(current, &mut self.value)
+    #[inline]
+    pub fn clean(global: &Global, value: T) -> Self {
+        Leaf {
+            modified: Modified(global.0),
+            value,
+        }
+    }
+
+    #[inline]
+    pub fn modified(&self) -> Modified {
+        Modified(self.modified.0)
+    }
+
+    #[inline]
+    pub fn read(&self) -> &T {
+        &self.value
     }
 }
 
-impl<T> Versioned<T>
-where
-    T: Versionable,
-{
-    pub fn update(&mut self, current: &Current, environment: &mut T::Environment) -> Modified {
-        if self.verified.0 < current.0 {
-            let modified = self.value.update_dependencies(current, environment);
-
-            if modified > self.modified {
-                self.value.update_self(environment);
-                self.modified.0 = modified.0;
-            }
-
-            self.verified.0 = current.0;
+impl<T> Leaf<T> {
+    #[inline]
+    pub fn write<F>(&mut self, global: &mut Global, f: F) where F: FnOnce(&mut T) -> bool {
+        if f(&mut self.value) {
+            global.mark(&mut self.modified);
         }
-
-        self.modified
     }
+
+    #[inline]
+    pub fn write_always<F>(&mut self, global: &mut Global, f: F) where F: FnOnce(&mut T) {
+        f(&mut self.value);
+        global.mark(&mut self.modified);
+    }
+
+    #[inline]
+    pub fn replace_always(&mut self, global: &mut Global, value: T) -> T {
+        let value = std::mem::replace(&mut self.value, value);
+        global.mark(&mut self.modified);
+        value
+    }
+}
+
+impl<T> Leaf<T>
+where
+    T: PartialEq,
+{
+    #[inline]
+    pub fn replace(&mut self, global: &mut Global, value: T) -> T {
+        if self.value != value {
+            let value = std::mem::replace(&mut self.value, value);
+            global.mark(&mut self.modified);
+            value
+        } else {
+            value
+        }
+    }
+}
+
+pub struct Branch {
+    verified: Verified,
+    computed: Computed,
+}
+
+impl Branch {
+    #[inline]
+    pub fn dirty() -> Self {
+        Self {
+            verified: Verified(Revision(0)),
+            computed: Computed(Revision(0)),
+        }
+    }
+
+    #[inline]
+    pub fn clean(global: &Global) -> Self {
+        Self {
+            verified: Verified(global.0),
+            computed: Computed(global.0),
+        }
+    }
+
+    #[inline]
+    pub fn panic_if_outdated(&self, global: &Global) {
+        if self.verified.0 < global.0 {
+            panic_outdated()
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn verify(&mut self, global: &Global) -> bool {
+        if self.verified.0 < global.0 {
+            self.verified.0 = global.0;
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn recompute(&mut self, modified: &Modified) -> bool {
+        if self.computed.0 < modified.0 {
+            self.computed.0 = modified.0;
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn modified(&self) -> Modified {
+        Modified(self.computed.0)
+    }
+}
+
+#[cold]
+fn panic_outdated() -> ! {
+    panic!("Tried to read outdated value.");
 }
 
 #[cfg(test)]
@@ -186,17 +175,7 @@ mod tests {
     const FRAGMENT_SOURCE_INDEX: SourceIndex = 1;
     const SHARED_SOURCE_INDEX: SourceIndex = 2;
 
-    struct Source {
-        contents: String,
-    }
-
-    impl Source {
-        fn new(contents: String) -> Self {
-            Source {
-                contents,
-            }
-        }
-    }
+    type Source = Leaf<String>;
 
     #[derive(Copy, Clone)]
     struct VertexSourceIndices;
@@ -217,183 +196,158 @@ mod tests {
     }
 
     struct ShaderName<I> {
-        contents: String,
         source_indices: I,
+        branch: Branch,
+        contents: String,
     }
 
     impl<I> ShaderName<I>
     where
         I: AsRef<[SourceIndex]>,
     {
-        fn new(source_indices: I, sources: &[Source]) -> Self {
+        fn new(source_indices: I) -> Self {
             ShaderName {
-                contents: {
-                    let mut contents = String::new();
-                    Self::compute(&mut contents, &source_indices, sources);
-                    contents
-                },
                 source_indices,
+                branch: Branch::dirty(),
+                contents: String::new(),
             }
         }
 
-        fn compute(contents: &mut String, source_indices: &I, sources: &[Source]) {
-            for &index in source_indices.as_ref() {
-                contents.push_str(&sources[index].contents);
+        fn update_contents(&mut self, global: &Global, sources: &mut [Source]) -> Modified {
+            if self.branch.verify(global) {
+                let modified = &self.source_indices
+                    .as_ref()
+                    .iter()
+                    .map(|&i| sources[i].modified())
+                    .max()
+                    .unwrap_or(Modified::NONE);
+
+                if self.branch.recompute(modified) {
+                    self.contents.clear();
+                    for &index in self.source_indices.as_ref() {
+                        self.contents.push_str(&sources[index].read());
+                    }
+                }
             }
+
+            self.branch.modified()
+        }
+
+        fn contents<'a>(&'a self, global: &'a Global) -> &'a str {
+            self.branch.panic_if_outdated(global);
+            &self.contents
         }
     }
 
-    impl<I> Versionable for ShaderName<I>
-    where
-        I: AsRef<[SourceIndex]>,
-    {
-        type Environment = [Source];
+    // struct ProgramName<V, S>
+    // where
+    //     V: AsRef<[SourceIndex]>,
+    //     S: AsRef<[SourceIndex]>,
+    // {
+    //     contents: Branch<String>,
+    //     vertex_shader_name: ShaderName<V>,
+    //     fragment_shader_name: ShaderName<S>,
+    // }
 
-        fn update_dependencies(&mut self, _current: &Current, sources: &mut [Source]) -> Modified {
-            self.source_indices
-                .as_ref()
-                .iter()
-                .map(|&i| sources[i].modified)
-                .max()
-                .unwrap()
-        }
+    // impl<V, S> ProgramName<V, S>
+    // where
+    //     V: AsRef<[SourceIndex]>,
+    //     S: AsRef<[SourceIndex]>,
+    // {
+    //     fn new(vertex_shader_name: ShaderName<V>, fragment_shader_name: ShaderName<S>) -> Self {
+    //         ProgramName {
+    //             contents: Branch::dirty(String::new()),
+    //             vertex_shader_name,
+    //             fragment_shader_name,
+    //         }
+    //     }
 
-        fn update_self(&mut self, sources: &mut [Source]) {
-            self.contents.clear();
-            ShaderName::compute(&mut self.contents, &self.source_indices, sources);
-        }
-    }
-
-    struct ProgramName<V, S>
-    where
-        V: AsRef<[SourceIndex]>,
-        S: AsRef<[SourceIndex]>,
-    {
-        contents: String,
-        vertex_shader_name: Versioned<ShaderName<V>>,
-        fragment_shader_name: Versioned<ShaderName<S>>,
-    }
-
-    impl<V, S> ProgramName<V, S>
-    where
-        V: AsRef<[SourceIndex]>,
-        S: AsRef<[SourceIndex]>,
-    {
-        fn new(
-            vertex_shader_name: Versioned<ShaderName<V>>,
-            fragment_shader_name: Versioned<ShaderName<S>>,
-        ) -> Self {
-            ProgramName {
-                contents: {
-                    let mut contents = String::new();
-                    Self::compute(&mut contents, &vertex_shader_name.value, &fragment_shader_name.value);
-                    contents
-                },
-                vertex_shader_name,
-                fragment_shader_name,
-            }
-        }
-
-        fn compute(string: &mut String, vertex_shader_name: &ShaderName<V>, fragment_shader_name: &ShaderName<S>) {
-            string.push_str(&vertex_shader_name.contents);
-            string.push_str(&fragment_shader_name.contents);
-        }
-    }
-
-    impl<V, S> Versionable for ProgramName<V, S>
-    where
-        V: AsRef<[SourceIndex]>,
-        S: AsRef<[SourceIndex]>,
-    {
-        type Environment = [Source];
-
-        fn update_dependencies(&mut self, current: &Current, sources: &mut [Source]) -> Modified {
-            let modified1 = self.vertex_shader_name.update(current, sources);
-            let modified2 = self.fragment_shader_name.update(current, sources);
-            return std::cmp::max(modified1, modified2);
-        }
-
-        fn update_self(&mut self, _sources: &mut [Source]) {
-            self.contents.clear();
-            ProgramName::compute(
-                &mut self.contents,
-                &self.vertex_shader_name.value,
-                &self.fragment_shader_name.value,
-            );
-        }
-    }
+    //     fn update_contents(&mut self, global: &Global, sources: &mut [Source]) -> Modified {
+    //         let Self { contents, vertex_shader_name, fragment_shader_name } = self;
+    //         contents.update(
+    //             global,
+    //             || {
+    //                 let modified1 = vertex_shader_name.update_contents(global, sources);
+    //                 let modified2 = fragment_shader_name.update_contents(global, sources);
+    //                 return std::cmp::max(modified1, modified2);
+    //             },
+    //             |contents| {
+    //                 contents.clear();
+    //                 contents.push_str(vertex_shader_name.contents(global));
+    //                 contents.push_str(fragment_shader_name.contents(global));
+    //             },
+    //         )
+    //     }
+    // }
 
     #[test]
     fn verify_shader_works() {
-        let current = &mut Current::new();
+        let global = &mut Global::new();
 
         let sources = &mut [
-            Source::new(current, "vertex 0\n".to_string()),
-            Source::new(current, "fragment 0\n".to_string()),
-            Source::new(current, "shared 0\n".to_string()),
+            Source::clean(global, "vertex 0\n".to_string()),
+            Source::clean(global, "fragment 0\n".to_string()),
+            Source::clean(global, "shared 0\n".to_string()),
         ];
 
-        let vs = &mut current.versioned(ShaderName::new(VertexSourceIndices, sources));
+        let vs = &mut ShaderName::new(VertexSourceIndices);
 
-        let fs = &mut current.versioned(ShaderName::new(FragmentSourceIndices, sources));
+        let fs = &mut ShaderName::new(FragmentSourceIndices);
 
-        assert_eq!(Modified(0), vs.update(current, sources));
-        assert_eq!("shared 0\nvertex 0\n", &vs.value.contents);
+        assert_eq!(Modified(Revision(1)), vs.update_contents(global, sources));
+        assert_eq!("shared 0\nvertex 0\n", vs.contents(global));
 
-        assert_eq!(Modified(0), fs.update(current, sources));
-        assert_eq!("shared 0\nfragment 0\n", &fs.value.contents);
+        assert_eq!(Modified(Revision(1)), fs.update_contents(global, sources));
+        assert_eq!("shared 0\nfragment 0\n", fs.contents(global));
 
-        let source = sources[0].get_mut()
-        sources[0].contents.clear();
-        sources[0].contents.push_str("vertex 1\n");
-        sources[0].modified.mark(current);
+        let source = sources[0].replace(global, "vertex 1\n".to_string());
 
-        assert_eq!(Modified(1), vs.update(current, sources));
-        assert_eq!("shared 0\nvertex 1\n", &vs.value.contents);
+        assert_eq!(Modified(Revision(2)), vs.update_contents(global, sources));
+        assert_eq!("shared 0\nvertex 1\n", vs.contents(global));
 
-        assert_eq!(Modified(0), fs.update(current, sources));
-        assert_eq!("shared 0\nfragment 0\n", &fs.value.contents);
+        assert_eq!(Modified(Revision(1)), fs.update_contents(global, sources));
+        assert_eq!("shared 0\nfragment 0\n", fs.contents(global));
 
-        sources[2].contents.clear();
-        sources[2].contents.push_str("shared 1\n");
-        sources[2].modified.mark(current);
+        sources[2].value.clear();
+        sources[2].value.push_str("shared 1\n");
+        global.mark(&mut sources[2].modified);
 
-        assert_eq!(Modified(2), vs.update(current, sources));
-        assert_eq!("shared 1\nvertex 1\n", &vs.value.contents);
+        assert_eq!(Modified(Revision(3)), vs.update_contents(global, sources));
+        assert_eq!("shared 1\nvertex 1\n", vs.contents(global));
 
-        assert_eq!(Modified(2), fs.update(current, sources));
-        assert_eq!("shared 1\nfragment 0\n", &fs.value.contents);
+        assert_eq!(Modified(Revision(3)), fs.update_contents(global, sources));
+        assert_eq!("shared 1\nfragment 0\n", fs.contents(global));
     }
 
-    #[test]
-    fn verify_program_works() {
-        let current = &mut Current::new();
+    // #[test]
+    // fn verify_program_works() {
+    //     let global = &mut Global::new();
 
-        let sources = &mut [
-            Source::new(current, "vertex 0\n".to_string()),
-            Source::new(current, "fragment 0\n".to_string()),
-            Source::new(current, "shared 0\n".to_string()),
-        ];
+    //     let sources = &mut [
+    //         Source::new(global, "vertex 0\n".to_string()),
+    //         Source::new(global, "fragment 0\n".to_string()),
+    //         Source::new(global, "shared 0\n".to_string()),
+    //     ];
 
-        let pr = &mut current.versioned(ProgramName::new(
-            current.versioned(ShaderName::new(VertexSourceIndices, sources)),
-            current.versioned(ShaderName::new(FragmentSourceIndices, sources)),
-        ));
+    //     let pr = &mut global.versioned(ProgramName::new(
+    //         global.versioned(ShaderName::new(VertexSourceIndices, sources)),
+    //         global.versioned(ShaderName::new(FragmentSourceIndices, sources)),
+    //     ));
 
-        assert_eq!(Modified(0), pr.update(current, sources));
-        assert_eq!("shared 0\nvertex 0\nshared 0\nfragment 0\n", &pr.value.contents);
+    //     assert_eq!(Modified(0), pr.update(global, sources));
+    //     assert_eq!("shared 0\nvertex 0\nshared 0\nfragment 0\n", &pr.value.contents);
 
-        assert_eq!(Modified(0), pr.update(current, sources));
-        assert_eq!("shared 0\nvertex 0\nshared 0\nfragment 0\n", &pr.value.contents);
+    //     assert_eq!(Modified(0), pr.update(global, sources));
+    //     assert_eq!("shared 0\nvertex 0\nshared 0\nfragment 0\n", &pr.value.contents);
 
-        sources[0].contents.clear();
-        sources[0].contents.push_str("vertex 1\n");
-        sources[0].modified.mark(current);
+    //     sources[0].contents.clear();
+    //     sources[0].contents.push_str("vertex 1\n");
+    //     sources[0].modified.mark(global);
 
-        assert_eq!(Modified(1), pr.update(current, sources));
-        assert_eq!("shared 0\nvertex 1\nshared 0\nfragment 0\n", &pr.value.contents);
+    //     assert_eq!(Modified(1), pr.update(global, sources));
+    //     assert_eq!("shared 0\nvertex 1\nshared 0\nfragment 0\n", &pr.value.contents);
 
-        assert_eq!(Modified(1), pr.update(current, sources));
-        assert_eq!("shared 0\nvertex 1\nshared 0\nfragment 0\n", &pr.value.contents);
-    }
+    //     assert_eq!(Modified(1), pr.update(global, sources));
+    //     assert_eq!("shared 0\nvertex 1\nshared 0\nfragment 0\n", &pr.value.contents);
+    // }
 }

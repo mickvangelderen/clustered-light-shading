@@ -1175,6 +1175,7 @@ dependencies = [
  "gl-typed 0.6.0",
  "glutin 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.21.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "incremental 0.1.0",
  "kernel-generator 0.1.0",
  "notify 4.0.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
