@@ -389,14 +389,14 @@ pub enum RenderTechnique {
 impl RenderTechnique {
     pub fn source(self) -> &'static str {
         match self {
-            RenderTechnique::Naive => "#define RENDERING_TECHNIQUE_NAIVE\n",
-            RenderTechnique::Tiled => "#define RENDERING_TECHNIQUE_TILED\n",
-            RenderTechnique::Clustered => "#define RENDERING_TECHNIQUE_CLUSTERED\n",
+            RenderTechnique::Naive => "#define RENDER_TECHNIQUE_NAIVE\n",
+            RenderTechnique::Tiled => "#define RENDER_TECHNIQUE_TILED\n",
+            RenderTechnique::Clustered => "#define RENDER_TECHNIQUE_CLUSTERED\n",
         }
     }
 
     pub fn regex() -> Regex {
-        Regex::new(r"\bRENDERING_TECHNIQUE_(NAIVE|TILED|CLUSTERED)\b").unwrap()
+        Regex::new(r"\bRENDER_TECHNIQUE_(NAIVE|TILED|CLUSTERED)\b").unwrap()
     }
 }
 
@@ -476,10 +476,19 @@ impl Shader {
                 .unwrap_or(ic::Modified::NONE);
 
             if self.branch.recompute(&modified) {
-                let source: String = self.source_indices.iter().map(|&i| world.sources[i].read()).collect();
+                let sources: Vec<[String; 2]> = self
+                    .source_indices
+                    .iter()
+                    .map(|&i| [format!("#line {} 0\n", i), world.sources[i].read()])
+                    .collect();
 
-                self.render_technique = world.render_technique_regex.is_match(&source);
-                self.attenuation_mode = world.attenuation_mode_regex.is_match(&source);
+                self.render_technique = sources
+                    .iter()
+                    .any(|[_, source]| world.render_technique_regex.is_match(source));
+
+                self.attenuation_mode = sources
+                    .iter()
+                    .any(|[_, source]| world.attenuation_mode_regex.is_match(source));
 
                 self.name.compile(
                     gl,
@@ -510,11 +519,21 @@ impl Shader {
                         .iter()
                         .copied(),
                     )
-                    .chain(["#line 1 1\n", &source].iter().copied()),
+                    .chain(
+                        sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))
+                    ),
                 );
 
                 if self.name.is_uncompiled() {
-                    error!("Compile error: {}\nIn:\n{}", self.name.log(gl), &source);
+                    let log = self.name.log(gl);
+
+                    let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
+                        let source_index: usize = captures[0].parse().unwrap();
+                        let path = world.sources[source_index].path.strip_prefix(&world.resource_dir).unwrap();
+                        path.display().to_string()
+                    });
+
+                    error!("Compile error:\n{}", log);
                 }
             }
         }
