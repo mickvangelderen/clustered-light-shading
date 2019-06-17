@@ -5,15 +5,20 @@
 #[macro_use]
 mod macros;
 
-mod ao_filter;
-mod ao_renderer;
-mod basic_renderer;
+pub(crate) use gl_typed as gl;
+pub(crate) use incremental as ic;
+pub(crate) use log::*;
+pub(crate) use regex::Regex;
+
+// mod ao_filter;
+// mod ao_renderer;
+// mod basic_renderer;
 mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
 mod cls;
-mod cluster_renderer;
+// mod cluster_renderer;
 mod configuration;
 mod convert;
 mod filters;
@@ -23,10 +28,10 @@ mod glutin_ext;
 mod keyboard;
 mod keyboard_model;
 mod light;
-mod line_renderer;
+// mod line_renderer;
 mod mono_stereo;
-mod overlay_renderer;
-mod post_renderer;
+// mod overlay_renderer;
+// mod post_renderer;
 mod random_unit_sphere_dense;
 mod random_unit_sphere_surface;
 mod rendering;
@@ -34,7 +39,7 @@ mod resources;
 mod shadow_renderer;
 mod timings;
 mod viewport;
-mod vsm_filter;
+// mod vsm_filter;
 mod window_mode;
 
 use crate::bounding_box::*;
@@ -42,6 +47,7 @@ use crate::cgmath_ext::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::mono_stereo::*;
+use crate::rendering::*;
 use crate::timings::*;
 use crate::viewport::*;
 use crate::window_mode::*;
@@ -49,7 +55,6 @@ use arrayvec::ArrayVec;
 use cgmath::*;
 use convert::*;
 use derive::EnumNext;
-use gl_typed as gl;
 use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
@@ -113,22 +118,16 @@ impl_enum_map! {
 
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
-#[repr(u32)]
-pub enum AttenuationMode {
-    Step = 1,
-    Linear = 2,
-    Physical = 3,
-    Interpolated = 4,
-    Reduced = 5,
-    Smooth = 6,
-}
-
 pub struct World {
     pub tick: u64,
+    pub global: ic::Global,
     pub clear_color: [f32; 3],
     pub window_mode: WindowMode,
-    pub attenuation_mode: AttenuationMode,
+    pub render_technique: ic::Leaf<RenderTechnique>,
+    pub render_technique_regex: Regex,
+    pub attenuation_mode: ic::Leaf<AttenuationMode>,
+    pub attenuation_mode_regex: Regex,
+    pub sources: Vec<ShaderSource>,
     pub target_camera_key: CameraKey,
     pub transition_camera: camera::TransitionCamera,
     pub cameras: CameraMap<camera::SmoothCamera>,
@@ -475,27 +474,11 @@ pub fn read_configuration(configuration_path: &std::path::Path) -> configuration
 }
 
 fn main() {
+    env_logger::init();
+
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
     let configuration_path = resource_dir.join(configuration::FILE_PATH);
-    let shadow_renderer_vs_path = resource_dir.join("shadow_renderer.vert");
-    let shadow_renderer_fs_path = resource_dir.join("shadow_renderer.frag");
-    let vsm_filter_vs_path = resource_dir.join("vsm_filter.vert");
-    let vsm_filter_fs_path = resource_dir.join("vsm_filter.frag");
-    let ao_filter_vs_path = resource_dir.join("ao_filter.vert");
-    let ao_filter_fs_path = resource_dir.join("ao_filter.frag");
-    let basic_renderer_vs_path = resource_dir.join("basic_renderer.vert");
-    let basic_renderer_fs_path = resource_dir.join("basic_renderer.frag");
-    let cluster_renderer_vs_path = resource_dir.join("cluster_renderer.vert");
-    let cluster_renderer_fs_path = resource_dir.join("cluster_renderer.frag");
-    let ao_renderer_vs_path = resource_dir.join("ao_renderer.vert");
-    let ao_renderer_fs_path = resource_dir.join("ao_renderer.frag");
-    let post_renderer_vs_path = resource_dir.join("post_renderer.vert");
-    let post_renderer_fs_path = resource_dir.join("post_renderer.frag");
-    let overlay_renderer_vs_path = resource_dir.join("overlay_renderer.vert");
-    let overlay_renderer_fs_path = resource_dir.join("overlay_renderer.frag");
-    let line_renderer_vs_path = resource_dir.join("line_renderer.vert");
-    let line_renderer_fs_path = resource_dir.join("line_renderer.frag");
 
     let (tx_fs, rx_fs) = mpsc::channel();
 
@@ -541,11 +524,17 @@ fn main() {
             }
         }
 
+        let mut global = ic::Global::new();
+
         World {
             tick: 0,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
-            attenuation_mode: AttenuationMode::Interpolated,
+            render_technique: ic::Leaf::clean(&mut global, RenderTechnique::Clustered),
+            render_technique_regex: RenderTechnique::regex(),
+            attenuation_mode: ic::Leaf::clean(&mut global, AttenuationMode::Interpolated),
+            attenuation_mode_regex: AttenuationMode::regex(),
+            sources: vec![],
             target_camera_key: CameraKey::Main,
             transition_camera: camera::TransitionCamera {
                 start_camera: cameras.main,
@@ -563,6 +552,7 @@ fn main() {
             sun_pos: Vector3::new(0.0, 0.0, 0.0),
             sun_rot: Deg(85.2).into(),
             keyboard_model: keyboard_model::KeyboardModel::new(),
+            global,
         }
     };
 
@@ -648,131 +638,20 @@ fn main() {
             .wrap_t(gl::REPEAT.into()),
     );
 
-    let mut shadow_renderer = {
-        let mut shadow_renderer = shadow_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&shadow_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&shadow_renderer_fs_path).unwrap();
-        shadow_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        shadow_renderer
+    let mut add_source = |path| {
+        let index = world.sources.len();
+        world.sources.push(ShaderSource {
+            path: resource_dir.join(path),
+            modified: ic::Modified::clean(&world.global),
+        });
+        index
     };
 
-    let mut vsm_filter = {
-        let mut vsm_filter = vsm_filter::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&vsm_filter_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&vsm_filter_fs_path).unwrap();
-        vsm_filter.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        vsm_filter
-    };
-
-    let mut ao_filter = {
-        let mut ao_filter = ao_filter::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&ao_filter_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&ao_filter_fs_path).unwrap();
-        ao_filter.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        ao_filter
-    };
-
-    let mut basic_renderer = {
-        let mut basic_renderer = basic_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&basic_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&basic_renderer_fs_path).unwrap();
-        basic_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        basic_renderer
-    };
-
-    let mut cluster_renderer = {
-        let mut cluster_renderer = cluster_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&cluster_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&cluster_renderer_fs_path).unwrap();
-        cluster_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        cluster_renderer
-    };
-
-    let mut ao_renderer = {
-        let mut ao_renderer = ao_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&ao_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&ao_renderer_fs_path).unwrap();
-        ao_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        ao_renderer
-    };
-
-    let mut post_renderer = {
-        let mut post_renderer = post_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&post_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&post_renderer_fs_path).unwrap();
-        post_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        post_renderer
-    };
-
-    let mut overlay_renderer = {
-        let mut overlay_renderer = overlay_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&overlay_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&overlay_renderer_fs_path).unwrap();
-        overlay_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        overlay_renderer
-    };
-
-    let mut line_renderer = {
-        let mut line_renderer = line_renderer::Renderer::new(&gl);
-        let vs_bytes = std::fs::read(&line_renderer_vs_path).unwrap();
-        let fs_bytes = std::fs::read(&line_renderer_fs_path).unwrap();
-        line_renderer.update(
-            &gl,
-            &rendering::VSFSProgramUpdate {
-                vertex_shader: Some(vs_bytes),
-                fragment_shader: Some(fs_bytes),
-            },
-        );
-        line_renderer
-    };
+    let mut shadow_renderer = shadow_renderer::Renderer::new(
+        &gl,
+        vec![add_source("shadow_renderer.vert")],
+        vec![add_source("shadow_renderer.frag")],
+    );
 
     let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
 
@@ -784,7 +663,7 @@ fn main() {
             shininess: mat.shininess,
         })
         .collect();
-    println!("material_datas len {}", material_datas.len());
+
     material_resources.write_all(&gl, &material_datas);
     drop(material_datas);
 
@@ -832,78 +711,20 @@ fn main() {
         // File watch events.
         {
             let mut configuration_update = false;
-            let mut shadow_renderer_update = rendering::VSFSProgramUpdate::default();
-            let mut vsm_filter_update = rendering::VSFSProgramUpdate::default();
-            let mut ao_filter_update = rendering::VSFSProgramUpdate::default();
-            let mut basic_renderer_update = rendering::VSFSProgramUpdate::default();
-            let mut cluster_renderer_update = rendering::VSFSProgramUpdate::default();
-            let mut ao_renderer_update = rendering::VSFSProgramUpdate::default();
-            let mut post_renderer_update = rendering::VSFSProgramUpdate::default();
-            let mut overlay_renderer_update = rendering::VSFSProgramUpdate::default();
-            let mut line_renderer_update = rendering::VSFSProgramUpdate::default();
 
             for event in rx_fs.try_iter() {
-                if let Some(ref path) = event.path {
+                let notify::RawEvent { path, .. } = event;
+                if let Some(path) = path {
                     // println!("Detected file change in {:?}", path.display());
-                    match path {
-                        path if path == &configuration_path => {
-                            configuration_update = true;
+                    // let rel_path = path.strip_prefix(&resource_dir);
+                    for source in world.sources.iter_mut() {
+                        if source.path == path {
+                            world.global.mark(&mut source.modified);
                         }
-                        path if path == &shadow_renderer_vs_path => {
-                            shadow_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &shadow_renderer_fs_path => {
-                            shadow_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &vsm_filter_vs_path => {
-                            vsm_filter_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &vsm_filter_fs_path => {
-                            vsm_filter_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &ao_filter_vs_path => {
-                            ao_filter_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &ao_filter_fs_path => {
-                            ao_filter_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &basic_renderer_vs_path => {
-                            basic_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &basic_renderer_fs_path => {
-                            basic_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &cluster_renderer_vs_path => {
-                            cluster_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &cluster_renderer_fs_path => {
-                            cluster_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &ao_renderer_vs_path => {
-                            ao_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &ao_renderer_fs_path => {
-                            ao_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &post_renderer_vs_path => {
-                            post_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &post_renderer_fs_path => {
-                            post_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &overlay_renderer_vs_path => {
-                            overlay_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &overlay_renderer_fs_path => {
-                            overlay_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &line_renderer_vs_path => {
-                            line_renderer_update.vertex_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        path if path == &line_renderer_fs_path => {
-                            line_renderer_update.fragment_shader = Some(std::fs::read(&path).unwrap());
-                        }
-                        _ => {}
+                    }
+
+                    if &path == &configuration_path {
+                        configuration_update = true;
                     }
                 }
             }
@@ -932,16 +753,6 @@ fn main() {
                     }
                 }
             }
-
-            shadow_renderer.update(&gl, &shadow_renderer_update);
-            vsm_filter.update(&gl, &vsm_filter_update);
-            ao_filter.update(&gl, &ao_filter_update);
-            basic_renderer.update(&gl, &basic_renderer_update);
-            cluster_renderer.update(&gl, &cluster_renderer_update);
-            ao_renderer.update(&gl, &ao_renderer_update);
-            post_renderer.update(&gl, &post_renderer_update);
-            overlay_renderer.update(&gl, &overlay_renderer_update);
-            line_renderer.update(&gl, &line_renderer_update);
         }
 
         timing_transition!(timings, execute_file_updates, wait_for_pose);
@@ -951,7 +762,7 @@ fn main() {
         // done to render the most up-to-date application state as possible.
         struct Mono0 {}
 
-        struct Eyes0 {
+        pub struct Eyes0 {
             tangents: [f32; 4],
             // Input
             pos_from_cam_to_hmd: Matrix4<f64>,
@@ -1003,7 +814,7 @@ fn main() {
         let mut should_export_state = false;
         let mut new_target_camera_key = world.target_camera_key;
         let mut new_window_mode = world.window_mode;
-        let mut new_attenuation_mode = world.attenuation_mode;
+        let mut new_attenuation_mode = world.attenuation_mode.value;
 
         events_loop.poll_events(|event| {
             use glutin::Event;
@@ -1100,7 +911,7 @@ fn main() {
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
         world.window_mode = new_window_mode;
-        world.attenuation_mode = new_attenuation_mode;
+        world.attenuation_mode.replace(&mut world.global, new_attenuation_mode);
 
         for key in CameraKey::iter() {
             let is_target = world.target_camera_key == key;
@@ -1200,7 +1011,6 @@ fn main() {
                 light_pos_from_clp_to_wld: light_pos_from_wld_to_clp.invert().unwrap(),
 
                 time: world.tick as f64 / DESIRED_UPS,
-                attenuation_mode: world.attenuation_mode as u32,
             }
         };
 
@@ -1334,7 +1144,6 @@ fn main() {
                     pos_from_hmd_to_wld,
 
                     pos_from_clp_to_hmd,
-
                 }
             }
         }
@@ -1481,21 +1290,22 @@ fn main() {
                 viewport: shadow_viewport,
                 framebuffer: view_ind_res.shadow_framebuffer_name.into(),
             },
+            &mut world,
             &resources,
         );
 
         // View independent.
-        vsm_filter.render(
-            &gl,
-            &vsm_filter::Parameters {
-                viewport: shadow_viewport,
-                framebuffer_x: view_ind_res.shadow_2_framebuffer_name.into(),
-                framebuffer_xy: view_ind_res.shadow_framebuffer_name.into(),
-                color: view_ind_res.shadow_texture.name(),
-                color_x: view_ind_res.shadow_2_texture.name(),
-            },
-            &resources,
-        );
+        // vsm_filter.render(
+        //     &gl,
+        //     &vsm_filter::Parameters {
+        //         viewport: shadow_viewport,
+        //         framebuffer_x: view_ind_res.shadow_2_framebuffer_name.into(),
+        //         framebuffer_xy: view_ind_res.shadow_framebuffer_name.into(),
+        //         color: view_ind_res.shadow_texture.name(),
+        //         color_x: view_ind_res.shadow_2_texture.name(),
+        //     },
+        //     &resources,
+        // );
 
         let compute_and_upload_light_positions = |view_dep_res: &ViewDependentResources, pos_from_wld_to_cam| unsafe {
             let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
@@ -1532,101 +1342,104 @@ fn main() {
         let render_main = |viewport: Viewport<i32>,
                            view_ind_res: &ViewIndependentResources,
                            view_dep_res: &ViewDependentResources| {
-            basic_renderer.render(
-                &gl,
-                &basic_renderer::Parameters {
-                    viewport,
-                    framebuffer: view_dep_res.main_framebuffer_name.into(),
-                    material_resources,
-                    shadow_texture_name: view_ind_res.shadow_texture.name(),
-                    shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                },
-                &world,
-                &resources,
-            );
+            // basic_renderer.render(
+            //     &gl,
+            //     &basic_renderer::Parameters {
+            //         viewport,
+            //         framebuffer: view_dep_res.main_framebuffer_name.into(),
+            //         material_resources,
+            //         shadow_texture_name: view_ind_res.shadow_texture.name(),
+            //         shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
+            //     },
+            //     &world,
+            //     &resources,
+            // );
 
-            line_renderer.render(
-                &gl,
-                &line_renderer::Parameters {
-                    viewport,
-                    framebuffer: view_dep_res.main_framebuffer_name.into(),
-                    vertices: &sun_frustrum_vertices[..],
-                    indices: &sun_frustrum_indices[..],
-                    pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
-                },
-            );
+            // line_renderer.render(
+            //     &gl,
+            //     &line_renderer::Parameters {
+            //         viewport,
+            //         framebuffer: view_dep_res.main_framebuffer_name.into(),
+            //         vertices: &sun_frustrum_vertices[..],
+            //         indices: &sun_frustrum_indices[..],
+            //         pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
+            //     },
+            // );
         };
 
         let render_end = |viewport: Viewport<i32>, view_dep_res: &ViewDependentResources| {
-            ao_renderer.render(
-                &gl,
-                &ao_renderer::Parameters {
-                    viewport,
-                    framebuffer: view_dep_res.ao_framebuffer_name.into(),
-                    color_texture_name: view_dep_res.main_color_texture.name(),
-                    depth_texture_name: view_dep_res.main_depth_texture.name(),
-                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-                    random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-                },
-                &world,
-                &resources,
-            );
+            // ao_renderer.render(
+            //     &gl,
+            //     &ao_renderer::Parameters {
+            //         viewport,
+            //         framebuffer: view_dep_res.ao_framebuffer_name.into(),
+            //         color_texture_name: view_dep_res.main_color_texture.name(),
+            //         depth_texture_name: view_dep_res.main_depth_texture.name(),
+            //         nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+            //         random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
+            //     },
+            //     &world,
+            //     &resources,
+            // );
 
-            ao_filter.render(
-                &gl,
-                &ao_filter::Parameters {
-                    viewport,
-                    framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
-                    framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
-                    color: view_dep_res.ao_texture.name(),
-                    color_x: view_dep_res.ao_x_texture.name(),
-                    depth: view_dep_res.main_depth_texture.name(),
-                },
-                &resources,
-            );
+            // ao_filter.render(
+            //     &gl,
+            //     &ao_filter::Parameters {
+            //         viewport,
+            //         framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
+            //         framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
+            //         color: view_dep_res.ao_texture.name(),
+            //         color_x: view_dep_res.ao_x_texture.name(),
+            //         depth: view_dep_res.main_depth_texture.name(),
+            //     },
+            //     &resources,
+            // );
 
-            post_renderer.render(
-                &gl,
-                &post_renderer::Parameters {
-                    viewport,
-                    framebuffer: gl::FramebufferName::Default,
-                    color_texture_name: view_dep_res.main_color_texture.name(),
-                    depth_texture_name: view_dep_res.main_depth_texture.name(),
-                    nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-                    ao_texture_name: view_dep_res.ao_texture.name(),
-                },
-                &world,
-                &resources,
-            );
+            // post_renderer.render(
+            //     &gl,
+            //     &post_renderer::Parameters {
+            //         viewport,
+            //         framebuffer: gl::FramebufferName::Default,
+            //         color_texture_name: view_dep_res.main_color_texture.name(),
+            //         depth_texture_name: view_dep_res.main_depth_texture.name(),
+            //         nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+            //         ao_texture_name: view_dep_res.ao_texture.name(),
+            //     },
+            //     &world,
+            //     &resources,
+            // );
         };
 
         let render_debug =
             |viewport: Viewport<i32>, framebuffer: gl::FramebufferName, cls_view_data_ext: &ViewDataExt| {
-                cluster_renderer.render(
-                    &gl,
-                    &cluster_renderer::Parameters {
-                        viewport,
-                        framebuffer,
-                        cls_buffer: &cls_buffer,
-                        configuration: &configuration.clustered_light_shading,
-                    },
-                    &world,
-                    &resources,
-                );
+                // cluster_renderer.render(
+                //     &gl,
+                //     &cluster_renderer::Parameters {
+                //         viewport,
+                //         framebuffer,
+                //         cls_buffer: &cls_buffer,
+                //         configuration: &configuration.clustered_light_shading,
+                //     },
+                //     &world,
+                //     &resources,
+                // );
 
-                let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-                let vertices: Vec<[f32; 3]> = corners_in_clp.iter().map(|point| point.cast().unwrap().into()).collect();
+                // let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                // let vertices: Vec<[f32; 3]> = corners_in_clp
+                //     .iter()
+                //     .map(|point| point.cast().unwrap().into())
+                //     .collect();
 
-                line_renderer.render(
-                    &gl,
-                    &line_renderer::Parameters {
-                        viewport,
-                        framebuffer,
-                        vertices: &vertices[..],
-                        indices: &sun_frustrum_indices[..],
-                        pos_from_obj_to_wld: &cls_view_data_ext.view_data.pos_from_clp_to_wld.cast().unwrap()
-                    },
-                );
+                // line_renderer.render(
+                //     &gl,
+                //     &line_renderer::Parameters {
+                //         viewport,
+                //         framebuffer,
+                //         vertices: &vertices[..],
+                //         indices: &sun_frustrum_indices[..],
+                //         pos_from_obj_to_wld: &cls_view_data_ext.view_data.pos_from_clp_to_wld.cast().unwrap(),
+                //     },
+                // );
             };
 
         if let Some(vr_context) = &vr_context {
@@ -1708,7 +1521,11 @@ fn main() {
 
         if let Some((index, debug_view_data)) = maybe_debug {
             view_resources.bind_index(&gl, index);
-            render_debug(debug_view_data.viewport, view_dep_res.main_framebuffer_name.into(), &cls_view_data_ext);
+            render_debug(
+                debug_view_data.viewport,
+                view_dep_res.main_framebuffer_name.into(),
+                &cls_view_data_ext,
+            );
         }
 
         render_end(full_viewport, view_dep_res);
