@@ -9,16 +9,18 @@ pub(crate) use gl_typed as gl;
 pub(crate) use incremental as ic;
 pub(crate) use log::*;
 pub(crate) use regex::{Regex, RegexBuilder};
+#[allow(unused_imports)]
+pub(crate) use std::convert::{TryFrom, TryInto};
 
 // mod ao_filter;
 // mod ao_renderer;
-// mod basic_renderer;
+mod basic_renderer;
 mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
 mod cls;
-// mod cluster_renderer;
+mod cluster_renderer;
 mod configuration;
 mod convert;
 mod filters;
@@ -28,15 +30,15 @@ mod glutin_ext;
 mod keyboard;
 mod keyboard_model;
 mod light;
-// mod line_renderer;
+mod line_renderer;
 mod mono_stereo;
-// mod overlay_renderer;
-// mod post_renderer;
+mod overlay_renderer;
+mod post_renderer;
 mod random_unit_sphere_dense;
 mod random_unit_sphere_surface;
 mod rendering;
 mod resources;
-mod shadow_renderer;
+// mod shadow_renderer;
 mod timings;
 mod viewport;
 // mod vsm_filter;
@@ -145,6 +147,15 @@ impl World {
 
     fn target_camera_mut(&mut self) -> &mut camera::SmoothCamera {
         &mut self.cameras[self.target_camera_key]
+    }
+
+    fn add_source(&mut self, path: impl AsRef<Path>) -> usize {
+        let index = self.sources.len();
+        self.sources.push(ShaderSource {
+            path: self.resource_dir.join(path),
+            modified: ic::Modified::clean(&self.global),
+        });
+        index
     }
 }
 
@@ -642,20 +653,11 @@ fn main() {
             .wrap_t(gl::REPEAT.into()),
     );
 
-    let mut add_source = |path| {
-        let index = world.sources.len();
-        world.sources.push(ShaderSource {
-            path: world.resource_dir.join(path),
-            modified: ic::Modified::clean(&world.global),
-        });
-        index
-    };
-
-    let mut shadow_renderer = shadow_renderer::Renderer::new(
-        &gl,
-        vec![add_source("shadow_renderer.vert")],
-        vec![add_source("shadow_renderer.frag")],
-    );
+    let mut line_renderer = line_renderer::Renderer::new(&gl, &mut world);
+    let mut basic_renderer = basic_renderer::Renderer::new(&gl, &mut world);
+    let mut overlay_renderer = overlay_renderer::Renderer::new(&gl, &mut world);
+    let mut post_renderer = post_renderer::Renderer::new(&gl, &mut world);
+    let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
@@ -719,7 +721,10 @@ fn main() {
             for event in rx_fs.try_iter() {
                 match event {
                     notify::DebouncedEvent::NoticeWrite(path) => {
-                        info!("Noticed write to file {:?}", path.strip_prefix(&world.resource_dir).unwrap().display());
+                        info!(
+                            "Noticed write to file {:?}",
+                            path.strip_prefix(&world.resource_dir).unwrap().display()
+                        );
                         for source in world.sources.iter_mut() {
                             if source.path == path {
                                 world.global.mark(&mut source.modified);
@@ -1288,18 +1293,18 @@ fn main() {
         view_ind_res.global_resources.write(&gl, &global_data);
         view_ind_res.cls_resources.write(&gl, &cls_buffer);
 
-        let shadow_viewport = Viewport::from_dimensions(Vector2::new(SHADOW_W, SHADOW_H));
+        // let shadow_viewport = Viewport::from_dimensions(Vector2::new(SHADOW_W, SHADOW_H));
 
         // View independent.
-        shadow_renderer.render(
-            &gl,
-            &shadow_renderer::Parameters {
-                viewport: shadow_viewport,
-                framebuffer: view_ind_res.shadow_framebuffer_name.into(),
-            },
-            &mut world,
-            &resources,
-        );
+        // shadow_renderer.render(
+        //     &gl,
+        //     &shadow_renderer::Parameters {
+        //         viewport: shadow_viewport,
+        //         framebuffer: view_ind_res.shadow_framebuffer_name.into(),
+        //     },
+        //     &mut world,
+        //     &resources,
+        // );
 
         // View independent.
         // vsm_filter.render(
@@ -1333,121 +1338,6 @@ fn main() {
                 view_dep_res.lighting_buffer_name,
             );
         };
-
-        fn render_start(gl: &gl::Gl, framebuffer: gl::FramebufferName, world: &World) {
-            unsafe {
-                gl.bind_framebuffer(gl::FRAMEBUFFER, framebuffer);
-
-                gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
-
-                // Reverse-Z projection.
-                gl.clear_depth(0.0);
-                gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
-            }
-        };
-
-        let render_main = |viewport: Viewport<i32>,
-                           view_ind_res: &ViewIndependentResources,
-                           view_dep_res: &ViewDependentResources| {
-            // basic_renderer.render(
-            //     &gl,
-            //     &basic_renderer::Parameters {
-            //         viewport,
-            //         framebuffer: view_dep_res.main_framebuffer_name.into(),
-            //         material_resources,
-            //         shadow_texture_name: view_ind_res.shadow_texture.name(),
-            //         shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-            //     },
-            //     &world,
-            //     &resources,
-            // );
-
-            // line_renderer.render(
-            //     &gl,
-            //     &line_renderer::Parameters {
-            //         viewport,
-            //         framebuffer: view_dep_res.main_framebuffer_name.into(),
-            //         vertices: &sun_frustrum_vertices[..],
-            //         indices: &sun_frustrum_indices[..],
-            //         pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
-            //     },
-            // );
-        };
-
-        let render_end = |viewport: Viewport<i32>, view_dep_res: &ViewDependentResources| {
-            // ao_renderer.render(
-            //     &gl,
-            //     &ao_renderer::Parameters {
-            //         viewport,
-            //         framebuffer: view_dep_res.ao_framebuffer_name.into(),
-            //         color_texture_name: view_dep_res.main_color_texture.name(),
-            //         depth_texture_name: view_dep_res.main_depth_texture.name(),
-            //         nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-            //         random_unit_sphere_surface_texture_name: random_unit_sphere_surface_texture.name(),
-            //     },
-            //     &world,
-            //     &resources,
-            // );
-
-            // ao_filter.render(
-            //     &gl,
-            //     &ao_filter::Parameters {
-            //         viewport,
-            //         framebuffer_x: view_dep_res.ao_x_framebuffer_name.into(),
-            //         framebuffer_xy: view_dep_res.ao_framebuffer_name.into(),
-            //         color: view_dep_res.ao_texture.name(),
-            //         color_x: view_dep_res.ao_x_texture.name(),
-            //         depth: view_dep_res.main_depth_texture.name(),
-            //     },
-            //     &resources,
-            // );
-
-            // post_renderer.render(
-            //     &gl,
-            //     &post_renderer::Parameters {
-            //         viewport,
-            //         framebuffer: gl::FramebufferName::Default,
-            //         color_texture_name: view_dep_res.main_color_texture.name(),
-            //         depth_texture_name: view_dep_res.main_depth_texture.name(),
-            //         nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
-            //         ao_texture_name: view_dep_res.ao_texture.name(),
-            //     },
-            //     &world,
-            //     &resources,
-            // );
-        };
-
-        let render_debug =
-            |viewport: Viewport<i32>, framebuffer: gl::FramebufferName, cls_view_data_ext: &ViewDataExt| {
-                // cluster_renderer.render(
-                //     &gl,
-                //     &cluster_renderer::Parameters {
-                //         viewport,
-                //         framebuffer,
-                //         cls_buffer: &cls_buffer,
-                //         configuration: &configuration.clustered_light_shading,
-                //     },
-                //     &world,
-                //     &resources,
-                // );
-
-                // let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-                // let vertices: Vec<[f32; 3]> = corners_in_clp
-                //     .iter()
-                //     .map(|point| point.cast().unwrap().into())
-                //     .collect();
-
-                // line_renderer.render(
-                //     &gl,
-                //     &line_renderer::Parameters {
-                //         viewport,
-                //         framebuffer,
-                //         vertices: &vertices[..],
-                //         indices: &sun_frustrum_indices[..],
-                //         pos_from_obj_to_wld: &cls_view_data_ext.view_data.pos_from_clp_to_wld.cast().unwrap(),
-                //     },
-                // );
-            };
 
         if let Some(vr_context) = &vr_context {
             // FIXME
@@ -1500,7 +1390,15 @@ fn main() {
         // MONOSCOPIC RENDERING USES SINGLE VIEW DEP
         let view_dep_res = &view_dep_res[0];
 
-        render_start(&gl, view_dep_res.main_framebuffer_name.into(), &world);
+        unsafe {
+            gl.bind_framebuffer(gl::FRAMEBUFFER, view_dep_res.main_framebuffer_name);
+
+            gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
+
+            // Reverse-Z projection.
+            gl.clear_depth(0.0);
+            gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
+        }
 
         let (maybe_main, maybe_debug) = match mode_data {
             WindowModeBox::Main(view_data_ext) => {
@@ -1523,19 +1421,83 @@ fn main() {
         if let Some((index, main_view_data)) = maybe_main {
             view_resources.bind_index(&gl, index);
             compute_and_upload_light_positions(&view_dep_res, main_view_data.view_data.pos_from_wld_to_cam);
-            render_main(main_view_data.viewport, &view_ind_res, &view_dep_res);
+            let viewport = main_view_data.viewport;
+
+            basic_renderer.render(
+                &gl,
+                &basic_renderer::Parameters {
+                    viewport,
+                    framebuffer: view_dep_res.main_framebuffer_name.into(),
+                    material_resources,
+                    shadow_texture_name: view_ind_res.shadow_texture.name(),
+                    shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
+                },
+                &mut world,
+                &resources,
+            );
+
+            line_renderer.render(
+                &gl,
+                &line_renderer::Parameters {
+                    viewport,
+                    framebuffer: view_dep_res.main_framebuffer_name.into(),
+                    vertices: &sun_frustrum_vertices[..],
+                    indices: &sun_frustrum_indices[..],
+                    pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
+                },
+                &mut world,
+            );
+
         }
 
         if let Some((index, debug_view_data)) = maybe_debug {
             view_resources.bind_index(&gl, index);
-            render_debug(
-                debug_view_data.viewport,
-                view_dep_res.main_framebuffer_name.into(),
-                &cls_view_data_ext,
+            let viewport = debug_view_data.viewport;
+            let framebuffer = view_dep_res.main_framebuffer_name.into();
+            cluster_renderer.render(
+                &gl,
+                &cluster_renderer::Parameters {
+                    viewport,
+                    framebuffer,
+                    cls_buffer: &cls_buffer,
+                    configuration: &configuration.clustered_light_shading,
+                },
+                &mut world,
+                &resources,
+            );
+
+            let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+            let vertices: Vec<[f32; 3]> = corners_in_clp
+                .iter()
+                .map(|point| point.cast().unwrap().into())
+                .collect();
+
+            line_renderer.render(
+                &gl,
+                &line_renderer::Parameters {
+                    viewport,
+                    framebuffer,
+                    vertices: &vertices[..],
+                    indices: &sun_frustrum_indices[..],
+                    pos_from_obj_to_wld: &cls_view_data_ext.view_data.pos_from_clp_to_wld.cast().unwrap(),
+                },
+                &mut world,
             );
         }
 
-        render_end(full_viewport, view_dep_res);
+        post_renderer.render(
+            &gl,
+            &post_renderer::Parameters {
+                viewport: full_viewport,
+                framebuffer: gl::FramebufferName::Default,
+                color_texture_name: view_dep_res.main_color_texture.name(),
+                depth_texture_name: view_dep_res.main_depth_texture.name(),
+                nor_in_cam_texture_name: view_dep_res.main_nor_in_cam_texture.name(),
+                ao_texture_name: view_dep_res.ao_texture.name(),
+            },
+            &mut world,
+            &resources,
+        );
 
         timing_transition!(timings, render, swap_buffers);
 

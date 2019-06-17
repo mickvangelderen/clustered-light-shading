@@ -87,13 +87,6 @@ pub struct GlobalData {
 }
 
 pub const GLOBAL_DATA_DECLARATION: &'static str = r"
-#define ATTENUATION_MODE_STEP 1
-#define ATTENUATION_MODE_LINEAR 2
-#define ATTENUATION_MODE_PHYSICAL 3
-#define ATTENUATION_MODE_INTERPOLATED 4
-#define ATTENUATION_MODE_REDUCED 5
-#define ATTENUATION_MODE_SMOOTH 6
-
 layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 light_pos_from_wld_to_cam;
     mat4 light_pos_from_cam_to_wld;
@@ -367,6 +360,7 @@ impl CLSResources {
     }
 }
 
+#[derive(Debug)]
 pub struct ShaderSource {
     pub path: PathBuf,
     pub modified: ic::Modified,
@@ -479,7 +473,7 @@ impl Shader {
                 let sources: Vec<[String; 2]> = self
                     .source_indices
                     .iter()
-                    .map(|&i| [format!("#line {} 0\n", i), world.sources[i].read()])
+                    .map(|&i| [format!("#line 1 {}\n", i + 1), world.sources[i].read()])
                     .collect();
 
                 self.render_technique = sources
@@ -528,9 +522,14 @@ impl Shader {
                     let log = self.name.log(gl);
 
                     let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-                        let source_index: usize = captures[0].parse().unwrap();
-                        let path = world.sources[source_index].path.strip_prefix(&world.resource_dir).unwrap();
-                        path.display().to_string()
+                        let i: usize = captures[0].parse().unwrap();
+                        if i > 0 {
+                            let i = i - 1;
+                            let path = world.sources[i].path.strip_prefix(&world.resource_dir).unwrap();
+                            path.display().to_string()
+                        } else {
+                            "<generated header>".to_string()
+                        }
                     });
 
                     error!("Compile error:\n{}", log);

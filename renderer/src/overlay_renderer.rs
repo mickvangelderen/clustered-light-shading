@@ -1,10 +1,8 @@
-use crate::rendering;
-use crate::resources::*;
-use gl_typed as gl;
-use std::convert::TryFrom;
+use crate::*;
+use crate::resources;
 
 pub struct Renderer {
-    pub program: rendering::VSFSProgram,
+    pub program: rendering::Program,
     pub color_sampler_loc: gl::OptionUniformLocation,
     pub default_colors_loc: gl::OptionUniformLocation,
     pub color_matrix_loc: gl::OptionUniformLocation,
@@ -22,7 +20,7 @@ pub struct Parameters {
 }
 
 impl Renderer {
-    pub fn render(&self, gl: &gl::Gl, params: &Parameters, resources: &Resources) {
+    pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
         unsafe {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -31,61 +29,57 @@ impl Renderer {
             gl.viewport(params.x0, params.y0, params.x1 - params.x0, params.y1 - params.y0);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
 
-            gl.use_program(self.program.name);
+            self.update(gl, world);
+            if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
+                gl.use_program(*program_name);
 
-            if let Some(loc) = self.color_sampler_loc.into() {
-                gl.uniform_1i(loc, 0);
-                gl.bind_texture_unit(0, params.color_texture_name);
-            };
+                if let Some(loc) = self.color_sampler_loc.into() {
+                    gl.uniform_1i(loc, 0);
+                    gl.bind_texture_unit(0, params.color_texture_name);
+                };
 
-            if let Some(loc) = self.default_colors_loc.into() {
-                gl.uniform_4f(loc, params.default_colors);
-            };
+                if let Some(loc) = self.default_colors_loc.into() {
+                    gl.uniform_4f(loc, params.default_colors);
+                };
 
-            if let Some(loc) = self.color_matrix_loc.into() {
-                gl.uniform_matrix4f(loc, gl::MajorAxis::Row, &params.color_matrix);
-            };
+                if let Some(loc) = self.color_matrix_loc.into() {
+                    gl.uniform_matrix4f(loc, gl::MajorAxis::Row, &params.color_matrix);
+                };
 
-            gl.bind_vertex_array(resources.full_screen_vao);
-            gl.draw_elements(
-                gl::TRIANGLES,
-                u32::try_from(FULL_SCREEN_INDICES.len() * 3).unwrap(),
-                gl::UNSIGNED_INT,
-                0,
-            );
-            gl.unbind_vertex_array();
-            gl.unuse_program();
+                gl.bind_vertex_array(resources.full_screen_vao);
+                gl.draw_elements(
+                    gl::TRIANGLES,
+                    u32::try_from(resources::FULL_SCREEN_INDICES.len() * 3).unwrap(),
+                    gl::UNSIGNED_INT,
+                    0,
+                );
+                gl.unbind_vertex_array();
+                gl.unuse_program();
+            }
             gl.depth_mask(gl::WriteMask::Enabled);
         }
     }
 
-    pub fn update(&mut self, gl: &gl::Gl, update: &rendering::VSFSProgramUpdate) {
-        unsafe {
-            if self.program.update(gl, update) {
-                gl.use_program(self.program.name);
-
-                macro_rules! get_uniform_location {
-                    ($gl: ident, $program: expr, $s: expr) => {{
-                        let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
-                        if loc.is_none() {
-                            eprintln!("{}: Could not get uniform location {:?}.", file!(), $s);
-                        }
-                        loc
-                    }};
+    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
+        let modified = self.program.modified();
+        if modified < self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+                unsafe {
+                    self.color_sampler_loc = get_uniform_location!(gl, *name, "color_sampler");
+                    self.default_colors_loc = get_uniform_location!(gl, *name, "default_colors");
+                    self.color_matrix_loc = get_uniform_location!(gl, *name, "color_matrix");
                 }
-
-                self.color_sampler_loc = get_uniform_location!(gl, self.program.name, "color_sampler");
-                self.default_colors_loc = get_uniform_location!(gl, self.program.name, "default_colors");
-                self.color_matrix_loc = get_uniform_location!(gl, self.program.name, "color_matrix");
-
-                gl.unuse_program();
             }
         }
     }
 
-    pub fn new(gl: &gl::Gl) -> Self {
+    pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::VSFSProgram::new(gl),
+            program: rendering::Program::new(
+                gl,
+                vec![world.add_source("overlay_renderer.vert")],
+                vec![world.add_source("overlay_renderer.frag")],
+            ),
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             default_colors_loc: gl::OptionUniformLocation::NONE,
             color_matrix_loc: gl::OptionUniformLocation::NONE,
