@@ -8,7 +8,7 @@ mod macros;
 pub(crate) use gl_typed as gl;
 pub(crate) use incremental as ic;
 pub(crate) use log::*;
-pub(crate) use regex::Regex;
+pub(crate) use regex::{Regex, RegexBuilder};
 
 // mod ao_filter;
 // mod ao_renderer;
@@ -48,6 +48,7 @@ use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::mono_stereo::*;
 use crate::rendering::*;
+use crate::resources::Resources;
 use crate::timings::*;
 use crate::viewport::*;
 use crate::window_mode::*;
@@ -58,7 +59,6 @@ use derive::EnumNext;
 use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
-use notify::Watcher;
 use openvr as vr;
 use openvr::enums::Enum;
 use std::mem;
@@ -119,6 +119,7 @@ impl_enum_map! {
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
 pub struct World {
+    pub resource_dir: PathBuf,
     pub tick: u64,
     pub global: ic::Global,
     pub clear_color: [f32; 3],
@@ -127,6 +128,7 @@ pub struct World {
     pub render_technique_regex: Regex,
     pub attenuation_mode: ic::Leaf<AttenuationMode>,
     pub attenuation_mode_regex: Regex,
+    pub gl_log_regex: Regex,
     pub sources: Vec<ShaderSource>,
     pub target_camera_key: CameraKey,
     pub transition_camera: camera::TransitionCamera,
@@ -482,9 +484,9 @@ fn main() {
 
     let (tx_fs, rx_fs) = mpsc::channel();
 
-    let mut watcher = notify::raw_watcher(tx_fs).unwrap();
+    let mut watcher = notify::watcher(tx_fs, time::Duration::from_millis(100)).unwrap();
 
-    watcher.watch("resources", notify::RecursiveMode::Recursive).unwrap();
+    notify::Watcher::watch(&mut watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
 
     let mut configuration: configuration::Root = read_configuration(&configuration_path);
 
@@ -527,6 +529,7 @@ fn main() {
         let mut global = ic::Global::new();
 
         World {
+            resource_dir,
             tick: 0,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
@@ -534,6 +537,7 @@ fn main() {
             render_technique_regex: RenderTechnique::regex(),
             attenuation_mode: ic::Leaf::clean(&mut global, AttenuationMode::Interpolated),
             attenuation_mode_regex: AttenuationMode::regex(),
+            gl_log_regex: RegexBuilder::new(r"^\d+").multi_line(true).build().unwrap(),
             sources: vec![],
             target_camera_key: CameraKey::Main,
             transition_camera: camera::TransitionCamera {
@@ -641,7 +645,7 @@ fn main() {
     let mut add_source = |path| {
         let index = world.sources.len();
         world.sources.push(ShaderSource {
-            path: resource_dir.join(path),
+            path: world.resource_dir.join(path),
             modified: ic::Modified::clean(&world.global),
         });
         index
@@ -653,7 +657,7 @@ fn main() {
         vec![add_source("shadow_renderer.frag")],
     );
 
-    let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
+    let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
     let material_resources = rendering::MaterialResources::new(&gl);
     let material_datas: Vec<rendering::MaterialData> = resources
@@ -713,18 +717,21 @@ fn main() {
             let mut configuration_update = false;
 
             for event in rx_fs.try_iter() {
-                let notify::RawEvent { path, .. } = event;
-                if let Some(path) = path {
-                    // println!("Detected file change in {:?}", path.display());
-                    // let rel_path = path.strip_prefix(&resource_dir);
-                    for source in world.sources.iter_mut() {
-                        if source.path == path {
-                            world.global.mark(&mut source.modified);
+                match event {
+                    notify::DebouncedEvent::NoticeWrite(path) => {
+                        info!("Noticed write to file {:?}", path.strip_prefix(&world.resource_dir).unwrap().display());
+                        for source in world.sources.iter_mut() {
+                            if source.path == path {
+                                world.global.mark(&mut source.modified);
+                            }
+                        }
+
+                        if &path == &configuration_path {
+                            configuration_update = true;
                         }
                     }
-
-                    if &path == &configuration_path {
-                        configuration_update = true;
+                    _ => {
+                        // Don't care.
                     }
                 }
             }
@@ -1536,7 +1543,7 @@ fn main() {
 
         timings.swap_buffers.end = time::Instant::now();
 
-        if keyboard_state.p.is_pressed() {
+        if keyboard_state.p.is_pressed() && keyboard_state.lalt.is_pressed() {
             timings.print_deltas();
         }
 

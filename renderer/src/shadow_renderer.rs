@@ -1,8 +1,4 @@
-use crate::rendering;
-use crate::resources::Resources;
 use crate::*;
-use cgmath::*;
-use gl_typed as gl;
 
 pub struct Renderer {
     pub program: rendering::Program,
@@ -60,9 +56,10 @@ impl Renderer {
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
         let modified = self.program.modified();
         if modified < self.program.update(gl, world) {
-            let name = *self.program.name(&world.global).as_ref();
-            unsafe {
-                self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, name, "pos_from_obj_to_wld");
+            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+                unsafe {
+                    self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, *name, "pos_from_obj_to_wld");
+                }
             }
         }
     }
