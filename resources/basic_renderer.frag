@@ -125,25 +125,24 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_attenuation;
 
   if (d_unclipped < R1) {
-    if (attenuation_mode == ATTENUATION_MODE_STEP) {
+#if defined(ATTENUATION_MODE_STEP)
       diffuse_attenuation = I*(1.0/R0 + R0 - 1.0/R1)/R1;
-    } else if (attenuation_mode == ATTENUATION_MODE_LINEAR) {
+#elif defined(ATTENUATION_MODE_LINEAR)
       // Linear doesn't go infinite so we can use the unclipped distance.
       diffuse_attenuation = I - (I/R1) * d_unclipped;
-    } else if (attenuation_mode == ATTENUATION_MODE_PHYSICAL) {
+#elif defined(ATTENUATION_MODE_PHYSICAL)
       diffuse_attenuation = I / d_sq;
-    } else if (attenuation_mode == ATTENUATION_MODE_INTERPOLATED) {
+#elif defined(ATTENUATION_MODE_INTERPOLATED)
       diffuse_attenuation = I / d_sq - (C / R1) * d;
       // diffuse_attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
-    } else if (attenuation_mode == ATTENUATION_MODE_REDUCED) {
+#elif defined(ATTENUATION_MODE_REDUCED)
       diffuse_attenuation = I / d_sq - C;
-    } else if (attenuation_mode == ATTENUATION_MODE_SMOOTH) {
+#elif defined(ATTENUATION_MODE_SMOOTH)
       diffuse_attenuation = I / d_sq - 3.0*C + (2.0*C/R1) * d;
-    } else {
-      // ERROR: Invalid attenuation_mode.
-      diffuse_attenuation = 0.0;
-    }
-    specular_attenuation = I*(1.0 - d_sq/(R1*R1));
+#else
+#error invalid attenuation mode!
+#endif
+      specular_attenuation = I*(1.0 - d_sq/(R1*R1));
   } else {
     diffuse_attenuation = 0.0;
     specular_attenuation = 0.0;
