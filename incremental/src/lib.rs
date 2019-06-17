@@ -24,12 +24,17 @@ impl Global {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct Modified(Revision);
 
 impl Modified {
     pub const NONE: Self = Self(Revision(0));
+
+    #[inline]
+    pub const fn clean(global: &Global) -> Self {
+        Modified(global.0)
+    }
 }
 
 #[derive(Debug)]
@@ -41,27 +46,17 @@ struct Verified(Revision);
 struct Computed(Revision);
 
 pub struct Leaf<T> {
-    modified: Modified,
-    value: T,
+    pub modified: Modified,
+    pub value: T,
 }
 
 impl<T> Leaf<T> {
     #[inline]
     pub fn clean(global: &Global, value: T) -> Self {
         Leaf {
-            modified: Modified(global.0),
+            modified: Modified::clean(global),
             value,
         }
-    }
-
-    #[inline]
-    pub fn modified(&self) -> Modified {
-        Modified(self.modified.0)
-    }
-
-    #[inline]
-    pub fn read(&self) -> &T {
-        &self.value
     }
 }
 

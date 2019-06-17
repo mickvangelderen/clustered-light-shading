@@ -1,8 +1,4 @@
-use crate::convert::*;
-use crate::gl_ext::*;
-use crate::rendering;
-use cgmath::*;
-use gl_typed as gl;
+use crate::*;
 
 // Capabilities.
 
@@ -88,7 +84,6 @@ pub struct GlobalData {
     pub light_pos_from_clp_to_wld: Matrix4<f32>,
 
     pub time: f64,
-    pub attenuation_mode: u32,
 }
 
 pub const GLOBAL_DATA_DECLARATION: &'static str = r"
@@ -110,7 +105,6 @@ layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
     mat4 light_pos_from_clp_to_wld;
 
     double time;
-    uint attenuation_mode;
 };
 ";
 
@@ -250,7 +244,11 @@ impl ViewResources {
             let total_bytes = data.len() * std::mem::size_of::<ViewData>();
             gl.named_buffer_reserve(self.buffer_name, total_bytes, gl::DYNAMIC_DRAW);
             for (index, &item) in data.iter().enumerate() {
-                gl.named_buffer_sub_data(self.buffer_name, index * std::mem::size_of::<ViewData>(), item.value_as_bytes());
+                gl.named_buffer_sub_data(
+                    self.buffer_name,
+                    index * std::mem::size_of::<ViewData>(),
+                    item.value_as_bytes(),
+                );
             }
         }
     }
@@ -369,94 +367,214 @@ impl CLSResources {
     }
 }
 
-pub struct VSFSProgram {
-    pub name: gl::ProgramName,
-    vertex_shader_name: gl::ShaderName,
-    fragment_shader_name: gl::ShaderName,
+pub struct ShaderSource {
+    pub path: PathBuf,
+    pub modified: ic::Modified,
 }
 
-#[derive(Default)]
-pub struct VSFSProgramUpdate {
-    pub vertex_shader: Option<Vec<u8>>,
-    pub fragment_shader: Option<Vec<u8>>,
+impl ShaderSource {
+    pub fn read(&self) -> String {
+        std::fs::read_to_string(&self.path).unwrap()
+    }
 }
 
-impl VSFSProgram {
-    pub fn update(&mut self, gl: &gl::Gl, update: &VSFSProgramUpdate) -> bool {
-        let mut should_link = false;
+#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+#[repr(u32)]
+pub enum RenderTechnique {
+    Naive = 1,
+    Tiled = 2,
+    Clustered = 3,
+}
 
-        if let Some(ref bytes) = update.vertex_shader {
-            self.vertex_shader_name
-                .compile(
-                    gl,
-                    &[
-                        rendering::COMMON_DECLARATION.as_bytes(),
-                        rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
-                        rendering::VIEW_DATA_DECLARATION.as_bytes(),
-                        rendering::CLS_BUFFER_DECLARATION.as_bytes(),
-                        "#line 1 1\n".as_bytes(),
-                        bytes.as_ref(),
-                    ],
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!(
-                        "In vertex shader: {}\nCompilation error:\n{}",
-                        std::str::from_utf8(bytes.as_ref()).unwrap(),
-                        e
-                    )
-                });
-            should_link = true;
-        }
-
-        if let Some(ref bytes) = update.fragment_shader {
-            self.fragment_shader_name
-                .compile(
-                    gl,
-                    &[
-                        rendering::COMMON_DECLARATION.as_bytes(),
-                        rendering::GLOBAL_DATA_DECLARATION.as_bytes(),
-                        rendering::VIEW_DATA_DECLARATION.as_bytes(),
-                        rendering::CLS_BUFFER_DECLARATION.as_bytes(),
-                        rendering::MATERIAL_DATA_DECLARATION.as_bytes(),
-                        "#line 1 1\n".as_bytes(),
-                        bytes.as_ref(),
-                    ],
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!(
-                        "In fragment shader: {}\nCompilation error:\n{}",
-                        std::str::from_utf8(bytes.as_ref()).unwrap(),
-                        e
-                    )
-                });
-            should_link = true;
-        }
-
-        if should_link {
-            self.name.link(gl).map(|_| true).unwrap_or_else(|e| {
-                eprintln!("{} (program):\n{}", file!(), e);
-                false
-            })
-        } else {
-            false
+impl RenderTechnique {
+    pub fn source(self) -> &'static str {
+        match self {
+            RenderTechnique::Naive => "#define RENDERING_TECHNIQUE_NAIVE\n",
+            RenderTechnique::Tiled => "#define RENDERING_TECHNIQUE_TILED\n",
+            RenderTechnique::Clustered => "#define RENDERING_TECHNIQUE_CLUSTERED\n",
         }
     }
 
-    pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            let name = gl.create_program();
+    pub fn regex() -> Regex {
+        Regex::new(r"\bRENDERING_TECHNIQUE_(NAIVE|TILED|CLUSTERED)\b").unwrap()
+    }
+}
 
-            let vertex_shader_name = gl.create_shader(gl::VERTEX_SHADER);
-            gl.attach_shader(name, vertex_shader_name);
+#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+#[repr(u32)]
+pub enum AttenuationMode {
+    Step = 1,
+    Linear = 2,
+    Physical = 3,
+    Interpolated = 4,
+    Reduced = 5,
+    Smooth = 6,
+}
 
-            let fragment_shader_name = gl.create_shader(gl::FRAGMENT_SHADER);
-            gl.attach_shader(name, fragment_shader_name);
+impl AttenuationMode {
+    pub fn source(self) -> &'static str {
+        match self {
+            AttenuationMode::Step => "#define ATTENUATION_MODE_STEP\n",
+            AttenuationMode::Linear => "#define ATTENUATION_MODE_LINEAR\n",
+            AttenuationMode::Physical => "#define ATTENUATION_MODE_PHYSICAL\n",
+            AttenuationMode::Interpolated => "#define ATTENUATION_MODE_INTERPOLATED\n",
+            AttenuationMode::Reduced => "#define ATTENUATION_MODE_REDUCED\n",
+            AttenuationMode::Smooth => "#define ATTENUATION_MODE_SMOOTH\n",
+        }
+    }
 
-            VSFSProgram {
-                name,
-                vertex_shader_name,
-                fragment_shader_name,
+    pub fn regex() -> Regex {
+        Regex::new(r"\bATTENUATION_MODE_(STEP|LINEAR|PHYSICAL|INTERPOLATED|REDUCED|SMOOTH)\b").unwrap()
+    }
+}
+
+pub struct Shader {
+    source_indices: Vec<usize>,
+    render_technique: bool,
+    attenuation_mode: bool,
+    pub branch: ic::Branch,
+    name: ShaderName,
+}
+
+impl Shader {
+    pub fn new(name: ShaderName, source_indices: Vec<usize>) -> Self {
+        Self {
+            source_indices,
+            render_technique: false,
+            attenuation_mode: false,
+            branch: ic::Branch::dirty(),
+            name,
+        }
+    }
+
+    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
+        let global = &world.global;
+        if self.branch.verify(global) {
+            let modified = self
+                .source_indices
+                .iter()
+                .map(|&i| world.sources[i].modified)
+                .chain(
+                    if self.render_technique {
+                        Some(world.render_technique.modified)
+                    } else {
+                        None
+                    }
+                    .iter()
+                    .copied(),
+                )
+                .chain(
+                    if self.attenuation_mode {
+                        Some(world.attenuation_mode.modified)
+                    } else {
+                        None
+                    }
+                    .iter()
+                    .copied(),
+                )
+                .max()
+                .unwrap_or(ic::Modified::NONE);
+
+            if self.branch.recompute(&modified) {
+                let source: String = self.source_indices.iter().map(|&i| world.sources[i].read()).collect();
+
+                self.render_technique = world.render_technique_regex.is_match(&source);
+                self.attenuation_mode = world.attenuation_mode_regex.is_match(&source);
+
+                self.name.compile(
+                    gl,
+                    [
+                        rendering::COMMON_DECLARATION,
+                        rendering::GLOBAL_DATA_DECLARATION,
+                        rendering::VIEW_DATA_DECLARATION,
+                        rendering::CLS_BUFFER_DECLARATION,
+                        rendering::MATERIAL_DATA_DECLARATION,
+                    ]
+                    .iter()
+                    .copied()
+                    .chain(
+                        if self.render_technique {
+                            Some(world.render_technique.value.source())
+                        } else {
+                            None
+                        }
+                        .iter()
+                        .copied(),
+                    )
+                    .chain(
+                        if self.attenuation_mode {
+                            Some(world.attenuation_mode.value.source())
+                        } else {
+                            None
+                        }
+                        .iter()
+                        .copied(),
+                    )
+                    .chain(["#line 1 1\n", &source].iter().copied()),
+                );
+
+                if self.name.is_uncompiled() {
+                    error!("Compile error: {}\nIn:\n{}", self.name.log(gl), &source);
+                }
             }
         }
+
+        self.branch.modified()
+    }
+
+    pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ShaderName {
+        self.branch.panic_if_outdated(global);
+        &self.name
+    }
+}
+
+pub struct Program {
+    vertex: Shader,
+    fragment: Shader,
+    branch: ic::Branch,
+    name: ProgramName,
+}
+
+impl Program {
+    pub fn new(gl: &gl::Gl, vertex_source_indices: Vec<usize>, fragment_source_indices: Vec<usize>) -> Self {
+        let mut program_name = ProgramName::new(gl);
+        let vertex_name = ShaderName::new(gl, gl::VERTEX_SHADER);
+        let fragment_name = ShaderName::new(gl, gl::FRAGMENT_SHADER);
+
+        program_name.attach(gl, &[&vertex_name, &fragment_name]);
+
+        Self {
+            vertex: Shader::new(vertex_name, vertex_source_indices),
+            fragment: Shader::new(fragment_name, fragment_source_indices),
+            branch: ic::Branch::dirty(),
+            name: program_name,
+        }
+    }
+
+    pub fn modified(&self) -> ic::Modified {
+        self.branch.modified()
+    }
+
+    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
+        if self.branch.verify(&world.global) {
+            let modified = std::cmp::max(self.vertex.update(gl, world), self.fragment.update(gl, world));
+
+            if self.branch.recompute(&modified) {
+                if self.vertex.name(&world.global).is_compiled() && self.fragment.name(&world.global).is_compiled() {
+                    self.name.link(gl);
+
+                    if self.name.is_unlinked() {
+                        error!("Link error: {}", self.name.log(gl));
+                    }
+                }
+            }
+        }
+
+        self.branch.modified()
+    }
+
+    pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ProgramName {
+        self.branch.panic_if_outdated(global);
+        &self.name
     }
 }

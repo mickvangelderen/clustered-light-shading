@@ -1,15 +1,16 @@
+use crate::*;
 use crate::configuration;
 use crate::convert::*;
 use crate::keyboard_model;
 use crate::light::*;
 use crate::rendering;
 use cgmath::*;
-use gl_typed as gl;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Instant;
 
 pub type TextureIndex = u32;
 pub type MaterialIndex = u32;
@@ -432,10 +433,12 @@ impl Resources {
             .map(PathBuf::from)
             .map(|rel_file_path| {
                 let file_path = resource_dir.join(&rel_file_path);
-                println!("Loading {:?}.", file_path.display());
+                info!("Loading {:?}...", file_path.display());
+                let now = Instant::now();
                 let obj = tobj::load_obj(&file_path).unwrap();
                 let vertex_count: usize = obj.0.iter().map(|model| model.mesh.indices.len()).sum();
-                println!("Loaded {:?} with {} vertices.", file_path.display(), vertex_count);
+                let elapsed = now.elapsed();
+                info!("Loaded {:?} with {} vertices in {}µs.", file_path.display(), vertex_count, elapsed.as_micros());
                 (rel_file_path, obj.0, obj.1)
             })
             .collect();
@@ -507,108 +510,112 @@ impl Resources {
 
             let material_dir = resource_dir.join(rel_file_path.parent().unwrap());
 
-            materials.extend(obj_materials.into_iter().map(|material| {
-                // https://github.com/rust-lang/rfcs/pull/1769
-                let diffuse = *if !material.diffuse_texture.is_empty() {
-                    let file_path = material_dir.join(&material.diffuse_texture);
-                    path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                        println!("Loading diffuse texture {:?}", &file_path);
-                        let img = image::open(&file_path)
-                            .expect("Failed to load image.")
-                            .flipv()
-                            .to_rgba();
-                        println!("Loaded diffuse texture {:?}", &file_path);
+            {
+                info!("Loading textures...");
+                let now = Instant::now();
+                let mut total_bytes = 0;
+                materials.extend(obj_materials.into_iter().map(|material| {
+                    // https://github.com/rust-lang/rfcs/pull/1769
+                    let diffuse = *if !material.diffuse_texture.is_empty() {
+                        let file_path = material_dir.join(&material.diffuse_texture);
+                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
+                            let img = image::open(&file_path)
+                                .expect("Failed to load image.")
+                                .flipv()
+                                .to_rgba();
+                            total_bytes += std::mem::size_of_val(&*img);
 
-                        let texture = if configuration.global.diffuse_srgb {
-                            create_srgb_texture(gl, img)
-                        } else {
-                            create_texture(gl, img)
-                        };
+                            let texture = if configuration.global.diffuse_srgb {
+                                create_srgb_texture(gl, img)
+                            } else {
+                                create_texture(gl, img)
+                            };
 
-                        let index = textures.len() as TextureIndex;
-                        textures.push(texture);
-                        index
-                    })
-                } else {
-                    let rgba_u8 =
-                        rgba_f32_to_rgba_u8([material.diffuse[0], material.diffuse[1], material.diffuse[2], 1.0]);
-                    color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                        let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
+                            let index = textures.len() as TextureIndex;
+                            textures.push(texture);
+                            index
+                        })
+                    } else {
+                        let rgba_u8 =
+                            rgba_f32_to_rgba_u8([material.diffuse[0], material.diffuse[1], material.diffuse[2], 1.0]);
+                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
+                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
-                        let texture = if configuration.global.diffuse_srgb {
-                            create_srgb_texture(gl, img)
-                        } else {
-                            create_texture(gl, img)
-                        };
+                            let texture = if configuration.global.diffuse_srgb {
+                                create_srgb_texture(gl, img)
+                            } else {
+                                create_texture(gl, img)
+                            };
 
-                        let index = textures.len() as TextureIndex;
-                        textures.push(texture);
-                        index
-                    })
-                };
+                            let index = textures.len() as TextureIndex;
+                            textures.push(texture);
+                            index
+                        })
+                    };
 
-                let normal = *if let Some(bump_path) = material.unknown_param.get("map_bump") {
-                    let file_path = material_dir.join(bump_path);
-                    path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                        println!("Loading normal texture {:?}", &file_path);
-                        let img = image::open(&file_path)
-                            .expect("Failed to load image.")
-                            .flipv()
-                            .to_rgba();
-                        println!("Loaded normal texture {:?}", &file_path);
+                    let normal = *if let Some(bump_path) = material.unknown_param.get("map_bump") {
+                        let file_path = material_dir.join(bump_path);
+                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
+                            let img = image::open(&file_path)
+                                .expect("Failed to load image.")
+                                .flipv()
+                                .to_rgba();
+                            total_bytes += std::mem::size_of_val(&*img);
 
-                        let texture = create_texture(gl, img);
-                        let index = textures.len() as TextureIndex;
-                        textures.push(texture);
-                        index
-                    })
-                } else {
-                    let rgba_u8 = rgba_f32_to_rgba_u8([0.5, 0.5, 0.5, 1.0]);
-                    color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                        let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
+                            let texture = create_texture(gl, img);
+                            let index = textures.len() as TextureIndex;
+                            textures.push(texture);
+                            index
+                        })
+                    } else {
+                        let rgba_u8 = rgba_f32_to_rgba_u8([0.5, 0.5, 0.5, 1.0]);
+                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
+                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
-                        let texture = create_texture(gl, img);
-                        let index = textures.len() as TextureIndex;
-                        textures.push(texture);
-                        index
-                    })
-                };
+                            let texture = create_texture(gl, img);
+                            let index = textures.len() as TextureIndex;
+                            textures.push(texture);
+                            index
+                        })
+                    };
 
-                let specular = *if !material.specular_texture.is_empty() {
-                    let file_path = material_dir.join(&material.specular_texture);
-                    path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                        println!("Loading specular texture {:?}", &file_path);
-                        let img = image::open(&file_path)
-                            .expect("Failed to load image.")
-                            .flipv()
-                            .to_rgba();
-                        println!("Loaded specular texture {:?}", &file_path);
+                    let specular = *if !material.specular_texture.is_empty() {
+                        let file_path = material_dir.join(&material.specular_texture);
+                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
+                            let img = image::open(&file_path)
+                                .expect("Failed to load image.")
+                                .flipv()
+                                .to_rgba();
+                            total_bytes += std::mem::size_of_val(&*img);
 
-                        let texture = create_texture(gl, img);
-                        let index = textures.len() as TextureIndex;
-                        textures.push(texture);
-                        index
-                    })
-                } else {
-                    let rgba_u8 =
-                        rgba_f32_to_rgba_u8([material.specular[0], material.specular[1], material.specular[2], 1.0]);
-                    color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                        let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
+                            let texture = create_texture(gl, img);
+                            let index = textures.len() as TextureIndex;
+                            textures.push(texture);
+                            index
+                        })
+                    } else {
+                        let rgba_u8 =
+                            rgba_f32_to_rgba_u8([material.specular[0], material.specular[1], material.specular[2], 1.0]);
+                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
+                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
-                        let texture = create_texture(gl, img);
-                        let index = textures.len() as TextureIndex;
-                        textures.push(texture);
-                        index
-                    })
-                };
+                            let texture = create_texture(gl, img);
+                            let index = textures.len() as TextureIndex;
+                            textures.push(texture);
+                            index
+                        })
+                    };
 
-                Material {
-                    diffuse,
-                    normal,
-                    specular,
-                    shininess: material.shininess,
-                }
-            }));
+                    Material {
+                        diffuse,
+                        normal,
+                        specular,
+                        shininess: material.shininess,
+                    }
+                }));
+                let elapsed = now.elapsed();
+                info!("Loaded {}MB of textures in {}µs.", total_bytes / 1000_000, elapsed.as_micros());
+            }
         }
 
         let key_indices: Vec<keyboard_model::UncheckedIndex> = meshes
