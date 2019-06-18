@@ -578,12 +578,26 @@ impl Program {
             let modified = std::cmp::max(self.vertex.update(gl, world), self.fragment.update(gl, world));
 
             if self.branch.recompute(&modified) {
-                if self.vertex.name(&world.global).is_compiled() && self.fragment.name(&world.global).is_compiled() {
-                    self.name.link(gl);
+                self.name.link(gl);
 
-                    if self.name.is_unlinked() {
-                        error!("Link error: {}", self.name.log(gl));
-                    }
+                if self.name.is_unlinked()
+                    && self.vertex.name(&world.global).is_compiled()
+                    && self.fragment.name(&world.global).is_compiled()
+                {
+                    let log = self.name.log(gl);
+
+                    let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
+                        let i: usize = captures[0].parse().unwrap();
+                        if i > 0 {
+                            let i = i - 1;
+                            let path = world.sources[i].path.strip_prefix(&world.resource_dir).unwrap();
+                            path.display().to_string()
+                        } else {
+                            "<generated header>".to_string()
+                        }
+                    });
+
+                    error!("Link error:\n{}", log);
                 }
             }
         }
