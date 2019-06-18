@@ -14,8 +14,6 @@ pub struct Renderer {
 }
 
 pub struct Parameters<'a> {
-    pub viewport: Viewport<i32>,
-    pub framebuffer: gl::FramebufferName,
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
     pub pos_from_obj_to_wld: &'a Matrix4<f32>,
@@ -34,12 +32,6 @@ const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
 impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World) {
         unsafe {
-            gl.enable(gl::DEPTH_TEST);
-            gl.enable(gl::CULL_FACE);
-            gl.cull_face(gl::BACK);
-            params.viewport.set(gl);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-
             self.update(gl, world);
             if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
                 gl.use_program(*program_name);

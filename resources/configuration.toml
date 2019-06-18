@@ -3,7 +3,7 @@ diffuse_srgb = true
 framebuffer_srgb = true
 
 [window]
-vsync = true
+vsync = false
 srgb = true
 rgb_bits = 24
 alpha_bits = 8
