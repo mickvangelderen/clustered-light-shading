@@ -393,8 +393,6 @@ impl ShaderName {
     }
 }
 
-pub struct QueryTimerLock;
-
 pub struct QueryTimer {
     names: [gl::QueryName; 2],
 }
@@ -403,7 +401,7 @@ impl QueryTimer {
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
             Self {
-                names: [gl.create_query(), gl.create_query()],
+                names: [gl.create_query(gl::TIME_ELAPSED), gl.create_query(gl::TIME_ELAPSED)],
             }
         }
     }
