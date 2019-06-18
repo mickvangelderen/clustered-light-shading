@@ -836,6 +836,7 @@ fn main() {
         let mut new_target_camera_key = world.target_camera_key;
         let mut new_window_mode = world.window_mode;
         let mut new_attenuation_mode = world.attenuation_mode.value;
+        let mut new_render_technique = world.render_technique.value;
 
         events_loop.poll_events(|event| {
             use glutin::Event;
@@ -882,6 +883,9 @@ fn main() {
                                             new_window_mode.wrapping_next_assign();
                                         }
                                         VirtualKeyCode::Key3 => {
+                                            new_render_technique.wrapping_next_assign();
+                                        }
+                                        VirtualKeyCode::Key4 => {
                                             world.depth_prepass = !world.depth_prepass;
                                         }
                                         VirtualKeyCode::C => {
@@ -935,7 +939,20 @@ fn main() {
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
         world.window_mode = new_window_mode;
-        world.attenuation_mode.replace(&mut world.global, new_attenuation_mode);
+
+        {
+            let old_attenuation_mode = world.attenuation_mode.replace(&mut world.global, new_attenuation_mode);
+            if old_attenuation_mode != new_attenuation_mode {
+                info!("Attenuation mode: {:?}", new_attenuation_mode);
+            }
+        }
+
+        {
+            let old_render_technique = world.render_technique.replace(&mut world.global, new_render_technique);
+            if old_render_technique != new_render_technique {
+                info!("Render technique: {:?}", new_render_technique);
+            }
+        }
 
         for key in CameraKey::iter() {
             let is_target = world.target_camera_key == key;

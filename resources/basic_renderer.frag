@@ -188,34 +188,21 @@ void main() {
       mat3(fs_tan_in_cam_norm, fs_bitan_in_cam_norm, fs_nor_in_cam_norm);
   vec3 nor_in_cam = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
 
-  // Ambient. Fake light bouncing from sun light.
-  float ambient_weight =
-      max(0.0, dot(mat3(pos_from_wld_to_cam) * vec3(0.0, 1.0, 0.0),
-                   light_dir_in_cam) *
-                   0.3);
-
-  // Diffuse.
-  float diffuse_weight = max(dot(nor_in_cam, light_dir_in_cam_norm), 0.0);
+  // TODO: Render unmasked and masked materials separately.
   vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
   if (diffuse_sample.a < 0.5) {
     discard;
   }
-  vec3 diffuse_color = diffuse_sample.rgb;
 
-  // Specular.
-  float specular_angle =
-      max(dot(cam_dir_in_cam_norm, reflect(-light_dir_in_cam_norm, nor_in_cam)),
-          0.0);
-  float specular_weight = pow(specular_angle, shininess);
-  vec3 specular_color = texture(specular_sampler, fs_pos_in_tex).rgb;
-
-  float visibility = compute_visibility_variance(pos_in_lgt);
-
+#if defined(RENDER_TECHNIQUE_NAIVE)
   vec3 color_accumulator = vec3(0.0);
-  // color_accumulator += (diffuse_color * ambient_weight) +
-  //                      visibility * (diffuse_color * diffuse_weight +
-  //                                    specular_color * specular_weight);
-
+  for (uint i = 0; i < 8; i++) {
+    color_accumulator +=
+      point_light_contribution(point_lights[i], nor_in_cam,
+                               fs_pos_in_cam, cam_dir_in_cam_norm);
+  }
+  frag_color = vec4(color_accumulator, 1.0);
+#elif defined(RENDER_TECHNIQUE_CLUSTERED)
   uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
 
   // CLUSTER INDICES X, Y, Z
@@ -255,20 +242,18 @@ void main() {
   // frag_color = vec4(vec3(float(cluster_length)/2.0) * cluster_index_colors, 1.0);
 
   // CLUSTERED SHADING
+  vec3 color_accumulator = vec3(0.0);
   for (uint i = 0; i < cluster_length; i++) {
     uint light_index = clusters[cluster_index + 1 + i];
 
-    float t_on = 5.0;
-    float t = float(cluster_length);
-    float tf = fract((float(time)*point_lights[i].att.x*1.0 - float(i))/t)*t/t_on;
-    float anim = step(tf, 1.0) * (cos((tf*2.0 - 1.0)*3.1415)*0.5 + 0.5);
-
-    color_accumulator += 
-    // color_accumulator += anim *
+    color_accumulator +=
         point_light_contribution(point_lights[light_index], nor_in_cam,
                                  fs_pos_in_cam, cam_dir_in_cam_norm);
   }
   frag_color = vec4(color_accumulator, 1.0);
+#else
+#error Unimplemented render technique!
+#endif
 
   // DIFFUSE TEXTURE
   // frag_color = texture(diffuse_sampler, fs_pos_in_tex);
