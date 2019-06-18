@@ -11,6 +11,8 @@ pub(crate) use log::*;
 pub(crate) use regex::{Regex, RegexBuilder};
 #[allow(unused_imports)]
 pub(crate) use std::convert::{TryFrom, TryInto};
+#[allow(unused_imports)]
+pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 
 // mod ao_filter;
 // mod ao_renderer;
@@ -23,6 +25,7 @@ mod cls;
 mod cluster_renderer;
 mod configuration;
 mod convert;
+mod depth_renderer;
 mod filters;
 pub mod frustrum;
 mod gl_ext;
@@ -126,6 +129,7 @@ pub struct World {
     pub global: ic::Global,
     pub clear_color: [f32; 3],
     pub window_mode: WindowMode,
+    pub depth_prepass: bool,
     pub render_technique: ic::Leaf<RenderTechnique>,
     pub render_technique_regex: Regex,
     pub attenuation_mode: ic::Leaf<AttenuationMode>,
@@ -544,6 +548,7 @@ fn main() {
             tick: 0,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
+            depth_prepass: false,
             render_technique: ic::Leaf::clean(&mut global, RenderTechnique::Clustered),
             render_technique_regex: RenderTechnique::regex(),
             attenuation_mode: ic::Leaf::clean(&mut global, AttenuationMode::Interpolated),
@@ -653,11 +658,15 @@ fn main() {
             .wrap_t(gl::REPEAT.into()),
     );
 
+    let mut depth_renderer = depth_renderer::Renderer::new(&gl, &mut world);
     let mut line_renderer = line_renderer::Renderer::new(&gl, &mut world);
     let mut basic_renderer = basic_renderer::Renderer::new(&gl, &mut world);
     let mut overlay_renderer = overlay_renderer::Renderer::new(&gl, &mut world);
     let mut post_renderer = post_renderer::Renderer::new(&gl, &mut world);
     let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
+
+    let depth_timer = QueryTimer::new(&gl);
+    let basic_timer = QueryTimer::new(&gl);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
@@ -871,6 +880,9 @@ fn main() {
                                         }
                                         VirtualKeyCode::Key2 => {
                                             new_window_mode.wrapping_next_assign();
+                                        }
+                                        VirtualKeyCode::Key3 => {
+                                            world.depth_prepass = !world.depth_prepass;
                                         }
                                         VirtualKeyCode::C => {
                                             world.target_camera_mut().toggle_smoothness();
@@ -1392,12 +1404,13 @@ fn main() {
 
         unsafe {
             gl.bind_framebuffer(gl::FRAMEBUFFER, view_dep_res.main_framebuffer_name);
-
             gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
-
-            // Reverse-Z projection.
+            // Reverse-Z.
             gl.clear_depth(0.0);
             gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
+            gl.enable(gl::DEPTH_TEST);
+            gl.enable(gl::CULL_FACE);
+            gl.cull_face(gl::BACK);
         }
 
         let (maybe_main, maybe_debug) = match mode_data {
@@ -1418,47 +1431,64 @@ fn main() {
             }
         };
 
+        let mut depth_elapsed = None;
+        let mut basic_elapsed = None;
+
         if let Some((index, main_view_data)) = maybe_main {
             view_resources.bind_index(&gl, index);
             compute_and_upload_light_positions(&view_dep_res, main_view_data.view_data.pos_from_wld_to_cam);
-            let viewport = main_view_data.viewport;
+            main_view_data.viewport.set(&gl);
 
-            basic_renderer.render(
-                &gl,
-                &basic_renderer::Parameters {
-                    viewport,
-                    framebuffer: view_dep_res.main_framebuffer_name.into(),
-                    material_resources,
-                    shadow_texture_name: view_ind_res.shadow_texture.name(),
-                    shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
-                },
-                &mut world,
-                &resources,
-            );
+            if world.depth_prepass {
+                depth_elapsed = depth_timer.time(&gl, world.tick, || {
+                    depth_renderer.render(&gl, &mut world, &resources);
+                });
+
+                unsafe {
+                    gl.depth_func(gl::GEQUAL);
+                    gl.depth_mask(gl::FALSE);
+                }
+            }
+
+            basic_elapsed = basic_timer.time(&gl, world.tick, || {
+                basic_renderer.render(
+                    &gl,
+                    &basic_renderer::Parameters {
+                        material_resources,
+                        shadow_texture_name: view_ind_res.shadow_texture.name(),
+                        shadow_texture_dimensions: [SHADOW_W as f32, SHADOW_H as f32],
+                    },
+                    &mut world,
+                    &resources,
+                );
+            });
+
+            if world.depth_prepass {
+                unsafe {
+                    gl.depth_func(gl::GREATER);
+                    gl.depth_mask(gl::TRUE);
+                }
+            }
 
             line_renderer.render(
                 &gl,
                 &line_renderer::Parameters {
-                    viewport,
-                    framebuffer: view_dep_res.main_framebuffer_name.into(),
                     vertices: &sun_frustrum_vertices[..],
                     indices: &sun_frustrum_indices[..],
                     pos_from_obj_to_wld: &global_data.light_pos_from_cam_to_wld,
                 },
                 &mut world,
             );
-
         }
 
         if let Some((index, debug_view_data)) = maybe_debug {
             view_resources.bind_index(&gl, index);
-            let viewport = debug_view_data.viewport;
-            let framebuffer = view_dep_res.main_framebuffer_name.into();
+
+            debug_view_data.viewport.set(&gl);
+
             cluster_renderer.render(
                 &gl,
                 &cluster_renderer::Parameters {
-                    viewport,
-                    framebuffer,
                     cls_buffer: &cls_buffer,
                     configuration: &configuration.clustered_light_shading,
                 },
@@ -1475,8 +1505,6 @@ fn main() {
             line_renderer.render(
                 &gl,
                 &line_renderer::Parameters {
-                    viewport,
-                    framebuffer,
                     vertices: &vertices[..],
                     indices: &sun_frustrum_indices[..],
                     pos_from_obj_to_wld: &cls_view_data_ext.view_data.pos_from_clp_to_wld.cast().unwrap(),
@@ -1506,7 +1534,22 @@ fn main() {
         timings.swap_buffers.end = time::Instant::now();
 
         if keyboard_state.p.is_pressed() && keyboard_state.lalt.is_pressed() {
-            timings.print_deltas();
+            if let Some(ns) = depth_elapsed {
+                let ns = ns.get();
+                println!("depth {}.{:03}μs", ns/1000, ns%1000);
+            }
+            if let Some(ns) = basic_elapsed {
+                let ns = ns.get();
+                println!("basic {}.{:03}μs", ns/1000, ns%1000);
+            }
+            let total_elapsed = depth_elapsed.map(NonZeroU64::get).unwrap_or(0) +
+                basic_elapsed.map(NonZeroU64::get).unwrap_or(0);
+            {
+                let ns = total_elapsed;
+                println!("total {}.{:03}μs", ns/1000, ns%1000);
+            }
+
+            // timings.print_deltas();
         }
 
         // std::thread::sleep(time::Duration::from_millis(17));

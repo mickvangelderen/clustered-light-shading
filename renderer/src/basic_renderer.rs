@@ -20,8 +20,6 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub viewport: Viewport<i32>,
-    pub framebuffer: gl::FramebufferName,
     pub material_resources: rendering::MaterialResources,
     pub shadow_texture_name: gl::TextureName,
     pub shadow_texture_dimensions: [f32; 2],
@@ -30,12 +28,6 @@ pub struct Parameters {
 impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
         unsafe {
-            gl.enable(gl::DEPTH_TEST);
-            gl.enable(gl::CULL_FACE);
-            gl.cull_face(gl::BACK);
-            params.viewport.set(gl);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
-
             self.update(gl, world);
             if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
                 gl.use_program(*program_name);

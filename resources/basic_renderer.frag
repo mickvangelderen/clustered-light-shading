@@ -158,7 +158,7 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   float specular_weight = pow(specular_angle, shininess);
 
   // LIGHT ATTENUATION.
-  return vec3(diffuse_attenuation);
+  // return vec3(diffuse_attenuation);
 
   // LIGHT CONTRIBUTION.
   return

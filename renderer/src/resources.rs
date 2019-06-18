@@ -35,25 +35,26 @@ pub struct Vertex {
     pub tan_in_obj: [f32; 3],
 }
 
+macro_rules! set_attrib {
+    ($gl: ident, $vao: ident, $loc: expr, $component_count: expr, $component_type: expr, $Vertex: ident, $field: ident, $bbi: expr) => {
+        $gl.vertex_array_attrib_format(
+            $vao,
+            $loc,
+            $component_count,
+            $component_type,
+            false,
+            field_offset!($Vertex, $field) as u32,
+        );
+        $gl.enable_vertex_array_attrib($vao, $loc);
+        $gl.vertex_array_attrib_binding($vao, $loc, $bbi);
+    };
+}
+
 impl Vertex {
     fn set_format(gl: &gl::Gl, vao: gl::VertexArrayName, vb: gl::BufferName, eb: gl::BufferName) {
-        macro_rules! set_attrib {
-            ($vao: ident, $loc: expr, $component_count: expr, $component_type: expr, $Vertex: ident, $field: ident, $bbi: expr) => {
-                gl.vertex_array_attrib_format(
-                    $vao,
-                    $loc,
-                    $component_count,
-                    $component_type,
-                    false,
-                    field_offset!($Vertex, $field) as u32,
-                );
-                gl.enable_vertex_array_attrib(vao, $loc);
-                gl.vertex_array_attrib_binding(vao, $loc, $bbi);
-            };
-        }
-
         unsafe {
             set_attrib!(
+                gl,
                 vao,
                 rendering::VS_POS_IN_OBJ_LOC,
                 3,
@@ -63,6 +64,7 @@ impl Vertex {
                 VERTEX_ARRAY_BUFFER_BINDING_INDEX
             );
             set_attrib!(
+                gl,
                 vao,
                 rendering::VS_POS_IN_TEX_LOC,
                 2,
@@ -72,6 +74,7 @@ impl Vertex {
                 VERTEX_ARRAY_BUFFER_BINDING_INDEX
             );
             set_attrib!(
+                gl,
                 vao,
                 rendering::VS_NOR_IN_OBJ_LOC,
                 3,
@@ -81,12 +84,33 @@ impl Vertex {
                 VERTEX_ARRAY_BUFFER_BINDING_INDEX
             );
             set_attrib!(
+                gl,
                 vao,
                 rendering::VS_TAN_IN_OBJ_LOC,
                 3,
                 gl::FLOAT,
                 Vertex,
                 tan_in_obj,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+            );
+
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<Vertex>() as u32;
+            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
+        }
+    }
+
+    fn set_pos_format(gl: &gl::Gl, vao: gl::VertexArrayName, vb: gl::BufferName, eb: gl::BufferName) {
+        unsafe {
+            set_attrib!(
+                gl,
+                vao,
+                rendering::VS_POS_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                Vertex,
+                pos_in_obj,
                 VERTEX_ARRAY_BUFFER_BINDING_INDEX
             );
 
@@ -298,6 +322,7 @@ pub struct Resources {
     pub path_to_texture_index: HashMap<PathBuf, TextureIndex>,
     pub color_to_texture_index: HashMap<[u8; 4], TextureIndex>,
     pub scene_vao: gl::VertexArrayName,
+    pub scene_pos_vao: gl::VertexArrayName,
     pub scene_vb: gl::BufferName,
     pub scene_eb: gl::BufferName,
     pub mesh_metas: Vec<MeshMeta>,
@@ -659,18 +684,20 @@ impl Resources {
             });
         }
 
-        let (scene_vao, scene_vb, scene_eb) = unsafe {
+        let (scene_vao, scene_pos_vao, scene_vb, scene_eb) = unsafe {
             let vao = gl.create_vertex_array();
+            let pos_vao = gl.create_vertex_array();
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
             Vertex::set_format(gl, vao, vb, eb);
+            Vertex::set_pos_format(gl, pos_vao, vb, eb);
 
             // Upload data.
             gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
             gl.named_buffer_data(eb, element_data.vec_as_bytes(), gl::STATIC_DRAW);
 
-            (vao, vb, eb)
+            (vao, pos_vao, vb, eb)
         };
 
         let (full_screen_vao, full_screen_vb, full_screen_eb) = unsafe {
@@ -718,6 +745,7 @@ impl Resources {
             path_to_texture_index,
             color_to_texture_index,
             scene_vao,
+            scene_pos_vao,
             scene_vb,
             scene_eb,
             mesh_metas,

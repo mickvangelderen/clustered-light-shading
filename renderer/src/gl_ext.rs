@@ -1,4 +1,4 @@
-use gl_typed as gl;
+use crate::*;
 
 #[derive(Debug, Copy, Clone)]
 pub struct TextureUpdateData<'a> {
@@ -305,11 +305,8 @@ impl ProgramName {
 
     #[inline]
     pub fn log(&self, gl: &gl::Gl) -> String {
-        unsafe {
-            gl.get_program_info_log(*self.as_ref())
-        }
+        unsafe { gl.get_program_info_log(*self.as_ref()) }
     }
-
 
     #[inline]
     pub fn is_linked(&self) -> bool {
@@ -376,9 +373,7 @@ impl ShaderName {
 
     #[inline]
     pub fn log(&self, gl: &gl::Gl) -> String {
-        unsafe {
-            gl.get_shader_info_log(*self.as_ref())
-        }
+        unsafe { gl.get_shader_info_log(*self.as_ref()) }
     }
 
     #[inline]
@@ -394,6 +389,44 @@ impl ShaderName {
         match self {
             ShaderName::Uncompiled(_) => true,
             _ => false,
+        }
+    }
+}
+
+pub struct QueryTimerLock;
+
+pub struct QueryTimer {
+    names: [gl::QueryName; 2],
+}
+
+impl QueryTimer {
+    pub fn new(gl: &gl::Gl) -> Self {
+        unsafe {
+            Self {
+                names: [gl.create_query(), gl.create_query()],
+            }
+        }
+    }
+
+    pub fn time(&self, gl: &gl::Gl, tick: u64, f: impl FnOnce()) -> Option<NonZeroU64> {
+        let result = self.begin(gl, tick);
+        f();
+        self.end(gl);
+        result
+    }
+
+    fn begin(&self, gl: &gl::Gl, tick: u64) -> Option<NonZeroU64> {
+        unsafe {
+            let name = self.names[usize::try_from(tick).unwrap() % self.names.len()];
+            let result = gl.try_query_result_u64(&name);
+            gl.begin_query(gl::TIME_ELAPSED, &name);
+            result
+        }
+    }
+
+    fn end(&self, gl: &gl::Gl) {
+        unsafe {
+            gl.end_query(gl::TIME_ELAPSED);
         }
     }
 }
