@@ -1,27 +1,26 @@
-uniform float highlight;
-
-uniform sampler2D shadow_sampler;
+// uniform sampler2D shadow_sampler;
 uniform sampler2D diffuse_sampler;
 uniform sampler2D normal_sampler;
 uniform sampler2D specular_sampler;
 
-uniform vec2 shadow_dimensions;
-uniform vec2 diffuse_dimensions;
+// uniform vec2 shadow_dimensions;
+// uniform vec2 diffuse_dimensions;
 uniform vec2 normal_dimensions;
-uniform vec2 specular_dimensions;
+// uniform vec2 specular_dimensions;
 
-in vec3 fs_pos_in_cam;
-in vec3 fs_pos_in_cls;
+uniform vec3 cam_pos_in_lgt;
+
 in vec2 fs_pos_in_tex;
-in vec4 fs_pos_in_lgt;
-in vec3 fs_nor_in_cam;
-in vec3 fs_tan_in_cam;
+
+in vec3 fs_pos_in_lgt;
+in vec3 fs_nor_in_lgt;
+in vec3 fs_tan_in_lgt;
 
 struct PointLight {
   vec4 ambient;
   vec4 diffuse;
   vec4 specular;
-  vec4 pos_in_cam;
+  vec4 pos_in_lgt;
   vec4 att;
 };
 
@@ -30,7 +29,7 @@ layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
 };
 
 layout(location = 0) out vec4 frag_color;
-layout(location = 1) out vec3 frag_nor_in_cam;
+layout(location = 1) out vec3 frag_nor_in_lgt;
 
 uvec3 separate_bits_by_2(uvec3 x) {
   // x       = 0b??????????????????????jihgfedcba
@@ -61,29 +60,6 @@ uint to_morton_3(uvec3 p) {
   return (q.z << 2) | (q.y << 1) | q.x;
 }
 
-float compute_visibility_classic(vec3 pos_in_lgt) {
-  // Can make the bias depend on the angle between the light direction and the
-  // surface normal but does that really help? The worst case scenario is not
-  // improved. For now I just use a constant so at least I don't have to look
-  // for errors here.
-  float bias = 0.005;
-
-  float closest_depth_in_lgt =
-      texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).x;
-  float frag_depth_in_lgt = 1.0 - pos_in_lgt.z;
-  return step(frag_depth_in_lgt, closest_depth_in_lgt + bias);
-}
-
-float compute_visibility_variance(vec3 pos_in_lgt) {
-  float frag_depth = 1.0 - pos_in_lgt.z;
-  vec2 sam = texture(shadow_sampler, pos_in_lgt.xy * 0.5 + 0.5).xy;
-  float mean_depth = sam.x;
-  float mean_depth_sq = sam.y;
-  float variance = mean_depth_sq - mean_depth * mean_depth;
-  float diff = frag_depth - mean_depth;
-  return (diff > 0.0) ? variance / (variance + diff * diff) : 1.0;
-}
-
 // FIXME
 vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   float dx = 1.0 / normal_dimensions.x;
@@ -105,10 +81,11 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   return normalize(vec3(-x, -y, 1.0));
 }
 
-vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
-                              vec3 frag_pos_in_cam, vec3 cam_dir_in_cam_norm) {
-  vec3 pos_from_frag_to_light = point_light.pos_in_cam.xyz - frag_pos_in_cam;
-  vec3 light_dir_in_cam_norm = normalize(pos_from_frag_to_light);
+// All computations are in lgt space.
+vec3 point_light_contribution(PointLight point_light, vec3 nor,
+                              vec3 frag_pos, vec3 lgt_dir_norm) {
+  vec3 pos_from_frag_to_light = point_light.pos_in_lgt.xyz - frag_pos;
+  vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
   float I = point_light.att[0];
   float C = point_light.att[1];
@@ -149,12 +126,12 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
   }
 
   // Diffuse.
-  float diffuse_weight = max(0.0, dot(nor_in_cam, light_dir_in_cam_norm));
+  float diffuse_weight = max(0.0, dot(nor, light_dir_norm));
 
   // Specular.
   float specular_angle =
-      max(0.0, dot(cam_dir_in_cam_norm,
-                   reflect(-light_dir_in_cam_norm, nor_in_cam)));
+      max(0.0, dot(lgt_dir_norm,
+                   reflect(-light_dir_norm, nor)));
   float specular_weight = pow(specular_angle, shininess);
 
   // LIGHT ATTENUATION.
@@ -171,22 +148,16 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor_in_cam,
 }
 
 void main() {
-  // Perspective divide after interpolation.
-  vec3 pos_in_lgt = fs_pos_in_lgt.xyz / fs_pos_in_lgt.w;
-
-  // Common intermediates.
-  vec3 light_dir_in_cam_norm = normalize(light_dir_in_cam);
-  vec3 cam_dir_in_cam_norm = normalize(-fs_pos_in_cam);
-
   // Perturbed normal in camera space.
   // TODO: Consider https://github.com/mickvangelderen/vr-lab/issues/3
-  vec3 fs_nor_in_cam_norm = normalize(fs_nor_in_cam);
-  vec3 fs_bitan_in_cam_norm =
-      cross(fs_nor_in_cam_norm, normalize(fs_tan_in_cam));
-  vec3 fs_tan_in_cam_norm = cross(fs_bitan_in_cam_norm, fs_nor_in_cam_norm);
+  vec3 fs_nor_in_lgt_norm = normalize(fs_nor_in_lgt);
+  vec3 fs_bitan_in_lgt_norm =
+      cross(fs_nor_in_lgt_norm, normalize(fs_tan_in_lgt));
+  vec3 fs_tan_in_lgt_norm = cross(fs_bitan_in_lgt_norm, fs_nor_in_lgt_norm);
   mat3 dir_from_tan_to_cam =
-      mat3(fs_tan_in_cam_norm, fs_bitan_in_cam_norm, fs_nor_in_cam_norm);
-  vec3 nor_in_cam = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
+      mat3(fs_tan_in_lgt_norm, fs_bitan_in_lgt_norm, fs_nor_in_lgt_norm);
+  vec3 nor_in_lgt = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
+  frag_nor_in_lgt = nor_in_lgt * 0.5 + vec3(0.5);
 
   // TODO: Render unmasked and masked materials separately.
   vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
@@ -194,16 +165,26 @@ void main() {
     discard;
   }
 
+#if defined(LIGHT_SPACE_CAM)
+  // Camera position is at origin.
+  vec3 cam_dir_in_lgt_norm = normalize(-fs_pos_in_lgt);
+#else
+  vec3 cam_dir_in_lgt_norm = normalize(cam_pos_in_lgt - fs_pos_in_lgt);
+#endif
+
 #if defined(RENDER_TECHNIQUE_NAIVE)
   vec3 color_accumulator = vec3(0.0);
   for (uint i = 0; i < 8; i++) {
     color_accumulator +=
-      point_light_contribution(point_lights[i], nor_in_cam,
-                               fs_pos_in_cam, cam_dir_in_cam_norm);
+      point_light_contribution(point_lights[i], nor_in_lgt,
+                               fs_pos_in_lgt, cam_dir_in_lgt_norm);
   }
   frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-  uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
+  // NOTE: If we are rendering with clustered light shading, we always need to
+  // compute the light positions in cls space. We make use of this by also doing
+  // the lighting in cls space. Therefore fs_pos_in_lgt == fs_pos_in_cls.
+  uvec3 fs_idx_in_cls = uvec3(fs_pos_in_lgt);
 
   // CLUSTER INDICES X, Y, Z
   // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
@@ -211,11 +192,6 @@ void main() {
   // CLUSTER INDICES X, Y, Z mod 3
   // vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
   // frag_color = vec4(cluster_index_colors.xyz, 1.0);
-
-  // CLUSTER INDICES X + Y + Z mod 2
-  // frag_color = vec4(
-  //     vec3(float((fs_idx_in_cls.x + fs_idx_in_cls.y + fs_idx_in_cls.z) & 1)),
-  //     1.0);
 
   // CLUSTER MORTON INDEX
   // uint cluster_morton_index = to_morton_3(fs_idx_in_cls);
@@ -247,8 +223,8 @@ void main() {
     uint light_index = clusters[cluster_index + 1 + i];
 
     color_accumulator +=
-        point_light_contribution(point_lights[light_index], nor_in_cam,
-                                 fs_pos_in_cam, cam_dir_in_cam_norm);
+        point_light_contribution(point_lights[light_index], nor_in_lgt,
+                                 fs_pos_in_lgt, cam_dir_in_lgt_norm);
   }
   frag_color = vec4(color_accumulator, 1.0);
 #else
@@ -265,7 +241,5 @@ void main() {
   // frag_color = texture(specular_sampler, fs_pos_in_tex);
 
   // NORMAL IN CAMERA SPACE
-  // frag_color = vec4(nor_in_cam, 1.0);
-
-  frag_nor_in_cam = nor_in_cam * 0.5 + vec3(0.5);
+  // frag_color = vec4(nor_in_lgt, 1.0);
 }

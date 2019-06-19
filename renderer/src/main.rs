@@ -130,6 +130,8 @@ pub struct World {
     pub clear_color: [f32; 3],
     pub window_mode: WindowMode,
     pub depth_prepass: bool,
+    pub light_space: ic::Leaf<LightSpace>,
+    pub light_space_regex: Regex,
     pub render_technique: ic::Leaf<RenderTechnique>,
     pub render_technique_regex: Regex,
     pub attenuation_mode: ic::Leaf<AttenuationMode>,
@@ -173,8 +175,9 @@ pub struct ViewIndependentResources {
     pub shadow_2_texture: Texture<gl::TEXTURE_2D, gl::RG32F>,
     // Storage buffers.
     pub cls_resources: rendering::CLSResources,
-
     pub global_resources: rendering::GlobalResources,
+    // Uniform buffers.
+    pub lighting_buffer_name: gl::BufferName,
 }
 
 impl ViewIndependentResources {
@@ -254,6 +257,10 @@ impl ViewIndependentResources {
             let global_resources = rendering::GlobalResources::new(&gl);
             global_resources.bind(gl);
 
+            // Uniform block buffers,
+
+            let lighting_buffer_name = gl.create_buffer();
+
             ViewIndependentResources {
                 shadow_framebuffer_name,
                 shadow_texture,
@@ -262,6 +269,7 @@ impl ViewIndependentResources {
                 shadow_2_texture,
                 global_resources,
                 cls_resources,
+                lighting_buffer_name,
             }
         }
     }
@@ -549,6 +557,8 @@ fn main() {
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
             depth_prepass: false,
+            light_space: ic::Leaf::clean(&mut global, LightSpace::Cam),
+            light_space_regex: LightSpace::regex(),
             render_technique: ic::Leaf::clean(&mut global, RenderTechnique::Clustered),
             render_technique_regex: RenderTechnique::regex(),
             attenuation_mode: ic::Leaf::clean(&mut global, AttenuationMode::Interpolated),
@@ -835,6 +845,7 @@ fn main() {
         let mut should_export_state = false;
         let mut new_target_camera_key = world.target_camera_key;
         let mut new_window_mode = world.window_mode;
+        let mut new_light_space = world.light_space.value;
         let mut new_attenuation_mode = world.attenuation_mode.value;
         let mut new_render_technique = world.render_technique.value;
 
@@ -886,6 +897,9 @@ fn main() {
                                             new_render_technique.wrapping_next_assign();
                                         }
                                         VirtualKeyCode::Key4 => {
+                                            new_light_space.wrapping_next_assign();
+                                        }
+                                        VirtualKeyCode::Key5 => {
                                             world.depth_prepass = !world.depth_prepass;
                                         }
                                         VirtualKeyCode::C => {
@@ -939,6 +953,13 @@ fn main() {
         let delta_time = 1.0 / DESIRED_UPS as f32;
 
         world.window_mode = new_window_mode;
+
+        {
+            let old_light_space = world.light_space.replace(&mut world.global, new_light_space);
+            if old_light_space != new_light_space {
+                info!("Light space: {:?}", new_light_space);
+            }
+        }
 
         {
             let old_attenuation_mode = world.attenuation_mode.replace(&mut world.global, new_attenuation_mode);
@@ -1108,6 +1129,13 @@ fn main() {
                 let pos_from_wld_to_cam = camera.transform.pos_from_parent().cast::<f64>().unwrap();
                 let pos_from_cam_to_wld = camera.transform.pos_to_parent().cast::<f64>().unwrap();
 
+                let cam_pos_in_lgt = if world.render_technique == RenderTechnique::Clustered {
+                    // FIXME: requires cls_buffer argh!
+                    pos_from_wld_to_cls * camera.transform.position.cast::<f64>().unwrap()
+                } else {
+                    pos_from_wld_to_
+                }
+
                 ViewDataExt0 {
                     viewport,
 
@@ -1117,6 +1145,8 @@ fn main() {
 
                         pos_from_cam_to_clp,
                         pos_from_clp_to_cam,
+
+                        cam_pos_in_lgt,
                     },
 
                     pos_from_wld_to_hmd: pos_from_wld_to_cam,
@@ -1348,25 +1378,41 @@ fn main() {
         //     &resources,
         // );
 
-        let compute_and_upload_light_positions = |view_dep_res: &ViewDependentResources, pos_from_wld_to_cam| unsafe {
+        let compute_and_upload_light_positions = |lighting_buffer_name, pos_from_wld_to_lgt| unsafe {
             let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
                 std::mem::uninitialized();
             for i in 0..rendering::POINT_LIGHT_CAPACITY as usize {
                 point_lights[i] =
-                    light::PointLightBufferEntry::from_point_light(resources.point_lights[i], pos_from_wld_to_cam);
+                    light::PointLightBufferEntry::from_point_light(resources.point_lights[i], pos_from_wld_to_lgt);
             }
             let lighting_buffer = light::LightingBuffer { point_lights };
-            gl.named_buffer_data(
-                view_dep_res.lighting_buffer_name,
-                lighting_buffer.value_as_bytes(),
-                gl::STREAM_DRAW,
-            );
+            gl.named_buffer_data(lighting_buffer_name, lighting_buffer.value_as_bytes(), gl::STREAM_DRAW);
             gl.bind_buffer_base(
                 gl::UNIFORM_BUFFER,
                 rendering::LIGHTING_BUFFER_BINDING,
-                view_dep_res.lighting_buffer_name,
+                lighting_buffer_name,
             );
         };
+
+        if world.render_technique.value == RenderTechnique::Clustered {
+            compute_and_upload_light_positions(
+                view_ind_res.lighting_buffer_name,
+                cls_buffer.header.pos_from_wld_to_cls,
+            );
+        } else {
+            match world.light_space.value {
+                LightSpace::Wld => {
+                    // FIXME: Should only need to re-upload dynamic lights.
+                    compute_and_upload_light_positions(view_ind_res.lighting_buffer_name, Matrix4::identity());
+                }
+                LightSpace::Hmd => {
+                    warn!("Unimplemented!");
+                }
+                _ => {
+                    // View dependent.
+                }
+            }
+        }
 
         if let Some(vr_context) = &vr_context {
             // FIXME
@@ -1453,7 +1499,14 @@ fn main() {
 
         if let Some((index, main_view_data)) = maybe_main {
             view_resources.bind_index(&gl, index);
-            compute_and_upload_light_positions(&view_dep_res, main_view_data.view_data.pos_from_wld_to_cam);
+
+            if world.render_technique.value != RenderTechnique::Clustered && world.light_space.value == LightSpace::Cam {
+                compute_and_upload_light_positions(
+                    view_dep_res.lighting_buffer_name,
+                    main_view_data.view_data.pos_from_wld_to_cam,
+                );
+            }
+
             main_view_data.viewport.set(&gl);
 
             if world.depth_prepass {
@@ -1553,17 +1606,17 @@ fn main() {
         if keyboard_state.p.is_pressed() && keyboard_state.lalt.is_pressed() {
             if let Some(ns) = depth_elapsed {
                 let ns = ns.get();
-                println!("depth {}.{:03}μs", ns/1000, ns%1000);
+                println!("depth {}.{:03}μs", ns / 1000, ns % 1000);
             }
             if let Some(ns) = basic_elapsed {
                 let ns = ns.get();
-                println!("basic {}.{:03}μs", ns/1000, ns%1000);
+                println!("basic {}.{:03}μs", ns / 1000, ns % 1000);
             }
-            let total_elapsed = depth_elapsed.map(NonZeroU64::get).unwrap_or(0) +
-                basic_elapsed.map(NonZeroU64::get).unwrap_or(0);
+            let total_elapsed =
+                depth_elapsed.map(NonZeroU64::get).unwrap_or(0) + basic_elapsed.map(NonZeroU64::get).unwrap_or(0);
             {
                 let ns = total_elapsed;
-                println!("total {}.{:03}μs", ns/1000, ns%1000);
+                println!("total {}.{:03}μs", ns / 1000, ns % 1000);
             }
 
             // timings.print_deltas();

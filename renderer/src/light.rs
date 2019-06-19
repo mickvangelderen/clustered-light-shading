@@ -48,7 +48,7 @@ pub struct PointLight {
     pub ambient: RGB<f32>,
     pub diffuse: RGB<f32>,
     pub specular: RGB<f32>,
-    pub pos_in_pnt: Point3<f32>,
+    pub pos_in_wld: Point3<f32>,
     pub attenuation: AttenCoefs<f32>,
 }
 
@@ -61,13 +61,13 @@ pub struct PointLightBufferEntry {
     _pad1: f32,
     specular: RGB<f32>,
     _pad2: f32,
-    pos_in_cam: Point3<f32>,
+    pos_in_lgt: Point3<f32>,
     _pad3: f32,
     attenuation: AttenCoefs<f32>,
 }
 
 impl PointLightBufferEntry {
-    pub fn from_point_light(point_light: PointLight, pos_from_pnt_to_cam: Matrix4<f32>) -> Self {
+    pub fn from_point_light(point_light: PointLight, pos_from_wld_to_lgt: Matrix4<f32>) -> Self {
         PointLightBufferEntry {
             ambient: point_light.ambient,
             _pad0: 0.0,
@@ -75,7 +75,7 @@ impl PointLightBufferEntry {
             _pad1: 0.0,
             specular: point_light.specular,
             _pad2: 0.0,
-            pos_in_cam: pos_from_pnt_to_cam.transform_point(point_light.pos_in_pnt),
+            pos_in_lgt: pos_from_wld_to_lgt.transform_point(point_light.pos_in_wld),
             _pad3: 0.0,
             attenuation: point_light.attenuation,
         }

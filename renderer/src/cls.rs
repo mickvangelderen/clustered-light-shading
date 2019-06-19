@@ -65,7 +65,7 @@ pub fn compute_light_assignment(
             }
         }
 
-        let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_pnt);
+        let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_wld);
 
         let r = l.attenuation.clip_far;
         let r_sq = r * r;
