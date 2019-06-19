@@ -143,7 +143,8 @@ pub struct ViewData {
     pub pos_from_wld_to_clp: Matrix4<f32>,
     pub pos_from_clp_to_wld: Matrix4<f32>,
 
-    pub light_dir_in_cam: Vector3<f32>,
+    pub cam_pos_in_lgt: Vector4<f32>,
+    pub light_dir_in_cam: Vector4<f32>,
 }
 
 pub const VIEW_DATA_DECLARATION: &'static str = r"
@@ -157,7 +158,8 @@ layout(std140, binding = VIEW_DATA_BINDING) uniform ViewData {
     mat4 pos_from_wld_to_clp;
     mat4 pos_from_clp_to_wld;
 
-    vec3 light_dir_in_cam;
+    vec4 cam_pos_in_lgt;
+    vec4 light_dir_in_cam;
 };
 ";
 
@@ -168,6 +170,8 @@ pub struct ViewData0 {
 
     pub pos_from_cam_to_clp: Matrix4<f64>,
     pub pos_from_clp_to_cam: Matrix4<f64>,
+
+    pub cam_pos_in_lgt: Vector3<f64>,
 }
 
 impl ViewData0 {
@@ -178,6 +182,8 @@ impl ViewData0 {
 
             pos_from_cam_to_clp,
             pos_from_clp_to_cam,
+
+            cam_pos_in_lgt,
         } = self;
 
         let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
@@ -198,7 +204,8 @@ impl ViewData0 {
             pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
             pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
 
-            light_dir_in_cam: light_dir_in_cam.cast().unwrap(),
+            cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap().extend(0.0),
+            light_dir_in_cam: light_dir_in_cam.cast().unwrap().extend(0.0),
         }
     }
 }
@@ -374,6 +381,28 @@ impl ShaderSource {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
 #[repr(u32)]
+pub enum LightSpace {
+    Wld = 1,
+    Hmd = 2,
+    Cam = 3,
+}
+
+impl LightSpace {
+    pub fn source(self) -> &'static str {
+        match self {
+            LightSpace::Wld => "#define LIGHT_SPACE_WLD\n",
+            LightSpace::Hmd => "#define LIGHT_SPACE_HMD\n",
+            LightSpace::Cam => "#define LIGHT_SPACE_CAM\n",
+        }
+    }
+
+    pub fn regex() -> Regex {
+        Regex::new(r"\bLIGHT_SPACE_(WLD|HMD|CAM)\b").unwrap()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+#[repr(u32)]
 pub enum RenderTechnique {
     Naive = 1,
     Tiled = 2,
@@ -448,6 +477,7 @@ impl Shader {
                 .source_indices
                 .iter()
                 .map(|&i| world.sources[i].modified)
+                .chain(std::iter::once(world.light_space.modified))
                 .chain(
                     if self.render_technique {
                         Some(world.render_technique.modified)
@@ -486,36 +516,37 @@ impl Shader {
 
                 self.name.compile(
                     gl,
-                    [
-                        rendering::COMMON_DECLARATION,
-                        rendering::GLOBAL_DATA_DECLARATION,
-                        rendering::VIEW_DATA_DECLARATION,
-                        rendering::CLS_BUFFER_DECLARATION,
-                        rendering::MATERIAL_DATA_DECLARATION,
-                    ]
-                    .iter()
-                    .copied()
-                    .chain(
-                        if self.render_technique {
-                            Some(world.render_technique.value.source())
-                        } else {
-                            None
-                        }
-                        .iter()
-                        .copied(),
-                    )
-                    .chain(
-                        if self.attenuation_mode {
-                            Some(world.attenuation_mode.value.source())
-                        } else {
-                            None
-                        }
-                        .iter()
-                        .copied(),
-                    )
-                    .chain(
-                        sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))
-                    ),
+                    std::iter::once(rendering::COMMON_DECLARATION)
+                        .chain(std::iter::once(world.light_space.value.source()))
+                        .chain(
+                            [
+                                rendering::GLOBAL_DATA_DECLARATION,
+                                rendering::VIEW_DATA_DECLARATION,
+                                rendering::CLS_BUFFER_DECLARATION,
+                                rendering::MATERIAL_DATA_DECLARATION,
+                            ]
+                            .iter()
+                            .copied(),
+                        )
+                        .chain(
+                            if self.render_technique {
+                                Some(world.render_technique.value.source())
+                            } else {
+                                None
+                            }
+                            .iter()
+                            .copied(),
+                        )
+                        .chain(
+                            if self.attenuation_mode {
+                                Some(world.attenuation_mode.value.source())
+                            } else {
+                                None
+                            }
+                            .iter()
+                            .copied(),
+                        )
+                        .chain(sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))),
                 );
 
                 if self.name.is_uncompiled() {
