@@ -71,260 +71,22 @@ pub const COMMON_DECLARATION: &'static str = concat!(
     attribute_location_declaration!(),
 );
 
-#[derive(Debug, Copy, Clone)]
-#[repr(C, align(256))]
-pub struct GlobalData {
-    pub light_pos_from_wld_to_cam: Matrix4<f32>,
-    pub light_pos_from_cam_to_wld: Matrix4<f32>,
-
-    pub light_pos_from_cam_to_clp: Matrix4<f32>,
-    pub light_pos_from_clp_to_cam: Matrix4<f32>,
-
-    pub light_pos_from_wld_to_clp: Matrix4<f32>,
-    pub light_pos_from_clp_to_wld: Matrix4<f32>,
-
-    pub time: f64,
-}
-
-pub const GLOBAL_DATA_DECLARATION: &'static str = r"
-layout(std140, binding = GLOBAL_DATA_BINDING) uniform GlobalData {
-    mat4 light_pos_from_wld_to_cam;
-    mat4 light_pos_from_cam_to_wld;
-
-    mat4 light_pos_from_cam_to_clp;
-    mat4 light_pos_from_clp_to_cam;
-
-    mat4 light_pos_from_wld_to_clp;
-    mat4 light_pos_from_clp_to_wld;
-
-    double time;
-};
-";
-
-#[derive(Debug, Copy, Clone)]
-pub struct GlobalResources {
-    buffer_name: gl::BufferName,
-}
-
-impl GlobalResources {
-    #[inline]
-    pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            GlobalResources {
-                buffer_name: gl.create_buffer(),
-            }
-        }
-    }
-
-    #[inline]
-    pub fn bind(&self, gl: &gl::Gl) {
-        unsafe {
-            gl.bind_buffer_base(gl::UNIFORM_BUFFER, GLOBAL_DATA_BINDING, self.buffer_name);
-        }
-    }
-
-    #[inline]
-    pub fn write(&self, gl: &gl::Gl, data: &GlobalData) {
-        unsafe {
-            gl.named_buffer_data(self.buffer_name, data.value_as_bytes(), gl::DYNAMIC_DRAW);
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-#[repr(C, align(256))]
-pub struct ViewData {
-    pub pos_from_wld_to_cam: Matrix4<f32>,
-    pub pos_from_cam_to_wld: Matrix4<f32>,
-
-    pub pos_from_cam_to_clp: Matrix4<f32>,
-    pub pos_from_clp_to_cam: Matrix4<f32>,
-
-    pub pos_from_wld_to_clp: Matrix4<f32>,
-    pub pos_from_clp_to_wld: Matrix4<f32>,
-
-    pub cam_pos_in_lgt: Vector4<f32>,
-    pub light_dir_in_cam: Vector4<f32>,
-}
-
-pub const VIEW_DATA_DECLARATION: &'static str = r"
-layout(std140, binding = VIEW_DATA_BINDING) uniform ViewData {
-    mat4 pos_from_wld_to_cam;
-    mat4 pos_from_cam_to_wld;
-
-    mat4 pos_from_cam_to_clp;
-    mat4 pos_from_clp_to_cam;
-
-    mat4 pos_from_wld_to_clp;
-    mat4 pos_from_clp_to_wld;
-
-    vec4 cam_pos_in_lgt;
-    vec4 light_dir_in_cam;
-};
-";
-
-#[derive(Debug)]
-pub struct ViewData0 {
-    pub pos_from_wld_to_cam: Matrix4<f64>,
-    pub pos_from_cam_to_wld: Matrix4<f64>,
-
-    pub pos_from_cam_to_clp: Matrix4<f64>,
-    pub pos_from_clp_to_cam: Matrix4<f64>,
-
-    pub cam_pos_in_lgt: Vector3<f64>,
-}
-
-impl ViewData0 {
-    pub fn into_view_data(self, global_data: &GlobalData) -> ViewData {
-        let ViewData0 {
-            pos_from_wld_to_cam,
-            pos_from_cam_to_wld,
-
-            pos_from_cam_to_clp,
-            pos_from_clp_to_cam,
-
-            cam_pos_in_lgt,
-        } = self;
-
-        let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
-        let pos_from_clp_to_wld = pos_from_cam_to_wld * pos_from_clp_to_cam;
-
-        let light_pos_from_cam_to_wld = global_data.light_pos_from_cam_to_wld.cast::<f64>().unwrap();
-        let light_dir_in_cam = self
-            .pos_from_wld_to_cam
-            .transform_vector(light_pos_from_cam_to_wld.transform_vector(Vector3::unit_z()));
-
-        rendering::ViewData {
-            pos_from_wld_to_cam: pos_from_wld_to_cam.cast().unwrap(),
-            pos_from_cam_to_wld: pos_from_cam_to_wld.cast().unwrap(),
-
-            pos_from_cam_to_clp: pos_from_cam_to_clp.cast().unwrap(),
-            pos_from_clp_to_cam: pos_from_clp_to_cam.cast().unwrap(),
-
-            pos_from_wld_to_clp: pos_from_wld_to_clp.cast().unwrap(),
-            pos_from_clp_to_wld: pos_from_clp_to_wld.cast().unwrap(),
-
-            cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap().extend(0.0),
-            light_dir_in_cam: light_dir_in_cam.cast().unwrap().extend(0.0),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct ViewResources {
-    buffer_name: gl::BufferName,
-}
-
-impl ViewResources {
-    #[inline]
-    pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            ViewResources {
-                buffer_name: gl.create_buffer(),
-            }
-        }
-    }
-
-    #[inline]
-    pub fn bind_index(&self, gl: &gl::Gl, index: usize) {
-        unsafe {
-            gl.bind_buffer_range(
-                gl::UNIFORM_BUFFER,
-                VIEW_DATA_BINDING,
-                self.buffer_name,
-                std::mem::size_of::<ViewData>() * index,
-                std::mem::size_of::<ViewData>(),
-            );
-        }
-    }
-
-    /// Use when the data isn't laid out in memory consecutively.
-    pub fn write_all_ref(&self, gl: &gl::Gl, data: &[&ViewData]) {
-        unsafe {
-            let total_bytes = data.len() * std::mem::size_of::<ViewData>();
-            gl.named_buffer_reserve(self.buffer_name, total_bytes, gl::DYNAMIC_DRAW);
-            for (index, &item) in data.iter().enumerate() {
-                gl.named_buffer_sub_data(
-                    self.buffer_name,
-                    index * std::mem::size_of::<ViewData>(),
-                    item.value_as_bytes(),
-                );
-            }
-        }
-    }
-
-    #[inline]
-    pub fn write_all(&self, gl: &gl::Gl, data: &[ViewData]) {
-        unsafe {
-            gl.named_buffer_data(self.buffer_name, data.slice_to_bytes(), gl::DYNAMIC_DRAW);
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-#[repr(C, align(256))]
-pub struct MaterialData {
-    pub shininess: f32,
-}
-
-pub const MATERIAL_DATA_DECLARATION: &'static str = r"
-layout(std140, binding = MATERIAL_DATA_BINDING) uniform MaterialData {
-    float shininess;
-};
-";
-
-#[derive(Debug, Copy, Clone)]
-pub struct MaterialResources {
-    buffer_name: gl::BufferName,
-}
-
-impl MaterialResources {
-    #[inline]
-    pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            MaterialResources {
-                buffer_name: gl.create_buffer(),
-            }
-        }
-    }
-
-    #[inline]
-    pub fn bind_index(&self, gl: &gl::Gl, index: usize) {
-        unsafe {
-            gl.bind_buffer_range(
-                gl::UNIFORM_BUFFER,
-                MATERIAL_DATA_BINDING,
-                self.buffer_name,
-                std::mem::size_of::<MaterialData>() * index,
-                std::mem::size_of::<MaterialData>(),
-            );
-        }
-    }
-
-    #[inline]
-    pub fn write_all(&self, gl: &gl::Gl, data: &[MaterialData]) {
-        unsafe {
-            gl.named_buffer_data(self.buffer_name, data.slice_to_bytes(), gl::DYNAMIC_DRAW);
-        }
-    }
-}
-
 #[derive(Debug)]
 #[repr(C)]
-pub struct CLSBufferHeader {
+pub struct ClusterHeader {
     pub dimensions: Vector4<u32>,
     pub pos_from_wld_to_cls: Matrix4<f32>,
     pub pos_from_cls_to_wld: Matrix4<f32>,
 }
 
 #[derive(Debug)]
-pub struct CLSBuffer {
-    pub header: CLSBufferHeader,
+pub struct ClusterData {
+    pub header: ClusterHeader,
     pub body: Vec<[u32; crate::cls::MAX_LIGHTS_PER_CLUSTER]>,
 }
 
-pub const CLS_BUFFER_DECLARATION: &'static str = r"
-layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
+pub const CLUSTER_DECLARATION: &'static str = r"
+layout(std430, binding = CLS_BUFFER_BINDING) buffer ClusterData {
     uvec4 cluster_dims;
     mat4 pos_from_wld_to_cls;
     mat4 pos_from_cls_to_wld;
@@ -333,15 +95,15 @@ layout(std430, binding = CLS_BUFFER_BINDING) buffer CLSBuffer {
 ";
 
 #[derive(Debug, Copy, Clone)]
-pub struct CLSResources {
+pub struct ClusterBuffer {
     buffer_name: gl::BufferName,
 }
 
-impl CLSResources {
+impl ClusterBuffer {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
-            CLSResources {
+            ClusterBuffer {
                 buffer_name: gl.create_buffer(),
             }
         }
@@ -355,10 +117,10 @@ impl CLSResources {
     }
 
     #[inline]
-    pub fn write(&self, gl: &gl::Gl, cls_buffer: &CLSBuffer) {
+    pub fn write(&self, gl: &gl::Gl, cluster_data: &ClusterData) {
         unsafe {
-            let header_bytes = cls_buffer.header.value_as_bytes();
-            let body_bytes = cls_buffer.body.vec_as_bytes();
+            let header_bytes = cluster_data.header.value_as_bytes();
+            let body_bytes = cluster_data.body.vec_as_bytes();
             let total_size = header_bytes.len() + body_bytes.len();
             gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
             gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
@@ -520,10 +282,7 @@ impl Shader {
                         .chain(std::iter::once(world.light_space.value.source()))
                         .chain(
                             [
-                                rendering::GLOBAL_DATA_DECLARATION,
-                                rendering::VIEW_DATA_DECLARATION,
-                                rendering::CLS_BUFFER_DECLARATION,
-                                rendering::MATERIAL_DATA_DECLARATION,
+                                rendering::CLUSTER_DECLARATION,
                             ]
                             .iter()
                             .copied(),
@@ -639,5 +398,68 @@ impl Program {
     pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ProgramName {
         self.branch.panic_if_outdated(global);
         &self.name
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct BufferPoolIndex(usize);
+
+#[derive(Debug)]
+pub struct BufferPool {
+    buffers: Vec<gl::BufferName>,
+    unused: BufferPoolIndex,
+}
+
+impl BufferPool {
+    pub fn new() -> Self {
+        Self {
+            buffers: Vec::new(),
+            unused: BufferPoolIndex(0),
+        }
+    }
+
+    pub fn unused(&mut self, gl: &gl::Gl) -> BufferPoolIndex {
+        let index = self.unused;
+
+        self.unused.0 += 1;
+
+        if self.buffers.len() < self.unused.0 {
+            unsafe {
+                self.buffers.push(gl.create_buffer());
+            }
+
+            debug_assert_eq!(self.buffers.len(), self.unused.0);
+        }
+
+        index
+    }
+
+    pub fn reset(&mut self, gl: &gl::Gl) {
+        // Free up unused memory. Should only happen occasionally.
+        while self.unused.0 < self.buffers.len() {
+            unsafe {
+                // Can unwrap since unused can't be less than 0.
+                let buffer_name = self.buffers.pop().unwrap();
+                gl.delete_buffer(buffer_name);
+            }
+        }
+
+        self.unused.0 = 0;
+    }
+
+    pub fn drop(&mut self, gl: &gl::Gl) {
+        while let Some(buffer_name) = self.buffers.pop() {
+            unsafe {
+                gl.delete_buffer(buffer_name);
+            }
+        }
+    }
+}
+
+impl std::ops::Index<BufferPoolIndex> for BufferPool {
+    type Output = gl::BufferName;
+
+    fn index(&self, index: BufferPoolIndex) -> &Self::Output {
+        &self.buffers[index.0]
     }
 }

@@ -22,7 +22,7 @@ pub fn compute_light_assignment(
     pos_from_hmd_to_wld: Matrix4<f64>,
     point_lights: &[light::PointLight],
     configuration: &configuration::ClusteredLightShading,
-) -> rendering::CLSBuffer {
+) -> rendering::ClusterData {
     // Get configuration.
     let cluster_side_max = configuration.cluster_side;
     let light_index = configuration.light_index;
@@ -133,8 +133,8 @@ pub fn compute_light_assignment(
         }
     }
 
-    rendering::CLSBuffer {
-        header: rendering::CLSBufferHeader {
+    rendering::ClusterData {
+        header: rendering::ClusterHeader {
             dimensions: dimensions_u32.extend(MAX_LIGHTS_PER_CLUSTER as u32),
             pos_from_wld_to_cls,
             pos_from_cls_to_wld,

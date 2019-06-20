@@ -2,7 +2,7 @@ use crate::camera;
 
 pub const FILE_PATH: &'static str = "configuration.toml";
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, Default)]
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct Root {
     pub global: Global,
     pub window: Window,
@@ -18,32 +18,14 @@ pub struct Window {
     pub rgb_bits: u8,
     pub alpha_bits: u8,
     pub srgb: bool,
-}
-
-impl Default for Window {
-    fn default() -> Self {
-        Window {
-            vsync: true,
-            rgb_bits: 24,
-            alpha_bits: 8,
-            srgb: true,
-        }
-    }
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct Global {
     pub diffuse_srgb: bool,
     pub framebuffer_srgb: bool,
-}
-
-impl Default for Global {
-    fn default() -> Self {
-        Global {
-            diffuse_srgb: true,
-            framebuffer_srgb: true,
-        }
-    }
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
@@ -55,29 +37,9 @@ pub struct ClusteredLightShading {
     pub animate_light_count: Option<f32>,
 }
 
-impl Default for ClusteredLightShading {
-    fn default() -> Self {
-        ClusteredLightShading {
-            cluster_side: 5.0,
-            light_index: None,
-            min_light_count: 1,
-            animate_z: None,
-            animate_light_count: None,
-        }
-    }
-}
-
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct GenericCamera {
     pub maximum_smoothness: f32,
-}
-
-impl Default for GenericCamera {
-    fn default() -> Self {
-        GenericCamera {
-            maximum_smoothness: 0.8,
-        }
-    }
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
@@ -87,18 +49,6 @@ pub struct Camera {
     pub positional_velocity: f32,
     pub angular_velocity: f32,
     pub zoom_velocity: f32,
-}
-
-impl Default for Camera {
-    fn default() -> Self {
-        Camera {
-            z0: -0.1,
-            z1: -50.0,
-            positional_velocity: 2.0,
-            angular_velocity: 0.4,
-            zoom_velocity: 1.0,
-        }
-    }
 }
 
 impl Into<camera::CameraProperties> for Camera {
@@ -116,6 +66,20 @@ impl Into<camera::CameraProperties> for Camera {
             positional_velocity,
             angular_velocity,
             zoom_velocity,
+        }
+    }
+}
+
+pub fn read(configuration_path: &std::path::Path) -> Root {
+    match std::fs::read_to_string(&configuration_path) {
+        Ok(contents) => match toml::from_str(&contents) {
+            Ok(configuration) => configuration,
+            Err(err) => {
+                panic!("Failed to parse configuration file {:?}: {}.", configuration_path, err)
+            }
+        },
+        Err(err) => {
+            panic!("Failed to read configuration file {:?}: {}.", configuration_path, err)
         }
     }
 }

@@ -10,7 +10,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters<'a> {
-    pub cls_buffer: &'a rendering::CLSBuffer,
+    pub cluster_data: &'a rendering::ClusterData,
     pub configuration: &'a configuration::ClusteredLightShading,
 }
 
@@ -24,7 +24,7 @@ impl Renderer {
 
                 let configuration = params.configuration;
 
-                let [xn, yn, zn, _wn]: [u32; 4] = params.cls_buffer.header.dimensions.into();
+                let [xn, yn, zn, _wn]: [u32; 4] = params.cluster_data.header.dimensions.into();
                 for zi in 0..zn {
                     if let Some(animate_z) = configuration.animate_z {
                         if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
@@ -42,7 +42,7 @@ impl Renderer {
                     for yi in 0..yn {
                         for xi in 0..xn {
                             let i = ((zi * yn) + yi) * xn + xi;
-                            let cluster = &params.cls_buffer.body[i as usize];
+                            let cluster = &params.cluster_data.body[i as usize];
                             let light_count = cluster[0];
                             if light_count >= min_light_count {
                                 if let Some(loc) = self.light_count_loc.into() {
@@ -54,7 +54,7 @@ impl Renderer {
                                         Matrix4::from_translation(Vector3::new(xi as f32, yi as f32, zi as f32));
 
                                     let pos_from_obj_to_wld =
-                                        params.cls_buffer.header.pos_from_cls_to_wld * pos_from_obj_to_cls;
+                                        params.cluster_data.header.pos_from_cls_to_wld * pos_from_obj_to_cls;
                                     gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
                                 }
 
