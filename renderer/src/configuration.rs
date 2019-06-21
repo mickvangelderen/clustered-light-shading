@@ -7,6 +7,7 @@ pub struct Root {
     pub global: Global,
     pub window: Window,
     pub clustered_light_shading: ClusteredLightShading,
+    pub virtual_stereo: VirtualStereo,
     pub camera: GenericCamera,
     pub main_camera: Camera,
     pub debug_camera: Camera,
@@ -26,6 +27,11 @@ pub struct Window {
 pub struct Global {
     pub diffuse_srgb: bool,
     pub framebuffer_srgb: bool,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
+pub struct VirtualStereo {
+    pub enabled: bool,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]

@@ -26,6 +26,16 @@ where
             dimensions: p1 - p0,
         }
     }
+
+    #[inline]
+    pub fn p0(&self) -> Point2<S> {
+        self.origin
+    }
+
+    #[inline]
+    pub fn p1(&self) -> Point2<S> {
+        self.origin + self.dimensions
+    }
 }
 
 impl Viewport<i32> {

@@ -8,6 +8,7 @@ mod macros;
 pub(crate) use gl_typed as gl;
 pub(crate) use incremental as ic;
 pub(crate) use log::*;
+pub(crate) use rand::prelude::*;
 pub(crate) use regex::{Regex, RegexBuilder};
 #[allow(unused_imports)]
 pub(crate) use std::convert::{TryFrom, TryInto};
@@ -33,6 +34,7 @@ mod light;
 mod line_renderer;
 mod mono_stereo;
 mod overlay_renderer;
+mod rain;
 mod rendering;
 mod resources;
 mod timings;
@@ -313,6 +315,7 @@ fn main() {
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             }),
             global,
+            rain_drops: Vec::new(),
         }
     };
 
@@ -386,43 +389,65 @@ fn main() {
             cam_to_hmd: Matrix4<f64>,
         }
 
-        struct StereoData<'a> {
-            vr_context: &'a vr::Context,
-            win_size: Vector2<u32>,
+        struct StereoData {
+            win_size: Vector2<i32>,
             hmd_to_bdy: Matrix4<f64>,
             eyes: EyeMap<EyeData>,
         }
 
-        let stereo_data = vr_context.as_ref().map(|vr_context| {
-            let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
-                unsafe { mem::zeroed() };
-            // NOTE: OpenVR will block upon querying the pose for as long as
-            // possible but no longer than it takes to submit the new frame. This is
-            // done to render the most up-to-date application state as possible.
-            vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
+        let stereo_data = vr_context
+            .as_ref()
+            .map(|vr_context| {
+                let mut poses: [vr::sys::TrackedDevicePose_t; vr::sys::k_unMaxTrackedDeviceCount as usize] =
+                    unsafe { mem::zeroed() };
+                // NOTE: OpenVR will block upon querying the pose for as long as
+                // possible but no longer than it takes to submit the new frame. This is
+                // done to render the most up-to-date application state as possible.
+                vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
 
-            let win_size = vr_context.system().get_recommended_render_target_size();
+                let win_size = vr_context.system().get_recommended_render_target_size();
 
-            let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
-            assert!(hmd_pose.bPoseIsValid, "Received invalid pose from VR.");
-            let hmd_to_bdy = Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap();
+                let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
+                assert!(hmd_pose.bPoseIsValid, "Received invalid pose from VR.");
+                let hmd_to_bdy = Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap();
 
-            StereoData {
-                vr_context,
-                win_size: Vector2::new(win_size.width, win_size.height),
-                hmd_to_bdy,
-                eyes: EyeMap::new(|eye_key| {
-                    let eye = Eye::from(eye_key);
-                    let cam_to_hmd = Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
-                        .cast()
-                        .unwrap();
-                    EyeData {
-                        tangents: vr_context.system().get_projection_raw(eye),
-                        cam_to_hmd: cam_to_hmd,
-                    }
-                }),
-            }
-        });
+                StereoData {
+                    win_size: Vector2::new(win_size.width, win_size.height).cast().unwrap(),
+                    hmd_to_bdy,
+                    eyes: EyeMap::new(|eye_key| {
+                        let eye = Eye::from(eye_key);
+                        let cam_to_hmd = Matrix4::from_hmd(vr_context.system().get_eye_to_head_transform(eye))
+                            .cast()
+                            .unwrap();
+                        EyeData {
+                            tangents: vr_context.system().get_projection_raw(eye),
+                            cam_to_hmd: cam_to_hmd,
+                        }
+                    }),
+                }
+            })
+            .or_else(|| {
+                if configuration.virtual_stereo.enabled {
+                    Some(StereoData {
+                        win_size: Vector2::new(world.win_size.width / 2.0, world.win_size.height)
+                            .cast()
+                            .unwrap(),
+                        hmd_to_bdy: Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0)),
+                        eyes: EyeMap {
+                            left: EyeData {
+                                tangents: [-1.0, 1.0, -1.0, 1.0],
+                                cam_to_hmd: Matrix4::from_translation(Vector3::new(-0.1, 0.01, -0.01)),
+                            },
+                            right: EyeData {
+                                tangents: [-1.0, 1.0, -1.0, 1.0],
+                                cam_to_hmd: Matrix4::from_translation(Vector3::new(0.1, 0.01, -0.01)),
+                            },
+                        },
+                    })
+                } else {
+                    None
+                }
+            });
 
         process_fs_events(&fs_rx, &gl, &mut world, &mut configuration);
         process_window_events(&mut events_loop, &vr_context, &mut world);
@@ -478,12 +503,41 @@ fn main() {
 
         let compute_light_data = |light_resources_vec: &mut Vec<gl::BufferName>,
                                   light_data_vec: &mut Vec<Matrix4<f64>>,
+                                    rain_drops: &[rain::Particle],
                                   wld_to_lgt: Matrix4<f64>,
                                   lgt_to_wld: Matrix4<f64>| unsafe {
             let mut point_lights: [light::LightBufferLight; rendering::POINT_LIGHT_CAPACITY as usize] =
                 std::mem::uninitialized();
-            for i in 0..rendering::POINT_LIGHT_CAPACITY as usize {
-                point_lights[i] = light::LightBufferLight::from_point_light(resources.point_lights[i], wld_to_lgt);
+
+            let mut count = 0;
+
+            // for i in 0..resources.point_lights.len() {
+            //     if count < point_lights.len() {
+            //         point_lights[count] =
+            //             light::LightBufferLight::from_point_light(resources.point_lights[i], wld_to_lgt);
+            //         count += 1;
+            //     }
+            // }
+
+            for rain_drop in rain_drops.iter() {
+                if count < point_lights.len() {
+                    point_lights[count] = light::LightBufferLight::from_point_light(
+                        light::PointLight {
+                            ambient: light::RGB::new(0.2000, 0.2000, 0.2000),
+                            diffuse: light::RGB::new(4.0000, 4.0000, 4.0000),
+                            specular: light::RGB::new(1.0000, 1.0000, 1.0000),
+                            pos_in_wld: Point3::from_vec(rain_drop.position),
+                            attenuation: light::AttenParams {
+                                intensity: 0.5,
+                                clip_near: 0.25,
+                                cutoff: 0.02,
+                            }
+                            .into(),
+                        },
+                        wld_to_lgt,
+                    );
+                    count += 1;
+                }
             }
 
             let index = light_data_vec.len();
@@ -491,6 +545,9 @@ fn main() {
             let buffer_data = light::LightBuffer {
                 wld_to_lgt: wld_to_lgt.cast().unwrap(),
                 lgt_to_wld: lgt_to_wld.cast().unwrap(),
+
+                count: Vector4::new(count as u32, 0, 0, 0),
+
                 point_lights,
             };
 
@@ -502,7 +559,7 @@ fn main() {
             let buffer_name = light_resources_vec[index];
 
             gl.named_buffer_data(buffer_name, buffer_data.value_as_bytes(), gl::STREAM_DRAW);
-            gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::LIGHT_BUFFER_BINDING, buffer_name);
+            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, rendering::LIGHT_BUFFER_BINDING, buffer_name);
 
             light_data_vec.push(wld_to_lgt);
         };
@@ -527,12 +584,11 @@ fn main() {
         if real_light_space == RealLightSpace::Wld {
             let wld_to_lgt = Matrix4::identity();
             let lgt_to_wld = Matrix4::identity();
-            compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+            compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
         }
 
         match stereo_data {
             Some(StereoData {
-                vr_context,
                 win_size,
                 hmd_to_bdy,
                 eyes,
@@ -550,11 +606,11 @@ fn main() {
                     {
                         let wld_to_lgt = Matrix4::identity();
                         let lgt_to_wld = Matrix4::identity();
-                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
                     }
                 }
 
-                let viewport = Viewport::from_dimensions(win_size.cast().unwrap());
+                let viewport = Viewport::from_dimensions(win_size);
                 let render_camera = world.transition_camera.current_camera;
                 let bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
 
@@ -564,7 +620,7 @@ fn main() {
                 if real_light_space == RealLightSpace::Hmd {
                     let wld_to_lgt = wld_to_hmd;
                     let lgt_to_wld = hmd_to_wld;
-                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
                 }
 
                 for &eye in EYE_KEYS.iter() {
@@ -580,7 +636,7 @@ fn main() {
                     if real_light_space == RealLightSpace::Cam {
                         let wld_to_lgt = wld_to_cam;
                         let lgt_to_wld = cam_to_wld;
-                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
                     }
 
                     let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
@@ -613,6 +669,7 @@ fn main() {
                     main_resources_index += 1;
 
                     main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
+                    viewport.set(&gl);
 
                     render_main(
                         &gl,
@@ -624,19 +681,27 @@ fn main() {
                     );
 
                     unsafe {
+                        let w = world.win_size.width as i32;
+                        let h = world.win_size.height as i32;
+
+                        let dst_viewport = match eye {
+                            vr::Eye::Left => Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h)),
+                            vr::Eye::Right => Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h)),
+                        };
+
                         gl.blit_named_framebuffer(
                             main_resources.framebuffer_name.into(),
                             gl::FramebufferName::Default,
-                            viewport.origin.x,
-                            viewport.origin.y,
-                            viewport.dimensions.x,
-                            viewport.dimensions.y,
-                            viewport.origin.x,
-                            viewport.origin.y,
-                            viewport.dimensions.x,
-                            viewport.dimensions.y,
+                            viewport.p0().x,
+                            viewport.p0().y,
+                            viewport.p1().x,
+                            viewport.p1().y,
+                            dst_viewport.p0().x,
+                            dst_viewport.p0().y,
+                            dst_viewport.p1().x,
+                            dst_viewport.p1().y,
                             gl::BlitMask::COLOR_BUFFER_BIT,
-                            gl::LINEAR,
+                            gl::NEAREST,
                         );
                     }
                 }
@@ -647,7 +712,7 @@ fn main() {
                     {
                         let wld_to_lgt = Matrix4::identity();
                         let lgt_to_wld = Matrix4::identity();
-                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
                     }
                 }
 
@@ -664,7 +729,7 @@ fn main() {
                 if real_light_space == RealLightSpace::Cam || real_light_space == RealLightSpace::Hmd {
                     let wld_to_lgt = wld_to_cam;
                     let lgt_to_wld = cam_to_wld;
-                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
                 }
 
                 let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
@@ -697,6 +762,7 @@ fn main() {
                 main_resources_index += 1;
 
                 main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
+                viewport.set(&gl);
 
                 render_main(
                     &gl,
@@ -720,7 +786,7 @@ fn main() {
                         viewport.dimensions.x,
                         viewport.dimensions.y,
                         gl::BlitMask::COLOR_BUFFER_BIT,
-                        gl::LINEAR,
+                        gl::NEAREST,
                     );
                 }
             }
@@ -1017,6 +1083,23 @@ pub fn process_window_events(
         delta_time,
         end_camera: &world.target_camera().current_to_camera(),
     });
+
+    {
+        let center = world.transition_camera.current_camera.transform.position;
+        let mut rng = rand::thread_rng();
+        let p0 = Point3::from_value(-10.0) + center;
+        let p1 = Point3::from_value(10.0) + center;
+
+        for rain_drop in world.rain_drops.iter_mut() {
+            rain_drop.update(delta_time, &mut rng, p0, p1);
+        }
+
+        for _ in 0..10 {
+            if world.rain_drops.len() < 100 {
+                world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
+            }
+        }
+    }
 
     if vr_context.is_some() {
         // Pitch makes me dizzy.

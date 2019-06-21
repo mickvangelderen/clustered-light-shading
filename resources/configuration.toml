@@ -17,6 +17,9 @@ min_light_count = 1
 # animate_z = 2.0
 # animate_light_count = 2.0
 
+[virtual_stereo]
+enabled = false
+
 [camera]
 maximum_smoothness = 0.80
 
