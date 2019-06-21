@@ -372,9 +372,12 @@ fn main() {
     // let mut main_resources_vec: Vec<MainResources> = Vec::new();
     // let mut debug_resources_vec = Vec::new();
 
-    let mut light_buffer_pool = BufferPool::new();
     let mut cluster_buffer_pool = BufferPool::new();
     let mut camera_buffer_pool = BufferPool::new();
+
+    let mut light_resources_vec = Vec::new();
+    let mut light_data_vec = Vec::new();
+
     let mut main_resources_vec = Vec::new();
 
     while world.running {
@@ -385,6 +388,7 @@ fn main() {
 
         struct StereoData<'a> {
             vr_context: &'a vr::Context,
+            win_size: Vector2<u32>,
             hmd_to_bdy: Matrix4<f64>,
             eyes: EyeMap<EyeData>,
         }
@@ -397,12 +401,15 @@ fn main() {
             // done to render the most up-to-date application state as possible.
             vr_context.compositor().wait_get_poses(&mut poses[..], None).unwrap();
 
+            let win_size = vr_context.system().get_recommended_render_target_size();
+
             let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
             assert!(hmd_pose.bPoseIsValid, "Received invalid pose from VR.");
             let hmd_to_bdy = Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap();
 
             StereoData {
                 vr_context,
+                win_size: Vector2::new(win_size.width, win_size.height),
                 hmd_to_bdy,
                 eyes: EyeMap::new(|eye_key| {
                     let eye = Eye::from(eye_key);
@@ -436,8 +443,9 @@ fn main() {
         //  - hmd --[clustered light shading dimensions]--> cls
         //  - cam --[projection]--> clp
 
+        light_data_vec.clear();
+
         let mut main_resources_index = 0;
-        let mut debug_resources_index = 0;
 
         fn mono_frustrum(camera: &camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
             let z0 = camera.properties.z0 as f64;
@@ -468,19 +476,35 @@ fn main() {
             }
         }
 
-        let compute_and_upload_light_positions = |lighting_buffer_name, wld_to_lgt| unsafe {
-            let mut point_lights: [light::PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize] =
+        let compute_light_data = |light_resources_vec: &mut Vec<gl::BufferName>,
+                                  light_data_vec: &mut Vec<Matrix4<f64>>,
+                                  wld_to_lgt: Matrix4<f64>,
+                                  lgt_to_wld: Matrix4<f64>| unsafe {
+            let mut point_lights: [light::LightBufferLight; rendering::POINT_LIGHT_CAPACITY as usize] =
                 std::mem::uninitialized();
             for i in 0..rendering::POINT_LIGHT_CAPACITY as usize {
-                point_lights[i] = light::PointLightBufferEntry::from_point_light(resources.point_lights[i], wld_to_lgt);
+                point_lights[i] = light::LightBufferLight::from_point_light(resources.point_lights[i], wld_to_lgt);
             }
-            let lighting_buffer = light::LightingBuffer { point_lights };
-            gl.named_buffer_data(lighting_buffer_name, lighting_buffer.value_as_bytes(), gl::STREAM_DRAW);
-            gl.bind_buffer_base(
-                gl::UNIFORM_BUFFER,
-                rendering::LIGHT_BUFFER_BINDING,
-                lighting_buffer_name,
-            );
+
+            let index = light_data_vec.len();
+
+            let buffer_data = light::LightBuffer {
+                wld_to_lgt: wld_to_lgt.cast().unwrap(),
+                lgt_to_wld: lgt_to_wld.cast().unwrap(),
+                point_lights,
+            };
+
+            if light_resources_vec.len() < index + 1 {
+                light_resources_vec.push(gl.create_buffer());
+                debug_assert_eq!(light_resources_vec.len(), index + 1);
+            }
+
+            let buffer_name = light_resources_vec[index];
+
+            gl.named_buffer_data(buffer_name, buffer_data.value_as_bytes(), gl::STREAM_DRAW);
+            gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::LIGHT_BUFFER_BINDING, buffer_name);
+
+            light_data_vec.push(wld_to_lgt);
         };
 
         #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -501,49 +525,46 @@ fn main() {
         };
 
         if real_light_space == RealLightSpace::Wld {
-            let buffer_index = light_buffer_pool.unused(&gl);
-            compute_and_upload_light_positions(light_buffer_pool[buffer_index], Matrix4::identity());
+            let wld_to_lgt = Matrix4::identity();
+            let lgt_to_wld = Matrix4::identity();
+            compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
         }
-
-        if world.render_technique.value == RenderTechnique::Clustered {}
 
         match stereo_data {
             Some(StereoData {
                 vr_context,
+                win_size,
                 hmd_to_bdy,
                 eyes,
             }) => {
-                match world.render_technique.value {
-                    RenderTechnique::Naive => {
-                        //
-                    }
-                    RenderTechnique::Tiled => {
-                        //
-                    }
-                    RenderTechnique::Clustered => {
-                        // compute cls space.
-                        let cluster_camera = &world.cameras.main;
-                        let bdy_to_wld = cluster_camera.current_transform.pos_to_parent();
-                        let cam_mats = eyes.map(|eye| {
-                            let frustrum = stereo_frustrum(&cluster_camera.properties, eye.tangents);
-                            let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                            let clp_to_cam = cam_to_clp.invert().unwrap();
-                        });
-                        unimplemented!();
-                        // let buffer_index = light_buffer_pool.unused(&gl);
-                        // compute_and_upload_light_positions(light_buffer_pool[buffer_index], wld_to_cls);
+                if world.render_technique.value == RenderTechnique::Clustered {
+                    // compute cls space.
+                    let cluster_camera = &world.cameras.main;
+                    let bdy_to_wld = cluster_camera.current_transform.pos_to_parent();
+                    let cam_mats = eyes.as_ref().map(|eye| {
+                        let frustrum = stereo_frustrum(&cluster_camera.properties, eye.tangents);
+                        let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                        let clp_to_cam = cam_to_clp.invert().unwrap();
+                    });
+
+                    {
+                        let wld_to_lgt = Matrix4::identity();
+                        let lgt_to_wld = Matrix4::identity();
+                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
                     }
                 }
 
-                let render_camera = &world.transition_camera.current_camera;
+                let viewport = Viewport::from_dimensions(win_size.cast().unwrap());
+                let render_camera = world.transition_camera.current_camera;
                 let bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
 
                 let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
                 let wld_to_hmd = hmd_to_wld.invert().unwrap();
 
                 if real_light_space == RealLightSpace::Hmd {
-                    let buffer_index = light_buffer_pool.unused(&gl);
-                    compute_and_upload_light_positions(light_buffer_pool[buffer_index], wld_to_hmd.cast().unwrap());
+                    let wld_to_lgt = wld_to_hmd;
+                    let lgt_to_wld = hmd_to_wld;
+                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
                 }
 
                 for &eye in EYE_KEYS.iter() {
@@ -557,32 +578,79 @@ fn main() {
                     let clp_to_cam = cam_to_clp.invert().unwrap();
 
                     if real_light_space == RealLightSpace::Cam {
-                        let buffer_index = light_buffer_pool.unused(&gl);
-                        compute_and_upload_light_positions(light_buffer_pool[buffer_index], wld_to_cam.cast().unwrap());
+                        let wld_to_lgt = wld_to_cam;
+                        let lgt_to_wld = cam_to_wld;
+                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
                     }
 
-                    // set cam_pos_in_lgt
-                    let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap();
+                    let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
+                    let cam_pos_in_lgt = light_data_vec.last().unwrap() * cam_pos_in_wld;
 
-                    let wld_to_lgt = match world.light_space.value {
-                        LightSpace::Wld => Matrix4::identity(),
-                        LightSpace::Hmd => wld_to_hmd,
-                        LightSpace::Cam => wld_to_cam,
-                    };
+                    unsafe {
+                        let camera_buffer = CameraBuffer {
+                            wld_to_cam: wld_to_cam.cast().unwrap(),
+                            cam_to_wld: cam_to_wld.cast().unwrap(),
 
-                    // rendering requires
-                    // obj_to_wld
-                    // wld_to_cam
-                    // cam_to_clp
-                    // wld_to_lgt
-                    //
-                    // clp_to_cam
-                    //
-                    // TODO: render main
-                    //             depth_renderer.render(&gl, &mut world, &resources);
+                            cam_to_clp: cam_to_clp.cast().unwrap(),
+                            clp_to_cam: clp_to_cam.cast().unwrap(),
+
+                            cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
+                        };
+
+                        let buffer_index = camera_buffer_pool.unused(&gl);
+                        let buffer_name = camera_buffer_pool[buffer_index];
+
+                        gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
+                        gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
+                    }
+
+                    if main_resources_vec.len() <= main_resources_index {
+                        let main_resources = MainResources::new(&gl, viewport.dimensions.x, viewport.dimensions.y);
+                        main_resources_vec.push(main_resources);
+                    }
+
+                    let main_resources = &mut main_resources_vec[main_resources_index];
+                    main_resources_index += 1;
+
+                    main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
+
+                    render_main(
+                        &gl,
+                        &main_resources,
+                        &resources,
+                        &mut world,
+                        &mut depth_renderer,
+                        &mut basic_renderer,
+                    );
+
+                    unsafe {
+                        gl.blit_named_framebuffer(
+                            main_resources.framebuffer_name.into(),
+                            gl::FramebufferName::Default,
+                            viewport.origin.x,
+                            viewport.origin.y,
+                            viewport.dimensions.x,
+                            viewport.dimensions.y,
+                            viewport.origin.x,
+                            viewport.origin.y,
+                            viewport.dimensions.x,
+                            viewport.dimensions.y,
+                            gl::BlitMask::COLOR_BUFFER_BIT,
+                            gl::LINEAR,
+                        );
+                    }
                 }
             }
             None => {
+                if world.render_technique.value == RenderTechnique::Clustered {
+                    // FIXME: COMPUTE CLS SPACE
+                    {
+                        let wld_to_lgt = Matrix4::identity();
+                        let lgt_to_wld = Matrix4::identity();
+                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
+                    }
+                }
+
                 let render_camera = &world.transition_camera.current_camera;
                 let viewport =
                     Viewport::from_dimensions(Vector2::new(world.win_size.width as i32, world.win_size.height as i32));
@@ -594,22 +662,15 @@ fn main() {
                 let clp_to_cam = cam_to_clp.invert().unwrap();
 
                 if real_light_space == RealLightSpace::Cam || real_light_space == RealLightSpace::Hmd {
-                    let buffer_index = light_buffer_pool.unused(&gl);
-                    compute_and_upload_light_positions(light_buffer_pool[buffer_index], wld_to_cam.cast().unwrap());
+                    let wld_to_lgt = wld_to_cam;
+                    let lgt_to_wld = cam_to_wld;
+                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, wld_to_lgt, lgt_to_wld);
                 }
 
-                let wld_to_lgt = match world.light_space.value {
-                    LightSpace::Wld => Matrix4::identity(),
-                    LightSpace::Hmd => wld_to_cam,
-                    LightSpace::Cam => wld_to_cam,
-                };
-                let lgt_to_wld = wld_to_lgt.invert().unwrap();
                 let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
-                let cam_pos_in_lgt = wld_to_lgt * cam_pos_in_wld;
+                let cam_pos_in_lgt = light_data_vec.last().unwrap() * cam_pos_in_wld;
 
                 unsafe {
-                    let buffer_index = camera_buffer_pool.unused(&gl);
-
                     let camera_buffer = CameraBuffer {
                         wld_to_cam: wld_to_cam.cast().unwrap(),
                         cam_to_wld: cam_to_wld.cast().unwrap(),
@@ -617,16 +678,14 @@ fn main() {
                         cam_to_clp: cam_to_clp.cast().unwrap(),
                         clp_to_cam: clp_to_cam.cast().unwrap(),
 
-                        wld_to_lgt: wld_to_lgt.cast().unwrap(),
-                        lgt_to_wld: lgt_to_wld.cast().unwrap(),
-
                         cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
                     };
 
+                    let buffer_index = camera_buffer_pool.unused(&gl);
                     let buffer_name = camera_buffer_pool[buffer_index];
 
-                    gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                     gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
+                    gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                 }
 
                 if main_resources_vec.len() <= main_resources_index {
@@ -702,7 +761,6 @@ fn main() {
         gl_window.swap_buffers().unwrap();
 
         // TODO: Borrow the pool instead.
-        light_buffer_pool.reset(&gl);
         cluster_buffer_pool.reset(&gl);
         camera_buffer_pool.reset(&gl);
 
