@@ -6,11 +6,11 @@ use gl_typed as gl;
 pub struct Renderer {
     pub program: rendering::Program,
     pub light_count_loc: gl::OptionUniformLocation,
-    pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
+    pub obj_to_wld_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters<'a> {
-    pub cluster_data: &'a rendering::ClusterData,
+    pub cluster_data: &'a rendering::ClusterBuffer,
     pub configuration: &'a configuration::ClusteredLightShading,
 }
 
@@ -49,13 +49,13 @@ impl Renderer {
                                     gl.uniform_1ui(loc, light_count);
                                 }
 
-                                if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                                    let pos_from_obj_to_cls =
+                                if let Some(loc) = self.obj_to_wld_loc.into() {
+                                    let obj_to_cls =
                                         Matrix4::from_translation(Vector3::new(xi as f32, yi as f32, zi as f32));
 
-                                    let pos_from_obj_to_wld =
-                                        params.cluster_data.header.pos_from_cls_to_wld * pos_from_obj_to_cls;
-                                    gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
+                                    let obj_to_wld =
+                                        params.cluster_data.header.cls_to_wld * obj_to_cls;
+                                    gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
                                 }
 
                                 gl.draw_elements(gl::TRIANGLES, resources.cluster_element_count, gl::UNSIGNED_INT, 0);
@@ -76,7 +76,7 @@ impl Renderer {
             if let ProgramName::Linked(name) = self.program.name(&world.global) {
                 unsafe {
                     self.light_count_loc = get_uniform_location!(gl, *name, "light_count");
-                    self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, *name, "pos_from_obj_to_wld");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
                 }
             }
         }
@@ -90,7 +90,7 @@ impl Renderer {
                 vec![world.add_source("cluster_renderer.frag")],
             ),
             light_count_loc: gl::OptionUniformLocation::NONE,
-            pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
+            obj_to_wld_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }

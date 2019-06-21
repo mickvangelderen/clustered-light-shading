@@ -8,8 +8,6 @@ uniform sampler2D specular_sampler;
 uniform vec2 normal_dimensions;
 // uniform vec2 specular_dimensions;
 
-uniform vec3 cam_pos_in_lgt;
-
 in vec2 fs_pos_in_tex;
 
 in vec3 fs_pos_in_lgt;
@@ -24,7 +22,7 @@ struct PointLight {
   vec4 att;
 };
 
-layout(std140, binding = LIGHTING_BUFFER_BINDING) uniform LightingBuffer {
+layout(std140, binding = LIGHT_BUFFER_BINDING) uniform LightBuffer {
   PointLight point_lights[POINT_LIGHT_CAPACITY];
 };
 
@@ -132,7 +130,8 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor,
   float specular_angle =
       max(0.0, dot(lgt_dir_norm,
                    reflect(-light_dir_norm, nor)));
-  float specular_weight = pow(specular_angle, shininess);
+  // TODO: Upload shininess
+  float specular_weight = pow(specular_angle, 10.0);
 
   // LIGHT ATTENUATION.
   // return vec3(diffuse_attenuation);
@@ -165,12 +164,7 @@ void main() {
     discard;
   }
 
-#if defined(LIGHT_SPACE_CAM)
-  // Camera position is at origin.
-  vec3 cam_dir_in_lgt_norm = normalize(-fs_pos_in_lgt);
-#else
-  vec3 cam_dir_in_lgt_norm = normalize(cam_pos_in_lgt - fs_pos_in_lgt);
-#endif
+  vec3 cam_dir_in_lgt_norm = normalize(cam_pos_in_lgt.xyz - fs_pos_in_lgt);
 
 #if defined(RENDER_TECHNIQUE_NAIVE)
   vec3 color_accumulator = vec3(0.0);
@@ -183,7 +177,7 @@ void main() {
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
   // NOTE: If we are rendering with clustered light shading, we always need to
   // compute the light positions in cls space. We make use of this by also doing
-  // the lighting in cls space. Therefore fs_pos_in_lgt == fs_pos_in_cls.
+  // the light in cls space. Therefore fs_pos_in_lgt == fs_pos_in_cls.
   uvec3 fs_idx_in_cls = uvec3(fs_pos_in_lgt);
 
   // CLUSTER INDICES X, Y, Z
@@ -241,5 +235,5 @@ void main() {
   // frag_color = texture(specular_sampler, fs_pos_in_tex);
 
   // NORMAL IN CAMERA SPACE
-  // frag_color = vec4(nor_in_lgt, 1.0);
+  frag_color = vec4(nor_in_lgt, 1.0);
 }

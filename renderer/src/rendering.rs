@@ -26,22 +26,22 @@ macro_rules! constant_declaration {
 
 // Storage buffer bindings.
 
-pub const GLOBAL_DATA_BINDING: u32 = 0;
-pub const VIEW_DATA_BINDING: u32 = 1;
-pub const MATERIAL_DATA_BINDING: u32 = 2;
-pub const AO_SAMPLE_BUFFER_BINDING: u32 = 3;
-pub const LIGHTING_BUFFER_BINDING: u32 = 4;
-pub const CLS_BUFFER_BINDING: u32 = 5;
+pub const GLOBAL_BUFFER_BINDING: u32 = 0;
+pub const CAMERA_BUFFER_BINDING: u32 = 1;
+pub const MATERIAL_BUFFER_BINDING: u32 = 2;
+pub const LIGHT_BUFFER_BINDING: u32 = 3;
+pub const TILE_BUFFER_BINDING: u32 = 4;
+pub const CLUSTER_BUFFER_BINDING: u32 = 5;
 
 macro_rules! buffer_binding_declaration {
     () => {
         r"
-#define GLOBAL_DATA_BINDING 0
-#define VIEW_DATA_BINDING 1
-#define MATERIAL_DATA_BINDING 2
-#define AO_SAMPLE_BUFFER_BINDING 3
-#define LIGHTING_BUFFER_BINDING 4
-#define CLS_BUFFER_BINDING 5
+#define GLOBAL_BUFFER_BINDING 0
+#define CAMERA_BUFFER_BINDING 1
+#define MATERIAL_BUFFER_BINDING 2
+#define LIGHT_BUFFER_BINDING 3
+#define TILE_BUFFER_BINDING 4
+#define CLUSTER_BUFFER_BINDING 5
 "
     };
 }
@@ -72,62 +72,92 @@ pub const COMMON_DECLARATION: &'static str = concat!(
 );
 
 #[derive(Debug)]
+#[repr(C, align(256))]
+pub struct CameraBuffer {
+    pub wld_to_cam: Matrix4<f32>,
+    pub cam_to_wld: Matrix4<f32>,
+
+    pub cam_to_clp: Matrix4<f32>,
+    pub clp_to_cam: Matrix4<f32>,
+
+    pub wld_to_lgt: Matrix4<f32>,
+    pub lgt_to_wld: Matrix4<f32>,
+
+    pub cam_pos_in_lgt: Vector4<f32>,
+}
+
+pub const CAMERA_BUFFER_DECLARATION: &'static str = r"
+layout(std140, binding = CAMERA_BUFFER_BINDING) uniform CameraBuffer {
+    mat4 wld_to_cam;
+    mat4 cam_to_wld;
+
+    mat4 cam_to_clp;
+    mat4 clp_to_cam;
+
+    mat4 wld_to_lgt;
+    mat4 lgt_to_wld;
+
+    vec4 cam_pos_in_lgt;
+};
+";
+
+#[derive(Debug)]
 #[repr(C)]
 pub struct ClusterHeader {
     pub dimensions: Vector4<u32>,
-    pub pos_from_wld_to_cls: Matrix4<f32>,
-    pub pos_from_cls_to_wld: Matrix4<f32>,
+    pub wld_to_cls: Matrix4<f32>,
+    pub cls_to_wld: Matrix4<f32>,
 }
 
 #[derive(Debug)]
-pub struct ClusterData {
+pub struct ClusterBuffer {
     pub header: ClusterHeader,
     pub body: Vec<[u32; crate::cls::MAX_LIGHTS_PER_CLUSTER]>,
 }
 
-pub const CLUSTER_DECLARATION: &'static str = r"
-layout(std430, binding = CLS_BUFFER_BINDING) buffer ClusterData {
+pub const CLUSTER_BUFFER_DECLARATION: &'static str = r"
+layout(std430, binding = CLUSTER_BUFFER_BINDING) buffer ClusterBuffer {
     uvec4 cluster_dims;
-    mat4 pos_from_wld_to_cls;
-    mat4 pos_from_cls_to_wld;
+    mat4 wld_to_cls;
+    mat4 cls_to_wld;
     uint clusters[];
 };
 ";
 
-#[derive(Debug, Copy, Clone)]
-pub struct ClusterBuffer {
-    buffer_name: gl::BufferName,
-}
+// #[derive(Debug, Copy, Clone)]
+// pub struct ClusterBuffer {
+//     buffer_name: gl::BufferName,
+// }
 
-impl ClusterBuffer {
-    #[inline]
-    pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            ClusterBuffer {
-                buffer_name: gl.create_buffer(),
-            }
-        }
-    }
+// impl ClusterBuffer {
+//     #[inline]
+//     pub fn new(gl: &gl::Gl) -> Self {
+//         unsafe {
+//             ClusterBuffer {
+//                 buffer_name: gl.create_buffer(),
+//             }
+//         }
+//     }
 
-    #[inline]
-    pub fn bind(&self, gl: &gl::Gl) {
-        unsafe {
-            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLS_BUFFER_BINDING, self.buffer_name);
-        }
-    }
+//     #[inline]
+//     pub fn bind(&self, gl: &gl::Gl) {
+//         unsafe {
+//             gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
+//         }
+//     }
 
-    #[inline]
-    pub fn write(&self, gl: &gl::Gl, cluster_data: &ClusterData) {
-        unsafe {
-            let header_bytes = cluster_data.header.value_as_bytes();
-            let body_bytes = cluster_data.body.vec_as_bytes();
-            let total_size = header_bytes.len() + body_bytes.len();
-            gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
-            gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
-            gl.named_buffer_sub_data(self.buffer_name, header_bytes.len(), body_bytes);
-        }
-    }
-}
+//     #[inline]
+//     pub fn write(&self, gl: &gl::Gl, cluster_data: &ClusterData) {
+//         unsafe {
+//             let header_bytes = cluster_data.header.value_as_bytes();
+//             let body_bytes = cluster_data.body.vec_as_bytes();
+//             let total_size = header_bytes.len() + body_bytes.len();
+//             gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
+//             gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
+//             gl.named_buffer_sub_data(self.buffer_name, header_bytes.len(), body_bytes);
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct ShaderSource {
@@ -280,13 +310,7 @@ impl Shader {
                     gl,
                     std::iter::once(rendering::COMMON_DECLARATION)
                         .chain(std::iter::once(world.light_space.value.source()))
-                        .chain(
-                            [
-                                rendering::CLUSTER_DECLARATION,
-                            ]
-                            .iter()
-                            .copied(),
-                        )
+                        .chain([CAMERA_BUFFER_DECLARATION, CLUSTER_BUFFER_DECLARATION].iter().copied())
                         .chain(
                             if self.render_technique {
                                 Some(world.render_technique.value.source())
