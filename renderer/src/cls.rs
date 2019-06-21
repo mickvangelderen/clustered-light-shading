@@ -2,14 +2,14 @@ use crate::*;
 
 pub const MAX_LIGHTS_PER_CLUSTER: usize = 8;
 
-fn compute_bounding_box(pos_from_clp_to_hmd: &[Matrix4<f64>]) -> BoundingBox<f32> {
+fn compute_bounding_box(clp_to_hmd: &[Matrix4<f64>]) -> BoundingBox<f32> {
     let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-    let mut corners_in_hmd = pos_from_clp_to_hmd
+    let mut corners_in_hmd = clp_to_hmd
         .iter()
-        .flat_map(|pos_from_clp_to_hmd| {
+        .flat_map(|clp_to_hmd| {
             corners_in_clp
                 .into_iter()
-                .map(move |&p| pos_from_clp_to_hmd.transform_point(p))
+                .map(move |&p| clp_to_hmd.transform_point(p))
         })
         .map(|p| p.cast::<f32>().unwrap());
     let first = BoundingBox::from_point(corners_in_hmd.next().unwrap());
@@ -17,17 +17,17 @@ fn compute_bounding_box(pos_from_clp_to_hmd: &[Matrix4<f64>]) -> BoundingBox<f32
 }
 
 pub fn compute_light_assignment(
-    pos_from_clp_to_hmd: &[Matrix4<f64>],
-    pos_from_wld_to_hmd: Matrix4<f64>,
-    pos_from_hmd_to_wld: Matrix4<f64>,
+    clp_to_hmd: &[Matrix4<f64>],
+    wld_to_hmd: Matrix4<f64>,
+    hmd_to_wld: Matrix4<f64>,
     point_lights: &[light::PointLight],
     configuration: &configuration::ClusteredLightShading,
-) -> rendering::ClusterData {
+) -> rendering::ClusterBuffer {
     // Get configuration.
     let cluster_side_max = configuration.cluster_side;
     let light_index = configuration.light_index;
 
-    let cluster_bounding_box = compute_bounding_box(pos_from_clp_to_hmd);
+    let cluster_bounding_box = compute_bounding_box(clp_to_hmd);
 
     let cbb_delta = cluster_bounding_box.delta();
     let dimensions_f32 = (cbb_delta / cluster_side_max).map(f32::ceil);
@@ -36,15 +36,15 @@ pub fn compute_light_assignment(
     let dimensions_u32 = dimensions_f32.map(|e| e as u32);
     let cluster_count = dimensions_u32.product();
 
-    let pos_from_hmd_to_cls: Matrix4<f64> =
+    let hmd_to_cls: Matrix4<f64> =
         Matrix4::from_scale_vector(scale_from_hmd_to_cls.cast().unwrap())
          * Matrix4::from_translation(-cluster_bounding_box.min.cast().unwrap().to_vec());
-    let pos_from_cls_to_hmd: Matrix4<f64> =
+    let cls_to_hmd: Matrix4<f64> =
         Matrix4::from_translation(cluster_bounding_box.min.cast().unwrap().to_vec())*
         Matrix4::from_scale_vector(scale_from_cls_to_hmd.cast().unwrap());
 
-    let pos_from_wld_to_cls: Matrix4<f32> = (pos_from_hmd_to_cls * pos_from_wld_to_hmd).cast().unwrap();
-    let pos_from_cls_to_wld: Matrix4<f32> = (pos_from_hmd_to_wld * pos_from_cls_to_hmd).cast().unwrap();
+    let wld_to_cls: Matrix4<f32> = (hmd_to_cls * wld_to_hmd).cast().unwrap();
+    let cls_to_wld: Matrix4<f32> = (hmd_to_wld * cls_to_hmd).cast().unwrap();
 
     let mut clustering: Vec<[u32; MAX_LIGHTS_PER_CLUSTER]> =
         (0..cluster_count).into_iter().map(|_| Default::default()).collect();
@@ -65,7 +65,7 @@ pub fn compute_light_assignment(
             }
         }
 
-        let pos_in_cls = pos_from_wld_to_cls.transform_point(l.pos_in_wld);
+        let pos_in_cls = wld_to_cls.transform_point(l.pos_in_wld);
 
         let r = l.attenuation.clip_far;
         let r_sq = r * r;
@@ -133,11 +133,11 @@ pub fn compute_light_assignment(
         }
     }
 
-    rendering::ClusterData {
+    rendering::ClusterBuffer {
         header: rendering::ClusterHeader {
             dimensions: dimensions_u32.extend(MAX_LIGHTS_PER_CLUSTER as u32),
-            pos_from_wld_to_cls,
-            pos_from_cls_to_wld,
+            wld_to_cls,
+            cls_to_wld,
         },
         body: clustering,
     }

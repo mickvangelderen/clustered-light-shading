@@ -3,7 +3,7 @@ use crate::*;
 pub struct Renderer {
     pub program: rendering::Program,
     //
-    pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
+    pub obj_to_wld_loc: gl::OptionUniformLocation,
 
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
     pub normal_sampler_loc: gl::OptionUniformLocation,
@@ -73,10 +73,10 @@ impl Renderer {
                         }
                     }
 
-                    if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                        let pos_from_obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
+                    if let Some(loc) = self.obj_to_wld_loc.into() {
+                        let obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
 
-                        gl.uniform_matrix4f(loc, gl::MajorAxis::Column, pos_from_obj_to_wld.as_ref());
+                        gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
                     }
 
                     gl.draw_elements_base_vertex(
@@ -99,7 +99,7 @@ impl Renderer {
         if modified < self.program.update(gl, world) {
             if let ProgramName::Linked(name) = self.program.name(&world.global) {
                 unsafe {
-                    self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, *name, "pos_from_obj_to_wld");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
 
                     self.diffuse_sampler_loc = get_uniform_location!(gl, *name, "diffuse_sampler");
                     self.normal_sampler_loc = get_uniform_location!(gl, *name, "normal_sampler");
@@ -120,7 +120,7 @@ impl Renderer {
                 vec![world.add_source("basic_renderer.vert")],
                 vec![world.add_source("basic_renderer.frag")],
             ),
-            pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
+            obj_to_wld_loc: gl::OptionUniformLocation::NONE,
 
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
             normal_sampler_loc: gl::OptionUniformLocation::NONE,
