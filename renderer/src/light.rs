@@ -1,5 +1,5 @@
-use cgmath::*;
 use crate::rendering;
+use cgmath::*;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
@@ -30,15 +30,22 @@ pub struct AttenCoefs<S> {
     pub clip_far: S,
 }
 
-impl<S> From<AttenParams<S>> for AttenCoefs<S> where S: num_traits::Float {
+impl<S> From<AttenParams<S>> for AttenCoefs<S>
+where
+    S: num_traits::Float,
+{
     fn from(value: AttenParams<S>) -> Self {
-        let AttenParams { intensity, cutoff, clip_near } = value;
+        let AttenParams {
+            intensity,
+            cutoff,
+            clip_near,
+        } = value;
 
         AttenCoefs {
             intensity,
             cutoff,
             clip_near,
-            clip_far: S::sqrt(intensity/cutoff),
+            clip_far: S::sqrt(intensity / cutoff),
         }
     }
 }
@@ -54,7 +61,7 @@ pub struct PointLight {
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
-pub struct PointLightBufferEntry {
+pub struct LightBufferLight {
     ambient: RGB<f32>,
     _pad0: f32,
     diffuse: RGB<f32>,
@@ -66,26 +73,47 @@ pub struct PointLightBufferEntry {
     attenuation: AttenCoefs<f32>,
 }
 
-impl PointLightBufferEntry {
-    pub fn from_point_light(point_light: PointLight, pos_from_wld_to_lgt: Matrix4<f32>) -> Self {
-        PointLightBufferEntry {
+impl LightBufferLight {
+    pub fn from_point_light(point_light: PointLight, pos_from_wld_to_lgt: Matrix4<f64>) -> Self {
+        LightBufferLight {
             ambient: point_light.ambient,
             _pad0: 0.0,
             diffuse: point_light.diffuse,
             _pad1: 0.0,
             specular: point_light.specular,
             _pad2: 0.0,
-            pos_in_lgt: pos_from_wld_to_lgt.transform_point(point_light.pos_in_wld),
+            pos_in_lgt: pos_from_wld_to_lgt
+                .transform_point(point_light.pos_in_wld.cast().unwrap())
+                .cast()
+                .unwrap(),
             _pad3: 0.0,
             attenuation: point_light.attenuation,
         }
     }
 }
 
-
-// FIXME: Align only necessary on uniform blocks?
 #[derive(Debug)]
 #[repr(C, align(256))]
-pub struct LightingBuffer {
-    pub point_lights: [PointLightBufferEntry; rendering::POINT_LIGHT_CAPACITY as usize],
+pub struct LightBuffer {
+    pub wld_to_lgt: Matrix4<f32>,
+    pub lgt_to_wld: Matrix4<f32>,
+
+    pub point_lights: [LightBufferLight; rendering::POINT_LIGHT_CAPACITY as usize],
 }
+
+pub const LIGHT_BUFFER_DECLARATION: &'static str = r"
+struct PointLight {
+    vec4 ambient;
+    vec4 diffuse;
+    vec4 specular;
+    vec4 pos_in_lgt;
+    vec4 att;
+};
+
+layout(std140, binding = LIGHT_BUFFER_BINDING) uniform LightBuffer {
+    mat4 wld_to_lgt;
+    mat4 lgt_to_wld;
+
+    PointLight point_lights[POINT_LIGHT_CAPACITY];
+};
+";

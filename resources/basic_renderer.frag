@@ -14,18 +14,6 @@ in vec3 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
 in vec3 fs_tan_in_lgt;
 
-struct PointLight {
-  vec4 ambient;
-  vec4 diffuse;
-  vec4 specular;
-  vec4 pos_in_lgt;
-  vec4 att;
-};
-
-layout(std140, binding = LIGHT_BUFFER_BINDING) uniform LightBuffer {
-  PointLight point_lights[POINT_LIGHT_CAPACITY];
-};
-
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_lgt;
 
@@ -235,5 +223,5 @@ void main() {
   // frag_color = texture(specular_sampler, fs_pos_in_tex);
 
   // NORMAL IN CAMERA SPACE
-  frag_color = vec4(nor_in_lgt, 1.0);
+  // frag_color = vec4(nor_in_lgt, 1.0);
 }

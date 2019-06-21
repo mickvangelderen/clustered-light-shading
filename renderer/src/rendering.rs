@@ -80,9 +80,6 @@ pub struct CameraBuffer {
     pub cam_to_clp: Matrix4<f32>,
     pub clp_to_cam: Matrix4<f32>,
 
-    pub wld_to_lgt: Matrix4<f32>,
-    pub lgt_to_wld: Matrix4<f32>,
-
     pub cam_pos_in_lgt: Vector4<f32>,
 }
 
@@ -93,9 +90,6 @@ layout(std140, binding = CAMERA_BUFFER_BINDING) uniform CameraBuffer {
 
     mat4 cam_to_clp;
     mat4 clp_to_cam;
-
-    mat4 wld_to_lgt;
-    mat4 lgt_to_wld;
 
     vec4 cam_pos_in_lgt;
 };
@@ -310,7 +304,15 @@ impl Shader {
                     gl,
                     std::iter::once(rendering::COMMON_DECLARATION)
                         .chain(std::iter::once(world.light_space.value.source()))
-                        .chain([CAMERA_BUFFER_DECLARATION, CLUSTER_BUFFER_DECLARATION].iter().copied())
+                        .chain(
+                            [
+                                crate::light::LIGHT_BUFFER_DECLARATION,
+                                CAMERA_BUFFER_DECLARATION,
+                                CLUSTER_BUFFER_DECLARATION,
+                            ]
+                            .iter()
+                            .copied(),
+                        )
                         .chain(
                             if self.render_technique {
                                 Some(world.render_technique.value.source())
