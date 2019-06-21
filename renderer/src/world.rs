@@ -24,6 +24,7 @@ pub struct World {
     pub target_camera_key: CameraKey,
     pub transition_camera: camera::TransitionCamera,
     pub cameras: CameraMap<camera::SmoothCamera>,
+    pub rain_drops: Vec<rain::Particle>,
 }
 
 impl World {

@@ -156,7 +156,7 @@ void main() {
 
 #if defined(RENDER_TECHNIQUE_NAIVE)
   vec3 color_accumulator = vec3(0.0);
-  for (uint i = 0; i < 8; i++) {
+  for (uint i = 0; i < count.x; i++) {
     color_accumulator +=
       point_light_contribution(point_lights[i], nor_in_lgt,
                                fs_pos_in_lgt, cam_dir_in_lgt_norm);

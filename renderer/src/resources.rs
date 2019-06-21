@@ -325,7 +325,7 @@ pub struct Resources {
     pub scene_vb: gl::BufferName,
     pub scene_eb: gl::BufferName,
     pub mesh_metas: Vec<MeshMeta>,
-    pub point_lights: [PointLight; rendering::POINT_LIGHT_CAPACITY as usize],
+    pub point_lights: Vec<PointLight>,
 
     pub full_screen_vao: gl::VertexArrayName,
     pub full_screen_vb: gl::BufferName,
@@ -749,7 +749,7 @@ impl Resources {
             cluster_vb,
             cluster_eb,
             cluster_element_count,
-            point_lights: [
+            point_lights: vec![
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
                     diffuse: RGB::new(4.0000, 4.0000, 4.0000),

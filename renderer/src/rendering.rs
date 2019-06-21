@@ -14,12 +14,12 @@ macro_rules! capability_declaration {
 
 // Constants.
 
-pub const POINT_LIGHT_CAPACITY: u32 = 8;
+pub const POINT_LIGHT_CAPACITY: u32 = 1000;
 
 macro_rules! constant_declaration {
     () => {
         r"
-#define POINT_LIGHT_CAPACITY 8
+#define POINT_LIGHT_CAPACITY 1000
 "
     };
 }
