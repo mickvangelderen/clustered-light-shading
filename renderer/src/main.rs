@@ -20,8 +20,8 @@ mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
-mod cls;
 mod cluster_renderer;
+mod cluster_shading;
 mod configuration;
 mod convert;
 mod depth_renderer;
@@ -44,6 +44,7 @@ mod world;
 
 use crate::bounding_box::*;
 use crate::cgmath_ext::*;
+use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 // use crate::mono_stereo::*;
@@ -368,24 +369,21 @@ fn main() {
     let mut fps_average = filters::MovingAverageF32::new(0.0);
     let mut last_frame_start = time::Instant::now();
 
-    // let mut light_buffer_vec: Vec<LightBuffer> = Vec::new();
-    // let mut tile_buffer_vec = Vec::new();
-    // let mut cluster_buffer_vec = Vec::new();
-    // let mut camera_buffer_vec: Vec<CameraBuffer> = Vec::new();
-    // let mut main_resources_vec: Vec<MainResources> = Vec::new();
-    // let mut debug_resources_vec = Vec::new();
-
     let mut cluster_buffer_pool = BufferPool::new();
     let mut camera_buffer_pool = BufferPool::new();
 
     let mut light_resources_vec: Vec<(gl::BufferName, light::LightBufferBody)> = Vec::new();
     let mut light_data_vec: Vec<Matrix4<f64>> = Vec::new();
 
+    let mut cluster_resources_vec: Vec<ClusterResources> = Vec::new();
+    let mut cluster_data_vec: Vec<ClusterData> = Vec::new();
+
     let mut main_resources_vec = Vec::new();
 
     let mut point_lights = Vec::new();
 
     while world.running {
+        #[derive(Copy, Clone)]
         pub struct EyeData {
             tangents: [f32; 4],
             cam_to_hmd: Matrix4<f64>,
@@ -430,18 +428,28 @@ fn main() {
             })
             .or_else(|| {
                 if configuration.virtual_stereo.enabled {
+                    let win_size = Vector2::new(world.win_size.width / 2.0, world.win_size.height)
+                        .cast::<f32>()
+                        .unwrap();
+                    let fovy: Rad<f32> = Deg(90.0).into();
+                    let fovx: Rad<f32> = fovy * (win_size.x / win_size.y);
+                    let pitch: Rad<f32> = Deg(configuration.virtual_stereo.pitch_deg).into();
+                    let yaw: Rad<f32> = Deg(configuration.virtual_stereo.yaw_deg).into();
+                    let l = -Rad::tan(yaw + fovx * 0.5);
+                    let r = -Rad::tan(yaw - fovx * 0.5);
+                    let b = -Rad::tan(pitch + fovy * 0.5);
+                    let t = -Rad::tan(pitch - fovy * 0.5);
+
                     Some(StereoData {
-                        win_size: Vector2::new(world.win_size.width / 2.0, world.win_size.height)
-                            .cast()
-                            .unwrap(),
+                        win_size: win_size.cast().unwrap(),
                         hmd_to_bdy: Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0)),
                         eyes: EyeMap {
                             left: EyeData {
-                                tangents: [-1.0, 1.0, -1.0, 1.0],
+                                tangents: [l, r, b, t],
                                 cam_to_hmd: Matrix4::from_translation(Vector3::new(-0.1, 0.01, -0.01)),
                             },
                             right: EyeData {
-                                tangents: [-1.0, 1.0, -1.0, 1.0],
+                                tangents: [-r, -l, b, t],
                                 cam_to_hmd: Matrix4::from_translation(Vector3::new(0.1, 0.01, -0.01)),
                             },
                         },
@@ -471,6 +479,7 @@ fn main() {
         //  - cam --[projection]--> clp
 
         light_data_vec.clear();
+        cluster_data_vec.clear();
 
         {
             point_lights.clear();
@@ -602,19 +611,36 @@ fn main() {
                 hmd_to_bdy,
                 eyes,
             }) => {
+                let viewport = Viewport::from_dimensions(win_size);
+                let render_camera = world.transition_camera.current_camera;
+                let bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
+
+                let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
+                let wld_to_hmd = hmd_to_wld.invert().unwrap();
+
+                let clp_to_hmd_map: EyeMap<Matrix4<f64>> = eyes.as_ref().map(|&eye| {
+                    let EyeData { tangents, cam_to_hmd } = eye;
+
+                    let frustrum = stereo_frustrum(&render_camera.properties, tangents);
+                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                    let clp_to_cam = cam_to_clp.invert().unwrap();
+
+                    cam_to_hmd * clp_to_cam
+                });
+
                 if world.render_technique.value == RenderTechnique::Clustered {
-                    // compute cls space.
-                    let cluster_camera = &world.cameras.main;
-                    let bdy_to_wld = cluster_camera.current_transform.pos_to_parent();
-                    let cam_mats = eyes.as_ref().map(|eye| {
-                        let frustrum = stereo_frustrum(&cluster_camera.properties, eye.tangents);
-                        let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                        let clp_to_cam = cam_to_clp.invert().unwrap();
-                    });
+                    let cluster_data = ClusterData::new(
+                        &configuration.clustered_light_shading,
+                        EYE_KEYS.iter().map(|&eye| clp_to_hmd_map[eye]),
+                        wld_to_hmd,
+                        hmd_to_wld,
+                    );
+                    cluster_data_vec.push(cluster_data);
+                    let cluster_data = cluster_data_vec.last().unwrap();
 
                     {
-                        let wld_to_lgt = Matrix4::identity();
-                        let lgt_to_wld = Matrix4::identity();
+                        let wld_to_lgt = cluster_data.wld_to_cls;
+                        let lgt_to_wld = cluster_data.cls_to_wld;
                         compute_light_data(
                             &mut light_resources_vec,
                             &mut light_data_vec,
@@ -623,14 +649,26 @@ fn main() {
                             lgt_to_wld,
                         );
                     }
+
+                    let (_, ref light_buffer_lights) = *light_resources_vec.last().unwrap();
+
+                    if cluster_resources_vec.len() < cluster_data_vec.len() {
+                        cluster_resources_vec.push(ClusterResources {
+                            buffer_name: unsafe { gl.create_buffer() },
+                            clusters: Vec::new(),
+                        });
+                        debug_assert_eq!(cluster_resources_vec.len(), cluster_data_vec.len());
+                    }
+
+                    let cluster_resources: &mut ClusterResources = cluster_resources_vec.last_mut().unwrap();
+
+                    cluster_resources.compute_and_upload(
+                        &gl,
+                        &configuration.clustered_light_shading,
+                        &cluster_data,
+                        &light_buffer_lights[..],
+                    );
                 }
-
-                let viewport = Viewport::from_dimensions(win_size);
-                let render_camera = world.transition_camera.current_camera;
-                let bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
-
-                let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                let wld_to_hmd = hmd_to_wld.invert().unwrap();
 
                 if real_light_space == RealLightSpace::Hmd {
                     let wld_to_lgt = wld_to_hmd;
@@ -644,8 +682,8 @@ fn main() {
                     );
                 }
 
-                for &eye in EYE_KEYS.iter() {
-                    let EyeData { tangents, cam_to_hmd } = eyes[eye];
+                for &eye_key in EYE_KEYS.iter() {
+                    let EyeData { tangents, cam_to_hmd } = eyes[eye_key];
 
                     let cam_to_wld = hmd_to_wld * cam_to_hmd;
                     let wld_to_cam = cam_to_wld.invert().unwrap();
@@ -669,20 +707,20 @@ fn main() {
                     let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
                     let cam_pos_in_lgt = light_data_vec.last().unwrap() * cam_pos_in_wld;
 
+                    let camera_buffer = CameraBuffer {
+                        wld_to_cam: wld_to_cam.cast().unwrap(),
+                        cam_to_wld: cam_to_wld.cast().unwrap(),
+
+                        cam_to_clp: cam_to_clp.cast().unwrap(),
+                        clp_to_cam: clp_to_cam.cast().unwrap(),
+
+                        cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
+                    };
+
+                    let buffer_index = camera_buffer_pool.unused(&gl);
+                    let buffer_name = camera_buffer_pool[buffer_index];
+
                     unsafe {
-                        let camera_buffer = CameraBuffer {
-                            wld_to_cam: wld_to_cam.cast().unwrap(),
-                            cam_to_wld: cam_to_wld.cast().unwrap(),
-
-                            cam_to_clp: cam_to_clp.cast().unwrap(),
-                            clp_to_cam: clp_to_cam.cast().unwrap(),
-
-                            cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
-                        };
-
-                        let buffer_index = camera_buffer_pool.unused(&gl);
-                        let buffer_name = camera_buffer_pool[buffer_index];
-
                         gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
                         gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                     }
@@ -711,7 +749,7 @@ fn main() {
                         let w = world.win_size.width as i32;
                         let h = world.win_size.height as i32;
 
-                        let dst_viewport = match eye {
+                        let dst_viewport = match eye_key {
                             vr::Eye::Left => Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h)),
                             vr::Eye::Right => Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h)),
                         };

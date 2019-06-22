@@ -10,7 +10,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters<'a> {
-    pub cluster_data: &'a rendering::ClusterBuffer,
+    pub cluster_data: &'a cluster_shading::ClusterBuffer,
     pub configuration: &'a configuration::ClusteredLightShading,
 }
 
@@ -35,7 +35,7 @@ impl Renderer {
 
                     if let Some(animate_light_count) = configuration.animate_light_count {
                         let time = world.tick as f64 / DESIRED_UPS;
-                        let delta = crate::cls::MAX_LIGHTS_PER_CLUSTER as u32 - min_light_count;
+                        let delta = cluster_shading::CLUSTER_CAPACITY as u32 - min_light_count;
                         min_light_count = ((time * animate_light_count as f64) as u64 % delta as u64) as u32;
                     }
 

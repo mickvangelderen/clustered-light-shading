@@ -96,64 +96,6 @@ layout(std140, binding = CAMERA_BUFFER_BINDING) uniform CameraBuffer {
 ";
 
 #[derive(Debug)]
-#[repr(C)]
-pub struct ClusterHeader {
-    pub dimensions: Vector4<u32>,
-    pub wld_to_cls: Matrix4<f32>,
-    pub cls_to_wld: Matrix4<f32>,
-}
-
-#[derive(Debug)]
-pub struct ClusterBuffer {
-    pub header: ClusterHeader,
-    pub body: Vec<[u32; crate::cls::MAX_LIGHTS_PER_CLUSTER]>,
-}
-
-pub const CLUSTER_BUFFER_DECLARATION: &'static str = r"
-layout(std430, binding = CLUSTER_BUFFER_BINDING) buffer ClusterBuffer {
-    uvec4 cluster_dims;
-    mat4 wld_to_cls;
-    mat4 cls_to_wld;
-    uint clusters[];
-};
-";
-
-// #[derive(Debug, Copy, Clone)]
-// pub struct ClusterBuffer {
-//     buffer_name: gl::BufferName,
-// }
-
-// impl ClusterBuffer {
-//     #[inline]
-//     pub fn new(gl: &gl::Gl) -> Self {
-//         unsafe {
-//             ClusterBuffer {
-//                 buffer_name: gl.create_buffer(),
-//             }
-//         }
-//     }
-
-//     #[inline]
-//     pub fn bind(&self, gl: &gl::Gl) {
-//         unsafe {
-//             gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
-//         }
-//     }
-
-//     #[inline]
-//     pub fn write(&self, gl: &gl::Gl, cluster_data: &ClusterData) {
-//         unsafe {
-//             let header_bytes = cluster_data.header.value_as_bytes();
-//             let body_bytes = cluster_data.body.vec_as_bytes();
-//             let total_size = header_bytes.len() + body_bytes.len();
-//             gl.named_buffer_reserve(self.buffer_name, total_size, gl::STREAM_DRAW);
-//             gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
-//             gl.named_buffer_sub_data(self.buffer_name, header_bytes.len(), body_bytes);
-//         }
-//     }
-// }
-
-#[derive(Debug)]
 pub struct ShaderSource {
     pub path: PathBuf,
     pub modified: ic::Modified,
@@ -308,7 +250,7 @@ impl Shader {
                             [
                                 crate::light::LIGHT_BUFFER_DECLARATION,
                                 CAMERA_BUFFER_DECLARATION,
-                                CLUSTER_BUFFER_DECLARATION,
+                                crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
                             ]
                             .iter()
                             .copied(),

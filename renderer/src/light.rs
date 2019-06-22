@@ -1,4 +1,3 @@
-use crate::rendering;
 use cgmath::*;
 
 #[derive(Debug, Copy, Clone)]
@@ -62,15 +61,15 @@ pub struct PointLight {
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct LightBufferLight {
-    ambient: RGB<f32>,
-    _pad0: f32,
-    diffuse: RGB<f32>,
-    _pad1: f32,
-    specular: RGB<f32>,
-    _pad2: f32,
-    pos_in_lgt: Point3<f32>,
-    _pad3: f32,
-    attenuation: AttenCoefs<f32>,
+    pub ambient: RGB<f32>,
+    pub _pad0: f32,
+    pub diffuse: RGB<f32>,
+    pub _pad1: f32,
+    pub specular: RGB<f32>,
+    pub _pad2: f32,
+    pub pos_in_lgt: Point3<f32>,
+    pub _pad3: f32,
+    pub attenuation: AttenCoefs<f32>,
 }
 
 impl LightBufferLight {
