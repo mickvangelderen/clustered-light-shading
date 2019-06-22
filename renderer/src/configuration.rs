@@ -32,6 +32,8 @@ pub struct Global {
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct VirtualStereo {
     pub enabled: bool,
+    pub pitch_deg: f32,
+    pub yaw_deg: f32,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
