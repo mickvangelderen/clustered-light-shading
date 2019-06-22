@@ -93,14 +93,14 @@ impl LightBufferLight {
 }
 
 #[repr(C)]
-pub struct LightBuffer {
+pub struct LightBufferHeader {
     pub wld_to_lgt: Matrix4<f32>,
     pub lgt_to_wld: Matrix4<f32>,
 
-    pub count: Vector4<u32>,
-
-    pub point_lights: [LightBufferLight; rendering::POINT_LIGHT_CAPACITY as usize],
+    pub light_count: Vector4<u32>,
 }
+
+pub type LightBufferBody = Vec<LightBufferLight>;
 
 pub const LIGHT_BUFFER_DECLARATION: &'static str = r"
 struct PointLight {
@@ -115,8 +115,8 @@ layout(std140, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
     mat4 wld_to_lgt;
     mat4 lgt_to_wld;
 
-    uvec4 count;
+    uvec4 light_count;
 
-    PointLight point_lights[POINT_LIGHT_CAPACITY];
+    PointLight point_lights[];
 };
 ";

@@ -378,10 +378,12 @@ fn main() {
     let mut cluster_buffer_pool = BufferPool::new();
     let mut camera_buffer_pool = BufferPool::new();
 
-    let mut light_resources_vec = Vec::new();
-    let mut light_data_vec = Vec::new();
+    let mut light_resources_vec: Vec<(gl::BufferName, light::LightBufferBody)> = Vec::new();
+    let mut light_data_vec: Vec<Matrix4<f64>> = Vec::new();
 
     let mut main_resources_vec = Vec::new();
+
+    let mut point_lights = Vec::new();
 
     while world.running {
         pub struct EyeData {
@@ -470,6 +472,29 @@ fn main() {
 
         light_data_vec.clear();
 
+        {
+            point_lights.clear();
+
+            for &point_light in resources.point_lights.iter() {
+                point_lights.push(point_light);
+            }
+
+            for rain_drop in world.rain_drops.iter() {
+                point_lights.push(light::PointLight {
+                    ambient: light::RGB::new(0.2000, 0.2000, 0.2000),
+                    diffuse: light::RGB::new(4.0000, 4.0000, 4.0000),
+                    specular: light::RGB::new(1.0000, 1.0000, 1.0000),
+                    pos_in_wld: Point3::from_vec(rain_drop.position),
+                    attenuation: light::AttenParams {
+                        intensity: 0.5,
+                        clip_near: 0.25,
+                        cutoff: 0.02,
+                    }
+                    .into(),
+                });
+            }
+        }
+
         let mut main_resources_index = 0;
 
         fn mono_frustrum(camera: &camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
@@ -501,65 +526,43 @@ fn main() {
             }
         }
 
-        let compute_light_data = |light_resources_vec: &mut Vec<gl::BufferName>,
+        let compute_light_data = |light_resources_vec: &mut Vec<(gl::BufferName, light::LightBufferBody)>,
                                   light_data_vec: &mut Vec<Matrix4<f64>>,
-                                    rain_drops: &[rain::Particle],
+                                  point_lights: &[light::PointLight],
                                   wld_to_lgt: Matrix4<f64>,
-                                  lgt_to_wld: Matrix4<f64>| unsafe {
-            let mut point_lights: [light::LightBufferLight; rendering::POINT_LIGHT_CAPACITY as usize] =
-                std::mem::uninitialized();
-
-            let mut count = 0;
-
-            // for i in 0..resources.point_lights.len() {
-            //     if count < point_lights.len() {
-            //         point_lights[count] =
-            //             light::LightBufferLight::from_point_light(resources.point_lights[i], wld_to_lgt);
-            //         count += 1;
-            //     }
-            // }
-
-            for rain_drop in rain_drops.iter() {
-                if count < point_lights.len() {
-                    point_lights[count] = light::LightBufferLight::from_point_light(
-                        light::PointLight {
-                            ambient: light::RGB::new(0.2000, 0.2000, 0.2000),
-                            diffuse: light::RGB::new(4.0000, 4.0000, 4.0000),
-                            specular: light::RGB::new(1.0000, 1.0000, 1.0000),
-                            pos_in_wld: Point3::from_vec(rain_drop.position),
-                            attenuation: light::AttenParams {
-                                intensity: 0.5,
-                                clip_near: 0.25,
-                                cutoff: 0.02,
-                            }
-                            .into(),
-                        },
-                        wld_to_lgt,
-                    );
-                    count += 1;
-                }
-            }
-
+                                  lgt_to_wld: Matrix4<f64>| {
             let index = light_data_vec.len();
 
-            let buffer_data = light::LightBuffer {
-                wld_to_lgt: wld_to_lgt.cast().unwrap(),
-                lgt_to_wld: lgt_to_wld.cast().unwrap(),
-
-                count: Vector4::new(count as u32, 0, 0, 0),
-
-                point_lights,
-            };
-
             if light_resources_vec.len() < index + 1 {
-                light_resources_vec.push(gl.create_buffer());
+                light_resources_vec.push(unsafe { (gl.create_buffer(), Vec::new()) });
                 debug_assert_eq!(light_resources_vec.len(), index + 1);
             }
 
-            let buffer_name = light_resources_vec[index];
+            let (buffer_name, ref mut body) = light_resources_vec[index];
 
-            gl.named_buffer_data(buffer_name, buffer_data.value_as_bytes(), gl::STREAM_DRAW);
-            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, rendering::LIGHT_BUFFER_BINDING, buffer_name);
+            body.clear();
+            body.extend(
+                point_lights
+                    .iter()
+                    .map(|&point_light| light::LightBufferLight::from_point_light(point_light, wld_to_lgt)),
+            );
+
+            let header = light::LightBufferHeader {
+                wld_to_lgt: wld_to_lgt.cast().unwrap(),
+                lgt_to_wld: lgt_to_wld.cast().unwrap(),
+
+                light_count: Vector4::new(body.len() as u32, 0, 0, 0),
+            };
+
+            unsafe {
+                let header_bytes = header.value_as_bytes();
+                let body_bytes = body.vec_as_bytes();
+
+                gl.named_buffer_reserve(buffer_name, header_bytes.len() + body_bytes.len(), gl::STREAM_DRAW);
+                gl.named_buffer_sub_data(buffer_name, 0, header_bytes);
+                gl.named_buffer_sub_data(buffer_name, header_bytes.len(), body_bytes);
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, rendering::LIGHT_BUFFER_BINDING, buffer_name);
+            }
 
             light_data_vec.push(wld_to_lgt);
         };
@@ -584,7 +587,13 @@ fn main() {
         if real_light_space == RealLightSpace::Wld {
             let wld_to_lgt = Matrix4::identity();
             let lgt_to_wld = Matrix4::identity();
-            compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
+            compute_light_data(
+                &mut light_resources_vec,
+                &mut light_data_vec,
+                &point_lights,
+                wld_to_lgt,
+                lgt_to_wld,
+            );
         }
 
         match stereo_data {
@@ -606,7 +615,13 @@ fn main() {
                     {
                         let wld_to_lgt = Matrix4::identity();
                         let lgt_to_wld = Matrix4::identity();
-                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
+                        compute_light_data(
+                            &mut light_resources_vec,
+                            &mut light_data_vec,
+                            &point_lights[..],
+                            wld_to_lgt,
+                            lgt_to_wld,
+                        );
                     }
                 }
 
@@ -620,7 +635,13 @@ fn main() {
                 if real_light_space == RealLightSpace::Hmd {
                     let wld_to_lgt = wld_to_hmd;
                     let lgt_to_wld = hmd_to_wld;
-                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
+                    compute_light_data(
+                        &mut light_resources_vec,
+                        &mut light_data_vec,
+                        &point_lights[..],
+                        wld_to_lgt,
+                        lgt_to_wld,
+                    );
                 }
 
                 for &eye in EYE_KEYS.iter() {
@@ -636,7 +657,13 @@ fn main() {
                     if real_light_space == RealLightSpace::Cam {
                         let wld_to_lgt = wld_to_cam;
                         let lgt_to_wld = cam_to_wld;
-                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
+                        compute_light_data(
+                            &mut light_resources_vec,
+                            &mut light_data_vec,
+                            &point_lights[..],
+                            wld_to_lgt,
+                            lgt_to_wld,
+                        );
                     }
 
                     let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
@@ -712,7 +739,13 @@ fn main() {
                     {
                         let wld_to_lgt = Matrix4::identity();
                         let lgt_to_wld = Matrix4::identity();
-                        compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
+                        compute_light_data(
+                            &mut light_resources_vec,
+                            &mut light_data_vec,
+                            &point_lights[..],
+                            wld_to_lgt,
+                            lgt_to_wld,
+                        );
                     }
                 }
 
@@ -729,7 +762,13 @@ fn main() {
                 if real_light_space == RealLightSpace::Cam || real_light_space == RealLightSpace::Hmd {
                     let wld_to_lgt = wld_to_cam;
                     let lgt_to_wld = cam_to_wld;
-                    compute_light_data(&mut light_resources_vec, &mut light_data_vec, &world.rain_drops[..], wld_to_lgt, lgt_to_wld);
+                    compute_light_data(
+                        &mut light_resources_vec,
+                        &mut light_data_vec,
+                        &point_lights[..],
+                        wld_to_lgt,
+                        lgt_to_wld,
+                    );
                 }
 
                 let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
@@ -1100,6 +1139,8 @@ pub fn process_window_events(
             }
         }
     }
+
+    {}
 
     if vr_context.is_some() {
         // Pitch makes me dizzy.
