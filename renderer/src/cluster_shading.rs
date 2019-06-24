@@ -38,6 +38,7 @@ where
     corners_in_hmd.fold(first, |b, p| b.enclose(p))
 }
 
+#[derive(Debug)]
 pub struct ClusterData {
     pub dimensions: Vector3<f64>,
     pub cls_origin: Point3<f64>,
@@ -168,6 +169,8 @@ impl ClusterResources {
                 };
             }
 
+            let mut overflow_count = 0usize;
+
             for z in z0..z2 {
                 let dz = closest_face_dist!(z, z1, pos_in_cls) * scale_from_cls_to_hmd.z;
                 for y in y0..y2 {
@@ -184,11 +187,15 @@ impl ClusterResources {
                             if offset < thing.len() {
                                 thing[offset] = i as u32;
                             } else {
-                                eprintln!("Overflowing clustered light assignment!");
+                                overflow_count += 1;
                             }
                         }
                     }
                 }
+            }
+
+            if overflow_count > 0 {
+                warn!("Overflowing light assignment: {}", overflow_count);
             }
         }
 

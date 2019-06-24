@@ -187,7 +187,7 @@ void main() {
        fs_idx_in_cls.x) *
       cluster_dims.w;
 
-  uint cluster_length = clusters[cluster_index];
+  uint cluster_length = min(cluster_dims.w - 1, clusters[cluster_index]);
   // uint cluster_length = 8;
 
   // CLUSTER LENGHTS
