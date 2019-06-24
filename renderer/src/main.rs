@@ -369,7 +369,6 @@ fn main() {
     let mut fps_average = filters::MovingAverageF32::new(0.0);
     let mut last_frame_start = time::Instant::now();
 
-    let mut cluster_buffer_pool = BufferPool::new();
     let mut camera_buffer_pool = BufferPool::new();
 
     let mut light_resources_vec: Vec<(gl::BufferName, light::LightBufferBody)> = Vec::new();
@@ -638,7 +637,7 @@ fn main() {
                     cluster_data_vec.push(cluster_data);
                     let cluster_data = cluster_data_vec.last().unwrap();
 
-                    {
+                    let light_resources_index = {
                         let wld_to_lgt = cluster_data.wld_to_cls;
                         let lgt_to_wld = cluster_data.cls_to_wld;
                         compute_light_data(
@@ -648,9 +647,11 @@ fn main() {
                             wld_to_lgt,
                             lgt_to_wld,
                         );
-                    }
 
-                    let (_, ref light_buffer_lights) = *light_resources_vec.last().unwrap();
+                        light_data_vec.len() - 1
+                    };
+
+                    let (_, ref light_buffer_lights) = light_resources_vec[light_resources_index];
 
                     if cluster_resources_vec.len() < cluster_data_vec.len() {
                         cluster_resources_vec.push(ClusterResources {
@@ -904,7 +905,6 @@ fn main() {
         gl_window.swap_buffers().unwrap();
 
         // TODO: Borrow the pool instead.
-        cluster_buffer_pool.reset(&gl);
         camera_buffer_pool.reset(&gl);
 
         // std::thread::sleep(time::Duration::from_millis(17));
@@ -1171,14 +1171,12 @@ pub fn process_window_events(
             rain_drop.update(delta_time, &mut rng, p0, p1);
         }
 
-        for _ in 0..10 {
-            if world.rain_drops.len() < 100 {
+        for _ in 0..1 {
+            if world.rain_drops.len() < 1 {
                 world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
             }
         }
     }
-
-    {}
 
     if vr_context.is_some() {
         // Pitch makes me dizzy.
