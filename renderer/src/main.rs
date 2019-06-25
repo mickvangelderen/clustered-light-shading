@@ -352,9 +352,6 @@ fn main() {
     let mut overlay_renderer = overlay_renderer::Renderer::new(&gl, &mut world);
     let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
 
-    let depth_timer = QueryTimer::new(&gl);
-    let basic_timer = QueryTimer::new(&gl);
-
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
     let vr_context = vr::Context::new(vr::ApplicationType::Scene)
@@ -650,12 +647,14 @@ fn main() {
 
                     let cluster_resources: &mut ClusterResources = &mut cluster_resources_vec[cluster_resources_index];
 
+                    let cpu_cluster_start = Some(std::time::Instant::now());
                     cluster_resources.compute_and_upload(
                         &gl,
                         &configuration.clustered_light_shading,
                         &cluster_data,
                         &point_lights[..],
                     );
+                    let cpu_cluster_end = Some(std::time::Instant::now());
                 }
 
                 for &eye_key in EYE_KEYS.iter() {
@@ -865,6 +864,23 @@ fn main() {
         //         &mut world,
         //     );
         // }
+
+        for i in 0..cluster_data_vec.len() {
+            let res = &cluster_resources_vec[i];
+            let data = &cluster_data_vec[i];
+            let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
+            let start = res.cpu_start.unwrap();
+            let end = res.cpu_end.unwrap();
+            println!(
+                "clustering {} x {} x {} ({} + {} MB) in {} us.",
+                dimensions_u32.x,
+                dimensions_u32.y,
+                dimensions_u32.z,
+                res.cluster_meta.vec_as_bytes().len() / 1000_000,
+                res.light_indices.vec_as_bytes().len() / 1000_000,
+                end.duration_since(start).as_micros()
+            );
+        }
 
         gl_window.swap_buffers().unwrap();
 
