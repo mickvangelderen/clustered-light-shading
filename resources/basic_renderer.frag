@@ -21,6 +21,34 @@ in vec3 fs_tan_in_lgt;
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_lgt;
 
+vec3 heatmap(float value, float minVal, float maxVal)
+{
+  vec3 color = vec3(0.0, 0.0, 0.0);
+  float range = maxVal - minVal;
+  float adjustedVal = clamp(value - minVal, 0.0, range);
+  float step = range / 6.0;
+  if( value < step ) {
+    color.z = value / step;
+  } else if( value < 2.0 * step) {
+    color.y = (value-step) / step;
+    color.z = 1.0;
+  } else if( value < 3.0 * step) {
+    color.y = 1.0;
+    color.z = 1.0 - (value-2.0 * step) / step;
+  } else if( value < 4.0 * step ) {
+    color.x = (value-3.0 * step) / step;
+    color.y = 1.0;
+  } else if( value < 5.0 * step) {
+    color.x = 1.0;
+    color.y = 1.0 - (value-4.0 * step) / step;
+  } else {
+    color.x = 1.0;
+    color.y = (value - 5.0 * step) / step;
+    color.z = (value - 5.0 * step) / step;
+  }
+  return color;
+}
+
 uvec3 separate_bits_by_2(uvec3 x) {
   // x       = 0b??????????????????????jihgfedcba
   // mask    = 0b00000000000000000000001111111111
@@ -191,7 +219,8 @@ void main() {
   uint cluster_length = clusters[cluster_meta_index + 1];
 
   // CLUSTER LENGHTS
-  // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
+  // frag_color = vec4(vec3(float(cluster_length) / 132.0), 1.0);
+  frag_color = vec4(heatmap(float(cluster_length), 0.0, 150), 1.0);
 
   // COLORED CLUSTER LENGTHS
   // if (cluster_length == 0) {
@@ -209,7 +238,7 @@ void main() {
         point_light_contribution(point_lights[light_index], nor_in_lgt,
                                  fs_pos_in_lgt, cam_dir_in_lgt_norm);
   }
-  frag_color = vec4(color_accumulator, 1.0);
+  // frag_color = vec4(color_accumulator, 1.0);
 #else
 #error Unimplemented render technique!
 #endif
