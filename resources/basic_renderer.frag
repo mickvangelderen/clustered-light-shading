@@ -10,6 +10,10 @@ uniform vec2 normal_dimensions;
 
 in vec2 fs_pos_in_tex;
 
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+in vec3 fs_pos_in_cls;
+#endif
+
 in vec3 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
 in vec3 fs_tan_in_lgt;
@@ -163,10 +167,7 @@ void main() {
   }
   frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-  // NOTE: If we are rendering with clustered light shading, we always need to
-  // compute the light positions in cls space. We make use of this by also doing
-  // the light in cls space. Therefore fs_pos_in_lgt == fs_pos_in_cls.
-  uvec3 fs_idx_in_cls = uvec3(fs_pos_in_lgt);
+  uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
 
   // CLUSTER INDICES X, Y, Z
   // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);

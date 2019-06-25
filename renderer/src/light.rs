@@ -1,4 +1,4 @@
-use cgmath::*;
+use crate::*;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
@@ -119,3 +119,22 @@ layout(std140, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
     PointLight point_lights[];
 };
 ";
+
+pub struct LightBufferResources {
+    pub buffer_name: gl::BufferName,
+    pub lights: Vec<LightBufferLight>,
+}
+
+impl LightBufferResources {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self {
+            buffer_name: unsafe { gl.create_buffer() },
+            lights: Vec::new(),
+        }
+    }
+}
+
+pub struct LightBufferData {
+    pub wld_to_lgt: Matrix4<f64>,
+    pub lgt_to_wld: Matrix4<f64>,
+}
