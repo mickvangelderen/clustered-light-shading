@@ -1,4 +1,5 @@
 use crate::*;
+use std::time::Instant;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -88,6 +89,8 @@ pub struct ClusterResources {
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
     pub light_indices: Vec<u32>,
+    pub cpu_start: Option<Instant>,
+    pub cpu_end: Option<Instant>,
 }
 
 impl ClusterResources {
@@ -97,6 +100,8 @@ impl ClusterResources {
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),
             light_indices: Vec::new(),
+            cpu_start: None,
+            cpu_end: None,
         }
     }
 }
@@ -109,6 +114,8 @@ impl ClusterResources {
         space: &ClusterData,
         point_lights: &[light::PointLight],
     ) {
+        self.cpu_start = Some(Instant::now());
+
         let ClusterData {
             dimensions,
             scale_from_cls_to_hmd,
@@ -305,5 +312,6 @@ impl ClusterResources {
             gl.named_buffer_sub_data(self.buffer_name, light_indices_bytes_offset, light_indices_bytes);
             gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
         }
+        self.cpu_end = Some(Instant::now());
     }
 }

@@ -393,38 +393,54 @@ impl ShaderName {
     }
 }
 
-pub struct QueryTimer {
-    names: [gl::QueryName; 2],
+pub struct QueryPool {
+    names: [gl::QueryName; 4],
 }
 
-impl QueryTimer {
+impl QueryPool {
     pub fn new(gl: &gl::Gl) -> Self {
         unsafe {
             Self {
-                names: [gl.create_query(gl::TIME_ELAPSED), gl.create_query(gl::TIME_ELAPSED)],
+                names: [
+                    gl.create_query(gl::TIMESTAMP),
+                    gl.create_query(gl::TIMESTAMP),
+                    gl.create_query(gl::TIMESTAMP),
+                    gl.create_query(gl::TIMESTAMP),
+                ],
             }
         }
     }
 
-    pub fn time(&self, gl: &gl::Gl, tick: u64, f: impl FnOnce()) -> Option<NonZeroU64> {
-        let result = self.begin(gl, tick);
-        f();
-        self.end(gl);
-        result
-    }
-
-    fn begin(&self, gl: &gl::Gl, tick: u64) -> Option<NonZeroU64> {
+    pub fn instant(&self, gl: &gl::Gl, tick: u64) -> Option<NonZeroU64> {
         unsafe {
-            let name = self.names[usize::try_from(tick).unwrap() % self.names.len()];
-            let result = gl.try_query_result_u64(&name);
-            gl.begin_query(gl::TIME_ELAPSED, &name);
+            let name = &self.names[tick as usize % self.names.len()];
+            let result = gl.try_query_result_u64(name);
+            gl.query_counter(name);
             result
         }
     }
-
-    fn end(&self, gl: &gl::Gl) {
-        unsafe {
-            gl.end_query(gl::TIME_ELAPSED);
-        }
-    }
 }
+
+// impl QueryTimer {
+//     pub fn time(&self, gl: &gl::Gl, tick: u64, f: impl FnOnce()) -> Option<NonZeroU64> {
+//         let result = self.begin(gl, tick);
+//         f();
+//         self.end(gl);
+//         result
+//     }
+
+//     fn begin(&self, gl: &gl::Gl, tick: u64) -> Option<NonZeroU64> {
+//         unsafe {
+//             let name = self.names[usize::try_from(tick).unwrap() % self.names.len()];
+//             let result = gl.try_query_result_u64(&name);
+//             gl.begin_query(gl::TIME_ELAPSED, &name);
+//             result
+//         }
+//     }
+
+//     fn end(&self, gl: &gl::Gl) {
+//         unsafe {
+//             gl.end_query(gl::TIME_ELAPSED);
+//         }
+//     }
+// }
