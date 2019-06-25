@@ -1,6 +1,7 @@
 [global]
 diffuse_srgb = true
 framebuffer_srgb = true
+rain_drop_max = 1000
 
 [window]
 vsync = false

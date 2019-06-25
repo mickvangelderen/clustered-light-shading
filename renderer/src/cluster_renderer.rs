@@ -10,7 +10,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters<'a> {
-    pub cluster_data: &'a cluster_shading::ClusterBuffer,
+    pub cluster_resources: &'a cluster_shading::ClusterResources,
     pub configuration: &'a configuration::ClusteredLightShading,
 }
 
@@ -24,45 +24,45 @@ impl Renderer {
 
                 let configuration = params.configuration;
 
-                let [xn, yn, zn, _wn]: [u32; 4] = params.cluster_data.header.dimensions.into();
-                for zi in 0..zn {
-                    if let Some(animate_z) = configuration.animate_z {
-                        if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
-                            continue;
-                        }
-                    }
-                    let mut min_light_count = configuration.min_light_count;
+                // let [xn, yn, zn, _wn]: [u32; 4] = params.cluster_data.header.dimensions.into();
+                // for zi in 0..zn {
+                //     if let Some(animate_z) = configuration.animate_z {
+                //         if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
+                //             continue;
+                //         }
+                //     }
+                //     let mut min_light_count = configuration.min_light_count;
 
-                    if let Some(animate_light_count) = configuration.animate_light_count {
-                        let time = world.tick as f64 / DESIRED_UPS;
-                        let delta = cluster_shading::CLUSTER_CAPACITY as u32 - min_light_count;
-                        min_light_count = ((time * animate_light_count as f64) as u64 % delta as u64) as u32;
-                    }
+                //     if let Some(animate_light_count) = configuration.animate_light_count {
+                //         let time = world.tick as f64 / DESIRED_UPS;
+                //         let delta = cluster_shading::CLUSTER_CAPACITY as u32 - min_light_count;
+                //         min_light_count = ((time * animate_light_count as f64) as u64 % delta as u64) as u32;
+                //     }
 
-                    for yi in 0..yn {
-                        for xi in 0..xn {
-                            let i = ((zi * yn) + yi) * xn + xi;
-                            let cluster = &params.cluster_data.body[i as usize];
-                            let light_count = cluster[0];
-                            if light_count >= min_light_count {
-                                if let Some(loc) = self.light_count_loc.into() {
-                                    gl.uniform_1ui(loc, light_count);
-                                }
+                //     for yi in 0..yn {
+                //         for xi in 0..xn {
+                //             let i = ((zi * yn) + yi) * xn + xi;
+                //             let cluster = &params.cluster_data.body[i as usize];
+                //             let light_count = cluster[0];
+                //             if light_count >= min_light_count {
+                //                 if let Some(loc) = self.light_count_loc.into() {
+                //                     gl.uniform_1ui(loc, light_count);
+                //                 }
 
-                                if let Some(loc) = self.obj_to_wld_loc.into() {
-                                    let obj_to_cls =
-                                        Matrix4::from_translation(Vector3::new(xi as f32, yi as f32, zi as f32));
+                //                 if let Some(loc) = self.obj_to_wld_loc.into() {
+                //                     let obj_to_cls =
+                //                         Matrix4::from_translation(Vector3::new(xi as f32, yi as f32, zi as f32));
 
-                                    let obj_to_wld =
-                                        params.cluster_data.header.cls_to_wld * obj_to_cls;
-                                    gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
-                                }
+                //                     let obj_to_wld =
+                //                         params.cluster_data.header.cls_to_wld * obj_to_cls;
+                //                     gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
+                //                 }
 
-                                gl.draw_elements(gl::TRIANGLES, resources.cluster_element_count, gl::UNSIGNED_INT, 0);
-                            }
-                        }
-                    }
-                }
+                //                 gl.draw_elements(gl::TRIANGLES, resources.cluster_element_count, gl::UNSIGNED_INT, 0);
+                //             }
+                //         }
+                //     }
+                // }
 
                 gl.unbind_vertex_array();
                 gl.unuse_program();

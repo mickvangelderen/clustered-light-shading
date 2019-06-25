@@ -459,7 +459,7 @@ fn main() {
             });
 
         process_fs_events(&fs_rx, &gl, &mut world, &mut configuration);
-        process_window_events(&mut events_loop, &vr_context, &mut world);
+        process_window_events(&mut events_loop, &vr_context, &configuration, &mut world);
         process_vr_events(&vr_context);
 
         // Space abbreviations:
@@ -969,6 +969,7 @@ fn process_fs_events(
 pub fn process_window_events(
     events_loop: &mut glutin::EventsLoop,
     vr_context: &Option<vr::Context>,
+    configuration: &configuration::Root,
     world: &mut World,
 ) {
     let mut mouse_dx = 0.0;
@@ -1136,8 +1137,11 @@ pub fn process_window_events(
         }
 
         for _ in 0..1 {
-            if world.rain_drops.len() < 1 {
+            if world.rain_drops.len() < configuration.global.rain_drop_max as usize {
                 world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
+            }
+            if world.rain_drops.len() > configuration.global.rain_drop_max as usize {
+                world.rain_drops.truncate(configuration.global.rain_drop_max as usize);
             }
         }
     }

@@ -27,6 +27,7 @@ pub struct Window {
 pub struct Global {
     pub diffuse_srgb: bool,
     pub framebuffer_srgb: bool,
+    pub rain_drop_max: u32,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]

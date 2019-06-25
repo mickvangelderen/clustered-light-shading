@@ -183,13 +183,12 @@ void main() {
   //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
   //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
 
-  uint cluster_index =
+  uint cluster_meta_index =
       (((fs_idx_in_cls.z * cluster_dims.y) + fs_idx_in_cls.y) * cluster_dims.x +
-       fs_idx_in_cls.x) *
-      cluster_dims.w;
+       fs_idx_in_cls.x) * 2;
 
-  uint cluster_length = min(cluster_dims.w - 1, clusters[cluster_index]);
-  // uint cluster_length = 8;
+  uint cluster_offset = clusters[cluster_meta_index];
+  uint cluster_length = clusters[cluster_meta_index + 1];
 
   // CLUSTER LENGHTS
   // frag_color = vec4(vec3(float(cluster_length) / 8.0), 1.0);
@@ -201,9 +200,10 @@ void main() {
   // frag_color = vec4(vec3(float(cluster_length)/2.0) * cluster_index_colors, 1.0);
 
   // CLUSTERED SHADING
+  uint cluster_lights_offset = cluster_dims.x * cluster_dims.y * cluster_dims.z * 2;
   vec3 color_accumulator = vec3(0.0);
   for (uint i = 0; i < cluster_length; i++) {
-    uint light_index = clusters[cluster_index + 1 + i];
+    uint light_index = clusters[cluster_lights_offset + cluster_offset + i];
 
     color_accumulator +=
         point_light_contribution(point_lights[light_index], nor_in_lgt,
