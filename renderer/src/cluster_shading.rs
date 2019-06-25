@@ -68,10 +68,10 @@ impl ClusterData {
         let scale_from_cls_to_hmd = bb_delta.div_element_wise(dimensions);
         let scale_from_hmd_to_cls = dimensions.div_element_wise(bb_delta);
 
-        let hmd_to_cls: Matrix4<f64> =
-            Matrix4::from_scale_vector(scale_from_hmd_to_cls) * Matrix4::from_translation(-cls_origin.to_vec());
         let cls_to_hmd: Matrix4<f64> =
             Matrix4::from_translation(cls_origin.to_vec()) * Matrix4::from_scale_vector(scale_from_cls_to_hmd);
+        let hmd_to_cls: Matrix4<f64> =
+            Matrix4::from_scale_vector(scale_from_hmd_to_cls) * Matrix4::from_translation(-cls_origin.to_vec());
 
         Self {
             dimensions,
@@ -79,8 +79,8 @@ impl ClusterData {
             scale_from_cls_to_hmd,
             scale_from_hmd_to_cls,
 
-            wld_to_cls: hmd_to_cls * wld_to_hmd,
             cls_to_wld: hmd_to_wld * cls_to_hmd,
+            wld_to_cls: hmd_to_cls * wld_to_hmd,
         }
     }
 }
@@ -88,6 +88,18 @@ impl ClusterData {
 pub struct ClusterResources {
     pub buffer_name: gl::BufferName,
     pub clusters: Vec<[u32; CLUSTER_CAPACITY]>,
+    // pub cluster_lengths: Vec<u32>,
+    // pub cluster_offsets: Vec<u32>,
+    // pub light_indices: Vec<u32>,
+}
+
+impl ClusterResources {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self {
+            buffer_name: unsafe { gl.create_buffer() },
+            clusters: Vec::new(),
+        }
+    }
 }
 
 impl ClusterResources {
@@ -96,27 +108,22 @@ impl ClusterResources {
         gl: &gl::Gl,
         cfg: &configuration::ClusteredLightShading,
         space: &ClusterData,
-        point_lights: &[light::LightBufferLight],
+        point_lights: &[light::PointLight],
     ) {
-        let Self {
-            buffer_name,
-            ref mut clusters,
-        } = self;
-
         let ClusterData {
             dimensions,
-            cls_origin,
             scale_from_cls_to_hmd,
             scale_from_hmd_to_cls,
             wld_to_cls,
             cls_to_wld,
+            ..
         } = *space;
 
         let dimensions_u32 = dimensions.cast::<u32>().unwrap();
         let cluster_count = dimensions_u32.product();
 
-        clusters.clear();
-        clusters.resize_with(cluster_count as usize, Default::default);
+        self.clusters.clear();
+        self.clusters.resize_with(cluster_count as usize, Default::default);
 
         for (i, l) in point_lights.iter().enumerate() {
             if let Some(light_index) = cfg.light_index {
@@ -125,7 +132,7 @@ impl ClusterResources {
                 }
             }
 
-            let pos_in_cls = l.pos_in_lgt.cast::<f64>().unwrap();
+            let pos_in_cls = wld_to_cls.transform_point(l.pos_in_wld.cast::<f64>().unwrap());
 
             let r = l.attenuation.clip_far as f64;
             let r_sq = r * r;
@@ -180,7 +187,7 @@ impl ClusterResources {
                         if dz * dz + dy * dy + dx * dx < r_sq {
                             // It's a hit!
                             let index = ((z * dimensions_u32.y) + y) * dimensions_u32.x + x;
-                            let thing = &mut clusters[index as usize];
+                            let thing = &mut self.clusters[index as usize];
 
                             thing[0] += 1;
                             let offset = thing[0] as usize;
@@ -207,7 +214,7 @@ impl ClusterResources {
             };
 
             let header_bytes = header.value_as_bytes();
-            let body_bytes = clusters.vec_as_bytes();
+            let body_bytes = self.clusters.vec_as_bytes();
 
             gl.named_buffer_reserve(self.buffer_name, header_bytes.len() + body_bytes.len(), gl::STREAM_DRAW);
             gl.named_buffer_sub_data(self.buffer_name, 0, header_bytes);
