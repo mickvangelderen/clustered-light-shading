@@ -8,6 +8,8 @@ uniform sampler2D specular_sampler;
 uniform vec2 normal_dimensions;
 // uniform vec2 specular_dimensions;
 
+layout(binding = 0) uniform atomic_uint shading_ops;
+
 in vec2 fs_pos_in_tex;
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
@@ -192,6 +194,7 @@ void main() {
     color_accumulator +=
       point_light_contribution(point_lights[i], nor_in_lgt,
                                fs_pos_in_lgt, cam_dir_in_lgt_norm);
+    atomicCounterIncrement(shading_ops);
   }
   frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
@@ -237,8 +240,9 @@ void main() {
     color_accumulator +=
         point_light_contribution(point_lights[light_index], nor_in_lgt,
                                  fs_pos_in_lgt, cam_dir_in_lgt_norm);
+    atomicCounterIncrement(shading_ops);
   }
-  // frag_color = vec4(color_accumulator, 1.0);
+  frag_color = vec4(color_accumulator, 1.0);
 #else
 #error Unimplemented render technique!
 #endif
