@@ -492,8 +492,8 @@ fn main() {
                     specular: light::RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_wld: Point3::from_vec(rain_drop.position),
                     attenuation: light::AttenParams {
-                        intensity: 0.5,
-                        clip_near: 0.25,
+                        intensity: 0.3,
+                        clip_near: 0.5,
                         cutoff: 0.02,
                     }
                     .into(),
