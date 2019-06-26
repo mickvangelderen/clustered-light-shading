@@ -222,8 +222,8 @@ void main() {
   uint cluster_length = clusters[cluster_meta_index + 1];
 
   // CLUSTER LENGHTS
-  // frag_color = vec4(vec3(float(cluster_length) / 132.0), 1.0);
-  frag_color = vec4(heatmap(float(cluster_length), 0.0, 150), 1.0);
+  frag_color = vec4(vec3(float(cluster_length) / 132.0), 1.0);
+  frag_color = vec4(heatmap(float(cluster_length), 0.0, 32.0), 1.0);
 
   // COLORED CLUSTER LENGTHS
   // if (cluster_length == 0) {
