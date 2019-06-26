@@ -762,6 +762,34 @@ fn main() {
                 let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                 let clp_to_cam = cam_to_clp.invert().unwrap();
 
+                if world.render_technique.value == RenderTechnique::Clustered {
+                    let cluster_data = ClusterData::new(
+                        &configuration.clustered_light_shading,
+                        std::iter::once(clp_to_cam),
+                        wld_to_cam,
+                        cam_to_wld,
+                    );
+                    cluster_data_vec.push(cluster_data);
+                    let cluster_data = cluster_data_vec.last().unwrap();
+
+                    if cluster_resources_vec.len() < cluster_data_vec.len() {
+                        cluster_resources_vec.push(ClusterResources::new(&gl));
+                        debug_assert_eq!(cluster_resources_vec.len(), cluster_data_vec.len());
+                    }
+                    let cluster_resources_index = cluster_data_vec.len() - 1;
+
+                    let cluster_resources: &mut ClusterResources = &mut cluster_resources_vec[cluster_resources_index];
+
+                    let cpu_cluster_start = Some(std::time::Instant::now());
+                    cluster_resources.compute_and_upload(
+                        &gl,
+                        &configuration.clustered_light_shading,
+                        &cluster_data,
+                        &point_lights[..],
+                    );
+                    let cpu_cluster_end = Some(std::time::Instant::now());
+                }
+
                 if world.light_space.value == LightSpace::Hmd || world.light_space.value == LightSpace::Cam {
                     let wld_to_lgt = wld_to_cam;
                     let lgt_to_wld = cam_to_wld;
