@@ -290,6 +290,7 @@ fn main() {
             resource_dir,
             configuration_path,
             tick: 0,
+            paused: false,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
             depth_prepass: true,
@@ -1053,6 +1054,9 @@ pub fn process_window_events(
                                     VirtualKeyCode::Escape => {
                                         world.running = false;
                                     }
+                                    VirtualKeyCode::Space => {
+                                        world.paused = !world.paused;
+                                    }
                                     _ => (),
                                 }
                             }
@@ -1142,32 +1146,35 @@ pub fn process_window_events(
         end_camera: &world.target_camera().current_to_camera(),
     });
 
-    {
-        let center = world.transition_camera.current_camera.transform.position;
-        let mut rng = rand::thread_rng();
-        let p0 = Point3::from_value(-10.0) + center;
-        let p1 = Point3::from_value(10.0) + center;
+    if world.paused == false {
+        {
+            // let center = world.transition_camera.current_camera.transform.position;
+            let center = Vector3::zero();
+            let mut rng = rand::thread_rng();
+            let p0 = Point3::from_value(-30.0) + center;
+            let p1 = Point3::from_value(30.0) + center;
 
-        for rain_drop in world.rain_drops.iter_mut() {
-            rain_drop.update(delta_time, &mut rng, p0, p1);
+            for rain_drop in world.rain_drops.iter_mut() {
+                rain_drop.update(delta_time, &mut rng, p0, p1);
+            }
+
+            for _ in 0..1 {
+                if world.rain_drops.len() < configuration.global.rain_drop_max as usize {
+                    world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
+                }
+                if world.rain_drops.len() > configuration.global.rain_drop_max as usize {
+                    world.rain_drops.truncate(configuration.global.rain_drop_max as usize);
+                }
+            }
         }
 
-        for _ in 0..1 {
-            if world.rain_drops.len() < configuration.global.rain_drop_max as usize {
-                world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
-            }
-            if world.rain_drops.len() > configuration.global.rain_drop_max as usize {
-                world.rain_drops.truncate(configuration.global.rain_drop_max as usize);
-            }
-        }
+        world.tick += 1;
     }
 
     if vr_context.is_some() {
         // Pitch makes me dizzy.
         world.transition_camera.current_camera.transform.pitch = Rad(0.0);
     }
-
-    world.tick += 1;
 }
 
 pub fn process_vr_events(vr_context: &Option<vr::Context>) {
