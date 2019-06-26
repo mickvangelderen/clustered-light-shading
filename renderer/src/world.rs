@@ -9,6 +9,7 @@ pub struct World {
     pub configuration_path: PathBuf,
     pub keyboard_state: KeyboardState,
     pub tick: u64,
+    pub paused: bool,
     pub global: ic::Global,
     pub clear_color: [f32; 3],
     pub window_mode: WindowMode,
