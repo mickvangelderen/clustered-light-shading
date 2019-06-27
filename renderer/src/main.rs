@@ -851,6 +851,51 @@ fn main() {
                 );
 
                 if world.target_camera_key == CameraKey::Debug {
+                    let cluster_camera = &world.cameras.main;
+                    let cam_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
+                    let wld_to_cam = cluster_camera
+                        .current_transform
+                        .pos_from_parent()
+                        .cast::<f64>()
+                        .unwrap();
+                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), viewport);
+                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                    let clp_to_cam = cam_to_clp.invert().unwrap();
+
+                    let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                    let vertices: Vec<[f32; 3]> = corners_in_clp
+                        .iter()
+                        .map(|point| point.cast().unwrap().into())
+                        .collect();
+
+                    let indices = [
+                        // Front
+                        [0, 1],
+                        [2, 3],
+                        [0, 2],
+                        [1, 3],
+                        // Back
+                        [4, 5],
+                        [6, 7],
+                        [4, 6],
+                        [5, 7],
+                        // Side
+                        [0, 4],
+                        [1, 5],
+                        [2, 6],
+                        [3, 7],
+                    ];
+
+                    line_renderer.render(
+                        &gl,
+                        &line_renderer::Parameters {
+                            vertices: &vertices[..],
+                            indices: &indices[..],
+                            obj_to_wld: &(cam_to_wld * clp_to_cam).cast().unwrap(),
+                        },
+                        &mut world,
+                    );
+
                     cluster_renderer.render(
                         &gl,
                         &cluster_renderer::Parameters {

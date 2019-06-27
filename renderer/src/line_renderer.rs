@@ -10,13 +10,13 @@ pub struct Renderer {
     pub vertex_array_name: gl::VertexArrayName,
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
-    pub pos_from_obj_to_wld_loc: gl::OptionUniformLocation,
+    pub obj_to_wld_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters<'a> {
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
-    pub pos_from_obj_to_wld: &'a Matrix4<f32>,
+    pub obj_to_wld: &'a Matrix4<f32>,
 }
 
 // TODO: Actually use this?
@@ -36,8 +36,8 @@ impl Renderer {
             if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
                 gl.use_program(*program_name);
 
-                if let Some(loc) = self.pos_from_obj_to_wld_loc.into() {
-                    gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.pos_from_obj_to_wld.as_ref());
+                if let Some(loc) = self.obj_to_wld_loc.into() {
+                    gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.obj_to_wld.as_ref());
                 }
 
                 gl.named_buffer_data(
@@ -70,7 +70,7 @@ impl Renderer {
         if modified < self.program.update(gl, world) {
             if let ProgramName::Linked(name) = self.program.name(&world.global) {
                 unsafe {
-                    self.pos_from_obj_to_wld_loc = get_uniform_location!(gl, *name, "pos_from_obj_to_wld");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
                 }
             }
         }
@@ -115,7 +115,7 @@ impl Renderer {
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,
-                pos_from_obj_to_wld_loc: gl::OptionUniformLocation::NONE,
+                obj_to_wld_loc: gl::OptionUniformLocation::NONE,
             }
         }
     }
