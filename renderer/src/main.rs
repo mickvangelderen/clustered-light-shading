@@ -293,6 +293,7 @@ fn main() {
             paused: false,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
+            display_mode: 1,
             depth_prepass: true,
             light_space: ic::Leaf::clean(&mut global, LightSpace::Cam),
             light_space_regex: LightSpace::regex(),
@@ -717,6 +718,7 @@ fn main() {
                         &mut world,
                         &mut depth_renderer,
                         &mut basic_renderer,
+                        &basic_renderer::Parameters { mode: 0 },
                     );
 
                     unsafe {
@@ -841,16 +843,29 @@ fn main() {
                 main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
                 viewport.set(&gl);
 
-                render_main(
-                    &gl,
-                    &main_resources,
-                    &resources,
-                    &mut world,
-                    &mut depth_renderer,
-                    &mut basic_renderer,
-                );
+                if world.target_camera_key == CameraKey::Main {
+                    render_main(
+                        &gl,
+                        &main_resources,
+                        &resources,
+                        &mut world,
+                        &mut depth_renderer,
+                        &mut basic_renderer,
+                        &basic_renderer::Parameters { mode: 0 },
+                    );
+                } else if world.target_camera_key == CameraKey::Debug {
+                    let display_mode = world.display_mode;
 
-                if world.target_camera_key == CameraKey::Debug {
+                    render_main(
+                        &gl,
+                        &main_resources,
+                        &resources,
+                        &mut world,
+                        &mut depth_renderer,
+                        &mut basic_renderer,
+                        &basic_renderer::Parameters { mode: display_mode },
+                    );
+
                     let cluster_camera = &world.cameras.main;
                     let cam_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
                     let wld_to_cam = cluster_camera
@@ -896,16 +911,18 @@ fn main() {
                         &mut world,
                     );
 
-                    cluster_renderer.render(
-                        &gl,
-                        &cluster_renderer::Parameters {
-                            cluster_resources: &cluster_resources_vec[0],
-                            cluster_data: &cluster_data_vec[0],
-                            configuration: &configuration.clustered_light_shading,
-                        },
-                        &mut world,
-                        &resources,
-                    );
+                    if world.render_technique.value == RenderTechnique::Clustered {
+                        cluster_renderer.render(
+                            &gl,
+                            &cluster_renderer::Parameters {
+                                cluster_resources: &cluster_resources_vec[0],
+                                cluster_data: &cluster_data_vec[0],
+                                configuration: &configuration.clustered_light_shading,
+                            },
+                            &mut world,
+                            &resources,
+                        );
+                    }
                 }
 
                 unsafe {
@@ -1130,7 +1147,11 @@ pub fn process_window_events(
                                         new_attenuation_mode.wrapping_next_assign();
                                     }
                                     VirtualKeyCode::Key2 => {
-                                        new_window_mode.wrapping_next_assign();
+                                        // new_window_mode.wrapping_next_assign();
+                                        world.display_mode += 1;
+                                        if world.display_mode >= 4 {
+                                            world.display_mode = 1;
+                                        }
                                     }
                                     VirtualKeyCode::Key3 => {
                                         new_render_technique.wrapping_next_assign();
@@ -1285,6 +1306,7 @@ pub fn render_main(
     world: &mut World,
     depth_renderer: &mut depth_renderer::Renderer,
     basic_renderer: &mut basic_renderer::Renderer,
+    basic_params: &basic_renderer::Parameters,
 ) {
     unsafe {
         gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
@@ -1306,7 +1328,7 @@ pub fn render_main(
         }
     }
 
-    basic_renderer.render(gl, &basic_renderer::Parameters {}, world, resources);
+    basic_renderer.render(gl, basic_params, world, resources);
 
     if world.depth_prepass {
         unsafe {

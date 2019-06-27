@@ -8,6 +8,8 @@ uniform sampler2D specular_sampler;
 uniform vec2 normal_dimensions;
 // uniform vec2 specular_dimensions;
 
+uniform uint display_mode;
+
 layout(binding = 0) uniform atomic_uint shading_ops;
 
 in vec2 fs_pos_in_tex;
@@ -247,15 +249,23 @@ void main() {
 #error Unimplemented render technique!
 #endif
 
-  // DIFFUSE TEXTURE
-  frag_color = texture(diffuse_sampler, fs_pos_in_tex);
+  if (display_mode == 1) {
+    // DIFFUSE TEXTURE
+    frag_color = texture(diffuse_sampler, fs_pos_in_tex);
+  }
 
-  // NORMAL TEXURE
-  // frag_color = texture(normal_sampler, fs_pos_in_tex);
+  if (display_mode == 2) {
+    // NORMAL TEXTURE
+    frag_color = texture(normal_sampler, fs_pos_in_tex);
+  }
 
-  // SPECULAR_TEXTURE
-  // frag_color = texture(specular_sampler, fs_pos_in_tex);
+  if (display_mode == 2) {
+    // SPECULAR_TEXTURE
+    frag_color = texture(specular_sampler, fs_pos_in_tex);
+  }
 
-  // NORMAL IN CAMERA SPACE
-  // frag_color = vec4(nor_in_lgt, 1.0);
+  if (display_mode == 3) {
+    // NORMAL
+    frag_color = vec4(nor_in_lgt, 1.0);
+  }
 }

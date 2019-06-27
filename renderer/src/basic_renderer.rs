@@ -12,9 +12,13 @@ pub struct Renderer {
     pub diffuse_dimensions_loc: gl::OptionUniformLocation,
     pub normal_dimensions_loc: gl::OptionUniformLocation,
     pub specular_dimensions_loc: gl::OptionUniformLocation,
+
+    pub display_mode_loc: gl::OptionUniformLocation,
 }
 
-pub struct Parameters {}
+pub struct Parameters {
+    pub mode: u32
+}
 
 impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
@@ -33,6 +37,10 @@ impl Renderer {
 
                 if let Some(loc) = self.specular_sampler_loc.into() {
                     gl.uniform_1i(loc, 3);
+                }
+
+                if let Some(loc) = self.display_mode_loc.into() {
+                    gl.uniform_1ui(loc, params.mode);
                 }
 
                 // Cache texture binding.
@@ -108,6 +116,8 @@ impl Renderer {
                     self.diffuse_dimensions_loc = get_uniform_location!(gl, *name, "diffuse_dimensions");
                     self.normal_dimensions_loc = get_uniform_location!(gl, *name, "normal_dimensions");
                     self.specular_dimensions_loc = get_uniform_location!(gl, *name, "specular_dimensions");
+
+                    self.display_mode_loc = get_uniform_location!(gl, *name, "display_mode");
                 }
             }
         }
@@ -129,6 +139,8 @@ impl Renderer {
             diffuse_dimensions_loc: gl::OptionUniformLocation::NONE,
             normal_dimensions_loc: gl::OptionUniformLocation::NONE,
             specular_dimensions_loc: gl::OptionUniformLocation::NONE,
+
+            display_mode_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }

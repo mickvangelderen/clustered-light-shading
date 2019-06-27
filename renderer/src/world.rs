@@ -13,6 +13,7 @@ pub struct World {
     pub global: ic::Global,
     pub clear_color: [f32; 3],
     pub window_mode: WindowMode,
+    pub display_mode: u32,
     pub depth_prepass: bool,
     pub light_space: ic::Leaf<LightSpace>,
     pub light_space_regex: Regex,
