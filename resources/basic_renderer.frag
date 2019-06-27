@@ -248,7 +248,7 @@ void main() {
 #endif
 
   // DIFFUSE TEXTURE
-  // frag_color = texture(diffuse_sampler, fs_pos_in_tex);
+  frag_color = texture(diffuse_sampler, fs_pos_in_tex);
 
   // NORMAL TEXURE
   // frag_color = texture(normal_sampler, fs_pos_in_tex);

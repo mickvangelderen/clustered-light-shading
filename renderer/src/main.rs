@@ -648,14 +648,12 @@ fn main() {
 
                     let cluster_resources: &mut ClusterResources = &mut cluster_resources_vec[cluster_resources_index];
 
-                    let cpu_cluster_start = Some(std::time::Instant::now());
                     cluster_resources.compute_and_upload(
                         &gl,
                         &configuration.clustered_light_shading,
                         &cluster_data,
                         &point_lights[..],
                     );
-                    let cpu_cluster_end = Some(std::time::Instant::now());
                 }
 
                 for &eye_key in EYE_KEYS.iter() {
@@ -763,6 +761,17 @@ fn main() {
                 let clp_to_cam = cam_to_clp.invert().unwrap();
 
                 if world.render_technique.value == RenderTechnique::Clustered {
+                    let cluster_camera = &world.cameras.main;
+                    let cam_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
+                    let wld_to_cam = cluster_camera
+                        .current_transform
+                        .pos_from_parent()
+                        .cast::<f64>()
+                        .unwrap();
+                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), viewport);
+                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                    let clp_to_cam = cam_to_clp.invert().unwrap();
+
                     let cluster_data = ClusterData::new(
                         &configuration.clustered_light_shading,
                         std::iter::once(clp_to_cam),
@@ -780,14 +789,12 @@ fn main() {
 
                     let cluster_resources: &mut ClusterResources = &mut cluster_resources_vec[cluster_resources_index];
 
-                    let cpu_cluster_start = Some(std::time::Instant::now());
                     cluster_resources.compute_and_upload(
                         &gl,
                         &configuration.clustered_light_shading,
                         &cluster_data,
                         &point_lights[..],
                     );
-                    let cpu_cluster_end = Some(std::time::Instant::now());
                 }
 
                 if world.light_space.value == LightSpace::Hmd || world.light_space.value == LightSpace::Cam {
@@ -842,6 +849,19 @@ fn main() {
                     &mut depth_renderer,
                     &mut basic_renderer,
                 );
+
+                if world.target_camera_key == CameraKey::Debug {
+                    cluster_renderer.render(
+                        &gl,
+                        &cluster_renderer::Parameters {
+                            cluster_resources: &cluster_resources_vec[0],
+                            cluster_data: &cluster_data_vec[0],
+                            configuration: &configuration.clustered_light_shading,
+                        },
+                        &mut world,
+                        &resources,
+                    );
+                }
 
                 unsafe {
                     gl.blit_named_framebuffer(
@@ -900,15 +920,15 @@ fn main() {
             let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
             let start = res.cpu_start.unwrap();
             let end = res.cpu_end.unwrap();
-            println!(
-                "clustering {} x {} x {} ({} + {} MB) in {} us.",
-                dimensions_u32.x,
-                dimensions_u32.y,
-                dimensions_u32.z,
-                res.cluster_meta.vec_as_bytes().len() / 1000_000,
-                res.light_indices.vec_as_bytes().len() / 1000_000,
-                end.duration_since(start).as_micros()
-            );
+            // println!(
+            //     "clustering {} x {} x {} ({} + {} MB) in {} us.",
+            //     dimensions_u32.x,
+            //     dimensions_u32.y,
+            //     dimensions_u32.z,
+            //     res.cluster_meta.vec_as_bytes().len() / 1000_000,
+            //     res.light_indices.vec_as_bytes().len() / 1000_000,
+            //     end.duration_since(start).as_micros()
+            // );
         }
 
         gl_window.swap_buffers().unwrap();
