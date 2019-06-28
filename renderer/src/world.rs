@@ -1,6 +1,7 @@
 use crate::*;
 
 pub struct World {
+    pub epoch: Instant,
     pub running: bool,
     pub focus: bool,
     pub win_dpi: f64,

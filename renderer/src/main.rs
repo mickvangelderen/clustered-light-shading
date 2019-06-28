@@ -14,6 +14,7 @@ pub(crate) use regex::{Regex, RegexBuilder};
 pub(crate) use std::convert::{TryFrom, TryInto};
 #[allow(unused_imports)]
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
+pub(crate) use std::time::Instant;
 
 mod basic_renderer;
 mod bounding_box;
@@ -34,6 +35,7 @@ mod light;
 mod line_renderer;
 mod mono_stereo;
 mod overlay_renderer;
+mod profiling;
 mod rain;
 mod rendering;
 mod resources;
@@ -47,6 +49,7 @@ use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
+use crate::profiling::*;
 // use crate::mono_stereo::*;
 use crate::rendering::*;
 use crate::resources::Resources;
@@ -125,6 +128,9 @@ pub struct MainResources {
     pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
     pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
+    // Profiling
+    pub depth_pass_profiler: Profiler,
+    pub basic_pass_profiler: Profiler,
 }
 
 impl MainResources {
@@ -166,6 +172,8 @@ impl MainResources {
                 color_texture,
                 depth_texture,
                 nor_in_cam_texture,
+                depth_pass_profiler: Profiler::new(&gl),
+                basic_pass_profiler: Profiler::new(&gl),
             }
         }
     }
@@ -190,6 +198,12 @@ impl MainResources {
             self.nor_in_cam_texture.drop(gl);
         }
     }
+}
+
+#[derive(Debug, Default)]
+pub struct MainData {
+    pub depth: Option<GpuCpuTimeSpan>,
+    pub basic: Option<GpuCpuTimeSpan>,
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
@@ -282,6 +296,7 @@ fn main() {
         let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
 
         World {
+            epoch: Instant::now(),
             running: true,
             focus: false,
             win_dpi,
@@ -376,7 +391,8 @@ fn main() {
     let mut cluster_resources_vec: Vec<ClusterResources> = Vec::new();
     let mut cluster_data_vec: Vec<ClusterData> = Vec::new();
 
-    let mut main_resources_vec = Vec::new();
+    let mut main_resources_vec: Vec<MainResources> = Vec::new();
+    let mut main_data_vec: Vec<MainData> = Vec::new();
 
     let mut point_lights = Vec::new();
 
@@ -478,6 +494,7 @@ fn main() {
 
         light_data_vec.clear();
         cluster_data_vec.clear();
+        main_data_vec.clear();
 
         {
             point_lights.clear();
@@ -502,7 +519,6 @@ fn main() {
             }
         }
 
-        let mut main_resources_index = 0;
         let mut light_buffer_index = None;
 
         fn mono_frustrum(camera: &camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
@@ -700,20 +716,23 @@ fn main() {
                         gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                     }
 
-                    if main_resources_vec.len() <= main_resources_index {
+                    let main_index = main_data_vec.len();
+                    main_data_vec.push(MainData::default());
+                    if main_resources_vec.len() < main_index + 1 {
                         let main_resources = MainResources::new(&gl, viewport.dimensions.x, viewport.dimensions.y);
                         main_resources_vec.push(main_resources);
                     }
 
-                    let main_resources = &mut main_resources_vec[main_resources_index];
-                    main_resources_index += 1;
+                    let main_resources = &mut main_resources_vec[main_index];
+                    let main_data = &mut main_data_vec[main_index];
 
                     main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
                     viewport.set(&gl);
 
                     render_main(
                         &gl,
-                        &main_resources,
+                        main_resources,
+                        main_data,
                         &resources,
                         &mut world,
                         &mut depth_renderer,
@@ -748,10 +767,6 @@ fn main() {
                 }
             }
             None => {
-                if world.render_technique.value == RenderTechnique::Clustered {
-                    // FIXME: COMPUTE CLS SPACE
-                }
-
                 let render_camera = &world.transition_camera.current_camera;
                 let viewport =
                     Viewport::from_dimensions(Vector2::new(world.win_size.width as i32, world.win_size.height as i32));
@@ -832,13 +847,15 @@ fn main() {
                     gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                 }
 
-                if main_resources_vec.len() <= main_resources_index {
+                let main_index = main_data_vec.len();
+                main_data_vec.push(MainData::default());
+                if main_resources_vec.len() < main_index + 1 {
                     let main_resources = MainResources::new(&gl, viewport.dimensions.x, viewport.dimensions.y);
                     main_resources_vec.push(main_resources);
                 }
 
-                let main_resources = &mut main_resources_vec[main_resources_index];
-                main_resources_index += 1;
+                let main_resources = &mut main_resources_vec[main_index];
+                let main_data = &mut main_data_vec[main_index];
 
                 main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
                 viewport.set(&gl);
@@ -846,7 +863,8 @@ fn main() {
                 if world.target_camera_key == CameraKey::Main {
                     render_main(
                         &gl,
-                        &main_resources,
+                        main_resources,
+                        main_data,
                         &resources,
                         &mut world,
                         &mut depth_renderer,
@@ -858,7 +876,8 @@ fn main() {
 
                     render_main(
                         &gl,
-                        &main_resources,
+                        main_resources,
+                        main_data,
                         &resources,
                         &mut world,
                         &mut depth_renderer,
@@ -982,15 +1001,36 @@ fn main() {
             let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
             let start = res.cpu_start.unwrap();
             let end = res.cpu_end.unwrap();
-            // println!(
-            //     "clustering {} x {} x {} ({} + {} MB) in {} us.",
-            //     dimensions_u32.x,
-            //     dimensions_u32.y,
-            //     dimensions_u32.z,
-            //     res.cluster_meta.vec_as_bytes().len() / 1000_000,
-            //     res.light_indices.vec_as_bytes().len() / 1000_000,
-            //     end.duration_since(start).as_micros()
-            // );
+            println!(
+                "clustering {} x {} x {} ({} + {} MB) in {} us.",
+                dimensions_u32.x,
+                dimensions_u32.y,
+                dimensions_u32.z,
+                res.cluster_meta.vec_as_bytes().len() / 1000_000,
+                res.light_indices.vec_as_bytes().len() / 1000_000,
+                end.duration_since(start).as_micros()
+            );
+        }
+
+        for (i, data) in main_data_vec.iter().enumerate() {
+            for (name, span) in [
+                ("depth", &data.depth),
+                ("basic", &data.basic),
+            ].iter() {
+                if let Some(span) = span {
+                    let cpu = span.cpu.delta();
+                    let gpu = span.gpu.delta();
+                    println!(
+                        "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU",
+                        i,
+                        name,
+                        cpu / 1000,
+                        cpu % 1000,
+                        gpu / 1000,
+                        gpu % 1000,
+                    );
+                }
+            }
         }
 
         gl_window.swap_buffers().unwrap();
@@ -1301,7 +1341,8 @@ pub fn process_vr_events(vr_context: &Option<vr::Context>) {
 
 pub fn render_main(
     gl: &gl::Gl,
-    main_resources: &MainResources,
+    main_resources: &mut MainResources,
+    main_data: &mut MainData,
     resources: &Resources,
     world: &mut World,
     depth_renderer: &mut depth_renderer::Renderer,
@@ -1320,15 +1361,27 @@ pub fn render_main(
     }
 
     if world.depth_prepass {
-        depth_renderer.render(gl, world, resources);
+        main_data.depth = Some(
+            main_resources
+                .depth_pass_profiler
+                .measure(&gl, world.epoch, world.tick, || {
+                    depth_renderer.render(gl, world, resources);
 
-        unsafe {
-            gl.depth_func(gl::GEQUAL);
-            gl.depth_mask(gl::FALSE);
-        }
+                    unsafe {
+                        gl.depth_func(gl::GEQUAL);
+                        gl.depth_mask(gl::FALSE);
+                    }
+                }),
+        );
     }
 
-    basic_renderer.render(gl, basic_params, world, resources);
+    main_data.basic = Some(
+        main_resources
+            .basic_pass_profiler
+            .measure(&gl, world.epoch, world.tick, || {
+                basic_renderer.render(gl, basic_params, world, resources);
+            }),
+    );
 
     if world.depth_prepass {
         unsafe {

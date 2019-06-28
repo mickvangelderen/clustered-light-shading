@@ -10,7 +10,7 @@ uniform vec2 normal_dimensions;
 
 uniform uint display_mode;
 
-layout(binding = 0) uniform atomic_uint shading_ops;
+// layout(binding = 0) uniform atomic_uint shading_ops;
 
 in vec2 fs_pos_in_tex;
 
@@ -183,10 +183,12 @@ void main() {
   frag_nor_in_lgt = nor_in_lgt * 0.5 + vec3(0.5);
 
   // TODO: Render unmasked and masked materials separately.
-  vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
-  if (diffuse_sample.a < 0.5) {
-    discard;
-  }
+  // vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
+  // if (diffuse_sample.a < 0.5) {
+  //   discard;
+  // }
+
+  if (display_mode ==  0) {
 
   vec3 cam_dir_in_lgt_norm = normalize(cam_pos_in_lgt.xyz - fs_pos_in_lgt);
 
@@ -196,7 +198,7 @@ void main() {
     color_accumulator +=
       point_light_contribution(point_lights[i], nor_in_lgt,
                                fs_pos_in_lgt, cam_dir_in_lgt_norm);
-    atomicCounterIncrement(shading_ops);
+    // atomicCounterIncrement(shading_ops);
   }
   frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
@@ -224,8 +226,8 @@ void main() {
   uint cluster_length = clusters[cluster_meta_index + 1];
 
   // CLUSTER LENGHTS
-  frag_color = vec4(vec3(float(cluster_length) / 132.0), 1.0);
-  frag_color = vec4(heatmap(float(cluster_length), 0.0, 32.0), 1.0);
+  // frag_color = vec4(vec3(float(cluster_length) / 132.0), 1.0);
+  // frag_color = vec4(heatmap(float(cluster_length), 0.0, 32.0), 1.0);
 
   // COLORED CLUSTER LENGTHS
   // if (cluster_length == 0) {
@@ -242,12 +244,13 @@ void main() {
     color_accumulator +=
         point_light_contribution(point_lights[light_index], nor_in_lgt,
                                  fs_pos_in_lgt, cam_dir_in_lgt_norm);
-    atomicCounterIncrement(shading_ops);
+    // atomicCounterIncrement(shading_ops);
   }
   frag_color = vec4(color_accumulator, 1.0);
 #else
 #error Unimplemented render technique!
 #endif
+  }
 
   if (display_mode == 1) {
     // DIFFUSE TEXTURE
