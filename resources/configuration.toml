@@ -1,7 +1,7 @@
 [global]
 diffuse_srgb = true
 framebuffer_srgb = true
-rain_drop_max = 10
+rain_drop_max = 100
 
 [window]
 vsync = false
@@ -12,7 +12,7 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-cluster_side = 1.0
+cluster_side = 1.5
 # light_index = 2
 min_light_count = 1
 # animate_z = 2.0
