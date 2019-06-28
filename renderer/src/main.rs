@@ -637,33 +637,41 @@ fn main() {
                     ));
                 }
 
-                let clp_to_hmd_map: EyeMap<Matrix4<f64>> = eyes.as_ref().map(|&eye| {
-                    let EyeData { tangents, cam_to_hmd } = eye;
-
-                    let frustrum = stereo_frustrum(&render_camera.properties, tangents);
-                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                    let clp_to_cam = cam_to_clp.invert().unwrap();
-
-                    cam_to_hmd * clp_to_cam
-                });
-
                 if world.render_technique.value == RenderTechnique::Clustered {
+                    let cluster_resources_index = cluster_data_vec.len();
+
+                    let cluster_camera = &world.cameras.main;
+                    let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
+
+                    let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
+                    let wld_to_hmd = hmd_to_wld.invert().unwrap();
+
+                    let clp_to_hmd_map: EyeMap<Matrix4<f64>> = eyes.as_ref().map(|&eye| {
+                        let EyeData { tangents, cam_to_hmd } = eye;
+
+                        let frustrum = stereo_frustrum(&cluster_camera.properties, tangents);
+                        let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                        let clp_to_cam = cam_to_clp.invert().unwrap();
+
+                        cam_to_hmd * clp_to_cam
+                    });
+
                     let cluster_data = ClusterData::new(
                         &configuration.clustered_light_shading,
                         EYE_KEYS.iter().map(|&eye| clp_to_hmd_map[eye]),
                         wld_to_hmd,
                         hmd_to_wld,
                     );
-                    cluster_data_vec.push(cluster_data);
-                    let cluster_data = cluster_data_vec.last().unwrap();
 
-                    if cluster_resources_vec.len() < cluster_data_vec.len() {
+                    cluster_data_vec.push(cluster_data);
+                    let cluster_data = &cluster_data_vec[cluster_resources_index];
+
+                    if cluster_resources_vec.len() < cluster_resources_index + 1 {
                         cluster_resources_vec.push(ClusterResources::new(&gl));
                         debug_assert_eq!(cluster_resources_vec.len(), cluster_data_vec.len());
                     }
-                    let cluster_resources_index = cluster_data_vec.len() - 1;
 
-                    let cluster_resources: &mut ClusterResources = &mut cluster_resources_vec[cluster_resources_index];
+                    let cluster_resources = &mut cluster_resources_vec[cluster_resources_index];
 
                     cluster_resources.compute_and_upload(
                         &gl,
