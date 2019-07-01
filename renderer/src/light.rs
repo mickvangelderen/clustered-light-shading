@@ -99,8 +99,6 @@ pub struct LightBufferHeader {
     pub light_count: Vector4<u32>,
 }
 
-pub type LightBufferBody = Vec<LightBufferLight>;
-
 pub const LIGHT_BUFFER_DECLARATION: &'static str = r"
 struct PointLight {
     vec4 ambient;
