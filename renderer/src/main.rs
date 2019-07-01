@@ -612,6 +612,87 @@ fn main() {
             ));
         }
 
+        if world.render_technique.value == RenderTechnique::Clustered {
+            let cluster_camera = &world.cameras.main;
+            let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
+            let wld_to_bdy = cluster_camera
+                .current_transform
+                .pos_from_parent()
+                .cast::<f64>()
+                .unwrap();
+
+            let cluster_resources_index = cluster_data_vec.len();
+
+            if cluster_resources_vec.len() < cluster_resources_index + 1 {
+                cluster_resources_vec.push(ClusterResources::new(&gl));
+                debug_assert_eq!(cluster_resources_vec.len(), cluster_resources_index + 1);
+            }
+
+            let cluster_resources = &mut cluster_resources_vec[cluster_resources_index];
+
+            cluster_resources.cameras.clear();
+            let hmd_to_wld;
+            let wld_to_hmd;
+
+            match stereo_data.as_ref() {
+                Some(&StereoData { hmd_to_bdy, eyes, .. }) => {
+                    hmd_to_wld = bdy_to_wld * hmd_to_bdy;
+                    wld_to_hmd = hmd_to_wld.invert().unwrap();
+
+                    for &eye in EYE_KEYS.iter() {
+                        let EyeData { tangents, cam_to_hmd } = eyes[eye];
+
+                        let frustrum = stereo_frustrum(&cluster_camera.properties, tangents);
+                        let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                        let clp_to_cam = cam_to_clp.invert().unwrap();
+
+                        let clp_to_hmd = cam_to_hmd * clp_to_cam;
+                        let hmd_to_clp = clp_to_hmd.invert().unwrap();
+
+                        cluster_resources.cameras.push(ClusterCamera { hmd_to_clp, clp_to_hmd });
+                    }
+                }
+                None => {
+                    // hmd_to_bdy = bdy_to_hmd = I
+                    hmd_to_wld = bdy_to_wld;
+                    wld_to_hmd = wld_to_bdy;
+
+                    let viewport = Viewport::from_dimensions(Vector2::new(
+                        world.win_size.width as i32,
+                        world.win_size.height as i32,
+                    ));
+                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), viewport);
+                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                    let clp_to_cam = cam_to_clp.invert().unwrap();
+
+                    // cam_to_hmd = hmd_to_cam = I
+                    let clp_to_hmd = clp_to_cam;
+                    let hmd_to_clp = cam_to_clp;
+
+                    cluster_resources.cameras.push(ClusterCamera { hmd_to_clp, clp_to_hmd });
+                }
+            }
+
+            let cluster_data = ClusterData::new(
+                &configuration.clustered_light_shading,
+                cluster_resources
+                    .cameras
+                    .iter()
+                    .map(|&ClusterCamera { clp_to_hmd, .. }| clp_to_hmd),
+                wld_to_hmd,
+                hmd_to_wld,
+            );
+
+            cluster_resources.compute_and_upload(
+                &gl,
+                &configuration.clustered_light_shading,
+                &cluster_data,
+                &point_lights[..],
+            );
+
+            cluster_data_vec.push(cluster_data);
+        }
+
         match stereo_data {
             Some(StereoData {
                 win_size,
@@ -635,50 +716,6 @@ fn main() {
                         wld_to_lgt,
                         lgt_to_wld,
                     ));
-                }
-
-                if world.render_technique.value == RenderTechnique::Clustered {
-                    let cluster_resources_index = cluster_data_vec.len();
-
-                    let cluster_camera = &world.cameras.main;
-                    let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
-
-                    let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                    let wld_to_hmd = hmd_to_wld.invert().unwrap();
-
-                    let clp_to_hmd_map: EyeMap<Matrix4<f64>> = eyes.as_ref().map(|&eye| {
-                        let EyeData { tangents, cam_to_hmd } = eye;
-
-                        let frustrum = stereo_frustrum(&cluster_camera.properties, tangents);
-                        let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                        let clp_to_cam = cam_to_clp.invert().unwrap();
-
-                        cam_to_hmd * clp_to_cam
-                    });
-
-                    let cluster_data = ClusterData::new(
-                        &configuration.clustered_light_shading,
-                        EYE_KEYS.iter().map(|&eye| clp_to_hmd_map[eye]),
-                        wld_to_hmd,
-                        hmd_to_wld,
-                    );
-
-                    cluster_data_vec.push(cluster_data);
-                    let cluster_data = &cluster_data_vec[cluster_resources_index];
-
-                    if cluster_resources_vec.len() < cluster_resources_index + 1 {
-                        cluster_resources_vec.push(ClusterResources::new(&gl));
-                        debug_assert_eq!(cluster_resources_vec.len(), cluster_data_vec.len());
-                    }
-
-                    let cluster_resources = &mut cluster_resources_vec[cluster_resources_index];
-
-                    cluster_resources.compute_and_upload(
-                        &gl,
-                        &configuration.clustered_light_shading,
-                        &cluster_data,
-                        &point_lights[..],
-                    );
                 }
 
                 for &eye_key in EYE_KEYS.iter() {
@@ -784,43 +821,6 @@ fn main() {
                 let frustrum = mono_frustrum(render_camera, viewport);
                 let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                 let clp_to_cam = cam_to_clp.invert().unwrap();
-
-                if world.render_technique.value == RenderTechnique::Clustered {
-                    let cluster_camera = &world.cameras.main;
-                    let cam_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
-                    let wld_to_cam = cluster_camera
-                        .current_transform
-                        .pos_from_parent()
-                        .cast::<f64>()
-                        .unwrap();
-                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), viewport);
-                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                    let clp_to_cam = cam_to_clp.invert().unwrap();
-
-                    let cluster_data = ClusterData::new(
-                        &configuration.clustered_light_shading,
-                        std::iter::once(clp_to_cam),
-                        wld_to_cam,
-                        cam_to_wld,
-                    );
-                    cluster_data_vec.push(cluster_data);
-                    let cluster_data = cluster_data_vec.last().unwrap();
-
-                    if cluster_resources_vec.len() < cluster_data_vec.len() {
-                        cluster_resources_vec.push(ClusterResources::new(&gl));
-                        debug_assert_eq!(cluster_resources_vec.len(), cluster_data_vec.len());
-                    }
-                    let cluster_resources_index = cluster_data_vec.len() - 1;
-
-                    let cluster_resources: &mut ClusterResources = &mut cluster_resources_vec[cluster_resources_index];
-
-                    cluster_resources.compute_and_upload(
-                        &gl,
-                        &configuration.clustered_light_shading,
-                        &cluster_data,
-                        &point_lights[..],
-                    );
-                }
 
                 if world.light_space.value == LightSpace::Hmd || world.light_space.value == LightSpace::Cam {
                     let wld_to_lgt = wld_to_cam;
@@ -1021,10 +1021,7 @@ fn main() {
         }
 
         for (i, data) in main_data_vec.iter().enumerate() {
-            for (name, span) in [
-                ("depth", &data.depth),
-                ("basic", &data.basic),
-            ].iter() {
+            for (name, span) in [("depth", &data.depth), ("basic", &data.basic)].iter() {
                 if let Some(span) = span {
                     let cpu = span.cpu.delta();
                     let gpu = span.gpu.delta();
