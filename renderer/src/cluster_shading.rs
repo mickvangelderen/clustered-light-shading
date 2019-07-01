@@ -84,8 +84,14 @@ impl ClusterData {
     }
 }
 
+pub struct ClusterCamera {
+    pub hmd_to_clp: Matrix4<f64>,
+    pub clp_to_hmd: Matrix4<f64>,
+}
+
 pub struct ClusterResources {
     pub buffer_name: gl::BufferName,
+    pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
     pub light_indices: Vec<u32>,
@@ -97,6 +103,7 @@ impl ClusterResources {
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
             buffer_name: unsafe { gl.create_buffer() },
+            cameras: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),
             light_indices: Vec::new(),
