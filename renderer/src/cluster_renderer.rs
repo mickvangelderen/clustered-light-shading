@@ -35,7 +35,7 @@ impl Renderer {
                             }
                         }
 
-                        let mut min_light_count = configuration.min_light_count;
+                        let min_light_count = configuration.min_light_count;
 
                         // if let Some(animate_light_count) = configuration.animate_light_count {
                         //     let time = world.tick as f64 / DESIRED_UPS;
