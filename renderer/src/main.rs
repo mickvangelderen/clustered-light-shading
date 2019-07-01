@@ -474,7 +474,7 @@ fn main() {
             });
 
         process_fs_events(&fs_rx, &gl, &mut world, &mut configuration);
-        process_window_events(&mut events_loop, &vr_context, &configuration, &mut world);
+        process_window_events(&mut events_loop, &vr_context, &mut configuration, &mut world);
         process_vr_events(&vr_context);
 
         // Space abbreviations:
@@ -1144,7 +1144,7 @@ fn process_fs_events(
 pub fn process_window_events(
     events_loop: &mut glutin::EventsLoop,
     vr_context: &Option<vr::Context>,
-    configuration: &configuration::Root,
+    configuration: &mut configuration::Root,
     world: &mut World,
 ) {
     let mut mouse_dx = 0.0;
@@ -1209,6 +1209,9 @@ pub fn process_window_events(
                                     }
                                     VirtualKeyCode::Key5 => {
                                         world.depth_prepass = !world.depth_prepass;
+                                    }
+                                    VirtualKeyCode::Backslash => {
+                                        configuration.virtual_stereo.enabled = !configuration.virtual_stereo.enabled;
                                     }
                                     VirtualKeyCode::C => {
                                         world.target_camera_mut().toggle_smoothness();
