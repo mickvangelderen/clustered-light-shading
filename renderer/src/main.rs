@@ -649,7 +649,12 @@ fn main() {
                         let clp_to_hmd = cam_to_hmd * clp_to_cam;
                         let hmd_to_clp = clp_to_hmd.invert().unwrap();
 
-                        cluster_resources.cameras.push(ClusterCamera { hmd_to_clp, clp_to_hmd });
+                        cluster_resources.cameras.push(ClusterCamera {
+                            hmd_to_clp,
+                            clp_to_hmd,
+                            wld_to_hmd,
+                            hmd_to_wld,
+                        });
                     }
                 }
                 None => {
@@ -669,7 +674,12 @@ fn main() {
                     let clp_to_hmd = clp_to_cam;
                     let hmd_to_clp = cam_to_clp;
 
-                    cluster_resources.cameras.push(ClusterCamera { hmd_to_clp, clp_to_hmd });
+                    cluster_resources.cameras.push(ClusterCamera {
+                        hmd_to_clp,
+                        clp_to_hmd,
+                        wld_to_hmd,
+                        hmd_to_wld,
+                    });
                 }
             }
 
@@ -782,7 +792,6 @@ fn main() {
                         &mut world,
                         &mut depth_renderer,
                         &mut basic_renderer,
-                        &basic_renderer::Parameters { mode: 0 },
                     );
 
                     unsafe {
@@ -868,31 +877,17 @@ fn main() {
                 main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
                 viewport.set(&gl);
 
-                if world.target_camera_key == CameraKey::Main {
-                    render_main(
-                        &gl,
-                        main_resources,
-                        main_data,
-                        &resources,
-                        &mut world,
-                        &mut depth_renderer,
-                        &mut basic_renderer,
-                        &basic_renderer::Parameters { mode: 0 },
-                    );
-                } else if world.target_camera_key == CameraKey::Debug {
-                    let display_mode = world.display_mode;
+                render_main(
+                    &gl,
+                    main_resources,
+                    main_data,
+                    &resources,
+                    &mut world,
+                    &mut depth_renderer,
+                    &mut basic_renderer,
+                );
 
-                    render_main(
-                        &gl,
-                        main_resources,
-                        main_data,
-                        &resources,
-                        &mut world,
-                        &mut depth_renderer,
-                        &mut basic_renderer,
-                        &basic_renderer::Parameters { mode: display_mode },
-                    );
-
+                if world.target_camera_key == CameraKey::Debug {
                     let cluster_camera = &world.cameras.main;
                     let cam_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
                     let wld_to_cam = cluster_camera
@@ -1355,7 +1350,6 @@ pub fn render_main(
     world: &mut World,
     depth_renderer: &mut depth_renderer::Renderer,
     basic_renderer: &mut basic_renderer::Renderer,
-    basic_params: &basic_renderer::Parameters,
 ) {
     unsafe {
         gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
@@ -1382,6 +1376,13 @@ pub fn render_main(
                 }),
         );
     }
+
+    let basic_params = &basic_renderer::Parameters {
+        mode: match world.target_camera_key {
+            CameraKey::Main => 0,
+            CameraKey::Debug => world.display_mode,
+        },
+    };
 
     main_data.basic = Some(
         main_resources
