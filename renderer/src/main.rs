@@ -859,17 +859,6 @@ fn main() {
                 );
 
                 if world.target_camera_key == CameraKey::Debug {
-                    let cluster_camera = &world.cameras.main;
-                    let cam_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
-                    let wld_to_cam = cluster_camera
-                        .current_transform
-                        .pos_from_parent()
-                        .cast::<f64>()
-                        .unwrap();
-                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), viewport);
-                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                    let clp_to_cam = cam_to_clp.invert().unwrap();
-
                     let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
                     let vertices: Vec<[f32; 3]> = corners_in_clp
                         .iter()
@@ -894,22 +883,27 @@ fn main() {
                         [3, 7],
                     ];
 
-                    line_renderer.render(
-                        &gl,
-                        &line_renderer::Parameters {
-                            vertices: &vertices[..],
-                            indices: &indices[..],
-                            obj_to_wld: &(cam_to_wld * clp_to_cam).cast().unwrap(),
-                        },
-                        &mut world,
-                    );
+                    for cluster_index in 0..cluster_data_vec.len() {
+                        let cluster_data = &cluster_data_vec[cluster_index];
+                        let cluster_resources = &cluster_resources_vec[cluster_index];
 
-                    if world.render_technique.value == RenderTechnique::Clustered {
+                        for camera in cluster_resources.cameras.iter() {
+                            line_renderer.render(
+                                &gl,
+                                &line_renderer::Parameters {
+                                    vertices: &vertices[..],
+                                    indices: &indices[..],
+                                    obj_to_wld: &(camera.hmd_to_wld * camera.clp_to_hmd).cast().unwrap(),
+                                },
+                                &mut world,
+                            );
+                        }
+
                         cluster_renderer.render(
                             &gl,
                             &cluster_renderer::Parameters {
-                                cluster_resources: &cluster_resources_vec[0],
-                                cluster_data: &cluster_data_vec[0],
+                                cluster_resources: &cluster_resources,
+                                cluster_data: &cluster_data,
                                 configuration: &configuration.clustered_light_shading,
                             },
                             &mut world,
