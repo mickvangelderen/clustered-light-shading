@@ -521,35 +521,6 @@ fn main() {
 
         let mut light_buffer_index = None;
 
-        fn mono_frustrum(camera: &camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
-            let z0 = camera.properties.z0 as f64;
-            let z1 = camera.properties.z1 as f64;
-            let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
-            let dx = dy * viewport.dimensions.x as f64 / viewport.dimensions.y as f64;
-            Frustrum::<f64> {
-                x0: -dx,
-                x1: dx,
-                y0: -dy,
-                y1: dy,
-                z0,
-                z1,
-            }
-        }
-
-        fn stereo_frustrum(camera_properties: &camera::CameraProperties, tangents: [f32; 4]) -> Frustrum<f64> {
-            let [l, r, b, t] = tangents;
-            let z0 = camera_properties.z0 as f64;
-            let z1 = camera_properties.z1 as f64;
-            Frustrum::<f64> {
-                x0: -z0 * l as f64,
-                x1: -z0 * r as f64,
-                y0: -z0 * b as f64,
-                y1: -z0 * t as f64,
-                z0,
-                z1,
-            }
-        }
-
         let compute_light_data = |light_resources_vec: &mut Vec<light::LightBufferResources>,
                                   light_data_vec: &mut Vec<light::LightBufferData>,
                                   point_lights: &[light::PointLight],
@@ -1397,5 +1368,34 @@ pub fn render_main(
             gl.depth_func(gl::GREATER);
             gl.depth_mask(gl::TRUE);
         }
+    }
+}
+
+fn mono_frustrum(camera: &camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
+    let z0 = camera.properties.z0 as f64;
+    let z1 = camera.properties.z1 as f64;
+    let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
+    let dx = dy * viewport.dimensions.x as f64 / viewport.dimensions.y as f64;
+    Frustrum::<f64> {
+        x0: -dx,
+        x1: dx,
+        y0: -dy,
+        y1: dy,
+        z0,
+        z1,
+    }
+}
+
+fn stereo_frustrum(camera_properties: &camera::CameraProperties, tangents: [f32; 4]) -> Frustrum<f64> {
+    let [l, r, b, t] = tangents;
+    let z0 = camera_properties.z0 as f64;
+    let z1 = camera_properties.z1 as f64;
+    Frustrum::<f64> {
+        x0: -z0 * l as f64,
+        x1: -z0 * r as f64,
+        y0: -z0 * b as f64,
+        y1: -z0 * t as f64,
+        z0,
+        z1,
     }
 }
