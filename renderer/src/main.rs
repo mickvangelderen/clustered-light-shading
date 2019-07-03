@@ -256,7 +256,7 @@ fn main() {
 
     let mut world = {
         let default_camera_transform = camera::CameraTransform {
-            position: Vector3::new(0.0, 1.0, 1.5),
+            position: Point3::new(0.0, 1.0, 1.5),
             yaw: Rad(0.0),
             pitch: Rad(0.0),
             fovy: Deg(90.0).into(),
@@ -385,8 +385,9 @@ fn main() {
 
     let mut camera_buffer_pool = BufferPool::new();
 
-    let mut light_resources_vec: Vec<light::LightBufferResources> = Vec::new();
-    let mut light_data_vec: Vec<light::LightBufferData> = Vec::new();
+    // TODO: Re-use
+    let mut light_resources_vec: Vec<light::LightResources> = Vec::new();
+    let mut light_params_vec: Vec<light::LightParameters> = Vec::new();
 
     let mut cluster_resources_vec: Vec<ClusterResources> = Vec::new();
     let mut cluster_data_vec: Vec<ClusterData> = Vec::new();
@@ -492,7 +493,7 @@ fn main() {
         //  - hmd --[clustered light shading dimensions]--> cls
         //  - cam --[projection]--> clp
 
-        light_data_vec.clear();
+        light_params_vec.clear();
         cluster_data_vec.clear();
         main_data_vec.clear();
 
@@ -519,68 +520,11 @@ fn main() {
             }
         }
 
-        let mut light_buffer_index = None;
-
-        let compute_light_data = |light_resources_vec: &mut Vec<light::LightBufferResources>,
-                                  light_data_vec: &mut Vec<light::LightBufferData>,
-                                  point_lights: &[light::PointLight],
-                                  wld_to_lgt: Matrix4<f64>,
-                                  lgt_to_wld: Matrix4<f64>|
-         -> usize {
-            let index = light_data_vec.len();
-
-            if light_resources_vec.len() < index + 1 {
-                light_resources_vec.push(light::LightBufferResources::new(&gl));
-                debug_assert_eq!(light_resources_vec.len(), index + 1);
-            }
-
-            let light::LightBufferResources {
-                buffer_name,
-                ref mut lights,
-            } = light_resources_vec[index];
-
-            lights.clear();
-            lights.extend(
-                point_lights
-                    .iter()
-                    .map(|&point_light| light::LightBufferLight::from_point_light(point_light, wld_to_lgt)),
-            );
-
-            let header = light::LightBufferHeader {
-                wld_to_lgt: wld_to_lgt.cast().unwrap(),
-                lgt_to_wld: lgt_to_wld.cast().unwrap(),
-
-                light_count: Vector4::new(lights.len() as u32, 0, 0, 0),
-            };
-
-            unsafe {
-                let header_bytes = header.value_as_bytes();
-                let body_bytes = lights.vec_as_bytes();
-
-                gl.named_buffer_reserve(buffer_name, header_bytes.len() + body_bytes.len(), gl::STREAM_DRAW);
-                gl.named_buffer_sub_data(buffer_name, 0, header_bytes);
-                gl.named_buffer_sub_data(buffer_name, header_bytes.len(), body_bytes);
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, rendering::LIGHT_BUFFER_BINDING, buffer_name);
-            }
-
-            light_data_vec.push(light::LightBufferData {
-                wld_to_lgt,
-                lgt_to_wld: wld_to_lgt.invert().unwrap(),
-            });
-
-            index
-        };
-
         if world.light_space.value == LightSpace::Wld {
-            let wld_to_lgt = Matrix4::identity();
-            let lgt_to_wld = Matrix4::identity();
-            light_buffer_index = Some(compute_light_data(
-                &mut light_resources_vec,
-                &mut light_data_vec,
-                &point_lights,
-                wld_to_lgt,
-                lgt_to_wld,
-            ));
+            light_params_vec.push(light::LightParameters {
+                wld_to_lgt: Matrix4::identity(),
+                lgt_to_wld: Matrix4::identity(),
+            });
         }
 
         if world.render_technique.value == RenderTechnique::Clustered {
@@ -633,11 +577,11 @@ fn main() {
                     hmd_to_wld = bdy_to_wld;
                     wld_to_hmd = wld_to_bdy;
 
-                    let viewport = Viewport::from_dimensions(Vector2::new(
+                    let dimensions = Vector2::new(
                         world.win_size.width as i32,
                         world.win_size.height as i32,
-                    ));
-                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), viewport);
+                    );
+                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), dimensions);
                     let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                     let clp_to_cam = cam_to_clp.invert().unwrap();
 
@@ -674,29 +618,42 @@ fn main() {
             cluster_data_vec.push(cluster_data);
         }
 
+        struct MainParameters {
+            pub wld_to_cam: Matrix4<f64>,
+            pub cam_to_wld: Matrix4<f64>,
+
+            pub cam_to_clp: Matrix4<f64>,
+            pub clp_to_cam: Matrix4<f64>,
+
+            pub cam_pos_in_wld: Point3<f64>,
+
+            pub light_index: usize,
+
+            pub dimensions: Vector2<i32>,
+            pub display_viewport: Viewport<i32>,
+        }
+
+        let mut main_parameters = Vec::new();
+
         match stereo_data {
             Some(StereoData {
                 win_size,
                 hmd_to_bdy,
                 eyes,
             }) => {
-                let viewport = Viewport::from_dimensions(win_size);
                 let render_camera = world.transition_camera.current_camera;
                 let bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
 
                 let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
                 let wld_to_hmd = hmd_to_wld.invert().unwrap();
 
+                let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap();
+
                 if world.light_space.value == LightSpace::Hmd {
-                    let wld_to_lgt = wld_to_hmd;
-                    let lgt_to_wld = hmd_to_wld;
-                    light_buffer_index = Some(compute_light_data(
-                        &mut light_resources_vec,
-                        &mut light_data_vec,
-                        &point_lights[..],
-                        wld_to_lgt,
-                        lgt_to_wld,
-                    ));
+                    light_params_vec.push(light::LightParameters {
+                        wld_to_lgt: wld_to_hmd,
+                        lgt_to_wld: hmd_to_wld,
+                    });
                 }
 
                 for &eye_key in EYE_KEYS.iter() {
@@ -710,258 +667,238 @@ fn main() {
                     let clp_to_cam = cam_to_clp.invert().unwrap();
 
                     if world.light_space.value == LightSpace::Cam {
-                        let wld_to_lgt = wld_to_cam;
-                        let lgt_to_wld = cam_to_wld;
-                        light_buffer_index = Some(compute_light_data(
-                            &mut light_resources_vec,
-                            &mut light_data_vec,
-                            &point_lights[..],
-                            wld_to_lgt,
-                            lgt_to_wld,
-                        ));
+                        light_params_vec.push(light::LightParameters {
+                            wld_to_lgt: wld_to_cam,
+                            lgt_to_wld: cam_to_wld,
+                        });
                     }
 
-                    let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
-                    let cam_pos_in_lgt = light_data_vec[light_buffer_index.unwrap()].wld_to_lgt * cam_pos_in_wld;
+                    main_parameters.push(MainParameters {
+                        wld_to_cam,
+                        cam_to_wld,
 
-                    let camera_buffer = CameraBuffer {
-                        wld_to_cam: wld_to_cam.cast().unwrap(),
-                        cam_to_wld: cam_to_wld.cast().unwrap(),
+                        cam_to_clp,
+                        clp_to_cam,
 
-                        cam_to_clp: cam_to_clp.cast().unwrap(),
-                        clp_to_cam: clp_to_cam.cast().unwrap(),
+                        cam_pos_in_wld,
 
-                        cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
-                    };
+                        light_index: light_params_vec.len() - 1,
 
-                    let buffer_index = camera_buffer_pool.unused(&gl);
-                    let buffer_name = camera_buffer_pool[buffer_index];
+                        dimensions: win_size,
+                        display_viewport: {
+                            let w = world.win_size.width as i32;
+                            let h = world.win_size.height as i32;
 
-                    unsafe {
-                        gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
-                        gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
-                    }
-
-                    let main_index = main_data_vec.len();
-                    main_data_vec.push(MainData::default());
-                    if main_resources_vec.len() < main_index + 1 {
-                        let main_resources = MainResources::new(&gl, viewport.dimensions.x, viewport.dimensions.y);
-                        main_resources_vec.push(main_resources);
-                    }
-
-                    let main_resources = &mut main_resources_vec[main_index];
-                    let main_data = &mut main_data_vec[main_index];
-
-                    main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
-                    viewport.set(&gl);
-
-                    render_main(
-                        &gl,
-                        main_resources,
-                        main_data,
-                        &resources,
-                        &mut world,
-                        &mut depth_renderer,
-                        &mut basic_renderer,
-                    );
-
-                    unsafe {
-                        let w = world.win_size.width as i32;
-                        let h = world.win_size.height as i32;
-
-                        let dst_viewport = match eye_key {
-                            vr::Eye::Left => Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h)),
-                            vr::Eye::Right => Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h)),
-                        };
-
-                        gl.blit_named_framebuffer(
-                            main_resources.framebuffer_name.into(),
-                            gl::FramebufferName::Default,
-                            viewport.p0().x,
-                            viewport.p0().y,
-                            viewport.p1().x,
-                            viewport.p1().y,
-                            dst_viewport.p0().x,
-                            dst_viewport.p0().y,
-                            dst_viewport.p1().x,
-                            dst_viewport.p1().y,
-                            gl::BlitMask::COLOR_BUFFER_BIT,
-                            gl::NEAREST,
-                        );
-                    }
+                            match eye_key {
+                                vr::Eye::Left => Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h)),
+                                vr::Eye::Right => Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h)),
+                            }
+                        },
+                    });
                 }
             }
             None => {
+                let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
+
                 let render_camera = &world.transition_camera.current_camera;
-                let viewport =
-                    Viewport::from_dimensions(Vector2::new(world.win_size.width as i32, world.win_size.height as i32));
                 let cam_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
                 let wld_to_cam = render_camera.transform.pos_from_parent().cast::<f64>().unwrap();
 
-                let frustrum = mono_frustrum(render_camera, viewport);
+                let frustrum = mono_frustrum(render_camera, dimensions);
                 let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                 let clp_to_cam = cam_to_clp.invert().unwrap();
 
                 if world.light_space.value == LightSpace::Hmd || world.light_space.value == LightSpace::Cam {
-                    let wld_to_lgt = wld_to_cam;
-                    let lgt_to_wld = cam_to_wld;
-                    light_buffer_index = Some(compute_light_data(
-                        &mut light_resources_vec,
-                        &mut light_data_vec,
-                        &point_lights[..],
-                        wld_to_lgt,
-                        lgt_to_wld,
-                    ));
+                    light_params_vec.push(light::LightParameters {
+                        wld_to_lgt: wld_to_cam,
+                        lgt_to_wld: cam_to_wld,
+                    });
                 }
 
-                let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap().extend(1.0);
-                let cam_pos_in_lgt = light_data_vec[light_buffer_index.unwrap()].wld_to_lgt * cam_pos_in_wld;
+                let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap();
 
-                unsafe {
-                    let camera_buffer = CameraBuffer {
-                        wld_to_cam: wld_to_cam.cast().unwrap(),
-                        cam_to_wld: cam_to_wld.cast().unwrap(),
+                main_parameters.push(MainParameters {
+                    wld_to_cam,
+                    cam_to_wld,
 
-                        cam_to_clp: cam_to_clp.cast().unwrap(),
-                        clp_to_cam: clp_to_cam.cast().unwrap(),
+                    cam_to_clp,
+                    clp_to_cam,
 
-                        cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
-                    };
+                    cam_pos_in_wld,
 
-                    let buffer_index = camera_buffer_pool.unused(&gl);
-                    let buffer_name = camera_buffer_pool[buffer_index];
+                    light_index: light_params_vec.len() - 1,
 
-                    gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
-                    gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
-                }
-
-                let main_index = main_data_vec.len();
-                main_data_vec.push(MainData::default());
-                if main_resources_vec.len() < main_index + 1 {
-                    let main_resources = MainResources::new(&gl, viewport.dimensions.x, viewport.dimensions.y);
-                    main_resources_vec.push(main_resources);
-                }
-
-                let main_resources = &mut main_resources_vec[main_index];
-                let main_data = &mut main_data_vec[main_index];
-
-                main_resources.resize(&gl, viewport.dimensions.x, viewport.dimensions.y);
-                viewport.set(&gl);
-
-                render_main(
-                    &gl,
-                    main_resources,
-                    main_data,
-                    &resources,
-                    &mut world,
-                    &mut depth_renderer,
-                    &mut basic_renderer,
-                );
-
-                if world.target_camera_key == CameraKey::Debug {
-                    let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-                    let vertices: Vec<[f32; 3]> = corners_in_clp
-                        .iter()
-                        .map(|point| point.cast().unwrap().into())
-                        .collect();
-
-                    let indices = [
-                        // Front
-                        [0, 1],
-                        [2, 3],
-                        [0, 2],
-                        [1, 3],
-                        // Back
-                        [4, 5],
-                        [6, 7],
-                        [4, 6],
-                        [5, 7],
-                        // Side
-                        [0, 4],
-                        [1, 5],
-                        [2, 6],
-                        [3, 7],
-                    ];
-
-                    for cluster_index in 0..cluster_data_vec.len() {
-                        let cluster_data = &cluster_data_vec[cluster_index];
-                        let cluster_resources = &cluster_resources_vec[cluster_index];
-
-                        for camera in cluster_resources.cameras.iter() {
-                            line_renderer.render(
-                                &gl,
-                                &line_renderer::Parameters {
-                                    vertices: &vertices[..],
-                                    indices: &indices[..],
-                                    obj_to_wld: &(camera.hmd_to_wld * camera.clp_to_hmd).cast().unwrap(),
-                                },
-                                &mut world,
-                            );
-                        }
-
-                        cluster_renderer.render(
-                            &gl,
-                            &cluster_renderer::Parameters {
-                                cluster_resources: &cluster_resources,
-                                cluster_data: &cluster_data,
-                                configuration: &configuration.clustered_light_shading,
-                            },
-                            &mut world,
-                            &resources,
-                        );
-                    }
-                }
-
-                unsafe {
-                    gl.blit_named_framebuffer(
-                        main_resources.framebuffer_name.into(),
-                        gl::FramebufferName::Default,
-                        viewport.origin.x,
-                        viewport.origin.y,
-                        viewport.dimensions.x,
-                        viewport.dimensions.y,
-                        viewport.origin.x,
-                        viewport.origin.y,
-                        viewport.dimensions.x,
-                        viewport.dimensions.y,
-                        gl::BlitMask::COLOR_BUFFER_BIT,
-                        gl::NEAREST,
-                    );
-                }
+                    dimensions,
+                    display_viewport: Viewport::from_dimensions(dimensions),
+                });
             }
         }
 
-        // if let Some((index, debug_view_data)) = maybe_debug {
-        //     view_resources.bind_index(&gl, index);
 
-        //     debug_view_data.viewport.set(&gl);
+        for res in light_resources_vec.iter_mut() {
+            res.dirty = true;
+        }
 
-        //     cluster_renderer.render(
-        //         &gl,
-        //         &cluster_renderer::Parameters {
-        //             cluster_data: &cluster_data,
-        //             configuration: &configuration.clustered_light_shading,
-        //         },
-        //         &mut world,
-        //         &resources,
-        //     );
+        let mut bound_light_index = None;
 
-        //     let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-        //     let vertices: Vec<[f32; 3]> = corners_in_clp
-        //         .iter()
-        //         .map(|point| point.cast().unwrap().into())
-        //         .collect();
+        for main_params in main_parameters.iter() {
+            let MainParameters {
+                ref wld_to_cam,
+                ref cam_to_wld,
 
-        //     line_renderer.render(
-        //         &gl,
-        //         &line_renderer::Parameters {
-        //             vertices: &vertices[..],
-        //             indices: &sun_frustrum_indices[..],
-        //             obj_to_wld: &cls_view_data_ext.view_data.clp_to_wld.cast().unwrap(),
-        //         },
-        //         &mut world,
-        //     );
-        // }
+                ref cam_to_clp,
+                ref clp_to_cam,
+
+                cam_pos_in_wld,
+
+                light_index,
+
+                dimensions,
+                display_viewport,
+            } = *main_params;
+
+            let light_params = &light_params_vec[light_index];
+
+            if bound_light_index != Some(light_index) {
+                // Ensure light resources are available.
+                while light_resources_vec.len() < light_index + 1 {
+                    light_resources_vec.push(light::LightResources::new(&gl));
+                }
+                let light_resources = &mut light_resources_vec[light_index];
+
+                // Ensure light resources are uploaded.
+                if light_resources.dirty {
+                    light_resources.lights.clear();
+                    light_resources.lights.extend(
+                        point_lights
+                            .iter()
+                            .map(|&point_light| light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)),
+                    );
+
+                    let header = light::LightBufferHeader {
+                        wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
+                        lgt_to_wld: light_params.lgt_to_wld.cast().unwrap(),
+
+                        light_count: Vector4::new(light_resources.lights.len() as u32, 0, 0, 0),
+                    };
+
+                    unsafe {
+                        let header_bytes = header.value_as_bytes();
+                        let body_bytes = light_resources.lights.vec_as_bytes();
+
+                        gl.named_buffer_reserve(light_resources.buffer_name, header_bytes.len() + body_bytes.len(), gl::STREAM_DRAW);
+                        gl.named_buffer_sub_data(light_resources.buffer_name, 0, header_bytes);
+                        gl.named_buffer_sub_data(light_resources.buffer_name, header_bytes.len(), body_bytes);
+                    }
+                }
+
+                // Ensure light resources are bound.
+                unsafe {
+                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, rendering::LIGHT_BUFFER_BINDING, light_resources.buffer_name);
+                    bound_light_index = Some(light_index);
+                }
+            }
+
+            let cam_pos_in_lgt =
+                light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
+
+            unsafe {
+                let camera_buffer = CameraBuffer {
+                    wld_to_cam: wld_to_cam.cast().unwrap(),
+                    cam_to_wld: cam_to_wld.cast().unwrap(),
+
+                    cam_to_clp: cam_to_clp.cast().unwrap(),
+                    clp_to_cam: clp_to_cam.cast().unwrap(),
+
+                    cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
+                };
+
+                let buffer_index = camera_buffer_pool.unused(&gl);
+                let buffer_name = camera_buffer_pool[buffer_index];
+
+                gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
+                gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
+            }
+
+            let main_index = main_data_vec.len();
+            main_data_vec.push(MainData::default());
+            if main_resources_vec.len() < main_index + 1 {
+                let main_resources = MainResources::new(&gl, dimensions.x, dimensions.y);
+                main_resources_vec.push(main_resources);
+            }
+
+            let main_resources = &mut main_resources_vec[main_index];
+            let main_data = &mut main_data_vec[main_index];
+
+            main_resources.resize(&gl, dimensions.x, dimensions.y);
+
+            unsafe {
+                gl.viewport(0, 0, dimensions.x, dimensions.y);
+            }
+
+            render_main(
+                &gl,
+                main_resources,
+                main_data,
+                &resources,
+                &mut world,
+                &mut depth_renderer,
+                &mut basic_renderer,
+            );
+
+            if world.target_camera_key == CameraKey::Debug {
+                let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                let vertices: Vec<[f32; 3]> = corners_in_clp
+                    .iter()
+                    .map(|point| point.cast().unwrap().into())
+                    .collect();
+
+                for cluster_index in 0..cluster_data_vec.len() {
+                    let cluster_data = &cluster_data_vec[cluster_index];
+                    let cluster_resources = &cluster_resources_vec[cluster_index];
+
+                    for camera in cluster_resources.cameras.iter() {
+                        line_renderer.render(
+                            &gl,
+                            &line_renderer::Parameters {
+                                vertices: &vertices[..],
+                                indices: &FRUSTRUM_LINE_MESH_INDICES[..],
+                                obj_to_wld: &(camera.hmd_to_wld * camera.clp_to_hmd).cast().unwrap(),
+                            },
+                            &mut world,
+                        );
+                    }
+
+                    cluster_renderer.render(
+                        &gl,
+                        &cluster_renderer::Parameters {
+                            cluster_resources: &cluster_resources,
+                            cluster_data: &cluster_data,
+                            configuration: &configuration.clustered_light_shading,
+                        },
+                        &mut world,
+                        &resources,
+                    );
+                }
+            }
+
+            unsafe {
+                gl.blit_named_framebuffer(
+                    main_resources.framebuffer_name.into(),
+                    gl::FramebufferName::Default,
+                    0,
+                    0,
+                    dimensions.x,
+                    dimensions.y,
+                    display_viewport.p0().x,
+                    display_viewport.p0().y,
+                    display_viewport.p1().x,
+                    display_viewport.p1().y,
+                    gl::BlitMask::COLOR_BUFFER_BIT,
+                    gl::NEAREST,
+                );
+            }
+        }
 
         for i in 0..cluster_data_vec.len() {
             let res = &cluster_resources_vec[i];
@@ -1016,8 +953,9 @@ fn main() {
             let fps = NANOS_PER_SEC / (duration.as_secs() as f32 * NANOS_PER_SEC + duration.subsec_nanos() as f32);
             fps_average.submit(fps);
             gl_window.window().set_title(&format!(
-                "VR Lab - {:?} - {:02.1} FPS",
+                "VR Lab - {:?} - {:?} - {:02.1} FPS",
                 world.target_camera_key,
+                world.render_technique.value,
                 fps_average.compute()
             ));
         }
@@ -1365,11 +1303,11 @@ pub fn render_main(
     }
 }
 
-fn mono_frustrum(camera: &camera::Camera, viewport: Viewport<i32>) -> Frustrum<f64> {
+fn mono_frustrum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustrum<f64> {
     let z0 = camera.properties.z0 as f64;
     let z1 = camera.properties.z1 as f64;
     let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
-    let dx = dy * viewport.dimensions.x as f64 / viewport.dimensions.y as f64;
+    let dx = dy * dimensions.x as f64 / dimensions.y as f64;
     Frustrum::<f64> {
         x0: -dx,
         x1: dx,
