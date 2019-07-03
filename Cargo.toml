@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "bmfont",
     "derive",
     "incremental",
     "polygen",
