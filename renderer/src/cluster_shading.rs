@@ -87,6 +87,9 @@ impl ClusterData {
 pub struct ClusterCamera {
     pub hmd_to_clp: Matrix4<f64>,
     pub clp_to_hmd: Matrix4<f64>,
+
+    pub wld_to_hmd: Matrix4<f64>,
+    pub hmd_to_wld: Matrix4<f64>,
 }
 
 pub struct ClusterResources {
