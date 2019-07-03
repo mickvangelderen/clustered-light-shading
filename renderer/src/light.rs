@@ -118,21 +118,23 @@ layout(std140, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
 };
 ";
 
-pub struct LightBufferResources {
+pub struct LightResources {
     pub buffer_name: gl::BufferName,
     pub lights: Vec<LightBufferLight>,
+    pub dirty: bool,
 }
 
-impl LightBufferResources {
+impl LightResources {
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
             buffer_name: unsafe { gl.create_buffer() },
             lights: Vec::new(),
+            dirty: true,
         }
     }
 }
 
-pub struct LightBufferData {
+pub struct LightParameters {
     pub wld_to_lgt: Matrix4<f64>,
     pub lgt_to_wld: Matrix4<f64>,
 }
