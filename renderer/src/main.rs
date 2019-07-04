@@ -39,6 +39,7 @@ mod profiling;
 mod rain;
 mod rendering;
 mod resources;
+mod text_rendering;
 mod timings;
 mod viewport;
 mod window_mode;
@@ -50,6 +51,7 @@ use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::profiling::*;
+use crate::text_rendering::TextRenderingContext;
 // use crate::mono_stereo::*;
 use crate::rendering::*;
 use crate::resources::Resources;
@@ -363,6 +365,8 @@ fn main() {
         }
     }
 
+    let mut text_rendering_context = TextRenderingContext::new(&gl, world.resource_dir.join("fonts/OpenSans-Regular.fnt"));
+
     let mut depth_renderer = depth_renderer::Renderer::new(&gl, &mut world);
     let mut line_renderer = line_renderer::Renderer::new(&gl, &mut world);
     let mut basic_renderer = basic_renderer::Renderer::new(&gl, &mut world);
@@ -577,10 +581,7 @@ fn main() {
                     hmd_to_wld = bdy_to_wld;
                     wld_to_hmd = wld_to_bdy;
 
-                    let dimensions = Vector2::new(
-                        world.win_size.width as i32,
-                        world.win_size.height as i32,
-                    );
+                    let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
                     let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), dimensions);
                     let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                     let clp_to_cam = cam_to_clp.invert().unwrap();
@@ -734,7 +735,6 @@ fn main() {
             }
         }
 
-
         for res in light_resources_vec.iter_mut() {
             res.dirty = true;
         }
@@ -769,11 +769,9 @@ fn main() {
                 // Ensure light resources are uploaded.
                 if light_resources.dirty {
                     light_resources.lights.clear();
-                    light_resources.lights.extend(
-                        point_lights
-                            .iter()
-                            .map(|&point_light| light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)),
-                    );
+                    light_resources.lights.extend(point_lights.iter().map(|&point_light| {
+                        light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)
+                    }));
 
                     let header = light::LightBufferHeader {
                         wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
@@ -786,7 +784,11 @@ fn main() {
                         let header_bytes = header.value_as_bytes();
                         let body_bytes = light_resources.lights.vec_as_bytes();
 
-                        gl.named_buffer_reserve(light_resources.buffer_name, header_bytes.len() + body_bytes.len(), gl::STREAM_DRAW);
+                        gl.named_buffer_reserve(
+                            light_resources.buffer_name,
+                            header_bytes.len() + body_bytes.len(),
+                            gl::STREAM_DRAW,
+                        );
                         gl.named_buffer_sub_data(light_resources.buffer_name, 0, header_bytes);
                         gl.named_buffer_sub_data(light_resources.buffer_name, header_bytes.len(), body_bytes);
                     }
@@ -794,13 +796,16 @@ fn main() {
 
                 // Ensure light resources are bound.
                 unsafe {
-                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, rendering::LIGHT_BUFFER_BINDING, light_resources.buffer_name);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        rendering::LIGHT_BUFFER_BINDING,
+                        light_resources.buffer_name,
+                    );
                     bound_light_index = Some(light_index);
                 }
             }
 
-            let cam_pos_in_lgt =
-                light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
+            let cam_pos_in_lgt = light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
 
             unsafe {
                 let camera_buffer = CameraBuffer {

@@ -19,6 +19,7 @@ notify = "4.0.10"
 num-traits = "0.2.6"
 openvr = { git = "https://github.com/mickvangelderen/openvr-rust", tag = "0.1.0" }
 polygen = { path = "../polygen" }
+bmfont = { path = "../bmfont" }
 regex = "1.1.7"
 serde = { version = "1.0.91", features = ["derive"] }
 tobj = "0.1.6"
