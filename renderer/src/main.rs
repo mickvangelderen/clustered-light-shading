@@ -39,6 +39,7 @@ mod profiling;
 mod rain;
 mod rendering;
 mod resources;
+mod text_renderer;
 mod text_rendering;
 mod timings;
 mod viewport;
@@ -51,7 +52,7 @@ use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::profiling::*;
-use crate::text_rendering::TextRenderingContext;
+use crate::text_rendering::{TextBox, TextRenderingContext};
 // use crate::mono_stereo::*;
 use crate::rendering::*;
 use crate::resources::Resources;
@@ -365,13 +366,15 @@ fn main() {
         }
     }
 
-    let mut text_rendering_context = TextRenderingContext::new(&gl, world.resource_dir.join("fonts/OpenSans-Regular.fnt"));
+    let mut text_rendering_context =
+        TextRenderingContext::new(&gl, world.resource_dir.join("fonts/OpenSans-Regular.fnt"));
 
     let mut depth_renderer = depth_renderer::Renderer::new(&gl, &mut world);
     let mut line_renderer = line_renderer::Renderer::new(&gl, &mut world);
     let mut basic_renderer = basic_renderer::Renderer::new(&gl, &mut world);
     let mut overlay_renderer = overlay_renderer::Renderer::new(&gl, &mut world);
     let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
+    let mut text_renderer = text_renderer::Renderer::new(&gl, &mut world);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
@@ -400,6 +403,13 @@ fn main() {
     let mut main_data_vec: Vec<MainData> = Vec::new();
 
     let mut point_lights = Vec::new();
+
+    let mut overlay_textbox = TextBox::new(
+        10,
+        10,
+        world.win_size.width as i32 - 10,
+        world.win_size.height as i32 - 10,
+    );
 
     while world.running {
         #[derive(Copy, Clone)]
@@ -905,21 +915,43 @@ fn main() {
             }
         }
 
+        unsafe {
+            let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
+
+            overlay_textbox.width = dimensions.x - 10;
+            overlay_textbox.height = dimensions.y - 10;
+            overlay_textbox.clear();
+
+            overlay_textbox.write(&text_rendering_context, &format!("Attenuation Mode: {:?}\n", world.attenuation_mode.value));
+            overlay_textbox.write(&text_rendering_context, &format!("Render Technique: {:?}\n", world.render_technique.value));
+            overlay_textbox.write(&text_rendering_context, &format!("Lighting Space: {:?}\n", world.light_space.value));
+
+            gl.viewport(0, 0, dimensions.x, dimensions.y);
+            gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
+
+            text_renderer.render(
+                &gl,
+                &mut world,
+                &text_rendering_context,
+                &overlay_textbox,
+            );
+        }
+
         for i in 0..cluster_data_vec.len() {
             let res = &cluster_resources_vec[i];
             let data = &cluster_data_vec[i];
             let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
             let start = res.cpu_start.unwrap();
             let end = res.cpu_end.unwrap();
-            println!(
-                "clustering {} x {} x {} ({} + {} MB) in {} us.",
-                dimensions_u32.x,
-                dimensions_u32.y,
-                dimensions_u32.z,
-                res.cluster_meta.vec_as_bytes().len() / 1000_000,
-                res.light_indices.vec_as_bytes().len() / 1000_000,
-                end.duration_since(start).as_micros()
-            );
+            // println!(
+            //     "clustering {} x {} x {} ({} + {} MB) in {} us.",
+            //     dimensions_u32.x,
+            //     dimensions_u32.y,
+            //     dimensions_u32.z,
+            //     res.cluster_meta.vec_as_bytes().len() / 1000_000,
+            //     res.light_indices.vec_as_bytes().len() / 1000_000,
+            //     end.duration_since(start).as_micros()
+            // );
         }
 
         for (i, data) in main_data_vec.iter().enumerate() {
@@ -927,15 +959,15 @@ fn main() {
                 if let Some(span) = span {
                     let cpu = span.cpu.delta();
                     let gpu = span.gpu.delta();
-                    println!(
-                        "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU",
-                        i,
-                        name,
-                        cpu / 1000,
-                        cpu % 1000,
-                        gpu / 1000,
-                        gpu % 1000,
-                    );
+                    // println!(
+                    //     "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU",
+                    //     i,
+                    //     name,
+                    //     cpu / 1000,
+                    //     cpu % 1000,
+                    //     gpu / 1000,
+                    //     gpu % 1000,
+                    // );
                 }
             }
         }
