@@ -1,5 +1,7 @@
 #![feature(const_int_conversion)]
 
+//! http://www.angelcode.com/products/bmfont/doc/file_format.html
+
 mod num;
 mod bmfont;
 
