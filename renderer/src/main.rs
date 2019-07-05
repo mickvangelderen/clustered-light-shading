@@ -406,9 +406,9 @@ fn main() {
     let mut point_lights = Vec::new();
 
     let mut overlay_textbox = TextBox::new(
+        13,
         10,
-        10,
-        world.win_size.width as i32 - 20,
+        world.win_size.width as i32 - 26,
         world.win_size.height as i32 - 20,
     );
 
@@ -919,7 +919,7 @@ fn main() {
         {
             let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
 
-            overlay_textbox.width = dimensions.x - 20;
+            overlay_textbox.width = dimensions.x - 26;
             overlay_textbox.height = dimensions.y - 20;
             overlay_textbox.clear();
         }
