@@ -7,7 +7,7 @@ pub struct BMFont<'a> {
     pub common: &'a CommonBlock,
     pub pages: Vec<&'a CStr>,
     pub chars: &'a [CharBlock],
-    pub kerning_pairs: &'a [KerningPairBlock],
+    pub kerning_pairs: Option<&'a [KerningPairBlock]>,
 }
 
 impl<'a> BMFont<'a> {
@@ -92,7 +92,7 @@ impl<'a> BMFont<'a> {
             common: common.expect("Exactly one common block!"),
             pages,
             chars: chars.expect("Exactly one char block!"),
-            kerning_pairs: kerning_pairs.expect("Exactly one kerning pair block!"),
+            kerning_pairs,
         }
     }
 }
