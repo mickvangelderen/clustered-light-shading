@@ -52,7 +52,7 @@ use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::profiling::*;
-use crate::text_rendering::{TextBox, TextRenderingContext};
+use crate::text_rendering::{FontContext, TextBox};
 // use crate::mono_stereo::*;
 use crate::rendering::*;
 use crate::resources::Resources;
@@ -366,8 +366,9 @@ fn main() {
         }
     }
 
-    let mut text_rendering_context =
-        TextRenderingContext::new(&gl, world.resource_dir.join("fonts/OpenSans-Regular.fnt"));
+    let mut sans_serif = FontContext::new(&gl, world.resource_dir.join("fonts/OpenSans-Regular.fnt"));
+
+    let mut monospace = FontContext::new(&gl, world.resource_dir.join("fonts/RobotoMono-Regular.fnt"));
 
     let mut depth_renderer = depth_renderer::Renderer::new(&gl, &mut world);
     let mut line_renderer = line_renderer::Renderer::new(&gl, &mut world);
@@ -407,8 +408,8 @@ fn main() {
     let mut overlay_textbox = TextBox::new(
         10,
         10,
-        world.win_size.width as i32 - 10,
-        world.win_size.height as i32 - 10,
+        world.win_size.width as i32 - 20,
+        world.win_size.height as i32 - 20,
     );
 
     while world.running {
@@ -915,27 +916,25 @@ fn main() {
             }
         }
 
-        unsafe {
+        {
             let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
 
-            overlay_textbox.width = dimensions.x - 10;
-            overlay_textbox.height = dimensions.y - 10;
+            overlay_textbox.width = dimensions.x - 20;
+            overlay_textbox.height = dimensions.y - 20;
             overlay_textbox.clear();
-
-            overlay_textbox.write(&text_rendering_context, &format!("Attenuation Mode: {:?}\n", world.attenuation_mode.value));
-            overlay_textbox.write(&text_rendering_context, &format!("Render Technique: {:?}\n", world.render_technique.value));
-            overlay_textbox.write(&text_rendering_context, &format!("Lighting Space: {:?}\n", world.light_space.value));
-
-            gl.viewport(0, 0, dimensions.x, dimensions.y);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
-
-            text_renderer.render(
-                &gl,
-                &mut world,
-                &text_rendering_context,
-                &overlay_textbox,
-            );
         }
+
+        overlay_textbox.write(
+            &monospace,
+            &format!(
+                concat!(
+                    "Attenuation Mode: {:?}\n",
+                    "Render Technique: {:?}\n",
+                    "Lighting Space:   {:?}\n\n",
+                ),
+                world.attenuation_mode.value, world.render_technique.value, world.light_space.value,
+            ),
+        );
 
         for i in 0..cluster_data_vec.len() {
             let res = &cluster_resources_vec[i];
@@ -943,15 +942,31 @@ fn main() {
             let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
             let start = res.cpu_start.unwrap();
             let end = res.cpu_end.unwrap();
-            // println!(
-            //     "clustering {} x {} x {} ({} + {} MB) in {} us.",
-            //     dimensions_u32.x,
-            //     dimensions_u32.y,
-            //     dimensions_u32.z,
-            //     res.cluster_meta.vec_as_bytes().len() / 1000_000,
-            //     res.light_indices.vec_as_bytes().len() / 1000_000,
-            //     end.duration_since(start).as_micros()
-            // );
+
+            let header_bytes = res.cluster_meta.vec_as_bytes().len();
+            let body_bytes = res.light_indices.vec_as_bytes().len();
+
+            let elapsed = end.duration_since(start).as_nanos();
+
+            overlay_textbox.write(
+                &monospace,
+                &format!(
+                    concat!(
+                        "Cluster Dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
+                        "Cluster Memory {{ header: {:2}.{:03}MB, body: {:2}.{:03}MB }}\n",
+                        "Cluster Computation CPU: {:6}.{:03}μs\n\n",
+                    ),
+                    dimensions_u32.x,
+                    dimensions_u32.y,
+                    dimensions_u32.z,
+                    header_bytes / 1000_000,
+                    (header_bytes / 1000) % 1000,
+                    body_bytes / 1000_000,
+                    (body_bytes / 1000) % 1000,
+                    elapsed / 1000,
+                    elapsed % 1000,
+                ),
+            );
         }
 
         for (i, data) in main_data_vec.iter().enumerate() {
@@ -959,17 +974,29 @@ fn main() {
                 if let Some(span) = span {
                     let cpu = span.cpu.delta();
                     let gpu = span.gpu.delta();
-                    // println!(
-                    //     "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU",
-                    //     i,
-                    //     name,
-                    //     cpu / 1000,
-                    //     cpu % 1000,
-                    //     gpu / 1000,
-                    //     gpu % 1000,
-                    // );
+
+                    overlay_textbox.write(
+                        &monospace,
+                        &format!(
+                            "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU\n",
+                            i,
+                            name,
+                            cpu / 1000,
+                            cpu % 1000,
+                            gpu / 1000,
+                            gpu % 1000,
+                        ),
+                    );
                 }
             }
+        }
+
+        unsafe {
+            let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
+            gl.viewport(0, 0, dimensions.x, dimensions.y);
+            gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
+
+            text_renderer.render(&gl, &mut world, &monospace, &overlay_textbox);
         }
 
         gl_window.swap_buffers().unwrap();
