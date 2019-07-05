@@ -8,7 +8,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn render(&mut self, gl: &gl::Gl, world: &mut World, context: &TextRenderingContext, text_box: &TextBox) {
+    pub fn render(&mut self, gl: &gl::Gl, world: &mut World, context: &FontContext, text_box: &TextBox) {
         unsafe {
             gl.named_buffer_data(context.vb, text_box.vertices.vec_as_bytes(), gl::STREAM_DRAW);
             gl.named_buffer_data(context.eb, text_box.indices.vec_as_bytes(), gl::STREAM_DRAW);
@@ -18,7 +18,7 @@ impl Renderer {
                 gl.disable(gl::DEPTH_TEST);
                 gl.depth_mask(gl::FALSE);
                 gl.enable(gl::BLEND);
-                gl.blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                gl.blend_func(gl::SRC_ALPHA, gl::ONE);
 
                 gl.use_program(*name);
                 gl.bind_vertex_array(context.vao);

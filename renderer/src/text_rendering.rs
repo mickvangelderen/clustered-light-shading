@@ -10,9 +10,8 @@ pub struct Page {
     pub texture_name: gl::TextureName,
 }
 
-#[derive(Debug)]
-pub struct Character {
-    pub id: char,
+#[derive(Debug, Copy, Clone)]
+pub struct GlyphMeta {
     pub x: u16,
     pub y: u16,
     pub width: u16,
@@ -22,6 +21,22 @@ pub struct Character {
     pub advance_x: i16,
     pub page: i8,
     pub channel: i8,
+}
+
+impl<'a> From<&'a bmfont::CharBlock> for GlyphMeta {
+    fn from(block: &'a bmfont::CharBlock) -> Self {
+        Self {
+            x: block.x.to_ne(),
+            y: block.y.to_ne(),
+            width: block.width.to_ne(),
+            height: block.height.to_ne(),
+            offset_x: block.offset_x.to_ne(),
+            offset_y: block.offset_y.to_ne(),
+            advance_x: block.advance_x.to_ne(),
+            page: block.page,
+            channel: block.channel,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -55,17 +70,18 @@ pub struct Meta {
 }
 
 #[derive(Debug)]
-pub struct TextRenderingContext {
+pub struct FontContext {
     pub file_path: PathBuf,
     pub meta: Meta,
-    pub characters: Vec<Character>,
+    pub notdef: Option<GlyphMeta>,
+    pub glyphs: Vec<(char, GlyphMeta)>,
     pub pages: Vec<Page>,
     pub vao: gl::VertexArrayName,
     pub vb: gl::BufferName,
     pub eb: gl::BufferName,
 }
 
-impl TextRenderingContext {
+impl FontContext {
     pub fn new(gl: &gl::Gl, path: impl Into<PathBuf>) -> Self {
         let file_path = path.into();
         let dir_path = file_path.parent().unwrap();
@@ -107,54 +123,67 @@ impl TextRenderingContext {
             blue: bmfont.common.blue,
         };
 
-        let characters: Vec<Character> = bmfont
+        let notdef: Option<GlyphMeta> = {
+            // NOTE: AngelCode's bitmap font generator emits u32::MAX for the notdef glyph id.
+            let mut notdefs = bmfont.chars.iter().filter_map(|block| match block.id.to_ne() {
+                0 | std::u32::MAX => Some(GlyphMeta::from(block)),
+                _ => None,
+            });
+            let notdef = notdefs.next();
+            assert!(notdefs.next().is_none(), "Found more than one notdef glyphs!");
+            notdef
+        };
+
+        let glyphs: Vec<(char, GlyphMeta)> = bmfont
             .chars
             .iter()
-            .map(|block| Character {
-                id: std::char::from_u32(block.id.to_ne()).unwrap(),
-                x: block.x.to_ne(),
-                y: block.y.to_ne(),
-                width: block.width.to_ne(),
-                height: block.height.to_ne(),
-                offset_x: block.offset_x.to_ne(),
-                offset_y: block.offset_y.to_ne(),
-                advance_x: block.advance_x.to_ne(),
-                page: block.page,
-                channel: block.channel,
-            })
+            .filter_map(|block| std::char::from_u32(block.id.to_ne()).map(|id| (id, GlyphMeta::from(block))))
             .collect();
+
+
+        let texture_name = unsafe {
+            let name = gl.create_texture(gl::TEXTURE_2D);
+            gl.texture_storage_2d(
+                &name,
+                meta.pages as i32,
+                gl::RGBA8,
+                meta.scale_x as i32,
+                meta.scale_y as i32,
+            );
+            gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+            gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+            name
+        };
+
+        assert_eq!(meta.pages as usize, bmfont.pages.len());
 
         let pages: Vec<Page> = bmfont
             .pages
             .iter()
-            .map(|cstr| {
+            .enumerate()
+            .map(|(page_index, &cstr)| {
                 let file_path = dir_path.join(cstr.to_str().unwrap());
-                let texture_name = unsafe {
-                    let name = gl.create_texture(gl::TEXTURE_2D);
 
-                    let img = image::open(&file_path)
-                        .expect("Failed to load image.")
-                        .flipv()
-                        .to_rgba();
+                let img = image::open(&file_path)
+                    .expect("Failed to load image.")
+                    .flipv()
+                    .to_rgba();
 
-                    gl.texture_storage_2d(&name, 1, gl::RGBA8, img.width() as i32, img.height() as i32);
+                assert_eq!(meta.scale_x as u32, img.width());
+                assert_eq!(meta.scale_y as u32, img.height());
 
+                unsafe {
                     gl.texture_sub_image_2d(
-                        &name,
+                        &texture_name,
+                        page_index as i32,
                         0,
                         0,
-                        0,
-                        img.width() as i32,
-                        img.height() as i32,
+                        meta.scale_x as i32,
+                        meta.scale_y as i32,
                         gl::RGBA,
                         gl::UNSIGNED_BYTE,
                         img.as_ptr() as *const std::ffi::c_void,
                     );
-
-                    gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
-                    gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
-
-                    name
                 };
                 Page {
                     file_path,
@@ -197,12 +226,21 @@ impl TextRenderingContext {
         Self {
             file_path,
             meta,
-            characters,
+            notdef,
+            glyphs,
             pages,
             vao,
             vb,
             eb,
         }
+    }
+
+    fn glyph(&self, target: char) -> Option<&GlyphMeta> {
+        self.glyphs
+            .iter()
+            .find(|&&(c, _)| c == target)
+            .map(|&(_, ref d)| d)
+            .or_else(|| self.notdef.as_ref())
     }
 }
 
@@ -224,7 +262,6 @@ pub struct TextBox {
     pub indices: Vec<u32>,
 }
 
-// 0, 1, 2, 3
 impl TextBox {
     pub fn new(offset_x: i32, offset_y: i32, width: i32, height: i32) -> Self {
         TextBox {
@@ -246,22 +283,27 @@ impl TextBox {
         self.indices.clear();
     }
 
-    pub fn write(&mut self, context: &TextRenderingContext, string: &str) {
+    pub fn write(&mut self, context: &FontContext, string: &str) {
         for c in string.chars() {
-            if let Some(char_data) = context.characters.iter().find(|data| data.id == c) {
-                let obj_x0_i32 = self.cursor_x + char_data.offset_x as i32;
-                let obj_y1_i32 = self.cursor_y - char_data.offset_y as i32 - context.meta.line_y as i32;
+            if c == '\n' {
+                self.cursor_y -= context.meta.line_y as i32;
+                self.cursor_x = self.offset_x;
+                continue;
+            }
 
+            if let Some(glyph_meta) = context.glyph(c) {
+                let obj_x0_i32 = self.cursor_x + glyph_meta.offset_x as i32;
+                let obj_y1_i32 = self.cursor_y - glyph_meta.offset_y as i32;
                 let obj_x0 = obj_x0_i32 as f32;
-                let obj_y0 = (obj_y1_i32 - char_data.height as i32) as f32;
-                let obj_x1 = (obj_x0_i32 + char_data.width as i32) as f32;
+                let obj_y0 = (obj_y1_i32 - glyph_meta.height as i32) as f32;
+                let obj_x1 = (obj_x0_i32 + glyph_meta.width as i32) as f32;
                 let obj_y1 = obj_y1_i32 as f32;
 
                 let sy = context.meta.scale_y as i32;
-                let tex_x0 = char_data.x as f32;
-                let tex_y0 = (sy - char_data.y as i32 - char_data.height as i32) as f32;
-                let tex_x1 = (char_data.x + char_data.width) as f32;
-                let tex_y1 = (sy - char_data.y as i32) as f32;
+                let tex_x0 = glyph_meta.x as f32;
+                let tex_y0 = (sy - glyph_meta.y as i32 - glyph_meta.height as i32) as f32;
+                let tex_x1 = (glyph_meta.x + glyph_meta.width) as f32;
+                let tex_y1 = (sy - glyph_meta.y as i32) as f32;
 
                 let base_index = self.vertices.len() as u32;
 
@@ -301,17 +343,7 @@ impl TextBox {
                     .copied(),
                 );
 
-                if c == '\n' {
-                    self.cursor_y -= context.meta.line_y as i32;
-                    self.cursor_x = self.offset_x;
-                } else {
-                    self.cursor_x += char_data.advance_x as i32;
-                }
-            } else {
-                if c == '\n' {
-                    self.cursor_y -= context.meta.line_y as i32;
-                    self.cursor_x = self.offset_x;
-                }
+                self.cursor_x += glyph_meta.advance_x as i32;
             }
         }
     }
