@@ -347,7 +347,7 @@ fn main() {
     unsafe {
         println!("OpenGL version {}.", gl.get_string(gl::VERSION));
         let flags = gl.get_context_flags();
-        if flags.contains(gl::ContextFlags::CONTEXT_FLAG_DEBUG_BIT) {
+        if flags.contains(gl::ContextFlag::DEBUG) {
             println!("OpenGL debugging enabled.");
             gl.enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
         }
@@ -1323,7 +1323,7 @@ pub fn render_main(
         gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
         // Reverse-Z.
         gl.clear_depth(0.0);
-        gl.clear(gl::ClearFlags::COLOR_BUFFER_BIT | gl::ClearFlags::DEPTH_BUFFER_BIT);
+        gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
         gl.enable(gl::DEPTH_TEST);
         gl.enable(gl::CULL_FACE);
         gl.cull_face(gl::BACK);
