@@ -1,0 +1,57 @@
+layout(std430, binding = 0) buffer InputBuffer {
+  uint values[ITEM_COUNT];
+} ib;
+
+layout(std430, binding = 1) buffer OutputBuffer {
+  uint values[ITEM_COUNT];
+} ob;
+
+shared uint values[LOCAL_X * LOCAL_Y * LOCAL_Z];
+
+layout (local_size_x = LOCAL_X, local_size_y = LOCAL_Y, local_size_z = LOCAL_Z) in;
+
+// void loop_impl() {
+//   uint i = gl_LocalInvocationIndex;
+//   for (uint s = 1; s < 32; s *= 2) {
+//     uint a = values[i];
+//     uint b = i < s ? 0 : values[i - s];
+//     memoryBarrierBuffer();
+//     values[i] = a + b;
+//     memoryBarrierBuffer();
+//   }
+// }
+
+void iteration(uint s) {
+  uint i = gl_LocalInvocationIndex;
+  uint a = values[i];
+  uint b = i < s ? 0 : values[i - s];
+  memoryBarrierShared();
+  values[i] = a + b;
+  memoryBarrierShared();
+}
+
+void unrolled_impl() {
+  iteration(1 << 0);
+  iteration(1 << 1);
+  iteration(1 << 2);
+  iteration(1 << 3);
+  iteration(1 << 4);
+  iteration(1 << 5); // 32
+  iteration(1 << 6);
+  iteration(1 << 7);
+  iteration(1 << 8);
+  // iteration(1 << 9); // 512
+  // iteration(1 << 10); // 1024
+}
+
+void main() {
+  uint i = gl_LocalInvocationIndex;
+
+  values[i] = ib.values[i];
+  memoryBarrierShared();
+
+  unrolled_impl();
+
+  ob.values[i] = values[i];
+}
+

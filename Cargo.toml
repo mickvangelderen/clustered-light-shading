@@ -4,6 +4,7 @@ members = [
     "derive",
     "incremental",
     "polygen",
+    "prefix-sum",
     "renderer",
     "log-viewer",
     "kernel-generator",
