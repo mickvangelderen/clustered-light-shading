@@ -65,20 +65,14 @@ impl Profiler {
         unsafe {
             gl.query_counter(&self.begin_query);
         }
-        assert!(self
-            .cpu_begin
-            .replace(epoch.elapsed().as_nanos() as u64)
-            .is_none());
+        assert!(self.cpu_begin.replace(epoch.elapsed().as_nanos() as u64).is_none());
     }
 
     fn record_end(&mut self, gl: &gl::Gl, epoch: &Instant) {
         unsafe {
             gl.query_counter(&self.end_query);
         }
-        assert!(self
-                .cpu_end
-                .replace(epoch.elapsed().as_nanos() as u64)
-                .is_none());
+        assert!(self.cpu_end.replace(epoch.elapsed().as_nanos() as u64).is_none());
     }
 
     pub fn record_closure(&mut self, gl: &gl::Gl, epoch: &Instant, f: impl FnOnce()) {
@@ -108,7 +102,32 @@ impl Profiler {
             cpu: TimeSpan {
                 begin: self.cpu_begin.take().unwrap(),
                 end: self.cpu_end.take().unwrap(),
-            }
+            },
+        }
+    }
+
+    pub fn try_query(&mut self, gl: &gl::Gl) -> Option<GpuCpuTimeSpan> {
+        let gpu_begin = unsafe { gl.try_query_result_u64(&self.begin_query) };
+        let gpu_end = unsafe { gl.try_query_result_u64(&self.end_query) };
+
+        let cpu_begin = self.cpu_begin.take();
+        let cpu_end = self.cpu_end.take();
+
+        if let (Some(gpu_begin), Some(gpu_end), Some(cpu_begin), Some(cpu_end)) =
+            (gpu_begin, gpu_end, cpu_begin, cpu_end)
+        {
+            Some(GpuCpuTimeSpan {
+                gpu: TimeSpan {
+                    begin: gpu_begin.get(),
+                    end: gpu_end.get(),
+                },
+                cpu: TimeSpan {
+                    begin: cpu_begin,
+                    end: cpu_end,
+                },
+            })
+        } else {
+            None
         }
     }
 }
