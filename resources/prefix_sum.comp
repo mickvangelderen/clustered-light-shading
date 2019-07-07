@@ -1,3 +1,7 @@
+#line 1 1
+
+#define LOCAL_XYZ (LOCAL_X) * (LOCAL_Y) * (LOCAL_Z)
+
 layout(std430, binding = 0) buffer InputBuffer {
   uint values[ITEM_COUNT];
 } ib;
@@ -6,52 +10,173 @@ layout(std430, binding = 1) buffer OutputBuffer {
   uint values[ITEM_COUNT];
 } ob;
 
-shared uint values[LOCAL_X * LOCAL_Y * LOCAL_Z];
+shared uint values[LOCAL_XYZ];
 
 layout (local_size_x = LOCAL_X, local_size_y = LOCAL_Y, local_size_z = LOCAL_Z) in;
 
-// void loop_impl() {
-//   uint i = gl_LocalInvocationIndex;
-//   for (uint s = 1; s < 32; s *= 2) {
-//     uint a = values[i];
-//     uint b = i < s ? 0 : values[i - s];
-//     memoryBarrierBuffer();
-//     values[i] = a + b;
-//     memoryBarrierBuffer();
-//   }
-// }
 
-void iteration(uint s) {
-  uint i = gl_LocalInvocationIndex;
-  uint a = values[i];
-  uint b = i < s ? 0 : values[i - s];
-  memoryBarrierShared();
-  values[i] = a + b;
-  memoryBarrierShared();
+uint sum_2(uint i, uint s) {
+  return values[i] + (i >= s ? values[i - s] : 0);
 }
 
-void unrolled_impl() {
-  iteration(1 << 0);
-  iteration(1 << 1);
-  iteration(1 << 2);
-  iteration(1 << 3);
-  iteration(1 << 4);
-  iteration(1 << 5); // 32
-  iteration(1 << 6);
-  iteration(1 << 7);
-  iteration(1 << 8);
-  // iteration(1 << 9); // 512
-  // iteration(1 << 10); // 1024
+uint sum_4(uint i, uint s) {
+  uint acc = values[i];
+  acc += (i >= 1*s) ? values[i - 1*s] : 0;
+  acc += (i >= 2*s) ? values[i - 2*s] : 0;
+  acc += (i >= 3*s) ? values[i - 3*s] : 0;
+  return acc;
+}
+
+uint sum_8(uint i, uint s) {
+  uint acc = values[i];
+  acc += (i >= 1*s) ? values[i - 1*s] : 0;
+  acc += (i >= 2*s) ? values[i - 2*s] : 0;
+  acc += (i >= 3*s) ? values[i - 3*s] : 0;
+  acc += (i >= 4*s) ? values[i - 4*s] : 0;
+  acc += (i >= 5*s) ? values[i - 5*s] : 0;
+  acc += (i >= 6*s) ? values[i - 6*s] : 0;
+  acc += (i >= 7*s) ? values[i - 7*s] : 0;
+  return acc;
 }
 
 void main() {
+#if (1 << 9) != LOCAL_XYZ
+#error Testing until here.
+#endif
   uint i = gl_LocalInvocationIndex;
 
-  values[i] = ib.values[i];
-  memoryBarrierShared();
+  // Move input to shared memory.
+  values[i] = ib.values[gl_WorkGroupID.x * LOCAL_XYZ + i];
+  barrier();
 
-  unrolled_impl();
+  // Compute prefix sum.
+  values[i] = sum_2(i, 1 << 0);
+  barrier();
+  values[i] = sum_2(i, 1 << 1);
+  barrier();
+  values[i] = sum_2(i, 1 << 2);
+  barrier();
+  values[i] = sum_2(i, 1 << 3);
+  barrier();
+  values[i] = sum_2(i, 1 << 4);
+  barrier();
+  values[i] = sum_2(i, 1 << 5);
+  barrier();
+  values[i] = sum_2(i, 1 << 6);
+  barrier();
+  values[i] = sum_2(i, 1 << 7);
+  barrier();
+  values[i] = sum_2(i, 1 << 8);
+  barrier();
+  values[i] = sum_2(i, 1 << 9);
+  barrier();
+  values[i] = sum_2(i, 1 << 10);
+  barrier();
+  values[i] = sum_2(i, 1 << 11);
+  barrier();
+  values[i] = sum_2(i, 1 << 12);
+  barrier();
+  values[i] = sum_2(i, 1 << 13);
+  barrier();
+  values[i] = sum_2(i, 1 << 14);
+  barrier();
+  values[i] = sum_2(i, 1 << 15);
+  barrier();
+  values[i] = sum_2(i, 1 << 16);
+  barrier();
+  values[i] = sum_2(i, 1 << 17);
+  barrier();
 
-  ob.values[i] = values[i];
+  // Emit output from shared memory.
+  ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = values[i];
 }
 
+// void iteration_16(uint s) {
+//   uint i = gl_LocalInvocationIndex;
+
+//   uint acc = values[i];
+//   acc += i >= (1*s) ? values[i - (1*s)] : 0;
+//   acc += i >= (2*s) ? values[i - (2*s)] : 0;
+//   acc += i >= (3*s) ? values[i - (3*s)] : 0;
+//   acc += i >= (4*s) ? values[i - (4*s)] : 0;
+//   acc += i >= (5*s) ? values[i - (5*s)] : 0;
+//   acc += i >= (6*s) ? values[i - (6*s)] : 0;
+//   acc += i >= (7*s) ? values[i - (7*s)] : 0;
+//   acc += i >= (8*s) ? values[i - (8*s)] : 0;
+//   acc += i >= (9*s) ? values[i - (9*s)] : 0;
+//   acc += i >= (10*s) ? values[i - (10*s)] : 0;
+//   acc += i >= (11*s) ? values[i - (11*s)] : 0;
+//   acc += i >= (12*s) ? values[i - (12*s)] : 0;
+//   acc += i >= (13*s) ? values[i - (13*s)] : 0;
+//   acc += i >= (14*s) ? values[i - (14*s)] : 0;
+//   acc += i >= (15*s) ? values[i - (15*s)] : 0;
+//   barrier();
+//   values[i] = acc;
+//   barrier();
+// }
+
+// void iteration_8(uint s) {
+//   uint i = gl_LocalInvocationIndex;
+
+//   uint acc = values[i];
+//   acc += i >= (1*s) ? values[i - (1*s)] : 0;
+//   acc += i >= (2*s) ? values[i - (2*s)] : 0;
+//   acc += i >= (3*s) ? values[i - (3*s)] : 0;
+//   acc += i >= (4*s) ? values[i - (4*s)] : 0;
+//   acc += i >= (5*s) ? values[i - (5*s)] : 0;
+//   acc += i >= (6*s) ? values[i - (6*s)] : 0;
+//   acc += i >= (7*s) ? values[i - (7*s)] : 0;
+//   barrier();
+//   values[i] = acc;
+//   barrier();
+// }
+
+// void iteration_4(uint s) {
+//   uint i = gl_LocalInvocationIndex;
+
+//   uint acc = values[i];
+//   acc += i >= (1*s) ? values[i - (1*s)] : 0;
+//   acc += i >= (2*s) ? values[i - (2*s)] : 0;
+//   acc += i >= (3*s) ? values[i - (3*s)] : 0;
+//   barrier();
+//   values[i] = acc;
+//   barrier();
+// }
+
+// void iteration_2(uint s) {
+//   uint i = gl_LocalInvocationIndex;
+
+//   uint acc = values[i];
+//   acc += i >= (1*s) ? values[i - (1*s)] : 0;
+//   barrier();
+//   values[i] = acc;
+//   barrier();
+// }
+
+// void impl_5x2() {
+//   // iteration avg 0.532μs CPU | 5.505μs GPU
+//   // iteration min 0.263μs CPU | 5.408μs GPU
+//   // iteration max 19.030μs CPU | 21.056μs GPU
+//   iteration_2(1 << 0);
+//   iteration_2(1 << 1);
+//   iteration_2(1 << 2);
+//   iteration_2(1 << 3);
+//   iteration_2(1 << 4);
+// }
+
+// void impl_4_4_2() {
+//   // iteration avg 0.540μs CPU | 5.185μs GPU
+//   // iteration min 0.273μs CPU | 5.088μs GPU
+//   // iteration max 19.187μs CPU | 21.088μs GPU
+//   iteration_4(1 << 0);
+//   iteration_4(1 << 2);
+//   iteration_2(1 << 4);
+// }
+
+// void impl_8_4() {
+//   // iteration avg 0.545μs CPU | 5.202μs GPU
+//   // iteration min 0.272μs CPU | 5.088μs GPU
+//   // iteration max 19.235μs CPU | 20.896μs GPU
+//   iteration_8(1 << 0);
+//   iteration_4(1 << 3);
+// }
