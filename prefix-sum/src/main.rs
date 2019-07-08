@@ -81,10 +81,12 @@ fn main() {
     };
 
     let cpu_result: Vec<u32> = values
-        .iter()
-        .scan(0, |state, &item| {
-            *state += item;
-            Some(*state)
+        .chunks_exact(cfg.local_xyz() as usize)
+        .flat_map(|chunk| {
+            chunk.iter().scan(0, |state, &item| {
+                *state += item;
+                Some(*state)
+            })
         })
         .collect();
 
@@ -197,7 +199,7 @@ fn main() {
 
         let b = cfg.local_xyz() as usize;
         for i in 0..cfg.item_count as usize / b {
-            let expected = &cpu_result[0..b];
+            let expected = &cpu_result[i*b..(i + 1)*b];
             let actual = &gpu_result[i*b..(i + 1)*b];
             if expected != actual {
                 panic!("block {} expected {:?}, got {:?}", i, expected, actual);
@@ -205,3 +207,4 @@ fn main() {
         }
     }
 }
+
