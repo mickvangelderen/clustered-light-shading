@@ -1,9 +1,9 @@
-local_x = 512
+local_x = 128
 local_y = 1
 local_z = 1
-item_count = 51200
-iterations = 1000
+item_count = 524288
+iterations = 40000
 
 [input]
-min = 0
-max = 4
+min = 1
+max = 1

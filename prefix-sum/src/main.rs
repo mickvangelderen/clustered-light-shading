@@ -12,8 +12,10 @@ pub(crate) use rand::prelude::*;
 fn main() {
     let cfg = configuration::read("prefix-sum/configuration.toml");
     println!("{:#?}", cfg);
+    dbg!(cfg.block_size());
+    dbg!(cfg.block_count());
 
-    assert_eq!(0, cfg.item_count % cfg.local_xyz());
+    assert_eq!(0, cfg.item_count % cfg.block_size());
 
     let event_loop = glutin::event_loop::EventLoop::new();
     let context = glutin::ContextBuilder::new()
@@ -44,35 +46,12 @@ fn main() {
     let epoch = &std::time::Instant::now();
 
     let mut total_profiler = Profiler::new(gl);
-    let mut profilers: Vec<Profiler> = std::iter::repeat_with(|| Profiler::new(gl)).take(cfg.iterations as usize).collect();
+    let mut profilers: Vec<Profiler> = std::iter::repeat_with(|| Profiler::new(gl))
+        .take(cfg.iterations as usize)
+        .collect();
 
-    let (shader, program) = {
-        let mut shader = ShaderName::new(gl, gl::COMPUTE_SHADER);
-        let header = format!(
-            r"
-#version 430
-
-#define LOCAL_X {}
-#define LOCAL_Y {}
-#define LOCAL_Z {}
-
-#define ITEM_COUNT {}
-",
-            cfg.local_x, cfg.local_y, cfg.local_z, cfg.item_count,
-        );
-        let source = std::fs::read_to_string("resources/prefix_sum.comp").unwrap();
-        shader.compile(gl, &[header.as_str(), source.as_str()]);
-        if !shader.is_compiled() {
-            panic!(shader.log(gl));
-        }
-        let mut program = ProgramName::new(gl);
-        program.attach(gl, &[&shader]);
-        program.link(gl);
-        if !program.is_linked() {
-            panic!(program.log(gl));
-        }
-        (shader, program)
-    };
+    let (shader_down, program_down) = prefix_sum_program(&gl, &cfg, Pass::Down);
+    let (shader_up, program_up) = prefix_sum_program(&gl, &cfg, Pass::Up);
 
     let values: Vec<u32> = {
         let rng = rand::thread_rng();
@@ -81,7 +60,7 @@ fn main() {
     };
 
     let cpu_result: Vec<u32> = values
-        .chunks_exact(cfg.local_xyz() as usize)
+        .chunks_exact(cfg.block_size() as usize)
         .flat_map(|chunk| {
             chunk.iter().scan(0, |state, &item| {
                 *state += item;
@@ -95,7 +74,11 @@ fn main() {
         let output_buffer = gl.create_buffer();
 
         gl.named_buffer_storage(input_buffer, values.vec_as_bytes(), gl::BufferStorageFlag::empty());
-        gl.named_buffer_storage_reserve(output_buffer, values.vec_as_bytes().len(), gl::BufferStorageFlag::empty());
+        gl.named_buffer_storage_reserve(
+            output_buffer,
+            values.vec_as_bytes().len(),
+            gl::BufferStorageFlag::empty(),
+        );
         gl.clear_named_buffer_sub_data(
             output_buffer,
             gl::R32UI,
@@ -106,7 +89,6 @@ fn main() {
             None,
         );
 
-        gl.use_program(*program.as_ref());
         gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, 0, input_buffer);
         gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, 1, output_buffer);
 
@@ -134,8 +116,17 @@ fn main() {
 
             for profiler in profilers.iter_mut() {
                 let rec = profiler.record(gl, epoch);
-                gl.dispatch_compute(cfg.item_count / cfg.local_xyz(), 1, 1);
+
+                let pass_0_count = cfg.item_count / cfg.block_size();
+                gl.use_program(*program_up.as_ref());
+                gl.dispatch_compute(pass_0_count, 1, 1);
                 gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+
+                // let pass_1_count = pass_0_count / cfg.block_size();
+                // gl.use_program(*program_down.as_ref());
+                // gl.dispatch_compute(pass_1_count, 1, 1);
+                // gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+
                 drop(rec);
                 gl.finish();
             }
@@ -197,10 +188,10 @@ fn main() {
             .unwrap();
         println!("iteration max {:?} CPU | {:?} GPU", Ns(cpu_max), Ns(gpu_max),);
 
-        let b = cfg.local_xyz() as usize;
+        let b = cfg.block_size() as usize;
         for i in 0..cfg.item_count as usize / b {
-            let expected = &cpu_result[i*b..(i + 1)*b];
-            let actual = &gpu_result[i*b..(i + 1)*b];
+            let expected = &cpu_result[i * b..(i + 1) * b];
+            let actual = &gpu_result[i * b..(i + 1) * b];
             if expected != actual {
                 panic!("block {} expected {:?}, got {:?}", i, expected, actual);
             }
@@ -208,3 +199,51 @@ fn main() {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum Pass {
+    Down,
+    Up,
+}
+
+impl Pass {
+    pub fn header(self) -> &'static str {
+        match self {
+            Pass::Down => "#define PASS_DOWN\n",
+            Pass::Up => "#define PASS_UP\n",
+        }
+    }
+}
+
+fn prefix_sum_program(gl: &gl::Gl, cfg: &configuration::Root, pass: Pass) -> (ShaderName, ProgramName) {
+    let mut shader = ShaderName::new(gl, gl::COMPUTE_SHADER);
+    let header = format!(
+        r"
+#version 430
+
+#define LOCAL_X {}
+#define LOCAL_Y {}
+#define LOCAL_Z {}
+
+#define ITEM_COUNT {}
+
+{}
+",
+        cfg.local_x,
+        cfg.local_y,
+        cfg.local_z,
+        cfg.item_count,
+        pass.header()
+    );
+    let source = std::fs::read_to_string("resources/prefix_sum.comp").unwrap();
+    shader.compile(gl, &[header.as_str(), source.as_str()]);
+    if !shader.is_compiled() {
+        panic!(shader.log(gl));
+    }
+    let mut program = ProgramName::new(gl);
+    program.attach(gl, &[&shader]);
+    program.link(gl);
+    if !program.is_linked() {
+        panic!(program.log(gl));
+    }
+    (shader, program)
+}
