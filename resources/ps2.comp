@@ -1,0 +1,85 @@
+#line 2 3
+
+layout(std430, binding = 0) buffer InputBuffer { uint values[]; }
+ib;
+
+layout(std430, binding = 1) buffer OffsetBuffer { uint offsets[LOCAL_XYZ]; };
+
+layout(std430, binding = 2) buffer OutputBuffer { uint values[]; }
+ob;
+
+shared uint values[LOCAL_XYZ];
+
+layout(local_size_x = LOCAL_X, local_size_y = LOCAL_Y,
+       local_size_z = LOCAL_Z) in;
+
+#define tid gl_LocalInvocationIndex
+#define wid gl_WorkGroupID.x
+
+void sum_2(uint s) {
+  uint acc = values[tid] + (tid >= s ? values[tid - s] : 0);
+  memoryBarrierShared();
+  barrier();
+
+  values[tid] = acc;
+  memoryBarrierShared();
+  barrier();
+}
+
+void main() {
+  uint N = ITEM_COUNT;
+  uint L = LOCAL_XYZ * LOCAL_XYZ;
+  uint C = N / L + ((N % L) == 0 ? 0 : 1);
+  uint B = C * LOCAL_XYZ;
+
+  uint w0 = wid * B;
+  uint w1 = w0 + B;
+
+  uint acc = (wid > 0) ? offsets[wid - 1] : 0;
+  for (uint offset = w0; offset < w1; offset += LOCAL_XYZ) {
+    // Initialize shared memory
+    values[tid] = ib.values[offset + tid];
+    memoryBarrierShared();
+    barrier();
+
+    // Compute prefix sum.
+#if (1 << 0) < LOCAL_XYZ
+    sum_2(1 << 0);
+#endif
+#if (1 << 1) < LOCAL_XYZ
+    sum_2(1 << 1);
+#endif
+#if (1 << 2) < LOCAL_XYZ
+    sum_2(1 << 2);
+#endif
+#if (1 << 3) < LOCAL_XYZ
+    sum_2(1 << 3);
+#endif
+#if (1 << 4) < LOCAL_XYZ
+    sum_2(1 << 4);
+#endif
+#if (1 << 5) < LOCAL_XYZ
+    sum_2(1 << 5);
+#endif
+#if (1 << 6) < LOCAL_XYZ
+    sum_2(1 << 6);
+#endif
+#if (1 << 7) < LOCAL_XYZ
+    sum_2(1 << 7);
+#endif
+#if (1 << 8) < LOCAL_XYZ
+    sum_2(1 << 8);
+#endif
+#if (1 << 9) < LOCAL_XYZ
+    sum_2(1 << 9);
+#endif
+#if (1 << 10) < LOCAL_XYZ
+#error Loop insufficiently unrolled.
+#endif
+
+    // Emit output from shared memory.
+    ob.values[offset + tid] = acc + values[tid];
+
+    acc += values[LOCAL_XYZ - 1];
+  }
+}
