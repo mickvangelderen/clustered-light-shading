@@ -9,16 +9,6 @@ pub struct Root {
 }
 
 impl Root {
-    /// Number of uints per block.
-    pub fn block_size(&self) -> u32 {
-        // uvec4
-        self.local_xyz() * 4
-    }
-
-    pub fn block_count(&self) -> u32 {
-        self.item_count / self.block_size()
-    }
-
     /// Number of elements per block.
     pub fn local_xyz(&self) -> u32 {
         self.local_x * self.local_y * self.local_z

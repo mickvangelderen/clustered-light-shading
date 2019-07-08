@@ -3,12 +3,12 @@
 #define LOCAL_XYZ (LOCAL_X) * (LOCAL_Y) * (LOCAL_Z)
 
 layout(std430, binding = 0) buffer InputBuffer {
-  uvec4 values[ITEM_COUNT >> 2];
+  uvec4 values[];
 }
 ib;
 
 layout(std430, binding = 1) buffer OutputBuffer {
-  uvec4 values[ITEM_COUNT >> 2];
+  uint values[];
 }
 ob;
 
@@ -80,6 +80,13 @@ void main() {
 #error Loop insufficiently unrolled.
 #endif
 
+#if defined(PASS_DOWN)
   // Emit output from shared memory.
-  ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = values[i];
+  if (i == (LOCAL_XYZ - 1)) {
+    ob.values[gl_WorkGroupID.x] = values[i].w;
+  }
+#elif defined(PASS_UP)
+
+#endif
 }
+
