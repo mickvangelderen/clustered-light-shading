@@ -3,134 +3,83 @@
 #define LOCAL_XYZ (LOCAL_X) * (LOCAL_Y) * (LOCAL_Z)
 
 layout(std430, binding = 0) buffer InputBuffer {
-  uint values[ITEM_COUNT];
-} ib;
+  uvec4 values[ITEM_COUNT >> 2];
+}
+ib;
 
 layout(std430, binding = 1) buffer OutputBuffer {
-  uint values[ITEM_COUNT];
-} ob;
+  uvec4 values[ITEM_COUNT >> 2];
+}
+ob;
 
-#define DOUBLE_BUFFER
-#define ZERO_PAD
+shared uvec4 values[LOCAL_XYZ];
 
-#if defined(DOUBLE_BUFFER)
-#if defined(ZERO_PAD)
-shared uint values_a[(LOCAL_XYZ >> 1) + LOCAL_XYZ];
-shared uint values_b[(LOCAL_XYZ >> 1) + LOCAL_XYZ];
-#else // !defined(ZERO_PAD)
-shared uint values_a[LOCAL_XYZ];
-shared uint values_b[LOCAL_XYZ];
-#endif // defined(ZERO_PAD)
-#else // !defined(DOUBLE_BUFFER)
-#if defined(ZERO_PAD)
-shared uint values_a[(LOCAL_XYZ >> 1) + LOCAL_XYZ];
-#else // !defined(ZERO_PAD)
-shared uint values_a[LOCAL_XYZ];
-#endif // defined(ZERO_PAD)
-#define values_b values_a
-#endif // defined(DOUBLE_BUFFER)
+layout(local_size_x = LOCAL_X, local_size_y = LOCAL_Y,
+       local_size_z = LOCAL_Z) in;
 
-layout (local_size_x = LOCAL_X, local_size_y = LOCAL_Y, local_size_z = LOCAL_Z) in;
+uvec4 scan_uvec4(uvec4 v) {
+  v += uvec4(0, v.xyz);
+  v += uvec4(0, 0, v.xy);
+  return v;
+}
 
-void b_sum_2_a(uint i, uint s) {
-#if defined(ZERO_PAD)
-  uint acc = values_a[(LOCAL_XYZ >> 1) + i] + values_a[(LOCAL_XYZ >> 1) + i - s];
-#else // !defined(ZERO_PAD)
-  uint acc = values_a[i] + (i >= s ? values_a[i - s] : 0);
-#endif
-#if defined(DOUBLE_BOUFFER)
-  // No need to sync between read and write.
-#else
+void sum_2(uint i, uint s) {
+  uvec4 acc = values[i] + uvec4((i >= s) ? values[i - s].w : 0);
   memoryBarrierShared();
   barrier();
-#endif
-#if defined(ZERO_PAD)
-  values_b[(LOCAL_XYZ >> 1) + i] = acc;
-#else // !defined(ZERO_PAD)
-  values_b[i] = acc;
-#endif
+
+  values[i] = acc;
   memoryBarrierShared();
   barrier();
 }
-
-void a_sum_2_b(uint i, uint s) {
-#if defined(ZERO_PAD)
-  uint acc = values_b[(LOCAL_XYZ >> 1) + i] + values_b[(LOCAL_XYZ >> 1) + i - s];
-#else // !defined(ZERO_PAD)
-  uint acc = values_b[i] + (i >= s ? values_b[i - s] : 0);
-#endif
-#if defined(DOUBLE_BOUFFER)
-  // No need to sync read write.
-#else
-  memoryBarrierShared();
-  barrier();
-#endif
-#if defined(ZERO_PAD)
-  values_a[(LOCAL_XYZ >> 1) + i] = acc;
-#else // !defined(ZERO_PAD)
-  values_a[i] = acc;
-#endif
-  memoryBarrierShared();
-  barrier();
-}
-
-// uint sum_4(uint i, uint s) {
-//   uint acc = values[i];
-//   acc += (i >= 1*s) ? values[i - 1*s] : 0;
-//   acc += (i >= 2*s) ? values[i - 2*s] : 0;
-//   acc += (i >= 3*s) ? values[i - 3*s] : 0;
-//   return acc;
-// }
-
-// uint sum_8(uint i, uint s) {
-//   uint acc = values[i];
-//   acc += (i >= 1*s) ? values[i - 1*s] : 0;
-//   acc += (i >= 2*s) ? values[i - 2*s] : 0;
-//   acc += (i >= 3*s) ? values[i - 3*s] : 0;
-//   acc += (i >= 4*s) ? values[i - 4*s] : 0;
-//   acc += (i >= 5*s) ? values[i - 5*s] : 0;
-//   acc += (i >= 6*s) ? values[i - 6*s] : 0;
-//   acc += (i >= 7*s) ? values[i - 7*s] : 0;
-//   return acc;
-// }
 
 void main() {
   uint i = gl_LocalInvocationIndex;
 
   // simple copy implementation. sanity check.
-  // ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = ib.values[gl_WorkGroupID.x * LOCAL_XYZ + i];
+  // ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = ib.values[gl_WorkGroupID.x *
+  // LOCAL_XYZ + i];
 
   // Move input to shared memory.
-#if defined(ZERO_PAD)
-  if (i < ((LOCAL_XYZ) >> 1)) {
-    values_a[i] = 0;
-  }
-  values_a[(LOCAL_XYZ >> 1) + i] = ib.values[gl_WorkGroupID.x * LOCAL_XYZ + i];
-#else // !defined(ZERO_PAD)
-  values_a[i] = ib.values[gl_WorkGroupID.x * LOCAL_XYZ + i];
-#endif // defined(ZERO_PAD)
+  values[i] = scan_uvec4(ib.values[gl_WorkGroupID.x * LOCAL_XYZ + i]);
   memoryBarrierShared();
   barrier();
 
   // Compute prefix sum.
-  b_sum_2_a(i, 1 << 0);
-  a_sum_2_b(i, 1 << 1);
-  b_sum_2_a(i, 1 << 2);
-  a_sum_2_b(i, 1 << 3);
-  b_sum_2_a(i, 1 << 4);
-  a_sum_2_b(i, 1 << 5);
-  b_sum_2_a(i, 1 << 6);
-  a_sum_2_b(i, 1 << 7);
-  b_sum_2_a(i, 1 << 8);
-
-#if (1 << 9) != LOCAL_XYZ
-#error Unexpected local dimensions
+#if (1 << 0) < LOCAL_XYZ
+  sum_2(i, 1 << 0);
+#endif
+#if (1 << 1) < LOCAL_XYZ
+  sum_2(i, 1 << 1);
+#endif
+#if (1 << 2) < LOCAL_XYZ
+  sum_2(i, 1 << 2);
+#endif
+#if (1 << 3) < LOCAL_XYZ
+  sum_2(i, 1 << 3);
+#endif
+#if (1 << 4) < LOCAL_XYZ
+  sum_2(i, 1 << 4);
+#endif
+#if (1 << 5) < LOCAL_XYZ
+  sum_2(i, 1 << 5);
+#endif
+#if (1 << 6) < LOCAL_XYZ
+  sum_2(i, 1 << 6);
+#endif
+#if (1 << 7) < LOCAL_XYZ
+  sum_2(i, 1 << 7);
+#endif
+#if (1 << 8) < LOCAL_XYZ
+  sum_2(i, 1 << 8);
+#endif
+#if (1 << 9) < LOCAL_XYZ
+  sum_2(i, 1 << 9);
+#endif
+#if (1 << 10) < LOCAL_XYZ
+#error Loop insufficiently unrolled.
 #endif
 
   // Emit output from shared memory.
-#if defined(ZERO_PAD)
-  ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = values_b[(LOCAL_XYZ >> 1) + i];
-#else // !defined(ZERO_PAD)
-  ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = values_b[i];
-#endif // defined(ZERO_PAD)
+  ob.values[gl_WorkGroupID.x * LOCAL_XYZ + i] = values[i];
 }
