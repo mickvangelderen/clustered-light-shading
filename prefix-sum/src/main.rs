@@ -18,27 +18,27 @@ fn u32_div_ceil(a: u32, b: u32) -> u32 {
         }
 }
 
+const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
+
 fn main() {
     let cfg = configuration::read("prefix-sum/configuration.toml");
     println!("{:#?}", cfg);
 
-    // [ B0 | B1 | B2 ]
-    //
-    let N = cfg.input.count;
-
     // number of chunks per block.
-    let C = u32_div_ceil(N, cfg.prefix_sum.t0 * cfg.prefix_sum.t1);
+    let chunks_per_block = u32_div_ceil(
+        cfg.input.count,
+        cfg.prefix_sum.pass_0_threads * cfg.prefix_sum.pass_1_threads,
+    );
 
     // items per block.
-    let B = C * cfg.prefix_sum.t0;
+    let items_per_block = chunks_per_block * cfg.prefix_sum.pass_0_threads;
 
     // number of blocks.
-    let D = u32_div_ceil(N, B);
+    let block_count = u32_div_ceil(cfg.input.count, items_per_block);
 
-    dbg!(N);
-    dbg!(C);
-    dbg!(B);
-    dbg!(D);
+    dbg!(chunks_per_block);
+    dbg!(items_per_block);
+    dbg!(block_count);
 
     let event_loop = glutin::event_loop::EventLoop::new();
     let context = glutin::ContextBuilder::new()
@@ -89,7 +89,7 @@ fn main() {
     let values: Vec<u32> = {
         let rng = rand::thread_rng();
         let dist = rand::distributions::Uniform::new_inclusive(cfg.input.min, cfg.input.max);
-        rng.sample_iter(dist).take(N as usize).collect()
+        rng.sample_iter(dist).take(cfg.input.count as usize).collect()
     };
 
     unsafe {
@@ -102,7 +102,7 @@ fn main() {
         // Input buffer (values, then zeros)
         gl.named_buffer_storage_reserve(
             input_buffer,
-            std::mem::size_of::<u32>() * (D * B) as usize,
+            std::mem::size_of::<u32>() * (block_count * items_per_block) as usize,
             buffer_flags,
         );
         gl.named_buffer_sub_data(input_buffer, 0, values.vec_as_bytes());
@@ -110,7 +110,7 @@ fn main() {
             input_buffer,
             gl::R32UI,
             values.vec_as_bytes().len(),
-            std::mem::size_of::<u32>() * (D * B) as usize,
+            std::mem::size_of::<u32>() * (block_count * items_per_block) as usize,
             gl::RED,
             gl::UNSIGNED_INT,
             None,
@@ -119,7 +119,7 @@ fn main() {
         // Offset buffer (uninitialized).
         gl.named_buffer_storage_reserve(
             offset_buffer,
-            std::mem::size_of::<u32>() * cfg.prefix_sum.t1 as usize,
+            std::mem::size_of::<u32>() * cfg.prefix_sum.pass_1_threads as usize,
             buffer_flags,
         );
 
@@ -127,14 +127,14 @@ fn main() {
         // Actual implementation can re-use input buffer or leave second buffer undefined.
         gl.named_buffer_storage_reserve(
             output_buffer,
-            std::mem::size_of::<u32>() * (D * B) as usize,
+            std::mem::size_of::<u32>() * (block_count * items_per_block) as usize,
             buffer_flags,
         );
         gl.clear_named_buffer_sub_data(
             output_buffer,
             gl::R32UI,
             0,
-            std::mem::size_of::<u32>() * (D * B) as usize,
+            std::mem::size_of::<u32>() * (block_count * items_per_block) as usize,
             gl::RED,
             gl::UNSIGNED_INT,
             None,
@@ -171,19 +171,22 @@ fn main() {
 
                 let ps0_rec = ps0_profilers[i].record(gl, epoch);
                 gl.use_program(*ps0.as_ref());
-                gl.dispatch_compute(D, 1, 1);
+                gl.uniform_1ui(ITEM_COUNT_LOC, cfg.input.count);
+                gl.dispatch_compute(block_count, 1, 1);
                 drop(ps0_rec);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
 
                 let ps1_rec = ps1_profilers[i].record(gl, epoch);
                 gl.use_program(*ps1.as_ref());
+                gl.uniform_1ui(ITEM_COUNT_LOC, cfg.input.count);
                 gl.dispatch_compute(1, 1, 1);
                 drop(ps1_rec);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
 
                 let ps2_rec = ps2_profilers[i].record(gl, epoch);
                 gl.use_program(*ps2.as_ref());
-                gl.dispatch_compute(D, 1, 1);
+                gl.uniform_1ui(ITEM_COUNT_LOC, cfg.input.count);
+                gl.dispatch_compute(block_count, 1, 1);
                 drop(ps2_rec);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE | gl::MemoryBarrierFlag::BUFFER_UPDATE);
 
@@ -209,7 +212,7 @@ fn main() {
         print_profiling_info(gl, "pass sum", &mut profilers);
 
         let cpu_offsets: Vec<u32> = values
-            .chunks(B as usize)
+            .chunks(items_per_block as usize)
             .map(|chunk| chunk.iter().sum::<u32>())
             .scan(0, |state, item| {
                 *state += item;
@@ -220,7 +223,9 @@ fn main() {
         // Check correctness.
         gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
 
-        let mut gpu_offsets: Vec<u32> = std::iter::repeat(0).take(cfg.prefix_sum.t1 as usize).collect();
+        let mut gpu_offsets: Vec<u32> = std::iter::repeat(0)
+            .take(cfg.prefix_sum.pass_1_threads as usize)
+            .collect();
 
         gl.get_named_buffer_sub_data(
             &offset_buffer,
@@ -238,7 +243,10 @@ fn main() {
             gpu_values.vec_as_bytes_mut(),
         );
 
-        assert!(cpu_offsets[0..D as usize] == gpu_offsets[0..D as usize], "Offsets are wrong.");
+        assert!(
+            cpu_offsets[0..block_count as usize] == gpu_offsets[0..block_count as usize],
+            "Offsets are wrong."
+        );
 
         let cpu_values: Vec<u32> = values
             .iter()
@@ -260,9 +268,12 @@ fn prefix_sum_program(gl: &gl::Gl, cfg: &configuration::Root, path: impl AsRef<P
 
 #define PASS_0_THREADS {}
 #define PASS_1_THREADS {}
-#define ITEM_COUNT {}
+
+#define ITEM_COUNT_LOC {}
 ",
-        cfg.prefix_sum.t0, cfg.prefix_sum.t1, cfg.input.count,
+        cfg.prefix_sum.pass_0_threads,
+        cfg.prefix_sum.pass_1_threads,
+        ITEM_COUNT_LOC.into_i32(),
     );
     let common = std::fs::read_to_string("resources/ps_common.comp").unwrap();
     let source = std::fs::read_to_string(path.as_ref()).unwrap();

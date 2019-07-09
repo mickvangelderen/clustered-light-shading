@@ -6,5 +6,5 @@ min = 0
 max = 8
 
 [prefix_sum]
-t0 = 128
-t1 = 128
+pass_0_threads = 128
+pass_1_threads = 128
