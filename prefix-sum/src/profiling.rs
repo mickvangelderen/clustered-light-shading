@@ -8,7 +8,7 @@ pub struct Ns(pub u64);
 impl std::fmt::Debug for Ns {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // FIXME: Take width/fill char character?
-        write!(f, "{}.{:03}μs", self.0 / 1000, self.0 % 1000)
+        write!(f, "{:6}.{:03}μs", self.0 / 1000, self.0 % 1000)
     }
 }
 

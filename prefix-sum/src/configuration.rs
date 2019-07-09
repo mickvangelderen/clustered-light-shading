@@ -1,18 +1,21 @@
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct Root {
-    pub local_x: u32,
-    pub local_y: u32,
-    pub local_z: u32,
-    pub item_count: u32,
     pub input: Input,
+    pub prefix_sum: PrefixSum,
     pub iterations: u32,
 }
 
-impl Root {
-    /// Number of elements per block.
-    pub fn local_xyz(&self) -> u32 {
-        self.local_x * self.local_y * self.local_z
-    }
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
+pub struct PrefixSum {
+    pub t0: u32,
+    pub t1: u32,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
+pub struct Input {
+    pub count: u32,
+    pub min: u32,
+    pub max: u32,
 }
 
 pub fn read(configuration_path: impl AsRef<std::path::Path>) -> Root {
@@ -28,10 +31,4 @@ pub fn read(configuration_path: impl AsRef<std::path::Path>) -> Root {
             panic!("Failed to read configuration file {:?}: {}.", configuration_path, err)
         }
     }
-}
-
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
-pub struct Input {
-    pub min: u32,
-    pub max: u32,
 }

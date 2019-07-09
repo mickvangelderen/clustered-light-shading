@@ -22,14 +22,20 @@ fn main() {
     let cfg = configuration::read("prefix-sum/configuration.toml");
     println!("{:#?}", cfg);
 
-    let N = cfg.item_count;
-    let L = cfg.local_xyz() * cfg.local_xyz();
-    let C = u32_div_ceil(N, L);
-    let B = C * cfg.local_xyz();
+    // [ B0 | B1 | B2 ]
+    //
+    let N = cfg.input.count;
+
+    // number of chunks per block.
+    let C = u32_div_ceil(N, cfg.prefix_sum.t0 * cfg.prefix_sum.t1);
+
+    // items per block.
+    let B = C * cfg.prefix_sum.t0;
+
+    // number of blocks.
     let D = u32_div_ceil(N, B);
 
     dbg!(N);
-    dbg!(L);
     dbg!(C);
     dbg!(B);
     dbg!(D);
@@ -66,6 +72,15 @@ fn main() {
     let mut profilers: Vec<Profiler> = std::iter::repeat_with(|| Profiler::new(gl))
         .take(cfg.iterations as usize)
         .collect();
+    let mut ps0_profilers: Vec<Profiler> = std::iter::repeat_with(|| Profiler::new(gl))
+        .take(cfg.iterations as usize)
+        .collect();
+    let mut ps1_profilers: Vec<Profiler> = std::iter::repeat_with(|| Profiler::new(gl))
+        .take(cfg.iterations as usize)
+        .collect();
+    let mut ps2_profilers: Vec<Profiler> = std::iter::repeat_with(|| Profiler::new(gl))
+        .take(cfg.iterations as usize)
+        .collect();
 
     let (_s0, ps0) = prefix_sum_program(&gl, &cfg, "resources/ps0.comp");
     let (_s1, ps1) = prefix_sum_program(&gl, &cfg, "resources/ps1.comp");
@@ -84,18 +99,42 @@ fn main() {
 
         let buffer_flags =
             gl::BufferStorageFlag::DYNAMIC_STORAGE | gl::BufferStorageFlag::READ | gl::BufferStorageFlag::WRITE;
-        gl.named_buffer_storage(input_buffer, values.vec_as_bytes(), buffer_flags);
+        // Input buffer (values, then zeros)
         gl.named_buffer_storage_reserve(
-            offset_buffer,
-            std::mem::size_of::<u32>() * cfg.local_xyz() as usize,
+            input_buffer,
+            std::mem::size_of::<u32>() * (D * B) as usize,
             buffer_flags,
         );
-        gl.named_buffer_storage_reserve(output_buffer, values.vec_as_bytes().len(), buffer_flags);
+        gl.named_buffer_sub_data(input_buffer, 0, values.vec_as_bytes());
+        gl.clear_named_buffer_sub_data(
+            input_buffer,
+            gl::R32UI,
+            values.vec_as_bytes().len(),
+            std::mem::size_of::<u32>() * (D * B) as usize,
+            gl::RED,
+            gl::UNSIGNED_INT,
+            None,
+        );
+
+        // Offset buffer (uninitialized).
+        gl.named_buffer_storage_reserve(
+            offset_buffer,
+            std::mem::size_of::<u32>() * cfg.prefix_sum.t1 as usize,
+            buffer_flags,
+        );
+
+        // Output buffer (zeros).
+        // Actual implementation can re-use input buffer or leave second buffer undefined.
+        gl.named_buffer_storage_reserve(
+            output_buffer,
+            std::mem::size_of::<u32>() * (D * B) as usize,
+            buffer_flags,
+        );
         gl.clear_named_buffer_sub_data(
             output_buffer,
             gl::R32UI,
             0,
-            values.vec_as_bytes().len(),
+            std::mem::size_of::<u32>() * (D * B) as usize,
             gl::RED,
             gl::UNSIGNED_INT,
             None,
@@ -127,19 +166,25 @@ fn main() {
             //     gl.finish();
             // }
 
-            for profiler in profilers.iter_mut() {
-                let rec = profiler.record(gl, epoch);
+            for i in 0..profilers.len() {
+                let rec = profilers[i].record(gl, epoch);
 
+                let ps0_rec = ps0_profilers[i].record(gl, epoch);
                 gl.use_program(*ps0.as_ref());
                 gl.dispatch_compute(D, 1, 1);
+                drop(ps0_rec);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
 
+                let ps1_rec = ps1_profilers[i].record(gl, epoch);
                 gl.use_program(*ps1.as_ref());
                 gl.dispatch_compute(1, 1, 1);
+                drop(ps1_rec);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
 
+                let ps2_rec = ps2_profilers[i].record(gl, epoch);
                 gl.use_program(*ps2.as_ref());
                 gl.dispatch_compute(D, 1, 1);
+                drop(ps2_rec);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE | gl::MemoryBarrierFlag::BUFFER_UPDATE);
 
                 drop(rec);
@@ -150,10 +195,32 @@ fn main() {
 
         println!("querying gpu data...");
 
-        // Query computation result.
+        let total = total_profiler.query(gl);
+        println!(
+            "{} iterations: {:?} CPU | {:?} GPU",
+            cfg.iterations,
+            Ns(total.cpu.delta()),
+            Ns(total.gpu.delta()),
+        );
+
+        print_profiling_info(gl, "pass 0  ", &mut ps0_profilers);
+        print_profiling_info(gl, "pass 1  ", &mut ps1_profilers);
+        print_profiling_info(gl, "pass 2  ", &mut ps2_profilers);
+        print_profiling_info(gl, "pass sum", &mut profilers);
+
+        let cpu_offsets: Vec<u32> = values
+            .chunks(B as usize)
+            .map(|chunk| chunk.iter().sum::<u32>())
+            .scan(0, |state, item| {
+                *state += item;
+                Some(*state)
+            })
+            .collect();
+
+        // Check correctness.
         gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
 
-        let mut gpu_offsets: Vec<u32> = std::iter::repeat(0).take(cfg.local_xyz() as usize).collect();
+        let mut gpu_offsets: Vec<u32> = std::iter::repeat(0).take(cfg.prefix_sum.t1 as usize).collect();
 
         gl.get_named_buffer_sub_data(
             &offset_buffer,
@@ -171,60 +238,7 @@ fn main() {
             gpu_values.vec_as_bytes_mut(),
         );
 
-        let total = total_profiler.query(gl);
-        let time_spans: Vec<GpuCpuTimeSpan> = profilers.iter_mut().map(|profiler| profiler.query(gl)).collect();
-
-        println!(
-            "{} iterations: {:?} CPU | {:?} GPU",
-            time_spans.len(),
-            Ns(total.cpu.delta()),
-            Ns(total.gpu.delta()),
-        );
-
-        let cpu_sum: u64 = time_spans.iter().map(|GpuCpuTimeSpan { cpu, .. }| cpu.delta()).sum();
-        let gpu_sum: u64 = time_spans.iter().map(|GpuCpuTimeSpan { gpu, .. }| gpu.delta()).sum();
-        println!(
-            "iteration avg {:?} CPU | {:?} GPU",
-            Ns(cpu_sum / time_spans.len() as u64),
-            Ns(gpu_sum / time_spans.len() as u64),
-        );
-
-        let cpu_min = time_spans
-            .iter()
-            .map(|GpuCpuTimeSpan { cpu, .. }| cpu.delta())
-            .min()
-            .unwrap();
-        let gpu_min = time_spans
-            .iter()
-            .map(|GpuCpuTimeSpan { gpu, .. }| gpu.delta())
-            .min()
-            .unwrap();
-        println!("iteration min {:?} CPU | {:?} GPU", Ns(cpu_min), Ns(gpu_min),);
-
-        let cpu_max = time_spans
-            .iter()
-            .map(|GpuCpuTimeSpan { cpu, .. }| cpu.delta())
-            .max()
-            .unwrap();
-        let gpu_max = time_spans
-            .iter()
-            .map(|GpuCpuTimeSpan { gpu, .. }| gpu.delta())
-            .max()
-            .unwrap();
-        println!("iteration max {:?} CPU | {:?} GPU", Ns(cpu_max), Ns(gpu_max),);
-
-        let cpu_offsets: Vec<u32> = values
-            .chunks(B as usize)
-            .map(|chunk| chunk.iter().sum::<u32>())
-            .scan(0, |state, item| {
-                *state += item;
-                Some(*state)
-            })
-            .collect();
-
-        assert_eq!(D, cpu_offsets.len() as u32);
-
-        assert_eq!(cpu_offsets[0..D as usize], gpu_offsets[0..D as usize]);
+        assert!(cpu_offsets[0..D as usize] == gpu_offsets[0..D as usize], "Offsets are wrong.");
 
         let cpu_values: Vec<u32> = values
             .iter()
@@ -234,7 +248,7 @@ fn main() {
             })
             .collect();
 
-        assert_eq!(cpu_values, gpu_values);
+        assert!(cpu_values == gpu_values, "Values are wrong");
     }
 }
 
@@ -244,21 +258,15 @@ fn prefix_sum_program(gl: &gl::Gl, cfg: &configuration::Root, path: impl AsRef<P
         r"
 #version 430
 
-#define LOCAL_X {}
-#define LOCAL_Y {}
-#define LOCAL_Z {}
-#define LOCAL_XYZ {}
-
+#define PASS_0_THREADS {}
+#define PASS_1_THREADS {}
 #define ITEM_COUNT {}
 ",
-        cfg.local_x,
-        cfg.local_y,
-        cfg.local_z,
-        cfg.local_xyz(),
-        cfg.item_count,
+        cfg.prefix_sum.t0, cfg.prefix_sum.t1, cfg.input.count,
     );
+    let common = std::fs::read_to_string("resources/ps_common.comp").unwrap();
     let source = std::fs::read_to_string(path.as_ref()).unwrap();
-    shader.compile(gl, &[header.as_str(), source.as_str()]);
+    shader.compile(gl, &[header.as_str(), common.as_str(), source.as_str()]);
     if !shader.is_compiled() {
         panic!("{}: {}", path.as_ref().display(), shader.log(gl));
     }
@@ -269,4 +277,41 @@ fn prefix_sum_program(gl: &gl::Gl, cfg: &configuration::Root, path: impl AsRef<P
         panic!("{}: {}", path.as_ref().display(), program.log(gl));
     }
     (shader, program)
+}
+
+fn print_profiling_info(gl: &gl::Gl, name: &str, profilers: &mut [Profiler]) {
+    let time_spans: Vec<GpuCpuTimeSpan> = profilers.iter_mut().map(|profiler| profiler.query(gl)).collect();
+
+    let cpu_sum: u64 = time_spans.iter().map(|GpuCpuTimeSpan { cpu, .. }| cpu.delta()).sum();
+    let gpu_sum: u64 = time_spans.iter().map(|GpuCpuTimeSpan { gpu, .. }| gpu.delta()).sum();
+    println!(
+        "{} avg {:?} CPU | {:?} GPU",
+        name,
+        Ns(cpu_sum / time_spans.len() as u64),
+        Ns(gpu_sum / time_spans.len() as u64),
+    );
+
+    let cpu_min = time_spans
+        .iter()
+        .map(|GpuCpuTimeSpan { cpu, .. }| cpu.delta())
+        .min()
+        .unwrap();
+    let gpu_min = time_spans
+        .iter()
+        .map(|GpuCpuTimeSpan { gpu, .. }| gpu.delta())
+        .min()
+        .unwrap();
+    println!("{} min {:?} CPU | {:?} GPU", name, Ns(cpu_min), Ns(gpu_min),);
+
+    let cpu_max = time_spans
+        .iter()
+        .map(|GpuCpuTimeSpan { cpu, .. }| cpu.delta())
+        .max()
+        .unwrap();
+    let gpu_max = time_spans
+        .iter()
+        .map(|GpuCpuTimeSpan { gpu, .. }| gpu.delta())
+        .max()
+        .unwrap();
+    println!("{} max {:?} CPU | {:?} GPU", name, Ns(cpu_max), Ns(gpu_max),);
 }

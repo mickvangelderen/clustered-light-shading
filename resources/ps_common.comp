@@ -1,0 +1,13 @@
+#line 2 1
+
+layout(std430, binding = 0) buffer InputBuffer { uint values[]; }
+ib;
+
+layout(std430, binding = 1) buffer OffsetBuffer { uint offsets[PASS_1_THREADS]; };
+
+layout(std430, binding = 2) buffer OutputBuffer { uint values[]; }
+ob;
+
+#define tid gl_LocalInvocationIndex
+#define wid gl_WorkGroupID.x
+
