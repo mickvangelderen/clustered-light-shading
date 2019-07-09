@@ -7,8 +7,8 @@ pub struct Root {
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct PrefixSum {
-    pub t0: u32,
-    pub t1: u32,
+    pub pass_0_threads: u32,
+    pub pass_1_threads: u32,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
