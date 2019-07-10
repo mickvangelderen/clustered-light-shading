@@ -82,7 +82,7 @@ fn main() {
         .take(cfg.iterations as usize)
         .collect();
 
-    let mut ps_res = unsafe { PrefixSumResources::new(&gl, cfg.prefix_sum) };
+    let ps_res = unsafe { PrefixSumResources::new(&gl, cfg.prefix_sum) };
 
     let values: Vec<u32> = {
         let rng = rand::thread_rng();
@@ -345,6 +345,19 @@ impl PrefixSumResources {
         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE | gl::MemoryBarrierFlag::BUFFER_UPDATE);
 
         drop(rec);
+    }
+
+    #[allow(unused)]
+    fn drop(self, gl: &gl::Gl) {
+        unsafe {
+            gl.delete_shader(*self.pass_0_shader.as_ref());
+            gl.delete_program(*self.pass_0_program.as_ref());
+            gl.delete_shader(*self.pass_1_shader.as_ref());
+            gl.delete_program(*self.pass_1_program.as_ref());
+            gl.delete_shader(*self.pass_2_shader.as_ref());
+            gl.delete_program(*self.pass_2_program.as_ref());
+            gl.delete_buffer(self.offset_buffer);
+        }
     }
 }
 
