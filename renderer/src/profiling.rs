@@ -60,18 +60,19 @@ impl Profiler {
     }
 
     pub fn measure(&self, gl: &gl::Gl, epoch: Instant, tick: u64, f: impl FnOnce()) -> GpuCpuTimeSpan {
-        let gpu_begin = self.begin_query_pool.now(&gl, tick).map(NonZeroU64::get).unwrap_or(0);
+        let gpu_begin = self.begin_query_pool.now(&gl, tick).map(NonZeroU64::get);
         let cpu_begin = epoch.elapsed().as_nanos() as u64;
 
         f();
 
-        let gpu_end = self.end_query_pool.now(&gl, tick).map(NonZeroU64::get).unwrap_or(0);
+        let gpu_end = self.end_query_pool.now(&gl, tick).map(NonZeroU64::get);
         let cpu_end = epoch.elapsed().as_nanos() as u64;
 
         GpuCpuTimeSpan {
-            gpu: TimeSpan {
-                begin: gpu_begin,
-                end: gpu_end,
+            gpu: if let (Some(begin), Some(end)) = (gpu_begin, gpu_end) {
+                TimeSpan { begin, end }
+            } else {
+                TimeSpan { begin: 0, end: 0 }
             },
             cpu: TimeSpan {
                 begin: cpu_begin,
