@@ -4,7 +4,7 @@ macro_rules! get_uniform_location {
     ($gl: ident, $program: expr, $s: expr) => {{
         let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
         if loc.is_none() {
-            eprintln!("{}: Could not get uniform location {:?}.", file!(), $s);
+            warn!("Could not get uniform location {:?}.", $s);
         }
         loc
     }};
@@ -14,7 +14,7 @@ macro_rules! get_attribute_location {
     ($gl: ident, $program: expr, $s: expr) => {{
         let loc = $gl.get_attrib_location($program, gl::static_cstr!($s));
         if loc.is_none() {
-            eprintln!("{}: Could not get attribute location {:?}.", file!(), $s);
+            warn!("Could not get attribute location {:?}.", $s);
         }
         loc
     }};
@@ -132,4 +132,28 @@ macro_rules! impl_enum_and_enum_map {
             )* }
         );
     }
+}
+
+macro_rules! create_framebuffer {
+    ($gl: expr, ($ds_att: expr, $ds_tex: expr), $( ($col_att: expr, $col_tex: expr) ),* $(,)?) => {{
+        let framebuffer_name = $gl.create_framebuffer();
+
+        $(
+            $gl.named_framebuffer_texture(framebuffer_name, $col_att, $col_tex, 0);
+        )*
+
+        $gl.named_framebuffer_texture(framebuffer_name, $ds_att, $ds_tex, 0);
+
+        $gl.named_framebuffer_draw_buffers(
+            framebuffer_name,
+            &[$( $col_att.into() ),*],
+        );
+
+        assert_eq!(
+            $gl.check_named_framebuffer_status(framebuffer_name, gl::FRAMEBUFFER),
+            gl::FRAMEBUFFER_COMPLETE.into()
+        );
+
+        framebuffer_name
+    }}
 }

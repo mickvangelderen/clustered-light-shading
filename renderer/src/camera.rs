@@ -1,40 +1,26 @@
 use crate::clamp::*;
 use cgmath::*;
 
-macro_rules! impl_interpolate {
-    ($Self: ident {
-        $($field: ident,)*
-    }) => {
-        impl $Self {
-            fn interpolate(a: Self, b: Self, t: f32) -> Self {
-                let s = 1.0 - t;
-                $Self {
-                    $(
-                        $field: a.$field * s + b.$field * t,
-                    )*
-                }
-            }
-        }
-    };
-}
-
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct CameraTransform {
-    pub position: Vector3<f32>,
+    pub position: Point3<f32>,
     pub yaw: Rad<f32>,
     pub pitch: Rad<f32>,
     pub fovy: Rad<f32>,
 }
 
-impl_interpolate!(CameraTransform {
-    position,
-    yaw,
-    pitch,
-    fovy,
-});
-
 impl CameraTransform {
+    fn interpolate(self, other: Self, t: f32) -> Self {
+        let s = 1.0 - t;
+        Self {
+            position: EuclideanSpace::from_vec(self.position.to_vec() * s + other.position.to_vec() * t),
+            yaw: self.yaw * s + other.yaw * t,
+            pitch: self.pitch * s + other.pitch * t,
+            fovy: self.fovy * s + other.fovy * t,
+        }
+    }
+
     #[inline]
     fn pitch_range() -> (Rad<f32>, Rad<f32>) {
         (Rad::from(Deg(-89.0)), Rad::from(Deg(89.0)))
@@ -77,7 +63,7 @@ impl CameraTransform {
 
     #[inline]
     pub fn pos_to_parent(&self) -> Matrix4<f32> {
-        Matrix4::from_translation(self.position) * Matrix4::from(self.rot_to_parent())
+        Matrix4::from_translation(self.position.to_vec()) * Matrix4::from(self.rot_to_parent())
     }
 
     #[inline]
@@ -88,7 +74,7 @@ impl CameraTransform {
 
     #[inline]
     pub fn pos_from_parent(&self) -> Matrix4<f32> {
-        Matrix4::from(self.rot_from_parent()) * Matrix4::from_translation(-self.position)
+        Matrix4::from(self.rot_from_parent()) * Matrix4::from_translation(-self.position.to_vec())
     }
 }
 
