@@ -1,0 +1,59 @@
+digraph pipeline {
+  cls_space [shape = "hexagon" label = "CLS Space"];
+  lgt_pos_in_wld [label = "Light Pos in WLD"];
+  lgt_pos_in_cls [shape = "hexagon" label = "Light Pos in CLS"];
+  camera0 [label = "Camera Body"];
+  hmd_space [label = "HMD Space"];
+  pose [label = "Pose"];
+  tan_mat [label = "Frustrum Tangents[2]\ncam_to_hmd[2]"];
+  cam_to_clp [label = "Projection Matrices[2]"];
+  clusters [shape = "hexagon" label = "Clusters"];
+  vr [label = "OpenVR"];
+  di [label = "Keyboard/Mouse"];
+
+  // fb_dim [label = "Framebuffer Dimensions"];
+  // vr -> fb_dim [label = "GetRecommendedRenderTargetSize"];
+
+  vr -> pose [label = "WaitGetPoses"];
+  vr -> tan_mat [label = "GetProjectionRaw\nGetEyeToHeadTransform"];
+
+  // { rank = same;
+  //   cam_to_clp camera_par}
+
+  di -> camera0;
+
+  tan_mat -> cam_to_clp;
+  // camera_par [label = "Camera Parameters"];
+  // camera_par -> cam_to_clp [label = "z_near\nz_far"];
+
+  pose -> hmd_space [label="hmd_to_bdy"];
+  camera0 -> hmd_space [label="bdy_to_wld"];
+
+  hmd_space -> cls_space [label = "hmd_to_wld"];
+  cam_to_clp -> cls_space [label = "clp_to_hmd"];
+
+  wld_to_clp[shape = "hexagon" label = "wld_to_clp[2]"];
+  hmd_space -> wld_to_clp [label = "wld_to_hmd"];
+  cam_to_clp -> wld_to_clp [label = "hmd_to_clp"];
+
+  cam_pos_in_cls[shape = "hexagon"];
+  camera0 -> cam_pos_in_cls [label = "pos_in_wld"];
+  cls_space -> cam_pos_in_cls [label = "wld_to_cls"];
+
+  // Compute light positions in CLS_SPACE.
+  lgt_pos_in_wld -> lgt_pos_in_cls;
+  cls_space -> lgt_pos_in_cls [label = "wld_to_cls"];
+
+  lgt_pos_in_cls -> clusters [label = "Light Assignment"];
+
+  // obj_to_wld
+  // wld_to_clp
+  // wld_to_lgt
+
+  // frag_pos_in_clp
+  // frag_pos_in_tex
+  // frag_pos_in_lgt
+  // frag_nor_in_lgt
+  // frag_tan_in_lgt
+}
+

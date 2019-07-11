@@ -1,19 +1,27 @@
 [global]
 diffuse_srgb = true
 framebuffer_srgb = true
+rain_drop_max = 100
 
 [window]
-vsync = true
+vsync = false
 srgb = true
 rgb_bits = 24
 alpha_bits = 8
+width = 1280
+height = 720
 
 [clustered_light_shading]
-cluster_side = 4.0
-# light_index = 4
+cluster_side = 1.5
+# light_index = 2
 min_light_count = 1
 # animate_z = 2.0
 # animate_light_count = 2.0
+
+[virtual_stereo]
+enabled = true
+pitch_deg = 0.0
+yaw_deg = 5.0
 
 [camera]
 maximum_smoothness = 0.80

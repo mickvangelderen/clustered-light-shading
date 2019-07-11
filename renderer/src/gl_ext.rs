@@ -1,4 +1,4 @@
-use gl_typed as gl;
+use crate::*;
 
 #[derive(Debug, Copy, Clone)]
 pub struct TextureUpdateData<'a> {
@@ -241,82 +241,6 @@ where
     }
 }
 
-pub trait ShaderNameExt: Sized {
-    fn new<K>(gl: &gl::Gl, kind: K) -> Self
-    where
-        K: Into<gl::ShaderKind>;
-
-    fn compile<'s, A>(&self, gl: &gl::Gl, sources: &A) -> Result<(), String>
-    where
-        A: gl::Array<Item = &'s [u8]> + gl::ArrayMap<*const i8> + gl::ArrayMap<i32> + ?Sized;
-}
-
-impl ShaderNameExt for gl::ShaderName {
-    #[inline]
-    fn new<K>(gl: &gl::Gl, kind: K) -> Self
-    where
-        K: Into<gl::ShaderKind>,
-    {
-        unsafe { gl.create_shader(kind) }
-    }
-
-    #[inline]
-    fn compile<'s, A>(&self, gl: &gl::Gl, sources: &A) -> Result<(), String>
-    where
-        A: gl::Array<Item = &'s [u8]> + gl::ArrayMap<*const i8> + gl::ArrayMap<i32> + ?Sized,
-    {
-        unsafe {
-            gl.shader_source(*self, sources);
-            gl.compile_shader(*self);
-            match gl.get_shaderiv(*self, gl::COMPILE_STATUS) {
-                gl::CompileStatus::Uncompiled => Err(gl.get_shader_info_log(*self)),
-                gl::CompileStatus::Compiled => Ok(()),
-            }
-        }
-    }
-}
-
-pub trait ProgramNameExt: Sized {
-    fn new(gl: &gl::Gl) -> Self;
-
-    fn attach<'i, I>(&self, gl: &gl::Gl, names: I)
-    where
-        I: IntoIterator<Item = &'i gl::ShaderName>;
-
-    fn link(&self, gl: &gl::Gl) -> Result<(), String>;
-}
-
-impl ProgramNameExt for gl::ProgramName {
-    #[inline]
-    fn new(gl: &gl::Gl) -> Self {
-        unsafe { gl.create_program() }
-    }
-
-    #[inline]
-    fn attach<'i, I>(&self, gl: &gl::Gl, names: I)
-    where
-        I: IntoIterator<Item = &'i gl::ShaderName>,
-    {
-        unsafe {
-            for name in names.into_iter() {
-                gl.attach_shader(*self, *name);
-            }
-        }
-    }
-
-    #[inline]
-    fn link(&self, gl: &gl::Gl) -> Result<(), String> {
-        unsafe {
-            gl.link_program(*self);
-
-            match gl.get_programiv(*self, gl::LINK_STATUS) {
-                gl::LinkStatus::Unlinked => Err(gl.get_program_info_log(*self)),
-                gl::LinkStatus::Linked => Ok(()),
-            }
-        }
-    }
-}
-
 pub trait BufferNameExt: Sized {
     fn new(gl: &gl::Gl) -> Self;
 }
@@ -327,3 +251,145 @@ impl BufferNameExt for gl::BufferName {
         unsafe { gl.create_buffer() }
     }
 }
+
+#[derive(Debug)]
+pub enum ProgramName {
+    Unlinked(gl::ProgramName),
+    Linked(gl::ProgramName),
+}
+
+impl AsRef<gl::ProgramName> for ProgramName {
+    fn as_ref(&self) -> &gl::ProgramName {
+        match self {
+            ProgramName::Unlinked(name) => name,
+            ProgramName::Linked(name) => name,
+        }
+    }
+}
+
+impl ProgramName {
+    #[inline]
+    pub fn new(gl: &gl::Gl) -> Self {
+        unsafe { ProgramName::Unlinked(gl.create_program()) }
+    }
+
+    #[inline]
+    pub fn attach<I>(&mut self, gl: &gl::Gl, names: I)
+    where
+        I: IntoIterator,
+        I::Item: AsRef<gl::ShaderName>,
+    {
+        unsafe {
+            for name in names.into_iter() {
+                gl.attach_shader(*self.as_ref(), *name.as_ref());
+            }
+        }
+    }
+
+    #[inline]
+    pub fn link(&mut self, gl: &gl::Gl) {
+        unsafe {
+            gl.link_program(*self.as_ref());
+            let status = gl.get_programiv(*self.as_ref(), gl::LINK_STATUS);
+            // Don't panic from here.
+            let name = std::ptr::read(self.as_ref());
+            std::ptr::write(
+                self,
+                match status {
+                    gl::LinkStatus::Unlinked => ProgramName::Unlinked(name),
+                    gl::LinkStatus::Linked => ProgramName::Linked(name),
+                },
+            );
+        }
+    }
+
+    #[inline]
+    pub fn log(&self, gl: &gl::Gl) -> String {
+        unsafe { gl.get_program_info_log(*self.as_ref()) }
+    }
+
+    #[inline]
+    pub fn is_linked(&self) -> bool {
+        match self {
+            ProgramName::Linked(_) => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_unlinked(&self) -> bool {
+        match self {
+            ProgramName::Unlinked(_) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ShaderName {
+    Uncompiled(gl::ShaderName),
+    Compiled(gl::ShaderName),
+}
+
+impl AsRef<gl::ShaderName> for ShaderName {
+    fn as_ref(&self) -> &gl::ShaderName {
+        match self {
+            ShaderName::Uncompiled(name) => name,
+            ShaderName::Compiled(name) => name,
+        }
+    }
+}
+
+impl ShaderName {
+    #[inline]
+    pub fn new<K>(gl: &gl::Gl, kind: K) -> Self
+    where
+        K: Into<gl::ShaderKind>,
+    {
+        unsafe { ShaderName::Uncompiled(gl.create_shader(kind.into())) }
+    }
+
+    #[inline]
+    pub fn compile<I>(&mut self, gl: &gl::Gl, sources: I)
+    where
+        I: IntoIterator,
+        I::Item: AsRef<[u8]>,
+    {
+        unsafe {
+            gl.shader_source(*self.as_ref(), sources);
+            gl.compile_shader(*self.as_ref());
+            let status = gl.get_shaderiv(*self.as_ref(), gl::COMPILE_STATUS);
+            // Don't panic from here.
+            let name = std::ptr::read(self.as_ref());
+            std::ptr::write(
+                self,
+                match status {
+                    gl::CompileStatus::Uncompiled => ShaderName::Uncompiled(name),
+                    gl::CompileStatus::Compiled => ShaderName::Compiled(name),
+                },
+            );
+        }
+    }
+
+    #[inline]
+    pub fn log(&self, gl: &gl::Gl) -> String {
+        unsafe { gl.get_shader_info_log(*self.as_ref()) }
+    }
+
+    #[inline]
+    pub fn is_compiled(&self) -> bool {
+        match self {
+            ShaderName::Compiled(_) => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_uncompiled(&self) -> bool {
+        match self {
+            ShaderName::Uncompiled(_) => true,
+            _ => false,
+        }
+    }
+}
+
