@@ -68,7 +68,6 @@ use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
-use openvr::enums::Enum;
 use std::mem;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -383,7 +382,7 @@ fn main() {
         .map_err(|error| {
             eprintln!(
                 "Failed to acquire context: {:?}",
-                vr::InitError::from_unchecked(error).unwrap()
+                error
             );
         })
         .ok();
@@ -415,7 +414,7 @@ fn main() {
     while world.running {
         #[derive(Copy, Clone)]
         pub struct EyeData {
-            tangents: [f32; 4],
+            tangents: vr::RawProjection,
             cam_to_hmd: Matrix4<f64>,
         }
 
@@ -475,11 +474,11 @@ fn main() {
                         hmd_to_bdy: Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0)),
                         eyes: EyeMap {
                             left: EyeData {
-                                tangents: [l, r, b, t],
+                                tangents: vr::RawProjection { l, r, b, t },
                                 cam_to_hmd: Matrix4::from_translation(Vector3::new(-0.1, 0.01, -0.01)),
                             },
                             right: EyeData {
-                                tangents: [-r, -l, b, t],
+                                tangents: vr::RawProjection { l: -r, r: -l, b, t },
                                 cam_to_hmd: Matrix4::from_translation(Vector3::new(0.1, 0.01, -0.01)),
                             },
                         },
@@ -1382,8 +1381,8 @@ fn mono_frustrum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustrum<
     }
 }
 
-fn stereo_frustrum(camera_properties: &camera::CameraProperties, tangents: [f32; 4]) -> Frustrum<f64> {
-    let [l, r, b, t] = tangents;
+fn stereo_frustrum(camera_properties: &camera::CameraProperties, tangents: vr::RawProjection) -> Frustrum<f64> {
+    let vr::RawProjection { l, r, b, t } = tangents;
     let z0 = camera_properties.z0 as f64;
     let z1 = camera_properties.z1 as f64;
     Frustrum::<f64> {
