@@ -180,6 +180,7 @@ impl AttenuationMode {
 }
 
 pub struct Shader {
+    header: &'static str,
     source_indices: Vec<usize>,
     light_space: bool,
     render_technique: bool,
@@ -189,8 +190,9 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub fn new(gl: &gl::Gl, kind: impl Into<gl::ShaderKind>, source_indices: Vec<usize>) -> Self {
+    pub fn new(gl: &gl::Gl, kind: impl Into<gl::ShaderKind>, header: &'static str, source_indices: Vec<usize>) -> Self {
         Self {
+            header,
             source_indices,
             light_space: false,
             render_technique: false,
@@ -253,6 +255,7 @@ impl Shader {
                         CAMERA_BUFFER_DECLARATION,
                         crate::light::LIGHT_BUFFER_DECLARATION,
                         crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
+                        &self.header,
                     ]
                     .iter()
                     .copied()
@@ -381,8 +384,8 @@ pub fn vs_fs_program(gl: &gl::Gl, world: &mut World, vs: &'static str, fs: &'sta
     Program::new(
         gl,
         vec![
-            Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source(vs)]),
-            Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source(fs)]),
+            Shader::new(gl, gl::VERTEX_SHADER, "", vec![world.add_source(vs)]),
+            Shader::new(gl, gl::FRAGMENT_SHADER, "", vec![world.add_source(fs)]),
         ],
     )
 }
