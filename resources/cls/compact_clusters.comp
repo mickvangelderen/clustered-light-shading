@@ -1,0 +1,160 @@
+layout(std430, binding = 0) buffer InputBuffer {
+  uint fragments_per_cluster[];
+};
+
+layout(std430, binding = 1) buffer OffsetBuffer {
+  uint offsets[PASS_1_THREADS];
+};
+
+layout(std430, binding = 2) buffer OutputBuffer {
+  uint active_cluster_indices[MAX_ACTIVE_CLUSTERS];
+};
+
+layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
+
+#if PASS == 0
+#define LOCAL_X PASS_0_THREADS
+#elif PASS == 1
+#define LOCAL_X PASS_1_THREADS
+#elif PASS == 2
+#define LOCAL_X PASS_0_THREADS
+#else
+#error Invalid PASS!
+#endif
+
+#define tid gl_LocalInvocationID.x
+#define wid gl_WorkGroupID.x
+
+shared uint values[LOCAL_X];
+
+layout(local_size_x = LOCAL_X) in;
+
+void sum_2(uint s) {
+  uint acc = values[tid] + (tid >= s ? values[tid - s] : 0);
+  memoryBarrierShared();
+  barrier();
+
+  values[tid] = acc;
+  memoryBarrierShared();
+  barrier();
+}
+
+// Assumes values are loaded in shared memory.
+void scan() {
+#if (1 << 0) < LOCAL_X
+  sum_2(1 << 0);
+#endif
+#if (1 << 1) < LOCAL_X
+  sum_2(1 << 1);
+#endif
+#if (1 << 2) < LOCAL_X
+  sum_2(1 << 2);
+#endif
+#if (1 << 3) < LOCAL_X
+  sum_2(1 << 3);
+#endif
+#if (1 << 4) < LOCAL_X
+  sum_2(1 << 4);
+#endif
+#if (1 << 5) < LOCAL_X
+  sum_2(1 << 5);
+#endif
+#if (1 << 6) < LOCAL_X
+  sum_2(1 << 6);
+#endif
+#if (1 << 7) < LOCAL_X
+  sum_2(1 << 7);
+#endif
+#if (1 << 8) < LOCAL_X
+  sum_2(1 << 8);
+#endif
+#if (1 << 9) < LOCAL_X
+  sum_2(1 << 9);
+#endif
+#if (1 << 10) < LOCAL_X
+#error Loop insufficiently unrolled.
+#endif
+}
+
+void uint_div_ceil(uint n, uint d) {
+  uint r = n / d;
+  return ((n % d) == 0) ? r : r + 1;
+}
+
+#if PASS == 0
+void main() {
+  uint C = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint B = C * PASS_0_THREADS;
+
+  uint offset_begin = wid * B;
+  uint offset_end = offset_begin + B;
+
+  // Sum up C*PASS_0_THREADS items in chunks of PASS_0_THREADS.
+  uint acc = 0;
+  for (uint offset = offset_begin; offset < offset_end;
+       offset += PASS_0_THREADS) {
+    uint value = fragments_per_cluster[offset + tid];
+    if (value > 0) {
+      acc += 1;
+    }
+  }
+
+  // Initialize shared memory
+  values[tid] = acc;
+  memoryBarrierShared();
+  barrier();
+
+  scan();
+
+  // Emit output from shared memory.
+  if (tid == 0) {
+    offsets[wid] = values[LOCAL_X - 1];
+  }
+}
+#elif PASS == 1
+void main() {
+  // Initialize shared memory
+  values[tid] = offsets[tid];
+  memoryBarrierShared();
+  barrier();
+
+  scan();
+
+  // Emit output from shared memory.
+  offsets[tid] = values[tid];
+}
+#elif PASS == 2
+void main() {
+  uint C = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint B = C * PASS_0_THREADS;
+
+  uint offset_begin = wid * B;
+  uint offset_end = offset_begin + B;
+
+  uint acc = (wid > 0) ? offsets[wid - 1] : 0;
+  for (uint offset = offset_begin; offset < offset_end;
+       offset += PASS_0_THREADS) {
+    // Initialize shared memory
+    uint initial_value = ((fragments_per_cluster[offset + tid]) == 0 ? 0 : 1);
+    values[tid] = initial_value;
+    memoryBarrierShared();
+    barrier();
+
+    scan();
+
+    if (initial_value > 0) {
+      // Instead of writing out the offsets, we use them immediately to emit
+      // active cluster indices.
+      uint active_cluster_index_index = acc + values[tid];
+      if (active_cluster_index_index < MAX_ACTIVE_CLUSTERS) {
+        active_cluster_indices[active_cluster_index_index] = offset + tid;
+      }
+    }
+
+    // Add the total sum of the current segment to the accumulator.
+    acc += values[LOCAL_X - 1];
+  }
+}
+#else
+#error Invalid PASS!
+#endif

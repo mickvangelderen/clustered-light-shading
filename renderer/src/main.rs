@@ -20,6 +20,7 @@ mod basic_renderer;
 mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
+mod cls_renderer;
 pub mod clamp;
 mod cluster_renderer;
 mod cluster_shading;
@@ -375,6 +376,7 @@ fn main() {
     let mut overlay_renderer = overlay_renderer::Renderer::new(&gl, &mut world);
     let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
     let mut text_renderer = text_renderer::Renderer::new(&gl, &mut world);
+    let mut cls_renderer = cls_renderer::Renderer::new(&gl, &mut world);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
