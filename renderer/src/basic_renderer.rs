@@ -125,13 +125,8 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::Program::new(
-                gl,
-                vec![
-                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("basic_renderer.vert")]),
-                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("basic_renderer.frag")]),
-                ],
-            ),
+            program: vs_fs_program(gl, world, "basic_renderer.vert", "basic_renderer.frag"),
+
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
 
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,

@@ -75,13 +75,7 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::Program::new(
-                gl,
-                vec![
-                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("overlay_renderer.vert")]),
-                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("overlay_renderer.frag")]),
-                ],
-            ),
+            program: vs_fs_program(gl, world, "overlay_renderer.vert", "overlay_renderer.frag"),
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             default_colors_loc: gl::OptionUniformLocation::NONE,
             color_matrix_loc: gl::OptionUniformLocation::NONE,
