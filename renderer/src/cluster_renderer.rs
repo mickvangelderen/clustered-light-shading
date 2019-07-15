@@ -114,13 +114,7 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::Program::new(
-                gl,
-                vec![
-                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("cluster_renderer.vert")]),
-                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("cluster_renderer.frag")]),
-                ],
-            ),
+            program: vs_fs_program(gl, world, "cluster_renderer.vert", "cluster_renderer.frag"),
             light_count_loc: gl::OptionUniformLocation::NONE,
             debug_pass_loc: gl::OptionUniformLocation::NONE,
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,

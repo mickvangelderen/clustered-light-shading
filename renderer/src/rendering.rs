@@ -376,6 +376,17 @@ impl Program {
     }
 }
 
+/// Utility function to create a very common single file vertex and single file fragment shader.
+pub fn vs_fs_program(gl: &gl::Gl, world: &mut World, vs: &'static str, fs: &'static str) -> Program {
+    Program::new(
+        gl,
+        vec![
+            Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source(vs)]),
+            Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source(fs)]),
+        ],
+    )
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct BufferPoolIndex(usize);
 

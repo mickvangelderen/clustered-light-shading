@@ -48,14 +48,7 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::Program::new(
-                gl,
-                vec![
-                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("depth_renderer.vert")]),
-                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("depth_renderer.frag")]),
-                ],
-            ),
-
+            program: vs_fs_program(gl, world, "depth_renderer.vert", "depth_renderer.frag"),
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
         }
     }
