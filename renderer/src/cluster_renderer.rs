@@ -30,7 +30,8 @@ impl Renderer {
                     let [xn, yn, zn]: [u32; 3] = params.cluster_data.dimensions.cast::<u32>().unwrap().into();
                     for zi in 0..zn {
                         if let Some(animate_z) = configuration.animate_z {
-                            if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
+                            if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32
+                            {
                                 continue;
                             }
                         }
@@ -61,7 +62,12 @@ impl Renderer {
                                         gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
                                     }
 
-                                    gl.draw_elements(gl::TRIANGLES, resources.cluster_element_count, gl::UNSIGNED_INT, 0);
+                                    gl.draw_elements(
+                                        gl::TRIANGLES,
+                                        resources.cluster_element_count,
+                                        gl::UNSIGNED_INT,
+                                        0,
+                                    );
                                 }
                             }
                         }
@@ -110,8 +116,10 @@ impl Renderer {
         Renderer {
             program: rendering::Program::new(
                 gl,
-                vec![world.add_source("cluster_renderer.vert")],
-                vec![world.add_source("cluster_renderer.frag")],
+                vec![
+                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("cluster_renderer.vert")]),
+                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("cluster_renderer.frag")]),
+                ],
             ),
             light_count_loc: gl::OptionUniformLocation::NONE,
             debug_pass_loc: gl::OptionUniformLocation::NONE,

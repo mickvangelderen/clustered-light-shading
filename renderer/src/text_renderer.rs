@@ -64,10 +64,12 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: Program::new(
+            program: rendering::Program::new(
                 gl,
-                vec![world.add_source("text_renderer.vert")],
-                vec![world.add_source("text_renderer.frag")],
+                vec![
+                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("text_renderer.vert")]),
+                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("text_renderer.frag")]),
+                ],
             ),
             dimensions_loc: gl::OptionUniformLocation::NONE,
             text_sampler_loc: gl::OptionUniformLocation::NONE,

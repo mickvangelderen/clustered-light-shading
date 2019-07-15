@@ -109,9 +109,12 @@ impl Renderer {
             Renderer {
                 program: rendering::Program::new(
                     gl,
-                    vec![world.add_source("line_renderer.vert")],
-                    vec![world.add_source("line_renderer.frag")],
+                    vec![
+                        rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("line_renderer.vert")]),
+                        rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("line_renderer.frag")]),
+                    ],
                 ),
+
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,
