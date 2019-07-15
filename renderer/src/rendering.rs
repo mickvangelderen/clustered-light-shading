@@ -181,6 +181,7 @@ impl AttenuationMode {
 
 pub struct Shader {
     source_indices: Vec<usize>,
+    light_space: bool,
     render_technique: bool,
     attenuation_mode: bool,
     pub branch: ic::Branch,
@@ -188,13 +189,14 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub fn new(name: ShaderName, source_indices: Vec<usize>) -> Self {
+    pub fn new(gl: &gl::Gl, kind: impl Into<gl::ShaderKind>, source_indices: Vec<usize>) -> Self {
         Self {
             source_indices,
+            light_space: false,
             render_technique: false,
             attenuation_mode: false,
             branch: ic::Branch::dirty(),
-            name,
+            name: ShaderName::new(gl, kind.into()),
         }
     }
 
@@ -205,24 +207,22 @@ impl Shader {
                 .source_indices
                 .iter()
                 .map(|&i| world.sources[i].modified)
-                .chain(std::iter::once(world.light_space.modified))
                 .chain(
-                    if self.render_technique {
-                        Some(world.render_technique.modified)
-                    } else {
-                        None
-                    }
+                    [
+                        (self.light_space, world.light_space.modified),
+                        (self.render_technique, world.render_technique.modified),
+                        (self.attenuation_mode, world.attenuation_mode.modified),
+                    ]
                     .iter()
-                    .copied(),
-                )
-                .chain(
-                    if self.attenuation_mode {
-                        Some(world.attenuation_mode.modified)
-                    } else {
-                        None
-                    }
-                    .iter()
-                    .copied(),
+                    .flat_map(
+                        |&(does_depend, modified)| {
+                            if does_depend {
+                                Some(modified)
+                            } else {
+                                None
+                            }
+                        },
+                    ),
                 )
                 .max()
                 .unwrap_or(ic::Modified::NONE);
@@ -234,6 +234,10 @@ impl Shader {
                     .map(|&i| [format!("#line 1 {}\n", i + 1), world.sources[i].read()])
                     .collect();
 
+                self.light_space = sources
+                    .iter()
+                    .any(|[_, source]| world.light_space_regex.is_match(source));
+
                 self.render_technique = sources
                     .iter()
                     .any(|[_, source]| world.render_technique_regex.is_match(source));
@@ -244,36 +248,36 @@ impl Shader {
 
                 self.name.compile(
                     gl,
-                    std::iter::once(rendering::COMMON_DECLARATION)
-                        .chain(std::iter::once(world.light_space.value.source()))
-                        .chain(
-                            [
-                                crate::light::LIGHT_BUFFER_DECLARATION,
-                                CAMERA_BUFFER_DECLARATION,
-                                crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
-                            ]
-                            .iter()
-                            .copied(),
-                        )
-                        .chain(
+                    [
+                        COMMON_DECLARATION,
+                        CAMERA_BUFFER_DECLARATION,
+                        crate::light::LIGHT_BUFFER_DECLARATION,
+                        crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
+                    ]
+                    .iter()
+                    .copied()
+                    .chain(
+                        [
+                            if self.light_space {
+                                Some(world.light_space.value.source())
+                            } else {
+                                None
+                            },
                             if self.render_technique {
                                 Some(world.render_technique.value.source())
                             } else {
                                 None
-                            }
-                            .iter()
-                            .copied(),
-                        )
-                        .chain(
+                            },
                             if self.attenuation_mode {
                                 Some(world.attenuation_mode.value.source())
                             } else {
                                 None
-                            }
-                            .iter()
-                            .copied(),
-                        )
-                        .chain(sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))),
+                            },
+                        ]
+                        .iter()
+                        .flat_map(|&x| x),
+                    )
+                    .chain(sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))),
                 );
 
                 if self.name.is_uncompiled() {
@@ -305,23 +309,19 @@ impl Shader {
 }
 
 pub struct Program {
-    vertex: Shader,
-    fragment: Shader,
+    shaders: Vec<Shader>,
     branch: ic::Branch,
     name: ProgramName,
 }
 
 impl Program {
-    pub fn new(gl: &gl::Gl, vertex_source_indices: Vec<usize>, fragment_source_indices: Vec<usize>) -> Self {
+    pub fn new(gl: &gl::Gl, shaders: Vec<Shader>) -> Self {
         let mut program_name = ProgramName::new(gl);
-        let vertex_name = ShaderName::new(gl, gl::VERTEX_SHADER);
-        let fragment_name = ShaderName::new(gl, gl::FRAGMENT_SHADER);
 
-        program_name.attach(gl, &[&vertex_name, &fragment_name]);
+        program_name.attach(gl, shaders.iter().map(|shader| &shader.name));
 
         Self {
-            vertex: Shader::new(vertex_name, vertex_source_indices),
-            fragment: Shader::new(fragment_name, fragment_source_indices),
+            shaders,
             branch: ic::Branch::dirty(),
             name: program_name,
         }
@@ -333,14 +333,21 @@ impl Program {
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
         if self.branch.verify(&world.global) {
-            let modified = std::cmp::max(self.vertex.update(gl, world), self.fragment.update(gl, world));
+            let modified = self
+                .shaders
+                .iter_mut()
+                .map(|shader| shader.update(gl, world))
+                .max()
+                .unwrap_or(self.branch.modified());
 
             if self.branch.recompute(&modified) {
                 self.name.link(gl);
 
                 if self.name.is_unlinked()
-                    && self.vertex.name(&world.global).is_compiled()
-                    && self.fragment.name(&world.global).is_compiled()
+                    && self
+                        .shaders
+                        .iter()
+                        .all(|shader| shader.name(&world.global).is_compiled())
                 {
                     let log = self.name.log(gl);
 

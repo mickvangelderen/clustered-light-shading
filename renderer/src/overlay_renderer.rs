@@ -1,5 +1,5 @@
-use crate::*;
 use crate::resources;
+use crate::*;
 
 pub struct Renderer {
     pub program: rendering::Program,
@@ -77,8 +77,10 @@ impl Renderer {
         Renderer {
             program: rendering::Program::new(
                 gl,
-                vec![world.add_source("overlay_renderer.vert")],
-                vec![world.add_source("overlay_renderer.frag")],
+                vec![
+                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("overlay_renderer.vert")]),
+                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("overlay_renderer.frag")]),
+                ],
             ),
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             default_colors_loc: gl::OptionUniformLocation::NONE,

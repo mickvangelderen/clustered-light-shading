@@ -17,7 +17,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub mode: u32
+    pub mode: u32,
 }
 
 impl Renderer {
@@ -127,8 +127,10 @@ impl Renderer {
         Renderer {
             program: rendering::Program::new(
                 gl,
-                vec![world.add_source("basic_renderer.vert")],
-                vec![world.add_source("basic_renderer.frag")],
+                vec![
+                    rendering::Shader::new(gl, gl::VERTEX_SHADER, vec![world.add_source("basic_renderer.vert")]),
+                    rendering::Shader::new(gl, gl::FRAGMENT_SHADER, vec![world.add_source("basic_renderer.frag")]),
+                ],
             ),
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
 

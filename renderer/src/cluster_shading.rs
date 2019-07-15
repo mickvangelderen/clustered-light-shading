@@ -357,3 +357,10 @@ impl ClusterResources {
         self.cpu_end = Some(Instant::now());
     }
 }
+
+#[derive(Debug)]
+struct GlobalClusterResources {
+    pub fragments_per_cluster_program: ProgramName,
+    pub compress_active_clusters_program: ProgramName,
+}
+
