@@ -11,6 +11,7 @@ pub struct Root {
     pub camera: GenericCamera,
     pub main_camera: Camera,
     pub debug_camera: Camera,
+    pub prefix_sum: PrefixSum,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
@@ -44,6 +45,12 @@ pub struct ClusteredLightShading {
     pub min_light_count: u32,
     pub animate_z: Option<f32>,
     pub animate_light_count: Option<f32>,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone)]
+pub struct PrefixSum {
+    pub pass_0_threads: u32,
+    pub pass_1_threads: u32,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
