@@ -1,0 +1,3 @@
+[submodule "incremental"]
+	path = incremental
+	url = git@github.com:mickvangelderen/incremental

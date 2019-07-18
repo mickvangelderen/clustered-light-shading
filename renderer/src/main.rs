@@ -6,7 +6,6 @@
 mod macros;
 
 pub(crate) use gl_typed as gl;
-pub(crate) use incremental as ic;
 pub(crate) use log::*;
 pub(crate) use rand::prelude::*;
 pub(crate) use regex::{Regex, RegexBuilder};
@@ -16,12 +15,13 @@ pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
+pub(crate) use oldincremental as ic;
 mod basic_renderer;
 mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
-mod cls_renderer;
 pub mod clamp;
+mod cls_renderer;
 mod cluster_renderer;
 mod cluster_shading;
 mod configuration;
@@ -31,10 +31,12 @@ mod filters;
 pub mod frustrum;
 mod gl_ext;
 mod glutin_ext;
+mod incremental;
 mod keyboard;
 mod light;
 mod line_renderer;
 mod mono_stereo;
+mod oldincremental;
 mod overlay_renderer;
 mod profiling;
 mod rain;
