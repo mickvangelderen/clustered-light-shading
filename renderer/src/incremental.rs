@@ -2,8 +2,10 @@ use crate::*;
 
 use ::incremental::{Branch, Graph as GraphRevision, Leaf, RootToken, Token};
 use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
 use std::io::prelude::*;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 pub type FileIndex = usize;
 
@@ -14,10 +16,10 @@ pub struct File {
     sections: Branch<Vec<Section>>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Section {
     Verbatim(String),
-    Include(PathBuf),
+    Include(SourceIndex),
 }
 
 #[derive(Debug)]
@@ -35,13 +37,12 @@ impl Parser {
         }
     }
 
-    fn parse(&self, file: usize, contents: &str, sections: &mut Vec<Section>) {
+    fn parse(&self, graph: &Graph, file_index: usize, contents: &str, sections: &mut Vec<Section>) {
         sections.clear();
         let mut verbatim_start = 0;
         let mut current_line = 1;
         for captures in self.include_regex.captures_iter(contents) {
             let line = captures.get(0).unwrap();
-            let path = captures.get(1).unwrap().as_str();
 
             // Add verbatim section.
             let verbatim_end = line.start();
@@ -50,14 +51,47 @@ impl Parser {
                 sections.push(Section::Verbatim(format!(
                     "#line {line} {file}\n{verbatim}",
                     line = current_line,
-                    file = file,
+                    file = file_index + 100,
                     verbatim = verbatim,
                 )));
                 current_line += verbatim.lines().count();
             }
 
+            let file_index = {
+                let mut files = graph.files.borrow_mut();
+                let mut path_to_index = graph.path_to_index.borrow_mut();
+
+                // Obtain actual path.
+                let relative_path = Path::new(captures.get(1).unwrap().as_str());
+                debug_assert!(relative_path.is_relative());
+
+                let path = std::fs::canonicalize(
+                    files[file_index]
+                        .path
+                        .parent()
+                        .expect("Path must have a parent.")
+                        .join(relative_path),
+                )
+                .unwrap();
+
+                // Ensure path has an index.
+                match path_to_index.get(&path) {
+                    Some(&file_index) => file_index,
+                    None => {
+                        let file_index = files.len();
+                        files.push(Rc::new(File {
+                            path: path.clone(),
+                            signal: graph.revision.leaf(()),
+                            sections: graph.revision.branch(Vec::new()),
+                        }));
+                        path_to_index.insert(path, file_index);
+                        file_index
+                    }
+                }
+            };
+
             // Add include section.
-            sections.push(Section::Include(PathBuf::from(path)));
+            sections.push(Section::Include(SourceIndex::File(file_index)));
             current_line += 1;
 
             // New verbatim starts after the include.
@@ -68,49 +102,20 @@ impl Parser {
         if verbatim_end > verbatim_start {
             let verbatim = &contents[verbatim_start..verbatim_end];
             sections.push(Section::Verbatim(format!(
-                "#line {line} {file}\n{verbatim}",
+                "#line {line} {file_index}\n{verbatim}",
                 line = current_line,
-                file = 999,
+                file_index = 999,
                 verbatim = verbatim,
             )));
         }
     }
 }
 
-#[test]
-fn parse_sections() {
-    let contents = r##"line 1
-line 2
-#include "header.glsl"
-line 4
-"##;
-    let parser = Parser::new();
-
-    let mut sections = Vec::new();
-
-    parser.parse(999, &contents, &mut sections);
-
-    assert_eq!(
-        vec![
-            Section::Verbatim(String::from("#line 1 999\nline 1\nline 2\n")),
-            Section::Include(PathBuf::from("header.glsl")),
-            Section::Verbatim(String::from("#line 4 999\nline 4\n")),
-        ],
-        sections
-    );
-}
-
-impl File {
-    pub fn sections<'a>(&'a self, graph: &'a Graph, token: &mut impl Token, index: FileIndex) -> Ref<'a, Vec<Section>> {
-        self.sections.verify(&graph.revision, token, |token| {
-            let _ = self.signal.read(token);
-
-            token.compute(|value| {
-                let contents = std::fs::read_to_string(&self.path).unwrap();
-                graph.parser.parse(index, &contents, value);
-            });
-        })
-    }
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum SourceIndex {
+    File(FileIndex),
+    AttenuationMode,
+    RenderTechnique,
 }
 
 #[derive(Debug)]
@@ -119,26 +124,32 @@ pub struct Shader {
     name: Branch<ShaderName>,
 }
 
-fn collect_section<'a>(graph: &'a Graph, token: &mut impl Token, file_index: FileIndex, sources: &mut Vec<Ref<'a, str>>, included: &mut Vec<FileIndex>) {
-    let sections = graph.files[file_index].sections(graph, token, file_index);
+fn collect_section<'a>(
+    graph: &'a Graph,
+    token: &mut impl Token,
+    file_index: FileIndex,
+    sources: &mut Vec<Ref<'a, str>>,
+    included: &mut Vec<SourceIndex>,
+) {
+    let sections = graph.sections(token, file_index);
 
     // TODO: https://users.rust-lang.org/t/transposition-and-refcell/30430
     for i in 0..sections.len() {
         let section = Ref::map(Ref::clone(&sections), |sections| &sections[i]);
         match *section {
             Section::Verbatim(_) => {
-                sources.push(Ref::map(section, |section| {
-                    match *section {
-                        Section::Verbatim(ref verbatim) => verbatim.as_str(),
-                        _ => unreachable!(),
-                    }
+                sources.push(Ref::map(section, |section| match *section {
+                    Section::Verbatim(ref verbatim) => verbatim.as_str(),
+                    _ => unreachable!(),
                 }));
-            },
-            Section::Include(ref path) => {
-                let file_index = graph.files.iter().position(|file: &File| &file.path == path).unwrap();
-                if included.iter().find(|&&item| item == file_index).is_none() {
-                    included.push(file_index);
-                    collect_section(graph, token, file_index, sources, included)
+            }
+            Section::Include(source_index) => {
+                if included.iter().find(|&&item| item == source_index).is_none() {
+                    included.push(source_index);
+                    match source_index {
+                        SourceIndex::File(file_index) => collect_section(graph, token, file_index, sources, included),
+                        _ => unimplemented!(),
+                    }
                 }
             }
         }
@@ -177,10 +188,40 @@ impl Program {
 
 #[derive(Debug)]
 pub struct Graph {
-    pub files: Vec<File>,
-    pub basic_program: Program,
+    pub path_to_index: RefCell<HashMap<PathBuf, FileIndex>>,
+    // Need RefCell and Rc to allow pushing new elements onto the Vec while we update elements.
+    pub files: RefCell<Vec<Rc<File>>>,
     pub parser: Parser,
     pub revision: GraphRevision,
+}
+
+impl Graph {
+    pub fn new() -> Self {
+        Self {
+            path_to_index: RefCell::new(HashMap::new()),
+            files: RefCell::new(Vec::new()),
+            parser: Parser::new(),
+            revision: GraphRevision::new(),
+        }
+    }
+}
+
+impl Graph {
+    pub fn sections<'a>(&'a self, token: &mut impl Token, file_index: FileIndex) -> Ref<'a, Vec<Section>> {
+        let file = {
+            let files = self.files.borrow();
+            Rc::clone(&files[file_index])
+        };
+
+        file.sections.verify(&self.revision, token, move |token| {
+            let _ = file.signal.read(token);
+
+            token.compute(|sections| {
+                let contents = std::fs::read_to_string(&file.path).unwrap();
+                self.parser.parse(self, file_index, &contents, sections);
+            });
+        })
+    }
 }
 
 // pub struct Shader {
