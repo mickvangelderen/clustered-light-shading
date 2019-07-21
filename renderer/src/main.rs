@@ -15,7 +15,6 @@ pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
-pub(crate) use oldincremental as ic;
 mod basic_renderer;
 mod bounding_box;
 pub mod camera;
@@ -35,7 +34,6 @@ mod keyboard;
 mod light;
 mod line_renderer;
 mod mono_stereo;
-mod oldincremental;
 mod overlay_renderer;
 mod profiling;
 mod rain;
@@ -55,7 +53,7 @@ use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::profiling::*;
-use crate::shader_compiler::{EntryPoint, ShaderCompiler, ShaderVariables};
+use crate::shader_compiler::{EntryPoint, ShaderCompiler};
 use crate::text_rendering::{FontContext, TextBox};
 // use crate::mono_stereo::*;
 use crate::rendering::*;
@@ -296,13 +294,19 @@ fn main() {
             }
         }
 
-        let mut global = ic::Global::new();
         let mut current = ::incremental::Current::new();
 
         let win_dpi = gl_window.get_hidpi_factor();
         let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
 
-        let shader_compiler = ShaderCompiler::new(&current);
+        let shader_compiler = ShaderCompiler::new(
+            &current,
+            shader_compiler::Variables {
+                light_space: LightSpace::Wld,
+                render_technique: RenderTechnique::Clustered,
+                attenuation_mode: AttenuationMode::Interpolated,
+            },
+        );
 
         World {
             epoch: Instant::now(),
@@ -319,14 +323,7 @@ fn main() {
             window_mode: WindowMode::Main,
             display_mode: 1,
             depth_prepass: true,
-            light_space: ic::Leaf::clean(&mut global, LightSpace::Cam),
-            light_space_regex: LightSpace::regex(),
-            render_technique: ic::Leaf::clean(&mut global, RenderTechnique::Clustered),
-            render_technique_regex: RenderTechnique::regex(),
-            attenuation_mode: ic::Leaf::clean(&mut global, AttenuationMode::Interpolated),
-            attenuation_mode_regex: AttenuationMode::regex(),
             gl_log_regex: RegexBuilder::new(r"^\d+").multi_line(true).build().unwrap(),
-            sources: vec![],
             target_camera_key: CameraKey::Main,
             transition_camera: camera::TransitionCamera {
                 start_camera: cameras.main,
@@ -341,14 +338,9 @@ fn main() {
                 current_smoothness: configuration.camera.maximum_smoothness,
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             }),
-            global,
             current,
             rain_drops: Vec::new(),
             shader_compiler,
-            shader_variables: ShaderVariables {
-                render_technique: RenderTechnique::Clustered,
-                attenuation_mode: AttenuationMode::Interpolated,
-            },
         }
     };
 
@@ -550,7 +542,7 @@ fn main() {
             }
         }
 
-        if world.light_space.value == LightSpace::Wld {
+        if world.shader_compiler.light_space() == LightSpace::Wld {
             light_params_vec.push(light::LightParameters {
                 wld_to_lgt: Matrix4::identity(),
                 lgt_to_wld: Matrix4::identity(),
@@ -569,7 +561,7 @@ fn main() {
             pub cam_pos_in_wld: Point3<f64>,
         }
 
-        if world.render_technique.value == RenderTechnique::Clustered {
+        if world.shader_compiler.render_technique() == RenderTechnique::Clustered {
             let cluster_camera = &world.cameras.main;
             let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
             let wld_to_bdy = cluster_camera
@@ -688,7 +680,7 @@ fn main() {
 
                 let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap();
 
-                if world.light_space.value == LightSpace::Hmd {
+                if world.shader_compiler.light_space() == LightSpace::Hmd {
                     light_params_vec.push(light::LightParameters {
                         wld_to_lgt: wld_to_hmd,
                         lgt_to_wld: hmd_to_wld,
@@ -705,7 +697,7 @@ fn main() {
                     let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                     let clp_to_cam = cam_to_clp.invert().unwrap();
 
-                    if world.light_space.value == LightSpace::Cam {
+                    if world.shader_compiler.light_space() == LightSpace::Cam {
                         light_params_vec.push(light::LightParameters {
                             wld_to_lgt: wld_to_cam,
                             lgt_to_wld: cam_to_wld,
@@ -747,7 +739,9 @@ fn main() {
                 let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                 let clp_to_cam = cam_to_clp.invert().unwrap();
 
-                if world.light_space.value == LightSpace::Hmd || world.light_space.value == LightSpace::Cam {
+                if world.shader_compiler.light_space() == LightSpace::Hmd
+                    || world.shader_compiler.light_space() == LightSpace::Cam
+                {
                     light_params_vec.push(light::LightParameters {
                         wld_to_lgt: wld_to_cam,
                         lgt_to_wld: cam_to_wld,
@@ -959,7 +953,9 @@ fn main() {
                     "Render Technique: {:?}\n",
                     "Lighting Space:   {:?}\n\n",
                 ),
-                world.attenuation_mode.value, world.render_technique.value, world.light_space.value,
+                world.shader_compiler.attenuation_mode(),
+                world.shader_compiler.render_technique(),
+                world.shader_compiler.light_space(),
             ),
         );
 
@@ -1046,7 +1042,7 @@ fn main() {
             gl_window.window().set_title(&format!(
                 "VR Lab - {:?} - {:?} - {:02.1} FPS",
                 world.target_camera_key,
-                world.render_technique.value,
+                world.shader_compiler.render_technique(),
                 fps_average.compute()
             ));
         }
@@ -1090,10 +1086,11 @@ fn process_fs_events(
                     "Noticed write to file {:?}",
                     path.strip_prefix(&world.resource_dir).unwrap().display()
                 );
-                for source in world.sources.iter_mut() {
-                    if source.path == path {
-                        world.global.mark(&mut source.modified);
-                    }
+
+                if let Some(source_index) = world.shader_compiler.memory.source_index(&path) {
+                    world.shader_compiler.source_mut(source_index)
+                        .last_modified
+                        .modify(&mut world.current);
                 }
 
                 if &path == &world.configuration_path {
@@ -1138,9 +1135,9 @@ pub fn process_window_events(
     let mut mouse_dscroll = 0.0;
     let mut new_target_camera_key = world.target_camera_key;
     let mut new_window_mode = world.window_mode;
-    let mut new_light_space = world.light_space.value;
-    let mut new_attenuation_mode = world.attenuation_mode.value;
-    let mut new_render_technique = world.render_technique.value;
+    let mut new_light_space = world.shader_compiler.light_space();
+    let mut new_attenuation_mode = world.shader_compiler.attenuation_mode();
+    let mut new_render_technique = world.shader_compiler.render_technique();
 
     events_loop.poll_events(|event| {
         use glutin::Event;
@@ -1234,26 +1231,15 @@ pub fn process_window_events(
 
     world.window_mode = new_window_mode;
 
-    {
-        let old_light_space = world.light_space.replace(&mut world.global, new_light_space);
-        if old_light_space != new_light_space {
-            info!("Light space: {:?}", new_light_space);
-        }
-    }
-
-    {
-        let old_attenuation_mode = world.attenuation_mode.replace(&mut world.global, new_attenuation_mode);
-        if old_attenuation_mode != new_attenuation_mode {
-            info!("Attenuation mode: {:?}", new_attenuation_mode);
-        }
-    }
-
-    {
-        let old_render_technique = world.render_technique.replace(&mut world.global, new_render_technique);
-        if old_render_technique != new_render_technique {
-            info!("Render technique: {:?}", new_render_technique);
-        }
-    }
+    world
+        .shader_compiler
+        .replace_light_space(&mut world.current, new_light_space);
+    world
+        .shader_compiler
+        .replace_attenuation_mode(&mut world.current, new_attenuation_mode);
+    world
+        .shader_compiler
+        .replace_render_technique(&mut world.current, new_render_technique);
 
     if new_target_camera_key != world.target_camera_key {
         world.target_camera_key = new_target_camera_key;

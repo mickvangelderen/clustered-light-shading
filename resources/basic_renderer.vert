@@ -1,3 +1,5 @@
+#include "native/RENDER_TECHNIQUE"
+
 uniform mat4 obj_to_wld;
 
 layout(location = VS_POS_IN_TEX_LOC) in vec2 vs_pos_in_tex;
@@ -31,3 +33,4 @@ void main() {
   fs_nor_in_lgt = transpose(inverse(mat3(obj_to_lgt))) * vs_nor_in_obj;
   fs_tan_in_lgt = mat3(obj_to_lgt) * vs_tan_in_obj;
 }
+

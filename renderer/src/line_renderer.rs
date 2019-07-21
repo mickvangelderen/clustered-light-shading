@@ -33,8 +33,8 @@ impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World) {
         unsafe {
             self.update(gl, world);
-            if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
-                gl.use_program(*program_name);
+            if let ProgramName::Linked(program_name) = self.program.name {
+                gl.use_program(program_name);
 
                 if let Some(loc) = self.obj_to_wld_loc.into() {
                     gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.obj_to_wld.as_ref());
@@ -66,11 +66,10 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
                 }
             }
         }

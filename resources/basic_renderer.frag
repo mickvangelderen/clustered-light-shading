@@ -1,3 +1,6 @@
+#include "native/RENDER_TECHNIQUE"
+#include "native/ATTENUATION_MODE"
+
 // uniform sampler2D shadow_sampler;
 uniform sampler2D diffuse_sampler;
 uniform sampler2D normal_sampler;

@@ -30,8 +30,8 @@ impl Renderer {
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
 
             self.update(gl, world);
-            if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
-                gl.use_program(*program_name);
+            if let ProgramName::Linked(program_name) = self.program.name {
+                gl.use_program(program_name);
 
                 if let Some(loc) = self.color_sampler_loc.into() {
                     gl.uniform_1i(loc, 0);
@@ -61,13 +61,12 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.color_sampler_loc = get_uniform_location!(gl, *name, "color_sampler");
-                    self.default_colors_loc = get_uniform_location!(gl, *name, "default_colors");
-                    self.color_matrix_loc = get_uniform_location!(gl, *name, "color_matrix");
+                    self.color_sampler_loc = get_uniform_location!(gl, name, "color_sampler");
+                    self.default_colors_loc = get_uniform_location!(gl, name, "default_colors");
+                    self.color_matrix_loc = get_uniform_location!(gl, name, "color_matrix");
                 }
             }
         }

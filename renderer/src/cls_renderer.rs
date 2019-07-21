@@ -28,11 +28,7 @@ impl Buffer {
             let byte_capacity = std::mem::size_of::<T>() * capacity;
 
             if self.byte_capacity < capacity {
-                gl.named_buffer_reserve(
-                    self.name,
-                    byte_capacity,
-                    gl::DYNAMIC_DRAW,
-                );
+                gl.named_buffer_reserve(self.name, byte_capacity, gl::DYNAMIC_DRAW);
                 self.byte_capacity = byte_capacity;
             }
         }
@@ -74,39 +70,39 @@ const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_
 
 const FRAGMENTS_PER_CLUSTER_BINDING: u32 = 0;
 
-fn fragments_per_cluster_header() -> String {
-    format!(
-        r##"
-#define DEPTH_SAMPLER_LOC {}
-#define DEPTH_DIMS_LOC {}
-#define CLP_TO_CLS_LOC {}
-#define CLUSTER_DIMS_LOC {}
-#define FRAGMENTS_PER_CLUSTER_BINDING {}
-"##,
-        DEPTH_SAMPLER_LOC.into_i32(),
-        DEPTH_DIMS_LOC.into_i32(),
-        CLP_TO_CLS_LOC.into_i32(),
-        CLUSTER_DIMS_LOC.into_i32(),
-        FRAGMENTS_PER_CLUSTER_BINDING,
-    )
-}
+// fn fragments_per_cluster_header() -> String {
+//     format!(
+//         r##"
+// #define DEPTH_SAMPLER_LOC {}
+// #define DEPTH_DIMS_LOC {}
+// #define CLP_TO_CLS_LOC {}
+// #define CLUSTER_DIMS_LOC {}
+// #define FRAGMENTS_PER_CLUSTER_BINDING {}
+// "##,
+//         DEPTH_SAMPLER_LOC.into_i32(),
+//         DEPTH_DIMS_LOC.into_i32(),
+//         CLP_TO_CLS_LOC.into_i32(),
+//         CLUSTER_DIMS_LOC.into_i32(),
+//         FRAGMENTS_PER_CLUSTER_BINDING,
+//     )
+// }
 
-// compact clusters program
-const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
-const ACTIVE_CLUSTER_CAPACITY: u32 = 1024 * 1024;
+// // compact clusters program
+// const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
+// const ACTIVE_CLUSTER_CAPACITY: u32 = 1024 * 1024;
 
-fn compact_cluster_header(pass: u32) -> String {
-    format!(
-        r##"
-#define PASS {}
-#define ACTIVE_CLUSTER_CAPACITY {}
-#define ITEM_COUNT_LOC {}
-"##,
-        pass,
-        ACTIVE_CLUSTER_CAPACITY,
-        ITEM_COUNT_LOC.into_i32(),
-    )
-}
+// fn compact_cluster_header(pass: u32) -> String {
+//     format!(
+//         r##"
+// #define PASS {}
+// #define ACTIVE_CLUSTER_CAPACITY {}
+// #define ITEM_COUNT_LOC {}
+// "##,
+//         pass,
+//         ACTIVE_CLUSTER_CAPACITY,
+//         ITEM_COUNT_LOC.into_i32(),
+//     )
+// }
 
 impl Renderer {
     pub fn render(&mut self, params: RenderParams) {
@@ -147,8 +143,8 @@ impl Renderer {
                 resources.fragments_per_cluster_buffer.name,
             );
 
-            if let ProgramName::Linked(name) = self.fragments_per_cluster_program.name(&world.global) {
-                gl.use_program(*name);
+            if let ProgramName::Linked(name) = self.fragments_per_cluster_program.name {
+                gl.use_program(name);
 
                 gl.uniform_1i(DEPTH_SAMPLER_LOC, 0);
                 gl.bind_texture_unit(0, depth_texture);
@@ -170,13 +166,13 @@ impl Renderer {
         //     gl.named_buffer_data(context.eb, text_box.indices.vec_as_bytes(), gl::STREAM_DRAW);
 
         //     self.update(gl, world);
-        //     if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        //     if let ProgramName::Linked(name) = self.program.name {
         //         gl.disable(gl::DEPTH_TEST);
         //         gl.depth_mask(gl::FALSE);
         //         gl.enable(gl::BLEND);
         //         gl.blend_func(gl::SRC_ALPHA, gl::ONE);
 
-        //         gl.use_program(*name);
+        //         gl.use_program(name);
         //         gl.bind_vertex_array(context.vao);
 
         //         if let Some(loc) = self.dimensions_loc.into() {
@@ -214,21 +210,13 @@ impl Renderer {
     }
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
-        let compact_clusters_index = world.add_source("cls/compact_clusters.comp");
-
         Renderer {
             fragments_per_cluster_program: rendering::Program::new(
                 gl,
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    format!(
-                        r##"
-#define DEPTH_SAMPLER_LOC {}
-"##,
-                        DEPTH_SAMPLER_LOC.into_i32(),
-                    ),
-                    vec![world.add_source("cls/fragments_per_cluster.comp")],
+                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
                 )],
             ),
             compact_clusters_0_program: rendering::Program::new(
@@ -236,8 +224,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    compact_cluster_header(0),
-                    vec![compact_clusters_index],
+                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
                 )],
             ),
             compact_clusters_1_program: rendering::Program::new(
@@ -245,8 +232,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    compact_cluster_header(1),
-                    vec![compact_clusters_index],
+                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
                 )],
             ),
             compact_clusters_2_program: rendering::Program::new(
@@ -254,8 +240,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    compact_cluster_header(2),
-                    vec![compact_clusters_index],
+                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
                 )],
             ),
             // dimensions_loc: gl::OptionUniformLocation::NONE,

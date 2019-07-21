@@ -79,16 +79,34 @@ impl Parser {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum SourceReader {
     File(PathBuf),
+    LightSpace,
     AttenuationMode,
     RenderTechnique,
 }
 
 impl SourceReader {
-    pub fn read(&self, source_index: SourceIndex, vars: &ShaderVariables, parser: &Parser, tokens: &mut Tokens) {
+    pub fn read(&self, source_index: SourceIndex, vars: &Variables, parser: &Parser, tokens: &mut Tokens) {
         match *self {
             SourceReader::File(ref path) => {
                 let source = std::fs::read_to_string(path).unwrap();
                 parser.parse(&source, source_index, tokens);
+            }
+            SourceReader::LightSpace => {
+                let define = match vars.light_space {
+                    LightSpace::Wld => "LIGHT_SPACE_WLD",
+                    LightSpace::Cam => "LIGHT_SPACE_CAM",
+                    LightSpace::Hmd => "LIGHT_SPACE_HMD",
+                };
+
+                tokens.push(Token::Literal(format!(
+                    "\
+                     #line {line} {source_index}\n\
+                     #define {define}\n\
+                     ",
+                    line = line!() - 2,
+                    source_index = source_index,
+                    define = define,
+                )));
             }
             SourceReader::AttenuationMode => {
                 let define = match vars.attenuation_mode {
@@ -111,11 +129,21 @@ impl SourceReader {
                 )));
             }
             SourceReader::RenderTechnique => {
-                *tokens = vec![Token::Literal(format!(
-                    "#define RENDER_TECHNIQUE {}\n",
-                    // TODO
-                    999
-                ))];
+                let define = match vars.render_technique {
+                    RenderTechnique::Clustered => "RENDER_TECHNIQUE_CLUSTERED",
+                    RenderTechnique::Naive => "RENDER_TECHNIQUE_NAIVE",
+                    RenderTechnique::Tiled => "RENDER_TECHNIQUE_TILED",
+                };
+
+                tokens.push(Token::Literal(format!(
+                    "\
+                     #line {line} {source_index}\n\
+                     #define {define}\n\
+                     ",
+                    line = line!() - 2,
+                    source_index = source_index,
+                    define = define,
+                )));
             }
         }
     }
@@ -141,11 +169,10 @@ impl Source {
         }
     }
 
-    pub fn update(&mut self, source_index: SourceIndex, vars: &ShaderVariables, parser: &Parser) {
+    pub fn update(&mut self, source_index: SourceIndex, vars: &Variables, parser: &Parser) {
         if self.last_computed.should_compute(&self.last_modified) {
             self.last_computed.update_to(&self.last_modified);
             self.reader.read(source_index, vars, parser, &mut self.tokens);
-            println!("Updated {:?}.", self);
         }
     }
 }
@@ -221,11 +248,11 @@ impl EntryPoint {
         }
     }
 
-    pub fn update(&mut self, world: &mut World) {
+    pub fn update(&mut self, world: &mut World) -> bool {
         if self.last_verified.should_verify(&world.current) {
             self.last_verified.update_to(&world.current);
         } else {
-            return;
+            return false;
         }
 
         let mut should_recompute = false;
@@ -241,14 +268,16 @@ impl EntryPoint {
             }
         }
 
-        if should_recompute {
+        return if should_recompute {
             self.contents.clear();
             self.included.clear();
 
             process(self, world, self.source_index);
 
-            println!("Updated {:?}.", self);
-        }
+            true
+        } else {
+            false
+        };
 
         fn process(ep: &mut EntryPoint, world: &mut World, source_index: SourceIndex) {
             // Stop processing if we've already included this file.
@@ -257,7 +286,7 @@ impl EntryPoint {
             }
 
             let source = Rc::get_mut(&mut world.shader_compiler.memory.sources[source_index]).unwrap();
-            source.update(source_index, &world.shader_variables, &world.shader_compiler.parser);
+            source.update(source_index, &world.shader_compiler.variables, &world.shader_compiler.parser);
 
             // Clone the source rc so we can access tokens while mutating the tokens vec.
             let source = Rc::clone(&world.shader_compiler.memory.sources[source_index]);
@@ -306,250 +335,103 @@ impl EntryPoint {
     }
 }
 
-// let attenuation_mode_path = PathBuf::from("intrinsic/ATTENUATION_MODE.glsl");
-// let render_technique_path = PathBuf::from("intrinsic/RENDER_TECHNIQUE.glsl");
-
-// pub struct Shader {
-//     header: String,
-//     source_indices: Vec<usize>,
-//     light_space: bool,
-//     render_technique: bool,
-//     attenuation_mode: bool,
-//     name: ShaderName,
-// }
-
-// impl Shader {
-//     pub fn new(gl: &gl::Gl, kind: impl Into<gl::ShaderKind>, header: String, source_indices: Vec<usize>) -> Self {
-//         Self {
-//             header,
-//             source_indices,
-//             light_space: false,
-//             render_technique: false,
-//             attenuation_mode: false,
-//             name: ShaderName::new(gl, kind.into()),
-//         }
-//     }
-
-//     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
-//         let global = &world.global;
-//         if self.branch.verify(global) {
-//             let modified = self
-//                 .source_indices
-//                 .iter()
-//                 .map(|&i| world.sources[i].modified)
-//                 .chain(
-//                     [
-//                         (self.light_space, world.light_space.modified),
-//                         (self.render_technique, world.render_technique.modified),
-//                         (self.attenuation_mode, world.attenuation_mode.modified),
-//                     ]
-//                     .iter()
-//                     .flat_map(
-//                         |&(does_depend, modified)| {
-//                             if does_depend {
-//                                 Some(modified)
-//                             } else {
-//                                 None
-//                             }
-//                         },
-//                     ),
-//                 )
-//                 .max()
-//                 .unwrap_or(ic::Modified::NONE);
-
-//             if self.branch.recompute(&modified) {
-//                 let sources: Vec<[String; 2]> = self
-//                     .source_indices
-//                     .iter()
-//                     .map(|&i| [format!("#line 1 {}\n", i + 1), world.sources[i].read()])
-//                     .collect();
-
-//                 self.light_space = sources
-//                     .iter()
-//                     .any(|[_, source]| world.light_space_regex.is_match(source));
-
-//                 self.render_technique = sources
-//                     .iter()
-//                     .any(|[_, source]| world.render_technique_regex.is_match(source));
-
-//                 self.attenuation_mode = sources
-//                     .iter()
-//                     .any(|[_, source]| world.attenuation_mode_regex.is_match(source));
-
-//                 self.name.compile(
-//                     gl,
-//                     [
-//                         COMMON_DECLARATION,
-//                         CAMERA_BUFFER_DECLARATION,
-//                         crate::light::LIGHT_BUFFER_DECLARATION,
-//                         crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
-//                         self.header.as_str(),
-//                     ]
-//                     .iter()
-//                     .copied()
-//                     .chain(
-//                         [
-//                             if self.light_space {
-//                                 Some(world.light_space.value.source())
-//                             } else {
-//                                 None
-//                             },
-//                             if self.render_technique {
-//                                 Some(world.render_technique.value.source())
-//                             } else {
-//                                 None
-//                             },
-//                             if self.attenuation_mode {
-//                                 Some(world.attenuation_mode.value.source())
-//                             } else {
-//                                 None
-//                             },
-//                         ]
-//                         .iter()
-//                         .flat_map(|&x| x),
-//                     )
-//                     .chain(sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))),
-//                 );
-
-//                 if self.name.is_uncompiled() {
-//                     let log = self.name.log(gl);
-
-//                     let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-//                         let i: usize = captures[0].parse().unwrap();
-//                         if i > 0 {
-//                             let i = i - 1;
-//                             let path = world.sources[i].path.strip_prefix(&world.resource_dir).unwrap();
-//                             path.display().to_string()
-//                         } else {
-//                             "<generated header>".to_string()
-//                         }
-//                     });
-
-//                     error!("Compile error:\n{}", log);
-//                 }
-//             }
-//         }
-
-//         self.branch.modified()
-//     }
-
-//     pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ShaderName {
-//         self.branch.panic_if_outdated(global);
-//         &self.name
-//     }
-// }
-
-// pub struct Program {
-//     shaders: Vec<Shader>,
-//     branch: ic::Branch,
-//     name: ProgramName,
-// }
-
-// impl Program {
-//     pub fn new(gl: &gl::Gl, shaders: Vec<Shader>) -> Self {
-//         let mut program_name = ProgramName::new(gl);
-
-//         program_name.attach(gl, shaders.iter().map(|shader| &shader.name));
-
-//         Self {
-//             shaders,
-//             branch: ic::Branch::dirty(),
-//             name: program_name,
-//         }
-//     }
-
-//     pub fn modified(&self) -> ic::Modified {
-//         self.branch.modified()
-//     }
-
-//     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
-//         if self.branch.verify(&world.global) {
-//             let modified = self
-//                 .shaders
-//                 .iter_mut()
-//                 .map(|shader| shader.update(gl, world))
-//                 .max()
-//                 .unwrap_or(self.branch.modified());
-
-//             if self.branch.recompute(&modified) {
-//                 self.name.link(gl);
-
-//                 if self.name.is_unlinked()
-//                     && self
-//                         .shaders
-//                         .iter()
-//                         .all(|shader| shader.name(&world.global).is_compiled())
-//                 {
-//                     let log = self.name.log(gl);
-
-//                     let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-//                         let i: usize = captures[0].parse().unwrap();
-//                         if i > 0 {
-//                             let i = i - 1;
-//                             let path = world.sources[i].path.strip_prefix(&world.resource_dir).unwrap();
-//                             path.display().to_string()
-//                         } else {
-//                             "<generated header>".to_string()
-//                         }
-//                     });
-
-//                     error!("Link error:\n{}", log);
-//                 }
-//             }
-//         }
-
-//         self.branch.modified()
-//     }
-
-//     pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ProgramName {
-//         self.branch.panic_if_outdated(global);
-//         &self.name
-//     }
-// }
-
-// /// Utility function to create a very common single file vertex and single file fragment shader.
-// pub fn vs_fs_program(gl: &gl::Gl, world: &mut World, vs: &'static str, fs: &'static str) -> Program {
-//     Program::new(
-//         gl,
-//         vec![
-//             Shader::new(gl, gl::VERTEX_SHADER, String::new(), vec![world.add_source(vs)]),
-//             Shader::new(gl, gl::FRAGMENT_SHADER, String::new(), vec![world.add_source(fs)]),
-//         ],
-//     )
-// }
-
-pub struct ShaderVariables {
+pub struct Variables {
+    pub light_space: LightSpace,
     pub attenuation_mode: AttenuationMode,
     pub render_technique: RenderTechnique,
+}
+
+pub struct NativeSourceIndices {
+    pub light_space: SourceIndex,
+    pub attenuation_mode: SourceIndex,
+    pub render_technique: SourceIndex,
 }
 
 pub struct ShaderCompiler {
     pub memory: Memory,
     pub parser: Parser,
-    pub attenuation_mode_index: SourceIndex,
-    pub render_technique_index: SourceIndex,
+    pub variables: Variables,
+    pub indices: NativeSourceIndices,
 }
 
 impl ShaderCompiler {
-    pub fn new(current: &Current) -> Self {
+    pub fn new(current: &Current, variables: Variables) -> Self {
         let parser = Parser::new();
         let mut memory = Memory::new();
-
-        let attenuation_mode_index = memory.add_source(
-            PathBuf::from("native/ATTENUATION_MODE"),
-            Source::new(current, SourceReader::AttenuationMode, PathBuf::from(file!())),
-        );
-
-        let render_technique_index = memory.add_source(
-            PathBuf::from("native/RENDER_TECHNIQUE"),
-            Source::new(current, SourceReader::RenderTechnique, PathBuf::from(file!())),
-        );
+        let indices = NativeSourceIndices {
+            light_space: memory.add_source(
+                PathBuf::from("native/LIGHT_SPACE"),
+                Source::new(current, SourceReader::LightSpace, PathBuf::from(file!())),
+            ),
+            attenuation_mode: memory.add_source(
+                PathBuf::from("native/ATTENUATION_MODE"),
+                Source::new(current, SourceReader::AttenuationMode, PathBuf::from(file!())),
+            ),
+            render_technique: memory.add_source(
+                PathBuf::from("native/RENDER_TECHNIQUE"),
+                Source::new(current, SourceReader::RenderTechnique, PathBuf::from(file!())),
+            ),
+        };
 
         Self {
             memory,
             parser,
-            attenuation_mode_index,
-            render_technique_index,
+            variables,
+            indices,
         }
+    }
+
+    pub fn source_mut(&mut self, source_index: SourceIndex) -> &mut Source {
+        Rc::get_mut(&mut self.memory.sources[source_index]).unwrap()
+    }
+
+    pub fn light_space(&self) -> LightSpace {
+        self.variables.light_space
+    }
+
+    pub fn replace_light_space(&mut self, current: &mut Current, light_space: LightSpace) -> LightSpace {
+        let old = std::mem::replace(&mut self.variables.light_space, light_space);
+        if old != light_space {
+            self.source_mut(self.indices.light_space)
+                .last_modified
+                .modify(current);
+        }
+        old
+    }
+
+    pub fn attenuation_mode(&self) -> AttenuationMode {
+        self.variables.attenuation_mode
+    }
+
+    pub fn replace_attenuation_mode(
+        &mut self,
+        current: &mut Current,
+        attenuation_mode: AttenuationMode,
+    ) -> AttenuationMode {
+        let old = std::mem::replace(&mut self.variables.attenuation_mode, attenuation_mode);
+        if old != attenuation_mode {
+            self.source_mut(self.indices.attenuation_mode)
+                .last_modified
+                .modify(current);
+        }
+        old
+    }
+
+    pub fn render_technique(&self) -> RenderTechnique {
+        self.variables.render_technique
+    }
+
+    pub fn replace_render_technique(
+        &mut self,
+        current: &mut Current,
+        render_technique: RenderTechnique,
+    ) -> RenderTechnique {
+        let old = std::mem::replace(&mut self.variables.render_technique, render_technique);
+        if old != render_technique {
+            self.source_mut(self.indices.render_technique)
+                .last_modified
+                .modify(current);
+        }
+        old
     }
 }

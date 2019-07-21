@@ -140,15 +140,11 @@ pub trait ValueAsBytes {
 
 impl<T> ValueAsBytes for T {
     fn value_as_bytes(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self as *const Self as *const u8, std::mem::size_of::<Self>())
-        }
+        unsafe { std::slice::from_raw_parts(self as *const Self as *const u8, std::mem::size_of::<Self>()) }
     }
 
     fn value_as_bytes_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            std::slice::from_raw_parts_mut(self as *mut Self as *mut u8, std::mem::size_of::<Self>())
-        }
+        unsafe { std::slice::from_raw_parts_mut(self as *mut Self as *mut u8, std::mem::size_of::<Self>()) }
     }
 }
 
@@ -158,9 +154,7 @@ pub trait SliceToBytes {
 
 impl<T> SliceToBytes for [T] {
     fn slice_to_bytes(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
-        }
+        unsafe { std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self)) }
     }
 }
 
@@ -173,4 +167,3 @@ impl<T> VecToBytes for Vec<T> {
         (&self[..]).slice_to_bytes()
     }
 }
-
