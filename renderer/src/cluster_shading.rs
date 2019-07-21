@@ -85,14 +85,19 @@ impl ClusterData {
 }
 
 pub struct ClusterCamera {
-    pub hmd_to_clp: Matrix4<f64>,
-    pub clp_to_hmd: Matrix4<f64>,
+    // Depth pass.
+    pub wld_to_cam: Matrix4<f64>,
+    pub cam_to_wld: Matrix4<f64>,
 
+    pub cam_to_clp: Matrix4<f64>,
+    pub clp_to_cam: Matrix4<f64>,
+
+    // Cluster orientation and dimensions.
     pub wld_to_hmd: Matrix4<f64>,
     pub hmd_to_wld: Matrix4<f64>,
 
-    pub depth_texture: gl::TextureName,
-    pub depth_dims: Vector2<u32>,
+    pub hmd_to_clp: Matrix4<f64>,
+    pub clp_to_hmd: Matrix4<f64>,
 }
 
 pub struct ClusterResources {
@@ -115,20 +120,6 @@ impl ClusterResources {
             light_indices: Vec::new(),
             cpu_start: None,
             cpu_end: None,
-            texture_name: unsafe {
-                let name = gl.create_texture();
-                name
-                    let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
-                depth_texture.update(gl, texture_update);
-
-                // Framebuffers.
-
-                let framebuffer_name = create_framebuffer!(
-                    gl,
-                    (gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name()),
-                );
-            }
-            texture_dims: Vector2::new(0, 0),
         }
     }
 }
