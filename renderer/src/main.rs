@@ -49,13 +49,13 @@ mod viewport;
 mod window_mode;
 mod world;
 
-use crate::shader_compiler::ShaderCompiler;
 use crate::bounding_box::*;
 use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
 use crate::profiling::*;
+use crate::shader_compiler::{EntryPoint, ShaderCompiler, ShaderVariables};
 use crate::text_rendering::{FontContext, TextBox};
 // use crate::mono_stereo::*;
 use crate::rendering::*;
@@ -345,8 +345,37 @@ fn main() {
             current,
             rain_drops: Vec::new(),
             shader_compiler,
+            shader_variables: ShaderVariables {
+                render_technique: RenderTechnique::Clustered,
+                attenuation_mode: AttenuationMode::Interpolated,
+            },
         }
     };
+
+    let mut ep = {
+        let relative_path: PathBuf = ["line_renderer.vert"].iter().collect();
+        let absolute_path: PathBuf = [world.resource_dir.as_path(), relative_path.as_path()].iter().collect();
+        let source_index = world.shader_compiler.memory.add_source(
+            absolute_path.clone(),
+            crate::shader_compiler::Source::new(
+                &world.current,
+                crate::shader_compiler::SourceReader::File(absolute_path),
+                relative_path,
+            ),
+        );
+
+        EntryPoint {
+            source_index,
+            last_verified: incremental::LastVerified::dirty(),
+            last_computed: incremental::LastComputed::dirty(),
+            contents: String::new(),
+            included: vec![source_index],
+        }
+    };
+
+    ep.update(&mut world);
+
+    println!("{}", ep.contents);
 
     unsafe { gl_window.make_current().unwrap() };
 
@@ -390,10 +419,7 @@ fn main() {
 
     let vr_context = vr::Context::new(vr::ApplicationType::Scene)
         .map_err(|error| {
-            eprintln!(
-                "Failed to acquire context: {:?}",
-                error
-            );
+            eprintln!("Failed to acquire context: {:?}", error);
         })
         .ok();
 

@@ -30,6 +30,7 @@ pub struct World {
     pub cameras: CameraMap<camera::SmoothCamera>,
     pub rain_drops: Vec<rain::Particle>,
     pub shader_compiler: ShaderCompiler,
+    pub shader_variables: ShaderVariables,
 }
 
 impl World {
