@@ -543,6 +543,18 @@ fn main() {
             });
         }
 
+        struct ClusterParameters {
+            pub render_dims: Vector2<u32>,
+
+            pub wld_to_cam: Matrix4<f64>,
+            pub cam_to_wld: Matrix4<f64>,
+
+            pub cam_to_clp: Matrix4<f64>,
+            pub clp_to_cam: Matrix4<f64>,
+
+            pub cam_pos_in_wld: Point3<f64>,
+        }
+
         if world.render_technique.value == RenderTechnique::Clustered {
             let cluster_camera = &world.cameras.main;
             let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
