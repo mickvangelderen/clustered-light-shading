@@ -86,11 +86,11 @@ impl ClusterData {
 
 pub struct ClusterCamera {
     // Depth pass.
-    pub wld_to_cam: Matrix4<f64>,
-    pub cam_to_wld: Matrix4<f64>,
+    // pub wld_to_cam: Matrix4<f64>,
+    // pub cam_to_wld: Matrix4<f64>,
 
-    pub cam_to_clp: Matrix4<f64>,
-    pub clp_to_cam: Matrix4<f64>,
+    // pub cam_to_clp: Matrix4<f64>,
+    // pub clp_to_cam: Matrix4<f64>,
 
     // Cluster orientation and dimensions.
     pub wld_to_hmd: Matrix4<f64>,

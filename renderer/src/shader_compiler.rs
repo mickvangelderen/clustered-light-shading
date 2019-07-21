@@ -6,15 +6,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-type SourceIndex = usize;
+pub type SourceIndex = usize;
 
 #[derive(Debug, Clone)]
-enum Token {
+pub enum Token {
     Literal(String),
     Include(PathBuf),
 }
 
-type Tokens = Vec<Token>;
+pub type Tokens = Vec<Token>;
 
 #[derive(Debug)]
 pub struct Parser {
@@ -22,16 +22,16 @@ pub struct Parser {
 }
 
 impl Parser {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            include_regex: regex::RegexBuilder::new(r#"^\s*#include "(.*)"\s*\r?\n"#)
+            include_regex: regex::RegexBuilder::new(r#"^[ \t]*#include "(.*)"[ \t]*\r?\n"#)
                 .multi_line(true)
                 .build()
                 .unwrap(),
         }
     }
 
-    fn parse(&self, source: &str, source_index: SourceIndex, tokens: &mut Vec<Token>) {
+    pub fn parse(&self, source: &str, source_index: SourceIndex, tokens: &mut Vec<Token>) {
         tokens.clear();
         let mut literal_start = 0;
         let mut current_line = 1;
@@ -77,24 +77,21 @@ impl Parser {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-enum SourceReader {
+pub enum SourceReader {
     File(PathBuf),
     AttenuationMode,
     RenderTechnique,
 }
 
-const ATTENUATION_MODE_FILE: &str = file!();
-
 impl SourceReader {
-    fn read(&self, source_index: SourceIndex, world: &World, tokens: &mut Tokens) {
+    pub fn read(&self, source_index: SourceIndex, vars: &ShaderVariables, parser: &Parser, tokens: &mut Tokens) {
         match *self {
             SourceReader::File(ref path) => {
-                let contents = std::fs::read_to_string(path).unwrap();
-                // TODO PARSE
-                *tokens = vec![Token::Literal(contents)];
+                let source = std::fs::read_to_string(path).unwrap();
+                parser.parse(&source, source_index, tokens);
             }
             SourceReader::AttenuationMode => {
-                let define = match world.attenuation_mode.value {
+                let define = match vars.attenuation_mode {
                     AttenuationMode::Step => "ATTENUATION_MODE_STEP",
                     AttenuationMode::Linear => "ATTENUATION_MODE_LINEAR",
                     AttenuationMode::Physical => "ATTENUATION_MODE_PHYSICAL",
@@ -103,7 +100,7 @@ impl SourceReader {
                     AttenuationMode::Smooth => "ATTENUATION_MODE_SMOOTH",
                 };
 
-                *tokens = vec![Token::Literal(format!(
+                tokens.push(Token::Literal(format!(
                     "\
                      #line {line} {source_index}\n\
                      #define {define}\n\
@@ -111,7 +108,7 @@ impl SourceReader {
                     line = line!() - 2,
                     source_index = source_index,
                     define = define,
-                ))];
+                )));
             }
             SourceReader::RenderTechnique => {
                 *tokens = vec![Token::Literal(format!(
@@ -125,16 +122,16 @@ impl SourceReader {
 }
 
 #[derive(Debug)]
-struct Source {
-    reader: SourceReader,
-    name: PathBuf,
-    last_modified: LastModified,
-    last_computed: LastComputed,
-    tokens: Tokens,
+pub struct Source {
+    pub reader: SourceReader,
+    pub name: PathBuf,
+    pub last_modified: LastModified,
+    pub last_computed: LastComputed,
+    pub tokens: Tokens,
 }
 
 impl Source {
-    fn new(current: &Current, reader: SourceReader, name: PathBuf) -> Self {
+    pub fn new(current: &Current, reader: SourceReader, name: PathBuf) -> Self {
         Self {
             reader,
             name,
@@ -144,19 +141,19 @@ impl Source {
         }
     }
 
-    fn update(&mut self, source_index: SourceIndex, world: &World) {
+    pub fn update(&mut self, source_index: SourceIndex, vars: &ShaderVariables, parser: &Parser) {
         if self.last_computed.should_compute(&self.last_modified) {
             self.last_computed.update_to(&self.last_modified);
-            self.reader.read(source_index, world, &mut self.tokens);
+            self.reader.read(source_index, vars, parser, &mut self.tokens);
             println!("Updated {:?}.", self);
         }
     }
 }
 
 #[derive(Debug)]
-struct Memory {
-    path_to_source_index: HashMap<PathBuf, SourceIndex>,
-    sources: Vec<Rc<Source>>,
+pub struct Memory {
+    pub path_to_source_index: HashMap<PathBuf, SourceIndex>,
+    pub sources: Vec<Rc<Source>>,
 }
 
 impl Memory {
@@ -167,26 +164,16 @@ impl Memory {
         }
     }
 
-    fn source_index(&mut self, path: impl AsRef<Path>) -> Option<SourceIndex> {
-        let path = path.as_ref();
+    pub fn source_index(&mut self, path: impl AsRef<Path>) -> Option<SourceIndex> {
         self.path_to_source_index.get(path.as_ref()).copied()
     }
 
-    fn add_source(&mut self, source_path: PathBuf, source: Source) -> SourceIndex {
+    pub fn add_source(&mut self, source_path: PathBuf, source: Source) -> SourceIndex {
         let source_index = self.sources.len();
         self.sources.push(Rc::new(source));
         self.path_to_source_index.insert(source_path, source_index);
         source_index
     }
-}
-
-#[derive(Debug)]
-struct EntryPoint {
-    file_index: SourceIndex,
-    last_verified: LastVerified,
-    last_computed: LastComputed,
-    contents: String,
-    included: Vec<SourceIndex>,
 }
 
 enum Presence {
@@ -203,8 +190,17 @@ fn vec_set_add<T: Copy + PartialEq>(vec: &mut Vec<T>, val: T) -> Presence {
     }
 }
 
+#[derive(Debug)]
+pub struct EntryPoint {
+    pub source_index: SourceIndex,
+    pub last_verified: LastVerified,
+    pub last_computed: LastComputed,
+    pub contents: String,
+    pub included: Vec<SourceIndex>,
+}
+
 impl EntryPoint {
-    fn update(&mut self, world: &mut World) {
+    pub fn update(&mut self, world: &mut World) {
         if self.last_verified.should_verify(&world.current) {
             self.last_verified.update_to(&world.current);
         } else {
@@ -228,7 +224,7 @@ impl EntryPoint {
             self.contents.clear();
             self.included.clear();
 
-            process(self, world, self.file_index);
+            process(self, world, self.source_index);
 
             println!("Updated {:?}.", self);
         }
@@ -239,13 +235,11 @@ impl EntryPoint {
                 return;
             }
 
-            let mem = &mut world.shader_compiler.memory;
-
-            let source = Rc::get_mut(&mut mem.sources[source_index]).unwrap();
-            source.update(source_index, world);
+            let source = Rc::get_mut(&mut world.shader_compiler.memory.sources[source_index]).unwrap();
+            source.update(source_index, &world.shader_variables, &world.shader_compiler.parser);
 
             // Clone the source rc so we can access tokens while mutating the tokens vec.
-            let source = Rc::clone(&mem.sources[source_index]);
+            let source = Rc::clone(&world.shader_compiler.memory.sources[source_index]);
 
             ep.last_computed.update_to(&source.last_modified);
 
@@ -256,7 +250,11 @@ impl EntryPoint {
                     }
                     Token::Include(ref relative_path) => {
                         let source_index = if relative_path.starts_with("native/") {
-                            mem.source_index(relative_path).expect("Unknown native path.")
+                            world
+                                .shader_compiler
+                                .memory
+                                .source_index(relative_path)
+                                .expect("Unknown native path.")
                         } else {
                             let parent_path = match source.reader {
                                 SourceReader::File(ref path) => path.parent().unwrap(),
@@ -264,15 +262,19 @@ impl EntryPoint {
                             };
                             let absolute_path = std::fs::canonicalize(parent_path.join(relative_path)).unwrap();
 
-                            mem.source_index(absolute_path).unwrap_or_else(|| {
-                                let resource_path = absolute_path.strip_prefix(&world.resource_dir).unwrap();
-                                let source = Source::new(
-                                    &world.current,
-                                    SourceReader::File(absolute_path.clone()),
-                                    resource_path.to_owned(),
-                                );
-                                mem.add_source(absolute_path, source)
-                            })
+                            world
+                                .shader_compiler
+                                .memory
+                                .source_index(&absolute_path)
+                                .unwrap_or_else(|| {
+                                    let resource_path = absolute_path.strip_prefix(&world.resource_dir).unwrap();
+                                    let source = Source::new(
+                                        &world.current,
+                                        SourceReader::File(absolute_path.clone()),
+                                        resource_path.to_owned(),
+                                    );
+                                    world.shader_compiler.memory.add_source(absolute_path, source)
+                                })
                         };
 
                         process(ep, world, source_index);
@@ -494,6 +496,11 @@ impl EntryPoint {
 //         ],
 //     )
 // }
+
+pub struct ShaderVariables {
+    pub attenuation_mode: AttenuationMode,
+    pub render_technique: RenderTechnique,
+}
 
 pub struct ShaderCompiler {
     pub memory: Memory,
