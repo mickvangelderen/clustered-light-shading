@@ -12,6 +12,7 @@ pub struct World {
     pub tick: u64,
     pub paused: bool,
     pub global: ic::Global,
+    pub current: ::incremental::Current,
     pub clear_color: [f32; 3],
     pub window_mode: WindowMode,
     pub display_mode: u32,
@@ -28,6 +29,7 @@ pub struct World {
     pub transition_camera: camera::TransitionCamera,
     pub cameras: CameraMap<camera::SmoothCamera>,
     pub rain_drops: Vec<rain::Particle>,
+    pub shader_compiler: ShaderCompiler,
 }
 
 impl World {

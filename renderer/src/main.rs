@@ -31,7 +31,6 @@ mod filters;
 pub mod frustrum;
 mod gl_ext;
 mod glutin_ext;
-mod incremental;
 mod keyboard;
 mod light;
 mod line_renderer;
@@ -42,6 +41,7 @@ mod profiling;
 mod rain;
 mod rendering;
 mod resources;
+mod shader_compiler;
 mod text_renderer;
 mod text_rendering;
 mod timings;
@@ -49,6 +49,7 @@ mod viewport;
 mod window_mode;
 mod world;
 
+use crate::shader_compiler::ShaderCompiler;
 use crate::bounding_box::*;
 use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
@@ -296,9 +297,12 @@ fn main() {
         }
 
         let mut global = ic::Global::new();
+        let mut current = ::incremental::Current::new();
 
         let win_dpi = gl_window.get_hidpi_factor();
         let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
+
+        let shader_compiler = ShaderCompiler::new(&current);
 
         World {
             epoch: Instant::now(),
@@ -338,7 +342,9 @@ fn main() {
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             }),
             global,
+            current,
             rain_drops: Vec::new(),
+            shader_compiler,
         }
     };
 
