@@ -200,6 +200,27 @@ pub struct EntryPoint {
 }
 
 impl EntryPoint {
+    pub fn new(world: &mut World, relative_path: impl Into<PathBuf>) -> Self {
+        let relative_path = relative_path.into();
+        let absolute_path: PathBuf = [world.resource_dir.as_path(), relative_path.as_path()].iter().collect();
+        let source_index = world.shader_compiler.memory.add_source(
+            absolute_path.clone(),
+            crate::shader_compiler::Source::new(
+                &world.current,
+                crate::shader_compiler::SourceReader::File(absolute_path),
+                relative_path,
+            ),
+        );
+
+        EntryPoint {
+            source_index,
+            last_verified: incremental::LastVerified::dirty(),
+            last_computed: incremental::LastComputed::dirty(),
+            contents: String::new(),
+            included: vec![source_index],
+        }
+    }
+
     pub fn update(&mut self, world: &mut World) {
         if self.last_verified.should_verify(&world.current) {
             self.last_verified.update_to(&world.current);
