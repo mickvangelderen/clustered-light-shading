@@ -95,18 +95,6 @@ layout(std140, binding = CAMERA_BUFFER_BINDING) uniform CameraBuffer {
 };
 ";
 
-#[derive(Debug)]
-pub struct ShaderSource {
-    pub path: PathBuf,
-    pub modified: ic::Modified,
-}
-
-impl ShaderSource {
-    pub fn read(&self) -> String {
-        std::fs::read_to_string(&self.path).unwrap()
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
 #[repr(u32)]
 pub enum LightSpace {
@@ -115,40 +103,12 @@ pub enum LightSpace {
     Cam = 3,
 }
 
-impl LightSpace {
-    pub fn source(self) -> &'static str {
-        match self {
-            LightSpace::Wld => "#define LIGHT_SPACE_WLD\n",
-            LightSpace::Hmd => "#define LIGHT_SPACE_HMD\n",
-            LightSpace::Cam => "#define LIGHT_SPACE_CAM\n",
-        }
-    }
-
-    pub fn regex() -> Regex {
-        Regex::new(r"\bLIGHT_SPACE_(WLD|HMD|CAM)\b").unwrap()
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
 #[repr(u32)]
 pub enum RenderTechnique {
     Naive = 1,
     Tiled = 2,
     Clustered = 3,
-}
-
-impl RenderTechnique {
-    pub fn source(self) -> &'static str {
-        match self {
-            RenderTechnique::Naive => "#define RENDER_TECHNIQUE_NAIVE\n",
-            RenderTechnique::Tiled => "#define RENDER_TECHNIQUE_TILED\n",
-            RenderTechnique::Clustered => "#define RENDER_TECHNIQUE_CLUSTERED\n",
-        }
-    }
-
-    pub fn regex() -> Regex {
-        Regex::new(r"\bRENDER_TECHNIQUE_(NAIVE|TILED|CLUSTERED)\b").unwrap()
-    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -180,141 +140,59 @@ impl AttenuationMode {
 }
 
 pub struct Shader {
-    header: String,
-    source_indices: Vec<usize>,
-    light_space: bool,
-    render_technique: bool,
-    attenuation_mode: bool,
-    pub branch: ic::Branch,
     name: ShaderName,
+    entry_point: EntryPoint,
 }
 
 impl Shader {
-    pub fn new(gl: &gl::Gl, kind: impl Into<gl::ShaderKind>, header: String, source_indices: Vec<usize>) -> Self {
+    pub fn new(gl: &gl::Gl, kind: impl Into<gl::ShaderKind>, entry_point: EntryPoint) -> Self {
         Self {
-            header,
-            source_indices,
-            light_space: false,
-            render_technique: false,
-            attenuation_mode: false,
-            branch: ic::Branch::dirty(),
             name: ShaderName::new(gl, kind.into()),
+            entry_point,
         }
     }
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
-        let global = &world.global;
-        if self.branch.verify(global) {
-            let modified = self
-                .source_indices
-                .iter()
-                .map(|&i| world.sources[i].modified)
-                .chain(
-                    [
-                        (self.light_space, world.light_space.modified),
-                        (self.render_technique, world.render_technique.modified),
-                        (self.attenuation_mode, world.attenuation_mode.modified),
-                    ]
-                    .iter()
-                    .flat_map(
-                        |&(does_depend, modified)| {
-                            if does_depend {
-                                Some(modified)
-                            } else {
-                                None
-                            }
-                        },
-                    ),
-                )
-                .max()
-                .unwrap_or(ic::Modified::NONE);
+    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> bool {
+        let updated = self.entry_point.update(world);
 
-            if self.branch.recompute(&modified) {
-                let sources: Vec<[String; 2]> = self
-                    .source_indices
-                    .iter()
-                    .map(|&i| [format!("#line 1 {}\n", i + 1), world.sources[i].read()])
-                    .collect();
+        if updated {
+            self.name.compile(
+                gl,
+                [
+                    COMMON_DECLARATION,
+                    CAMERA_BUFFER_DECLARATION,
+                    crate::light::LIGHT_BUFFER_DECLARATION,
+                    crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
+                    &self.entry_point.contents,
+                ]
+                .iter(),
+            );
 
-                self.light_space = sources
-                    .iter()
-                    .any(|[_, source]| world.light_space_regex.is_match(source));
+            if self.name.is_compiled() {
+                let name = world.shader_compiler.memory.sources[self.entry_point.source_index]
+                    .name
+                    .to_str()
+                    .unwrap();
+                info!("Compiled {}.", name);
+            } else {
+                let log = self.name.log(gl);
 
-                self.render_technique = sources
-                    .iter()
-                    .any(|[_, source]| world.render_technique_regex.is_match(source));
+                let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
+                    let i: usize = captures[0].parse().unwrap();
+                    world.shader_compiler.memory.sources[i].name.to_str().unwrap()
+                });
 
-                self.attenuation_mode = sources
-                    .iter()
-                    .any(|[_, source]| world.attenuation_mode_regex.is_match(source));
-
-                self.name.compile(
-                    gl,
-                    [
-                        COMMON_DECLARATION,
-                        CAMERA_BUFFER_DECLARATION,
-                        crate::light::LIGHT_BUFFER_DECLARATION,
-                        crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
-                        self.header.as_str(),
-                    ]
-                    .iter()
-                    .copied()
-                    .chain(
-                        [
-                            if self.light_space {
-                                Some(world.light_space.value.source())
-                            } else {
-                                None
-                            },
-                            if self.render_technique {
-                                Some(world.render_technique.value.source())
-                            } else {
-                                None
-                            },
-                            if self.attenuation_mode {
-                                Some(world.attenuation_mode.value.source())
-                            } else {
-                                None
-                            },
-                        ]
-                        .iter()
-                        .flat_map(|&x| x),
-                    )
-                    .chain(sources.iter().flat_map(|x| x.iter().map(|s| s.as_str()))),
-                );
-
-                if self.name.is_uncompiled() {
-                    let log = self.name.log(gl);
-
-                    let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-                        let i: usize = captures[0].parse().unwrap();
-                        if i > 0 {
-                            let i = i - 1;
-                            let path = world.sources[i].path.strip_prefix(&world.resource_dir).unwrap();
-                            path.display().to_string()
-                        } else {
-                            "<generated header>".to_string()
-                        }
-                    });
-
-                    error!("Compile error:\n{}", log);
-                }
+                error!("Compile error:\n{}", log);
             }
         }
 
-        self.branch.modified()
-    }
-
-    pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ShaderName {
-        self.branch.panic_if_outdated(global);
-        &self.name
+        updated
     }
 }
 
 pub struct Program {
     shaders: Vec<Shader>,
-    branch: ic::Branch,
-    name: ProgramName,
+    pub name: ProgramName,
 }
 
 impl Program {
@@ -325,57 +203,32 @@ impl Program {
 
         Self {
             shaders,
-            branch: ic::Branch::dirty(),
             name: program_name,
         }
     }
 
-    pub fn modified(&self) -> ic::Modified {
-        self.branch.modified()
-    }
+    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> bool {
+        let updated = self
+            .shaders
+            .iter_mut()
+            .fold(false, |updated, shader| shader.update(gl, world) || updated);
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> ic::Modified {
-        if self.branch.verify(&world.global) {
-            let modified = self
-                .shaders
-                .iter_mut()
-                .map(|shader| shader.update(gl, world))
-                .max()
-                .unwrap_or(self.branch.modified());
+        if updated {
+            self.name.link(gl);
 
-            if self.branch.recompute(&modified) {
-                self.name.link(gl);
+            if self.name.is_unlinked() && self.shaders.iter().all(|shader| shader.name.is_compiled()) {
+                let log = self.name.log(gl);
 
-                if self.name.is_unlinked()
-                    && self
-                        .shaders
-                        .iter()
-                        .all(|shader| shader.name(&world.global).is_compiled())
-                {
-                    let log = self.name.log(gl);
+                let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
+                    let i: usize = captures[0].parse().unwrap();
+                    world.shader_compiler.memory.sources[i].name.to_str().unwrap()
+                });
 
-                    let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-                        let i: usize = captures[0].parse().unwrap();
-                        if i > 0 {
-                            let i = i - 1;
-                            let path = world.sources[i].path.strip_prefix(&world.resource_dir).unwrap();
-                            path.display().to_string()
-                        } else {
-                            "<generated header>".to_string()
-                        }
-                    });
-
-                    error!("Link error:\n{}", log);
-                }
+                error!("Link error:\n{}", log);
             }
         }
 
-        self.branch.modified()
-    }
-
-    pub fn name<'a>(&'a self, global: &'a ic::Global) -> &'a ProgramName {
-        self.branch.panic_if_outdated(global);
-        &self.name
+        updated
     }
 }
 
@@ -384,8 +237,8 @@ pub fn vs_fs_program(gl: &gl::Gl, world: &mut World, vs: &'static str, fs: &'sta
     Program::new(
         gl,
         vec![
-            Shader::new(gl, gl::VERTEX_SHADER, String::new(), vec![world.add_source(vs)]),
-            Shader::new(gl, gl::FRAGMENT_SHADER, String::new(), vec![world.add_source(fs)]),
+            Shader::new(gl, gl::VERTEX_SHADER, EntryPoint::new(world, vs)),
+            Shader::new(gl, gl::FRAGMENT_SHADER, EntryPoint::new(world, fs)),
         ],
     )
 }

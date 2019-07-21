@@ -140,7 +140,6 @@ impl FontContext {
             .filter_map(|block| std::char::from_u32(block.id.to_ne()).map(|id| (id, GlyphMeta::from(block))))
             .collect();
 
-
         let texture_name = unsafe {
             let name = gl.create_texture(gl::TEXTURE_2D);
             gl.texture_storage_2d(

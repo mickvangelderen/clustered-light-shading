@@ -20,8 +20,8 @@ impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
         unsafe {
             self.update(gl, world);
-            if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
-                gl.use_program(*program_name);
+            if let ProgramName::Linked(program_name) = self.program.name {
+                gl.use_program(program_name);
                 gl.bind_vertex_array(resources.cluster_vao);
 
                 let configuration = params.configuration;
@@ -100,13 +100,12 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.light_count_loc = get_uniform_location!(gl, *name, "current_light_count");
-                    self.debug_pass_loc = get_uniform_location!(gl, *name, "debug_pass");
-                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
+                    self.light_count_loc = get_uniform_location!(gl, name, "current_light_count");
+                    self.debug_pass_loc = get_uniform_location!(gl, name, "debug_pass");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
                 }
             }
         }

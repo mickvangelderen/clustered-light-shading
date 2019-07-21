@@ -18,7 +18,6 @@ impl<S: BaseFloat> Matrix4BaseFloatExt<S> for Matrix4<S> {
     fn from_scale_vector(vector: Vector3<S>) -> Self {
         Matrix4::from_nonuniform_scale(vector.x, vector.y, vector.z)
     }
-
 }
 
 pub trait PartialOrdExt {

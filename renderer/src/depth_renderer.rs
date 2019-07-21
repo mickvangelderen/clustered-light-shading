@@ -9,8 +9,8 @@ impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, world: &mut World, resources: &Resources) {
         unsafe {
             self.update(gl, world);
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
-                gl.use_program(*name);
+            if let ProgramName::Linked(name) = self.program.name {
+                gl.use_program(name);
                 gl.bind_vertex_array(resources.scene_pos_vao);
 
                 for (i, mesh_meta) in resources.mesh_metas.iter().enumerate() {
@@ -36,11 +36,10 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
                 }
             }
         }

@@ -147,7 +147,7 @@ impl ClusterResources {
 // LI = 4_000_000 (a bit much isn't it)
 
 // 1.1. (light_xyzr_wld_buffer[L]) upload light [x, y, z]_wld in world space.
-// 1.2. (light_xyzr_cls_buffer[L]) compute [[x, y, z]_cls | r_ wld] using wld_to_cls. 
+// 1.2. (light_xyzr_cls_buffer[L]) compute [[x, y, z]_cls | r_ wld] using wld_to_cls.
 
 // 2.1. (depth_buffer[WX, WH]) render depth W*H [z_wld]
 // 2.2. (active_clusters[CX, CY, CZ]) compute W*H [active|inactive] clusters.
@@ -180,7 +180,8 @@ impl ClusterResources {
 
         // First pass, compute cluster lengths and offsets.
         self.cluster_lengths.clear();
-        self.cluster_lengths.resize_with(cluster_count as usize, Default::default);
+        self.cluster_lengths
+            .resize_with(cluster_count as usize, Default::default);
 
         for (i, l) in point_lights.iter().enumerate() {
             if let Some(light_index) = cfg.light_index {
@@ -255,19 +256,22 @@ impl ClusterResources {
         self.cluster_meta.clear();
         self.cluster_meta.reserve(cluster_count as usize);
 
-        self.cluster_meta.extend(self.cluster_lengths.iter().scan(0, |offset, &length| {
-            let meta = ClusterMeta {
-                offset: *offset,
-                length: length,
-            };
-            *offset += length;
-            Some(meta)
-        }));
+        self.cluster_meta
+            .extend(self.cluster_lengths.iter().scan(0, |offset, &length| {
+                let meta = ClusterMeta {
+                    offset: *offset,
+                    length: length,
+                };
+                *offset += length;
+                Some(meta)
+            }));
 
         // Second pass
         self.cluster_lengths.clear();
-        self.cluster_lengths.resize_with(cluster_count as usize, Default::default);
-        self.light_indices.resize_with(total_light_indices as usize, Default::default);
+        self.cluster_lengths
+            .resize_with(cluster_count as usize, Default::default);
+        self.light_indices
+            .resize_with(total_light_indices as usize, Default::default);
 
         for (i, l) in point_lights.iter().enumerate() {
             if let Some(light_index) = cfg.light_index {
@@ -332,10 +336,13 @@ impl ClusterResources {
                             let light_offset = self.cluster_lengths[cluster_index as usize];
                             self.cluster_lengths[cluster_index as usize] += 1;
 
-                            let ClusterMeta { offset: cluster_offset, length: cluster_len } = self.cluster_meta[cluster_index as usize];
+                            let ClusterMeta {
+                                offset: cluster_offset,
+                                length: cluster_len,
+                            } = self.cluster_meta[cluster_index as usize];
                             debug_assert!(light_offset < cluster_len);
 
-                            self.light_indices[(cluster_offset +  light_offset) as usize] = i as u32;
+                            self.light_indices[(cluster_offset + light_offset) as usize] = i as u32;
                         }
                     }
                 }
@@ -371,4 +378,3 @@ struct GlobalClusterResources {
     pub fragments_per_cluster_program: ProgramName,
     pub compress_active_clusters_program: ProgramName,
 }
-

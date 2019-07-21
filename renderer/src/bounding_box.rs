@@ -1,5 +1,5 @@
-use cgmath::*;
 use crate::cgmath_ext::*;
+use cgmath::*;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BoundingBox<S> {
