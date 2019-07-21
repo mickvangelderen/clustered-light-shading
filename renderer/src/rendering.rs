@@ -216,15 +216,34 @@ impl Program {
         if updated {
             self.name.link(gl);
 
-            if self.name.is_unlinked() && self.shaders.iter().all(|shader| shader.name.is_compiled()) {
-                let log = self.name.log(gl);
+            if self.name.is_linked() {
+                // NOTE(mickvangelderen) EW!
+                let names: String = self
+                    .shaders
+                    .iter()
+                    .flat_map(|shader| {
+                        std::iter::once(
+                            world.shader_compiler.memory.sources[shader.entry_point.source_index]
+                                .name
+                                .to_str()
+                                .unwrap(),
+                        )
+                        .chain(std::iter::once(", "))
+                    })
+                    .collect();
+                info!("Linked [{}].", &names[0..names.len() - 2]);
+            } else {
+                // Don't repeat messages spewed by shader already.
+                if self.shaders.iter().all(|shader| shader.name.is_compiled()) {
+                    let log = self.name.log(gl);
 
-                let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-                    let i: usize = captures[0].parse().unwrap();
-                    world.shader_compiler.memory.sources[i].name.to_str().unwrap()
-                });
+                    let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
+                        let i: usize = captures[0].parse().unwrap();
+                        world.shader_compiler.memory.sources[i].name.to_str().unwrap()
+                    });
 
-                error!("Link error:\n{}", log);
+                    error!("Link error:\n{}", log);
+                }
             }
         }
 

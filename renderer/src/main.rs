@@ -344,11 +344,6 @@ fn main() {
         }
     };
 
-    let mut ep = EntryPoint::new(&mut world, "line_renderer.vert");
-    ep.update(&mut world);
-
-    println!("{}", ep.contents);
-
     unsafe { gl_window.make_current().unwrap() };
 
     let gl = unsafe { gl::Gl::load_with(|s| gl_window.context().get_proc_address(s) as *const _) };
