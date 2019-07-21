@@ -352,27 +352,7 @@ fn main() {
         }
     };
 
-    let mut ep = {
-        let relative_path: PathBuf = ["line_renderer.vert"].iter().collect();
-        let absolute_path: PathBuf = [world.resource_dir.as_path(), relative_path.as_path()].iter().collect();
-        let source_index = world.shader_compiler.memory.add_source(
-            absolute_path.clone(),
-            crate::shader_compiler::Source::new(
-                &world.current,
-                crate::shader_compiler::SourceReader::File(absolute_path),
-                relative_path,
-            ),
-        );
-
-        EntryPoint {
-            source_index,
-            last_verified: incremental::LastVerified::dirty(),
-            last_computed: incremental::LastComputed::dirty(),
-            contents: String::new(),
-            included: vec![source_index],
-        }
-    };
-
+    let mut ep = EntryPoint::new(&mut world, "line_renderer.vert");
     ep.update(&mut world);
 
     println!("{}", ep.contents);
