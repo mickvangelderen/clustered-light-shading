@@ -122,23 +122,6 @@ pub enum AttenuationMode {
     Smooth = 6,
 }
 
-impl AttenuationMode {
-    pub fn source(self) -> &'static str {
-        match self {
-            AttenuationMode::Step => "#define ATTENUATION_MODE_STEP\n",
-            AttenuationMode::Linear => "#define ATTENUATION_MODE_LINEAR\n",
-            AttenuationMode::Physical => "#define ATTENUATION_MODE_PHYSICAL\n",
-            AttenuationMode::Interpolated => "#define ATTENUATION_MODE_INTERPOLATED\n",
-            AttenuationMode::Reduced => "#define ATTENUATION_MODE_REDUCED\n",
-            AttenuationMode::Smooth => "#define ATTENUATION_MODE_SMOOTH\n",
-        }
-    }
-
-    pub fn regex() -> Regex {
-        Regex::new(r"\bATTENUATION_MODE_(STEP|LINEAR|PHYSICAL|INTERPOLATED|REDUCED|SMOOTH)\b").unwrap()
-    }
-}
-
 pub struct Shader {
     name: ShaderName,
     entry_point: EntryPoint,
