@@ -18,12 +18,4 @@ opt-level = 3
 
 [profile.test]
 opt-level = 3
- 
-[patch."https://github.com/mickvangelderen/openvr-sys-rust"]
-openvr-sys = { path = "../openvr-sys-rust" }
 
-[patch."https://github.com/mickvangelderen/openvr-rust"]
-openvr = { path = "../openvr-rust" }
-
-[patch."https://github.com/mickvangelderen/gl-typed-rust"]
-gl-typed = { path = "../gl-typed-rust" }
