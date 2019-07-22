@@ -699,18 +699,56 @@ fn main() {
                     gl::UNSIGNED_INT,
                     None,
                 );
+
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::FRAGMENTS_PER_CLUSTER_BINDING,
+                    cluster_resources.mark_buffer_name,
+                );
+
+                // // NOTE: Not sure if necessary for clears.
+                // gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
             }
 
             for camera in cluster_resources.cameras.iter() {
                 let main_index = main_pool.reserve(&gl, camera.frame_dims);
+                let main_resources = &mut main_pool.resources[main_index];
 
-                render_depth(
-                    &gl,
-                    &mut main_pool.resources[main_index],
-                    &resources,
-                    &mut world,
-                    &mut depth_renderer,
-                );
+                render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
+
+                unsafe {
+                    let program = &mut cls_renderer.fragments_per_cluster_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+
+                        gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
+                        gl.bind_texture_unit(0, main_resources.depth_texture.name());
+
+                        gl.uniform_2f(
+                            cls_renderer::FB_DIMS_LOC,
+                            main_resources.dims.cast::<f32>().unwrap().into(),
+                        );
+
+                        let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
+                            .cast::<f32>()
+                            .unwrap();
+
+                        gl.uniform_matrix4f(cls_renderer::CLP_TO_CLS_LOC, gl::MajorAxis::Column, clp_to_cls.as_ref());
+
+                        gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+
+                        gl.memory_barrier(
+                            gl::MemoryBarrierFlag::FRAMEBUFFER
+                                | gl::MemoryBarrierFlag::TEXTURE_FETCH
+                                | gl::MemoryBarrierFlag::SHADER_STORAGE,
+                        );
+
+                        assert_eq!(0, main_resources.dims.x % 16);
+                        assert_eq!(0, main_resources.dims.y % 16);
+                        gl.dispatch_compute(main_resources.dims.x as u32 / 16, main_resources.dims.y as u32 / 16, 1);
+                    }
+                }
 
                 // cls_renderer.render(cls_renderer::RenderParams {
                 //     gl: &gl,
@@ -973,6 +1011,7 @@ fn main() {
                             cluster_resources: &cluster_resources,
                             cluster_data: &cluster_data,
                             configuration: &configuration.clustered_light_shading,
+                            cls_to_clp: (cam_to_clp * wld_to_cam * cluster_data.cls_to_wld).cast().unwrap()
                         },
                         &mut world,
                         &resources,
