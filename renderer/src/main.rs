@@ -706,8 +706,8 @@ fn main() {
                     cluster_resources.mark_buffer_name,
                 );
 
-                // // NOTE: Not sure if necessary for clears.
-                // gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+                // NOTE: Not sure if necessary for clears.
+                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
             }
 
             for camera in cluster_resources.cameras.iter() {
@@ -730,23 +730,22 @@ fn main() {
                             main_resources.dims.cast::<f32>().unwrap().into(),
                         );
 
+                        // dbg!(camera.clp_to_cam);
+                        // dbg!(camera.cam_to_wld);
+                        // dbg!(cluster_data.wld_to_cls);
                         let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
                             .cast::<f32>()
                             .unwrap();
+                        // dbg!(clp_to_cls);
 
                         gl.uniform_matrix4f(cls_renderer::CLP_TO_CLS_LOC, gl::MajorAxis::Column, clp_to_cls.as_ref());
 
                         gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
 
-                        gl.memory_barrier(
-                            gl::MemoryBarrierFlag::FRAMEBUFFER
-                                | gl::MemoryBarrierFlag::TEXTURE_FETCH
-                                | gl::MemoryBarrierFlag::SHADER_STORAGE,
-                        );
+                        gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH);
 
-                        assert_eq!(0, main_resources.dims.x % 16);
-                        assert_eq!(0, main_resources.dims.y % 16);
                         gl.dispatch_compute(main_resources.dims.x as u32 / 16, main_resources.dims.y as u32 / 16, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
 
