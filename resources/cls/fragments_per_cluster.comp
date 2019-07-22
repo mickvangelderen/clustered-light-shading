@@ -1,0 +1,36 @@
+layout(location = DEPTH_SAMPLER_LOC) uniform sampler2D depth_sampler;
+layout(location = DEPTH_DIMS_LOC) uniform vec2 depth_dims;
+
+layout(location = CLP_TO_CLS_LOC) uniform mat4 clp_to_cls;
+layout(location = CLS_DIMS_LOC) uniform vec3 cls_dims;
+
+layout(binding = FRAGMENTS_PER_CLUSTER_BINDING) buffer OutputBuffer {
+  uint fragments_per_cluster[];
+};
+
+vec3 from_homogeneous(vec4 p) { return p.xyz / p.z; }
+
+vec4 to_homogeneous(vec3 p) { return vec4(p, 1.0); }
+
+uint index3(uvec3 indices, uvec3 dimensions) {
+  return (((indices.z * dimensions.y) + indices.y) * dimensions.x) + indices.x;
+}
+
+vec3 compute_pos_in_cls() {
+  // pos_in_ndc is known.
+  // inverse projection clp_to_cls is known.
+  // assuming w_cls = 1, we can compute pos_in_cls.
+  vec4 pos_in_ndc = to_homogeneous(vec3(
+      // xy
+      gl_GlobalInvocationID.xy / fb_dims * 2.0 - vec2(1.0),
+      // z
+      texture(depth_sampler, gl_GlobalInvocationID.xy).r));
+  return from_homogeneous(clp_to_cls * pos_in_ndc);
+}
+
+layout(local_size_x = 16, local_size_y = 16) in;
+void main() {
+  uvec3 idx_in_cls = uvec3(compute_pos_in_cls());
+  uint cluster_index = index3(idx_in_cls, cls_dims);
+  atomicAdd(fragments_per_cluster[cluster_index], 1);
+}
