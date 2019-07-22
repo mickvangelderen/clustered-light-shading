@@ -11,9 +11,6 @@ pub struct ClusterHeader {
 
 pub const CLUSTER_BUFFER_DECLARATION: &'static str = r"
 layout(std430, binding = CLUSTER_BUFFER_BINDING) buffer ClusterBuffer {
-    uvec4 cluster_dims;
-    mat4 wld_to_cls;
-    mat4 cls_to_wld;
     uint clusters[];
 };
 ";
@@ -39,8 +36,11 @@ where
 
 #[derive(Debug)]
 pub struct ClusterData {
-    pub dimensions: Vector3<f64>,
-    pub cls_origin: Point3<f64>,
+    pub dimensions: Vector3<u32>,
+
+    pub trans_from_cls_to_hmd: Vector3<f64>,
+    pub trans_from_hmd_to_cls: Vector3<f64>,
+
     pub scale_from_cls_to_hmd: Vector3<f64>,
     pub scale_from_hmd_to_cls: Vector3<f64>,
 
@@ -63,18 +63,23 @@ impl ClusterData {
         let bb_delta = bb.delta();
         let dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
 
-        let cls_origin = bb.min;
+        let trans_from_hmd_to_cls = Point3::origin() - bb.min;
+        let trans_from_cls_to_hmd = bb.min - Point3::origin();
+
         let scale_from_cls_to_hmd = bb_delta.div_element_wise(dimensions);
         let scale_from_hmd_to_cls = dimensions.div_element_wise(bb_delta);
 
         let cls_to_hmd: Matrix4<f64> =
-            Matrix4::from_translation(cls_origin.to_vec()) * Matrix4::from_scale_vector(scale_from_cls_to_hmd);
+            Matrix4::from_translation(trans_from_cls_to_hmd) * Matrix4::from_scale_vector(scale_from_cls_to_hmd);
         let hmd_to_cls: Matrix4<f64> =
-            Matrix4::from_scale_vector(scale_from_hmd_to_cls) * Matrix4::from_translation(-cls_origin.to_vec());
+            Matrix4::from_scale_vector(scale_from_hmd_to_cls) * Matrix4::from_translation(trans_from_hmd_to_cls);
 
         Self {
-            dimensions,
-            cls_origin,
+            dimensions: dimensions.cast().unwrap(),
+
+            trans_from_cls_to_hmd,
+            trans_from_hmd_to_cls,
+
             scale_from_cls_to_hmd,
             scale_from_hmd_to_cls,
 
@@ -82,15 +87,21 @@ impl ClusterData {
             wld_to_cls: hmd_to_cls * wld_to_hmd,
         }
     }
+
+    pub fn cluster_count(&self) -> u32 {
+        self.dimensions.product()
+    }
 }
 
 pub struct ClusterCamera {
     // Depth pass.
-    // pub wld_to_cam: Matrix4<f64>,
-    // pub cam_to_wld: Matrix4<f64>,
+    pub frame_dims: Vector2<i32>,
 
-    // pub cam_to_clp: Matrix4<f64>,
-    // pub clp_to_cam: Matrix4<f64>,
+    pub wld_to_cam: Matrix4<f64>,
+    pub cam_to_wld: Matrix4<f64>,
+
+    pub cam_to_clp: Matrix4<f64>,
+    pub clp_to_cam: Matrix4<f64>,
 
     // Cluster orientation and dimensions.
     pub wld_to_hmd: Matrix4<f64>,
@@ -102,6 +113,7 @@ pub struct ClusterCamera {
 
 pub struct ClusterResources {
     pub buffer_name: gl::BufferName,
+    pub mark_buffer_name: gl::BufferName,
     pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
@@ -114,6 +126,7 @@ impl ClusterResources {
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
             buffer_name: unsafe { gl.create_buffer() },
+            mark_buffer_name: unsafe { gl.create_buffer() },
             cameras: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),
@@ -176,6 +189,8 @@ impl ClusterResources {
         } = *space;
 
         let dimensions_u32 = dimensions.cast::<u32>().unwrap();
+        let dimensions = dimensions.cast::<f64>().unwrap();
+
         let cluster_count = dimensions_u32.product();
 
         // First pass, compute cluster lengths and offsets.

@@ -224,7 +224,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
+                    EntryPoint::new(world, "cls/compact_clusters_0.comp"),
                 )],
             ),
             compact_clusters_1_program: rendering::Program::new(
@@ -232,7 +232,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
+                    EntryPoint::new(world, "cls/compact_clusters_1.comp"),
                 )],
             ),
             compact_clusters_2_program: rendering::Program::new(
@@ -240,7 +240,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
-                    EntryPoint::new(world, "cls/fragments_per_cluster.comp"),
+                    EntryPoint::new(world, "cls/compact_clusters_2.comp"),
                 )],
             ),
             // dimensions_loc: gl::OptionUniformLocation::NONE,
