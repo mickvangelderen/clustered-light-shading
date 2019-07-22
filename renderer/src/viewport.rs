@@ -9,7 +9,7 @@ pub struct Viewport<S> {
 
 impl<S> Viewport<S>
 where
-    S: BaseNum
+    S: BaseNum,
 {
     #[inline]
     pub fn from_dimensions(dimensions: Vector2<S>) -> Self {

@@ -17,14 +17,14 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub mode: u32
+    pub mode: u32,
 }
 
 impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
         unsafe {
             self.update(gl, world);
-            if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
+            if let ProgramName::Linked(ref program_name) = self.program.name {
                 gl.use_program(*program_name);
 
                 if let Some(loc) = self.diffuse_sampler_loc.into() {
@@ -103,21 +103,20 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
 
-                    self.diffuse_sampler_loc = get_uniform_location!(gl, *name, "diffuse_sampler");
-                    self.normal_sampler_loc = get_uniform_location!(gl, *name, "normal_sampler");
-                    self.specular_sampler_loc = get_uniform_location!(gl, *name, "specular_sampler");
+                    self.diffuse_sampler_loc = get_uniform_location!(gl, name, "diffuse_sampler");
+                    self.normal_sampler_loc = get_uniform_location!(gl, name, "normal_sampler");
+                    self.specular_sampler_loc = get_uniform_location!(gl, name, "specular_sampler");
 
-                    self.diffuse_dimensions_loc = get_uniform_location!(gl, *name, "diffuse_dimensions");
-                    self.normal_dimensions_loc = get_uniform_location!(gl, *name, "normal_dimensions");
-                    self.specular_dimensions_loc = get_uniform_location!(gl, *name, "specular_dimensions");
+                    self.diffuse_dimensions_loc = get_uniform_location!(gl, name, "diffuse_dimensions");
+                    self.normal_dimensions_loc = get_uniform_location!(gl, name, "normal_dimensions");
+                    self.specular_dimensions_loc = get_uniform_location!(gl, name, "specular_dimensions");
 
-                    self.display_mode_loc = get_uniform_location!(gl, *name, "display_mode");
+                    self.display_mode_loc = get_uniform_location!(gl, name, "display_mode");
                 }
             }
         }
@@ -125,11 +124,8 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::Program::new(
-                gl,
-                vec![world.add_source("basic_renderer.vert")],
-                vec![world.add_source("basic_renderer.frag")],
-            ),
+            program: vs_fs_program(gl, world, "basic_renderer.vert", "basic_renderer.frag"),
+
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
 
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,

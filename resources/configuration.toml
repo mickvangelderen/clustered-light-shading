@@ -39,3 +39,7 @@ z1 = -200.0
 positional_velocity = 16.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
+
+[prefix_sum]
+pass_0_threads = 64
+pass_1_threads = 64

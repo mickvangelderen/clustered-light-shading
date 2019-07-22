@@ -1,8 +1,8 @@
-use crate::*;
 use crate::configuration;
 use crate::convert::*;
 use crate::light::*;
 use crate::rendering;
+use crate::*;
 use cgmath::*;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -461,7 +461,12 @@ impl Resources {
                 let obj = tobj::load_obj(&file_path).unwrap();
                 let vertex_count: usize = obj.0.iter().map(|model| model.mesh.indices.len()).sum();
                 let elapsed = now.elapsed();
-                info!("Loaded {:?} with {} vertices in {}µs.", file_path.display(), vertex_count, elapsed.as_micros());
+                info!(
+                    "Loaded {:?} with {} vertices in {}µs.",
+                    file_path.display(),
+                    vertex_count,
+                    elapsed.as_micros()
+                );
                 (rel_file_path, obj.0, obj.1)
             })
             .collect();
@@ -617,8 +622,12 @@ impl Resources {
                             index
                         })
                     } else {
-                        let rgba_u8 =
-                            rgba_f32_to_rgba_u8([material.specular[0], material.specular[1], material.specular[2], 1.0]);
+                        let rgba_u8 = rgba_f32_to_rgba_u8([
+                            material.specular[0],
+                            material.specular[1],
+                            material.specular[2],
+                            1.0,
+                        ]);
                         color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
                             let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
@@ -637,7 +646,11 @@ impl Resources {
                     }
                 }));
                 let elapsed = now.elapsed();
-                info!("Loaded {}MB of textures in {}µs.", total_bytes / 1000_000, elapsed.as_micros());
+                info!(
+                    "Loaded {}MB of textures in {}µs.",
+                    total_bytes / 1000_000,
+                    elapsed.as_micros()
+                );
             }
         }
 

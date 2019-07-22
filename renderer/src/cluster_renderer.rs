@@ -20,8 +20,8 @@ impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
         unsafe {
             self.update(gl, world);
-            if let ProgramName::Linked(program_name) = self.program.name(&world.global) {
-                gl.use_program(*program_name);
+            if let ProgramName::Linked(program_name) = self.program.name {
+                gl.use_program(program_name);
                 gl.bind_vertex_array(resources.cluster_vao);
 
                 let configuration = params.configuration;
@@ -30,7 +30,8 @@ impl Renderer {
                     let [xn, yn, zn]: [u32; 3] = params.cluster_data.dimensions.cast::<u32>().unwrap().into();
                     for zi in 0..zn {
                         if let Some(animate_z) = configuration.animate_z {
-                            if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32 {
+                            if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32
+                            {
                                 continue;
                             }
                         }
@@ -61,7 +62,12 @@ impl Renderer {
                                         gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
                                     }
 
-                                    gl.draw_elements(gl::TRIANGLES, resources.cluster_element_count, gl::UNSIGNED_INT, 0);
+                                    gl.draw_elements(
+                                        gl::TRIANGLES,
+                                        resources.cluster_element_count,
+                                        gl::UNSIGNED_INT,
+                                        0,
+                                    );
                                 }
                             }
                         }
@@ -94,13 +100,12 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.light_count_loc = get_uniform_location!(gl, *name, "current_light_count");
-                    self.debug_pass_loc = get_uniform_location!(gl, *name, "debug_pass");
-                    self.obj_to_wld_loc = get_uniform_location!(gl, *name, "obj_to_wld");
+                    self.light_count_loc = get_uniform_location!(gl, name, "current_light_count");
+                    self.debug_pass_loc = get_uniform_location!(gl, name, "debug_pass");
+                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
                 }
             }
         }
@@ -108,11 +113,7 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: rendering::Program::new(
-                gl,
-                vec![world.add_source("cluster_renderer.vert")],
-                vec![world.add_source("cluster_renderer.frag")],
-            ),
+            program: vs_fs_program(gl, world, "cluster_renderer.vert", "cluster_renderer.frag"),
             light_count_loc: gl::OptionUniformLocation::NONE,
             debug_pass_loc: gl::OptionUniformLocation::NONE,
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,

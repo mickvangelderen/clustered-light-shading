@@ -85,11 +85,19 @@ impl ClusterData {
 }
 
 pub struct ClusterCamera {
-    pub hmd_to_clp: Matrix4<f64>,
-    pub clp_to_hmd: Matrix4<f64>,
+    // Depth pass.
+    // pub wld_to_cam: Matrix4<f64>,
+    // pub cam_to_wld: Matrix4<f64>,
 
+    // pub cam_to_clp: Matrix4<f64>,
+    // pub clp_to_cam: Matrix4<f64>,
+
+    // Cluster orientation and dimensions.
     pub wld_to_hmd: Matrix4<f64>,
     pub hmd_to_wld: Matrix4<f64>,
+
+    pub hmd_to_clp: Matrix4<f64>,
+    pub clp_to_hmd: Matrix4<f64>,
 }
 
 pub struct ClusterResources {
@@ -116,6 +124,38 @@ impl ClusterResources {
     }
 }
 
+// Ballpark numbers
+//
+// light count
+// L = 1_000_000
+//
+// window dimensions
+// WX = 1920
+// WY = 1080
+//
+// cluster dimensions
+// CX = 400
+// CY = 200
+// CZ = 200
+//
+// active clusters
+// CA ~ WX*WY/pixels per cluster (16) (depends on geometry, window dimensions, cluster dimensions)
+// CA = 130_000
+//
+// total light indices
+// LI ~ CA*lights per cluster (32)
+// LI = 4_000_000 (a bit much isn't it)
+
+// 1.1. (light_xyzr_wld_buffer[L]) upload light [x, y, z]_wld in world space.
+// 1.2. (light_xyzr_cls_buffer[L]) compute [[x, y, z]_cls | r_ wld] using wld_to_cls.
+
+// 2.1. (depth_buffer[WX, WH]) render depth W*H [z_wld]
+// 2.2. (active_clusters[CX, CY, CZ]) compute W*H [active|inactive] clusters.
+// 2.3. (active_cluster_ids[CA]) prefix sum active clusters to get offsets, write cluster id.
+
+// 3.1. (cluster_lengths[CA]) intersect active clusters with lights and count.
+// 3.2. (light_indices[LI]) prefix sum cluster_lengths to get offsets, write light id.
+
 impl ClusterResources {
     pub fn compute_and_upload(
         &mut self,
@@ -140,7 +180,8 @@ impl ClusterResources {
 
         // First pass, compute cluster lengths and offsets.
         self.cluster_lengths.clear();
-        self.cluster_lengths.resize_with(cluster_count as usize, Default::default);
+        self.cluster_lengths
+            .resize_with(cluster_count as usize, Default::default);
 
         for (i, l) in point_lights.iter().enumerate() {
             if let Some(light_index) = cfg.light_index {
@@ -215,19 +256,22 @@ impl ClusterResources {
         self.cluster_meta.clear();
         self.cluster_meta.reserve(cluster_count as usize);
 
-        self.cluster_meta.extend(self.cluster_lengths.iter().scan(0, |offset, &length| {
-            let meta = ClusterMeta {
-                offset: *offset,
-                length: length,
-            };
-            *offset += length;
-            Some(meta)
-        }));
+        self.cluster_meta
+            .extend(self.cluster_lengths.iter().scan(0, |offset, &length| {
+                let meta = ClusterMeta {
+                    offset: *offset,
+                    length: length,
+                };
+                *offset += length;
+                Some(meta)
+            }));
 
         // Second pass
         self.cluster_lengths.clear();
-        self.cluster_lengths.resize_with(cluster_count as usize, Default::default);
-        self.light_indices.resize_with(total_light_indices as usize, Default::default);
+        self.cluster_lengths
+            .resize_with(cluster_count as usize, Default::default);
+        self.light_indices
+            .resize_with(total_light_indices as usize, Default::default);
 
         for (i, l) in point_lights.iter().enumerate() {
             if let Some(light_index) = cfg.light_index {
@@ -292,10 +336,13 @@ impl ClusterResources {
                             let light_offset = self.cluster_lengths[cluster_index as usize];
                             self.cluster_lengths[cluster_index as usize] += 1;
 
-                            let ClusterMeta { offset: cluster_offset, length: cluster_len } = self.cluster_meta[cluster_index as usize];
+                            let ClusterMeta {
+                                offset: cluster_offset,
+                                length: cluster_len,
+                            } = self.cluster_meta[cluster_index as usize];
                             debug_assert!(light_offset < cluster_len);
 
-                            self.light_indices[(cluster_offset +  light_offset) as usize] = i as u32;
+                            self.light_indices[(cluster_offset + light_offset) as usize] = i as u32;
                         }
                     }
                 }
@@ -324,4 +371,10 @@ impl ClusterResources {
         }
         self.cpu_end = Some(Instant::now());
     }
+}
+
+#[derive(Debug)]
+struct GlobalClusterResources {
+    pub fragments_per_cluster_program: ProgramName,
+    pub compress_active_clusters_program: ProgramName,
 }

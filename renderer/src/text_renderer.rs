@@ -14,13 +14,13 @@ impl Renderer {
             gl.named_buffer_data(context.eb, text_box.indices.vec_as_bytes(), gl::STREAM_DRAW);
 
             self.update(gl, world);
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+            if let ProgramName::Linked(name) = self.program.name {
                 gl.disable(gl::DEPTH_TEST);
                 gl.depth_mask(gl::FALSE);
                 gl.enable(gl::BLEND);
                 gl.blend_func(gl::SRC_ALPHA, gl::ONE);
 
-                gl.use_program(*name);
+                gl.use_program(name);
                 gl.bind_vertex_array(context.vao);
 
                 if let Some(loc) = self.dimensions_loc.into() {
@@ -51,12 +51,11 @@ impl Renderer {
     }
 
     pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        let modified = self.program.modified();
-        if modified < self.program.update(gl, world) {
-            if let ProgramName::Linked(name) = self.program.name(&world.global) {
+        if self.program.update(gl, world) {
+            if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
-                    self.dimensions_loc = get_uniform_location!(gl, *name, "dimensions");
-                    self.text_dimensions_loc = get_uniform_location!(gl, *name, "text_dimensions");
+                    self.dimensions_loc = get_uniform_location!(gl, name, "dimensions");
+                    self.text_dimensions_loc = get_uniform_location!(gl, name, "text_dimensions");
                 }
             }
         }
@@ -64,11 +63,7 @@ impl Renderer {
 
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
         Renderer {
-            program: Program::new(
-                gl,
-                vec![world.add_source("text_renderer.vert")],
-                vec![world.add_source("text_renderer.frag")],
-            ),
+            program: vs_fs_program(gl, world, "text_renderer.vert", "text_renderer.frag"),
             dimensions_loc: gl::OptionUniformLocation::NONE,
             text_sampler_loc: gl::OptionUniformLocation::NONE,
             text_dimensions_loc: gl::OptionUniformLocation::NONE,
