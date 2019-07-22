@@ -714,15 +714,37 @@ fn main() {
                 let main_index = main_pool.reserve(&gl, camera.frame_dims);
                 let main_resources = &mut main_pool.resources[main_index];
 
+                unsafe {
+                    let camera_buffer = CameraBuffer {
+                        wld_to_cam: camera.wld_to_cam.cast().unwrap(),
+                        cam_to_wld: camera.cam_to_wld.cast().unwrap(),
+
+                        cam_to_clp: camera.cam_to_clp.cast().unwrap(),
+                        clp_to_cam: camera.clp_to_cam.cast().unwrap(),
+
+                        // NOTE: Doesn't matter for depth pass!
+                        cam_pos_in_lgt: Vector4::zero(),
+                    };
+
+                    let buffer_index = camera_buffer_pool.unused(&gl);
+                    let buffer_name = camera_buffer_pool[buffer_index];
+
+                    gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
+                    gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
+                }
+
                 render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
 
+
                 unsafe {
+                    gl.finish();
+                    gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
                     let program = &mut cls_renderer.fragments_per_cluster_program;
                     program.update(&gl, &mut world);
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
 
-                        gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
+                        // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
                         gl.bind_texture_unit(0, main_resources.depth_texture.name());
 
                         gl.uniform_2f(

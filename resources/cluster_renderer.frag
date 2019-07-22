@@ -16,7 +16,6 @@ void main() {
   uvec3 idx_in_cls = fs_indices.xyz;
   uint cluster_index = fs_indices.w;
 
-  // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 1.0);
   uint frag_count = fragments_per_cluster[cluster_index];
 
   if (frag_count == 0) {
@@ -24,6 +23,9 @@ void main() {
   }
 
   frag_color = vec4(vec3(float(frag_count) / 512.0), 1.0);
+
+  // COLORS
+  // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 1.0);
 
   // if (
   //     fs_pos_in_tex.x > 0.01 && fs_pos_in_tex.x < 0.99 &&
