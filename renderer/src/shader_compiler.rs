@@ -32,7 +32,6 @@ impl Parser {
     }
 
     pub fn parse(&self, source: &str, source_index: SourceIndex, tokens: &mut Vec<Token>) {
-        tokens.clear();
         let mut literal_start = 0;
         let mut current_line = 1;
         for captures in self.include_regex.captures_iter(source) {
@@ -172,6 +171,7 @@ impl Source {
     pub fn update(&mut self, source_index: SourceIndex, vars: &Variables, parser: &Parser) {
         if self.last_computed.should_compute(&self.last_modified) {
             self.last_computed.update_to(&self.last_modified);
+            self.tokens.clear();
             self.reader.read(source_index, vars, parser, &mut self.tokens);
         }
     }
