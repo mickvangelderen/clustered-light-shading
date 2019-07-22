@@ -19,6 +19,11 @@ pub struct Parameters<'a> {
 impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
         unsafe {
+            // TODO: remove me
+            if params.cluster_resources.cluster_meta.len() != params.cluster_data.cluster_count() as usize {
+                return
+            }
+
             self.update(gl, world);
             if let ProgramName::Linked(program_name) = self.program.name {
                 gl.use_program(program_name);
@@ -27,7 +32,7 @@ impl Renderer {
                 let configuration = params.configuration;
 
                 let pass = || {
-                    let [xn, yn, zn]: [u32; 3] = params.cluster_data.dimensions.cast::<u32>().unwrap().into();
+                    let [xn, yn, zn]: [u32; 3] = params.cluster_data.dimensions.into();
                     for zi in 0..zn {
                         if let Some(animate_z) = configuration.animate_z {
                             if zi != (((world.tick as f64 / DESIRED_UPS) * animate_z as f64) as u64 % zn as u64) as u32

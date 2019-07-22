@@ -125,8 +125,7 @@ impl_enum_map! {
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
 pub struct MainResources {
-    pub width: i32,
-    pub height: i32,
+    pub dims: Vector2<i32>,
     // Main frame resources.
     pub framebuffer_name: gl::NonDefaultFramebufferName,
     pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
@@ -138,11 +137,11 @@ pub struct MainResources {
 }
 
 impl MainResources {
-    pub fn new(gl: &gl::Gl, width: i32, height: i32) -> Self {
+    pub fn new(gl: &gl::Gl, dims: Vector2<i32>) -> Self {
         unsafe {
             // Textures.
             let texture_update = TextureUpdate::new()
-                .data(width, height, None)
+                .data(dims.x, dims.y, None)
                 .min_filter(gl::NEAREST.into())
                 .mag_filter(gl::NEAREST.into())
                 .max_level(0)
@@ -170,8 +169,7 @@ impl MainResources {
             // Uniform block buffers,
 
             MainResources {
-                width,
-                height,
+                dims,
                 framebuffer_name,
                 color_texture,
                 depth_texture,
@@ -182,12 +180,11 @@ impl MainResources {
         }
     }
 
-    pub fn resize(&mut self, gl: &gl::Gl, width: i32, height: i32) {
-        if width != self.width || height != self.height {
-            self.width = width;
-            self.height = height;
+    pub fn resize(&mut self, gl: &gl::Gl, dims: Vector2<i32>) {
+        if self.dims != dims {
+            self.dims = dims;
 
-            let texture_update = TextureUpdate::new().data(width, height, None);
+            let texture_update = TextureUpdate::new().data(dims.x, dims.y, None);
             self.color_texture.update(gl, texture_update);
             self.depth_texture.update(gl, texture_update);
             self.nor_in_cam_texture.update(gl, texture_update);
@@ -208,6 +205,38 @@ impl MainResources {
 pub struct MainData {
     pub depth: Option<GpuCpuTimeSpan>,
     pub basic: Option<GpuCpuTimeSpan>,
+}
+
+pub struct MainPool {
+    pub resources: Vec<MainResources>,
+    pub data: Vec<MainData>,
+}
+
+impl MainPool {
+    pub fn new() -> Self {
+        Self {
+            resources: Vec::new(),
+            data: Vec::new(),
+        }
+    }
+
+    pub fn reserve(&mut self, gl: &gl::Gl, dims: Vector2<i32>) -> usize {
+        let index = self.data.len();
+        self.data.push(MainData::default());
+
+        if self.resources.len() < index + 1 {
+            self.resources.push(MainResources::new(&gl, dims));
+        }
+
+        let resources = &mut self.resources[index];
+        resources.resize(&gl, dims);
+
+        index
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
@@ -402,8 +431,7 @@ fn main() {
     let mut cluster_resources_vec: Vec<ClusterResources> = Vec::new();
     let mut cluster_data_vec: Vec<ClusterData> = Vec::new();
 
-    let mut main_resources_vec: Vec<MainResources> = Vec::new();
-    let mut main_data_vec: Vec<MainData> = Vec::new();
+    let mut main_pool = MainPool::new();
 
     let mut point_lights = Vec::new();
 
@@ -512,7 +540,7 @@ fn main() {
 
         light_params_vec.clear();
         cluster_data_vec.clear();
-        main_data_vec.clear();
+        main_pool.clear();
 
         {
             point_lights.clear();
@@ -579,12 +607,19 @@ fn main() {
             let wld_to_hmd;
 
             match stereo_data.as_ref() {
-                Some(&StereoData { hmd_to_bdy, eyes, .. }) => {
+                Some(&StereoData {
+                    hmd_to_bdy,
+                    eyes,
+                    win_size,
+                }) => {
                     hmd_to_wld = bdy_to_wld * hmd_to_bdy;
                     wld_to_hmd = hmd_to_wld.invert().unwrap();
 
                     for &eye in EYE_KEYS.iter() {
                         let EyeData { tangents, cam_to_hmd } = eyes[eye];
+
+                        let cam_to_wld = cam_to_hmd * hmd_to_wld;
+                        let wld_to_cam = cam_to_wld.invert().unwrap();
 
                         let frustrum = stereo_frustrum(&cluster_camera.properties, tangents);
                         let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
@@ -594,8 +629,17 @@ fn main() {
                         let hmd_to_clp = clp_to_hmd.invert().unwrap();
 
                         cluster_resources.cameras.push(ClusterCamera {
+                            frame_dims: win_size,
+
+                            wld_to_cam,
+                            cam_to_wld,
+
+                            cam_to_clp,
+                            clp_to_cam,
+
                             hmd_to_clp,
                             clp_to_hmd,
+
                             wld_to_hmd,
                             hmd_to_wld,
                         });
@@ -606,8 +650,8 @@ fn main() {
                     hmd_to_wld = bdy_to_wld;
                     wld_to_hmd = wld_to_bdy;
 
-                    let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
-                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), dimensions);
+                    let frame_dims = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
+                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), frame_dims);
                     let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                     let clp_to_cam = cam_to_clp.invert().unwrap();
 
@@ -616,8 +660,17 @@ fn main() {
                     let hmd_to_clp = cam_to_clp;
 
                     cluster_resources.cameras.push(ClusterCamera {
+                        frame_dims,
+
+                        wld_to_cam: wld_to_bdy,
+                        cam_to_wld: bdy_to_wld,
+
+                        cam_to_clp,
+                        clp_to_cam,
+
                         hmd_to_clp,
                         clp_to_hmd,
+
                         wld_to_hmd,
                         hmd_to_wld,
                     });
@@ -634,12 +687,37 @@ fn main() {
                 hmd_to_wld,
             );
 
-            cluster_resources.compute_and_upload(
-                &gl,
-                &configuration.clustered_light_shading,
-                &cluster_data,
-                &point_lights[..],
-            );
+            unsafe {
+                let byte_count = std::mem::size_of::<u32>() * cluster_data.cluster_count() as usize;
+                gl.named_buffer_reserve(cluster_resources.mark_buffer_name, byte_count, gl::STREAM_DRAW);
+                gl.clear_named_buffer_sub_data(
+                    cluster_resources.mark_buffer_name,
+                    gl::R32UI,
+                    0,
+                    byte_count,
+                    gl::RED,
+                    gl::UNSIGNED_INT,
+                    None,
+                );
+            }
+
+            for camera in cluster_resources.cameras.iter() {
+                let main_index = main_pool.reserve(&gl, camera.frame_dims);
+
+                render_depth(
+                    &gl,
+                    &mut main_pool.resources[main_index],
+                    &resources,
+                    &mut world,
+                    &mut depth_renderer,
+                );
+
+                // cls_renderer.render(cls_renderer::RenderParams {
+                //     gl: &gl,
+                //     cfg: &configuration,
+                //     clp_to_hmd,
+                // });
+            }
 
             cluster_data_vec.push(cluster_data);
         }
@@ -852,21 +930,9 @@ fn main() {
                 gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
             }
 
-            let main_index = main_data_vec.len();
-            main_data_vec.push(MainData::default());
-            if main_resources_vec.len() < main_index + 1 {
-                let main_resources = MainResources::new(&gl, dimensions.x, dimensions.y);
-                main_resources_vec.push(main_resources);
-            }
-
-            let main_resources = &mut main_resources_vec[main_index];
-            let main_data = &mut main_data_vec[main_index];
-
-            main_resources.resize(&gl, dimensions.x, dimensions.y);
-
-            unsafe {
-                gl.viewport(0, 0, dimensions.x, dimensions.y);
-            }
+            let main_index = main_pool.reserve(&gl, dimensions);
+            let main_resources = &mut main_pool.resources[main_index];
+            let main_data = &mut main_pool.data[main_index];
 
             render_main(
                 &gl,
@@ -957,14 +1023,16 @@ fn main() {
         for i in 0..cluster_data_vec.len() {
             let res = &cluster_resources_vec[i];
             let data = &cluster_data_vec[i];
-            let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
-            let start = res.cpu_start.unwrap();
-            let end = res.cpu_end.unwrap();
+            let dimensions_u32 = data.dimensions;
 
             let header_bytes = res.cluster_meta.vec_as_bytes().len();
             let body_bytes = res.light_indices.vec_as_bytes().len();
 
-            let elapsed = end.duration_since(start).as_nanos();
+            let elapsed = if let (Some(start), Some(end)) = (res.cpu_start, res.cpu_end) {
+                end.duration_since(start).as_nanos()
+            } else {
+                0
+            };
 
             overlay_textbox.write(
                 &monospace,
@@ -987,7 +1055,7 @@ fn main() {
             );
         }
 
-        for (i, data) in main_data_vec.iter().enumerate() {
+        for (i, data) in main_pool.data.iter().enumerate() {
             for (name, span) in [("depth", &data.depth), ("basic", &data.basic)].iter() {
                 if let Some(span) = span {
                     let cpu = span.cpu.delta();
@@ -1083,7 +1151,9 @@ fn process_fs_events(
                 );
 
                 if let Some(source_index) = world.shader_compiler.memory.source_index(&path) {
-                    world.shader_compiler.source_mut(source_index)
+                    world
+                        .shader_compiler
+                        .source_mut(source_index)
                         .last_modified
                         .modify(&mut world.current);
                 }
@@ -1317,6 +1387,28 @@ pub fn process_vr_events(vr_context: &Option<vr::Context>) {
     }
 }
 
+pub fn render_depth(
+    gl: &gl::Gl,
+    main_resources: &mut MainResources,
+    resources: &Resources,
+    world: &mut World,
+    depth_renderer: &mut depth_renderer::Renderer,
+) {
+    unsafe {
+        gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
+        gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
+        gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
+        // Reverse-Z.
+        gl.clear_depth(0.0);
+        gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
+        gl.enable(gl::DEPTH_TEST);
+        gl.enable(gl::CULL_FACE);
+        gl.cull_face(gl::BACK);
+    }
+
+    depth_renderer.render(gl, world, resources);
+}
+
 pub fn render_main(
     gl: &gl::Gl,
     main_resources: &mut MainResources,
@@ -1327,6 +1419,7 @@ pub fn render_main(
     basic_renderer: &mut basic_renderer::Renderer,
 ) {
     unsafe {
+        gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
         gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
         gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
         // Reverse-Z.

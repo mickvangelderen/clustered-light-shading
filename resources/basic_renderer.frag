@@ -18,6 +18,7 @@ uniform uint display_mode;
 in vec2 fs_pos_in_tex;
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
+uniform uvec4 cluster_dims;
 in vec3 fs_pos_in_cls;
 #endif
 
