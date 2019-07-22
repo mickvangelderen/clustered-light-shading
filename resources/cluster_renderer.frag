@@ -23,7 +23,7 @@ void main() {
     discard;
   }
 
-  frag_color = vec4(vec3(float(frag_count) / 4.0), 1.0);
+  frag_color = vec4(vec3(float(frag_count) / 512.0), 1.0);
 
   // if (
   //     fs_pos_in_tex.x > 0.01 && fs_pos_in_tex.x < 0.99 &&
