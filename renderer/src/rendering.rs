@@ -307,3 +307,21 @@ impl std::ops::Index<BufferPoolIndex> for BufferPool {
         &self.buffers[index.0]
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct DrawCommand {
+    pub count: u32,
+    pub prim_count: u32,
+    pub first_index: u32,
+    pub base_vertex: u32,
+    pub base_instance: u32,
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct ComputeCommand {
+    pub work_group_x: u32,
+    pub work_group_y: u32,
+    pub work_group_z: u32,
+}

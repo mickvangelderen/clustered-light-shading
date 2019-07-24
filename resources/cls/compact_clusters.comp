@@ -1,5 +1,8 @@
 #include "native/PREFIX_SUM"
 
+#include "../compute_indirect.glsl"
+#include "../draw_indirect.glsl"
+
 layout(std430, binding = 0) buffer InputBuffer {
   uint fragments_per_cluster[];
 };
@@ -10,6 +13,14 @@ layout(std430, binding = 1) buffer OffsetBuffer {
 
 layout(std430, binding = 2) buffer OutputBuffer {
   uint active_cluster_indices[];
+};
+
+layout(std430, binding = 3) buffer DrawIndirectBuffer {
+  DrawCommand draw_command;
+};
+
+layout(std430, binding = 4) buffer ComputeIndirectBuffer {
+  ComputeCommand compute_command;
 };
 
 layout(location = 0) uniform uint ITEM_COUNT;
@@ -124,6 +135,13 @@ void main() {
 
   // Emit output from shared memory.
   offsets[tid] = values[tid];
+
+  // Emit indirect draw and indirect compute data.
+  if (tid == 0) {
+    uint active_cluster_count = offsets[PASS_1_THREADS - 1];
+    draw_command.count = active_cluster_count;
+    compute_command.work_group_x = active_cluster_count;
+  }
 }
 #elif PASS == 2
 void main() {
