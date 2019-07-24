@@ -735,9 +735,7 @@ fn main() {
 
                 render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
 
-
                 unsafe {
-                    gl.finish();
                     gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
                     let program = &mut cls_renderer.fragments_per_cluster_program;
                     program.update(&gl, &mut world);
@@ -766,13 +764,9 @@ fn main() {
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
-
-                // cls_renderer.render(cls_renderer::RenderParams {
-                //     gl: &gl,
-                //     cfg: &configuration,
-                //     clp_to_hmd,
-                // });
             }
+
+            // We have our fragments per cluster buffer here.
 
             cluster_data_vec.push(cluster_data);
         }
