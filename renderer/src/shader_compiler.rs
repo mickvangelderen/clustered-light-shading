@@ -81,6 +81,7 @@ pub enum SourceReader {
     LightSpace,
     AttenuationMode,
     RenderTechnique,
+    PrefixSum,
 }
 
 impl SourceReader {
@@ -142,6 +143,19 @@ impl SourceReader {
                     line = line!() - 2,
                     source_index = source_index,
                     define = define,
+                )));
+            }
+            SourceReader::PrefixSum => {
+                tokens.push(Token::Literal(format!(
+                    "\
+                     #line {} {}\n\
+                     #define PASS_0_THREADS {}\n\
+                     #define PASS_1_THREADS {}\n\
+                     ",
+                    line!() - 3,
+                    source_index,
+                    vars.prefix_sum.pass_0_threads,
+                    vars.prefix_sum.pass_1_threads,
                 )));
             }
         }
@@ -286,7 +300,11 @@ impl EntryPoint {
             }
 
             let source = Rc::get_mut(&mut world.shader_compiler.memory.sources[source_index]).unwrap();
-            source.update(source_index, &world.shader_compiler.variables, &world.shader_compiler.parser);
+            source.update(
+                source_index,
+                &world.shader_compiler.variables,
+                &world.shader_compiler.parser,
+            );
 
             // Clone the source rc so we can access tokens while mutating the tokens vec.
             let source = Rc::clone(&world.shader_compiler.memory.sources[source_index]);
@@ -339,12 +357,14 @@ pub struct Variables {
     pub light_space: LightSpace,
     pub attenuation_mode: AttenuationMode,
     pub render_technique: RenderTechnique,
+    pub prefix_sum: configuration::PrefixSum,
 }
 
 pub struct NativeSourceIndices {
     pub light_space: SourceIndex,
     pub attenuation_mode: SourceIndex,
     pub render_technique: SourceIndex,
+    pub prefix_sum: SourceIndex
 }
 
 pub struct ShaderCompiler {
@@ -371,6 +391,10 @@ impl ShaderCompiler {
                 PathBuf::from("native/RENDER_TECHNIQUE"),
                 Source::new(current, SourceReader::RenderTechnique, PathBuf::from(file!())),
             ),
+            prefix_sum: memory.add_source(
+                PathBuf::from("native/PREFIX_SUM"),
+                Source::new(current, SourceReader::PrefixSum, PathBuf::from(file!())),
+            ),
         };
 
         Self {
@@ -392,9 +416,7 @@ impl ShaderCompiler {
     pub fn replace_light_space(&mut self, current: &mut Current, light_space: LightSpace) -> LightSpace {
         let old = std::mem::replace(&mut self.variables.light_space, light_space);
         if old != light_space {
-            self.source_mut(self.indices.light_space)
-                .last_modified
-                .modify(current);
+            self.source_mut(self.indices.light_space).last_modified.modify(current);
         }
         old
     }
@@ -429,6 +451,24 @@ impl ShaderCompiler {
         let old = std::mem::replace(&mut self.variables.render_technique, render_technique);
         if old != render_technique {
             self.source_mut(self.indices.render_technique)
+                .last_modified
+                .modify(current);
+        }
+        old
+    }
+
+    pub fn prefix_sum(&self) -> configuration::PrefixSum {
+        self.variables.prefix_sum
+    }
+
+    pub fn replace_prefix_sum(
+        &mut self,
+        current: &mut Current,
+        prefix_sum: configuration::PrefixSum,
+    ) -> configuration::PrefixSum {
+        let old = std::mem::replace(&mut self.variables.prefix_sum, prefix_sum);
+        if old != prefix_sum {
+            self.source_mut(self.indices.prefix_sum)
                 .last_modified
                 .modify(current);
         }

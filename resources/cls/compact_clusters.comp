@@ -1,3 +1,5 @@
+#include "native/PREFIX_SUM"
+
 layout(std430, binding = 0) buffer InputBuffer {
   uint fragments_per_cluster[];
 };
@@ -7,10 +9,10 @@ layout(std430, binding = 1) buffer OffsetBuffer {
 };
 
 layout(std430, binding = 2) buffer OutputBuffer {
-  uint active_cluster_indices[MAX_ACTIVE_CLUSTERS];
+  uint active_cluster_indices[];
 };
 
-layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
+layout(location = 0) uniform uint ITEM_COUNT;
 
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS
@@ -76,18 +78,18 @@ void scan() {
 #endif
 }
 
-void uint_div_ceil(uint n, uint d) {
+uint uint_div_ceil(uint n, uint d) {
   uint r = n / d;
   return ((n % d) == 0) ? r : r + 1;
 }
 
 #if PASS == 0
 void main() {
-  uint C = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
-  uint B = C * PASS_0_THREADS;
+  uint blocks_per_dispatch = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint items_per_block = PASS_0_THREADS * blocks_per_dispatch;
 
-  uint offset_begin = wid * B;
-  uint offset_end = offset_begin + B;
+  uint offset_begin = wid * items_per_block;
+  uint offset_end = offset_begin + items_per_block;
 
   // Sum up C*PASS_0_THREADS items in chunks of PASS_0_THREADS.
   uint acc = 0;
@@ -125,30 +127,28 @@ void main() {
 }
 #elif PASS == 2
 void main() {
-  uint C = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
-  uint B = C * PASS_0_THREADS;
+  uint blocks_per_dispatch = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint items_per_block = PASS_0_THREADS * blocks_per_dispatch;
 
-  uint offset_begin = wid * B;
-  uint offset_end = offset_begin + B;
+  uint offset_begin = wid * items_per_block;
+  uint offset_end = offset_begin + items_per_block;
 
   uint acc = (wid > 0) ? offsets[wid - 1] : 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     // Initialize shared memory
-    uint initial_value = ((fragments_per_cluster[offset + tid]) == 0 ? 0 : 1);
-    values[tid] = initial_value;
+    uint cluster_active = ((fragments_per_cluster[offset + tid]) == 0 ? 0 : 1);
+    values[tid] = cluster_active;
     memoryBarrierShared();
     barrier();
 
     scan();
 
-    if (initial_value > 0) {
+    if (cluster_active > 0) {
       // Instead of writing out the offsets, we use them immediately to emit
       // active cluster indices.
-      uint active_cluster_index_index = acc + values[tid];
-      if (active_cluster_index_index < MAX_ACTIVE_CLUSTERS) {
-        active_cluster_indices[active_cluster_index_index] = offset + tid;
-      }
+      uint active_cluster_index_index = acc + values[tid] - 1;
+      active_cluster_indices[active_cluster_index_index] = offset + tid;
     }
 
     // Add the total sum of the current segment to the accumulator.

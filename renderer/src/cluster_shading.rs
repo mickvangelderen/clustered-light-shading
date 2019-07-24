@@ -113,7 +113,9 @@ pub struct ClusterCamera {
 
 pub struct ClusterResources {
     pub buffer_name: gl::BufferName,
-    pub mark_buffer_name: gl::BufferName,
+    pub fragments_per_cluster_buffer_name: gl::BufferName,
+    pub offset_buffer_name: gl::BufferName,
+    pub active_cluster_buffer_name: gl::BufferName,
     pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
@@ -126,7 +128,9 @@ impl ClusterResources {
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
             buffer_name: unsafe { gl.create_buffer() },
-            mark_buffer_name: unsafe { gl.create_buffer() },
+            fragments_per_cluster_buffer_name: unsafe { gl.create_buffer() },
+            offset_buffer_name: unsafe { gl.create_buffer() },
+            active_cluster_buffer_name: unsafe { gl.create_buffer() },
             cameras: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),

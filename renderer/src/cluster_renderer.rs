@@ -29,7 +29,7 @@ impl Renderer {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     FRAGMENTS_PER_CLUSTER_BINDING,
-                    params.cluster_resources.mark_buffer_name,
+                    params.cluster_resources.fragments_per_cluster_buffer_name,
                 );
 
                 gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());

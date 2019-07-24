@@ -5,7 +5,7 @@ pub struct Root {
     pub iterations: u32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub struct PrefixSum {
     pub pass_0_threads: u32,
     pub pass_1_threads: u32,
