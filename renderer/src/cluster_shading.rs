@@ -61,7 +61,20 @@ impl ClusterData {
         let bb = compute_bounding_box(clp_to_hmd);
 
         let bb_delta = bb.delta();
-        let dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
+        let mut dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
+
+        // TODO: Warn?
+        if dimensions.x > 512.0 {
+            dimensions.x = 512.0
+        }
+
+        if dimensions.y > 512.0 {
+            dimensions.x = 512.0
+        }
+
+        if dimensions.z > 512.0 {
+            dimensions.x = 512.0
+        }
 
         let trans_from_hmd_to_cls = Point3::origin() - bb.min;
         let trans_from_cls_to_hmd = bb.min - Point3::origin();
