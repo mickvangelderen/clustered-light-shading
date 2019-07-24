@@ -22,7 +22,7 @@ void main() {
     discard;
   }
 
-  frag_color = vec4(vec3(float(frag_count) / 512.0), 1.0);
+  frag_color = vec4(vec3(float(frag_count) / 4096.0), 1.0);
 
   // COLORS
   // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 1.0);

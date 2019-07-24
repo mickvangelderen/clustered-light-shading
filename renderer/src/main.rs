@@ -752,13 +752,9 @@ fn main() {
                             main_resources.dims.cast::<f32>().unwrap().into(),
                         );
 
-                        // dbg!(camera.clp_to_cam);
-                        // dbg!(camera.cam_to_wld);
-                        // dbg!(cluster_data.wld_to_cls);
                         let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
                             .cast::<f32>()
                             .unwrap();
-                        // dbg!(clp_to_cls);
 
                         gl.uniform_matrix4f(cls_renderer::CLP_TO_CLS_LOC, gl::MajorAxis::Column, clp_to_cls.as_ref());
 
