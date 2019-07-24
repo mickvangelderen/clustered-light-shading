@@ -68,41 +68,12 @@ pub const FB_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_u
 pub const CLP_TO_CLS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(2) };
 pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(3) };
 
+// compact clusters
+pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
+
 pub const FRAGMENTS_PER_CLUSTER_BINDING: u32 = 0;
-
-// fn fragments_per_cluster_header() -> String {
-//     format!(
-//         "\n\
-//          #define DEPTH_SAMPLER_LOC {}\n\
-//          #define DEPTH_DIMS_LOC {}\n\
-//          #define CLP_TO_CLS_LOC {}\n\
-//          #define CLUSTER_DIMS_LOC {}\n\
-//          #define FRAGMENTS_PER_CLUSTER_BINDING {}\n\
-//          ",
-//         DEPTH_SAMPLER_LOC.into_i32(),
-//         DEPTH_DIMS_LOC.into_i32(),
-//         CLP_TO_CLS_LOC.into_i32(),
-//         CLUSTER_DIMS_LOC.into_i32(),
-//         FRAGMENTS_PER_CLUSTER_BINDING,
-//     )
-// }
-
-// // compact clusters program
-// const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
-// const ACTIVE_CLUSTER_CAPACITY: u32 = 1024 * 1024;
-
-// fn compact_cluster_header(pass: u32) -> String {
-//     format!(
-//         r##"
-// #define PASS {}
-// #define ACTIVE_CLUSTER_CAPACITY {}
-// #define ITEM_COUNT_LOC {}
-// "##,
-//         pass,
-//         ACTIVE_CLUSTER_CAPACITY,
-//         ITEM_COUNT_LOC.into_i32(),
-//     )
-// }
+pub const OFFSET_BINDING: u32 = 1;
+pub const ACTIVE_CLUSTER_BINDING: u32 = 2;
 
 impl Renderer {
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
@@ -139,9 +110,6 @@ impl Renderer {
                     EntryPoint::new(world, "cls/compact_clusters_2.comp"),
                 )],
             ),
-            // dimensions_loc: gl::OptionUniformLocation::NONE,
-            // text_sampler_loc: gl::OptionUniformLocation::NONE,
-            // text_dimensions_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }

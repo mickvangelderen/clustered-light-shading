@@ -33,6 +33,7 @@ mod glutin_ext;
 mod keyboard;
 mod light;
 mod line_renderer;
+mod math;
 mod mono_stereo;
 mod overlay_renderer;
 mod profiling;
@@ -52,6 +53,7 @@ use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
+use crate::math::DivCeil;
 use crate::profiling::*;
 use crate::shader_compiler::{EntryPoint, ShaderCompiler};
 use crate::text_rendering::{FontContext, TextBox};
@@ -334,6 +336,7 @@ fn main() {
                 light_space: LightSpace::Wld,
                 render_technique: RenderTechnique::Clustered,
                 attenuation_mode: AttenuationMode::Interpolated,
+                prefix_sum: configuration.prefix_sum,
             },
         );
 
@@ -687,27 +690,24 @@ fn main() {
                 hmd_to_wld,
             );
 
+            let item_count = cluster_data.cluster_count();
+            let blocks_per_dispatch =
+                item_count.div_ceil(configuration.prefix_sum.pass_0_threads * configuration.prefix_sum.pass_1_threads);
+            let items_per_dispatch = configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
+            let dispatch_count = item_count.div_ceil(items_per_dispatch);
+            let padded_item_count = dispatch_count * items_per_dispatch;
+
             unsafe {
-                let byte_count = std::mem::size_of::<u32>() * cluster_data.cluster_count() as usize;
-                gl.named_buffer_reserve(cluster_resources.mark_buffer_name, byte_count, gl::STREAM_DRAW);
-                gl.clear_named_buffer_sub_data(
-                    cluster_resources.mark_buffer_name,
-                    gl::R32UI,
-                    0,
-                    byte_count,
-                    gl::RED,
-                    gl::UNSIGNED_INT,
-                    None,
-                );
+                let buffer_name = cluster_resources.fragments_per_cluster_buffer_name;
+                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
+                gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::FRAGMENTS_PER_CLUSTER_BINDING,
-                    cluster_resources.mark_buffer_name,
+                    buffer_name,
                 );
-
-                // NOTE: Not sure if necessary for clears.
-                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
             }
 
             for camera in cluster_resources.cameras.iter() {
@@ -734,9 +734,8 @@ fn main() {
                 }
 
                 render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
-
                 unsafe {
-                    gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
+                    // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
                     let program = &mut cls_renderer.fragments_per_cluster_program;
                     program.update(&gl, &mut world);
                     if let ProgramName::Linked(name) = program.name {
@@ -767,6 +766,61 @@ fn main() {
             }
 
             // We have our fragments per cluster buffer here.
+
+            unsafe {
+                let buffer_name = cluster_resources.offset_buffer_name;
+                let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
+                gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
+                gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
+
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer_name);
+            }
+
+            unsafe {
+                let buffer_name = cluster_resources.active_cluster_buffer_name;
+                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
+                gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
+
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::ACTIVE_CLUSTER_BINDING,
+                    buffer_name,
+                );
+            }
+
+            unsafe {
+                let program = &mut cls_renderer.compact_clusters_0_program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                    gl.dispatch_compute(dispatch_count, 1, 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
+
+            unsafe {
+                let program = &mut cls_renderer.compact_clusters_1_program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                    gl.dispatch_compute(configuration.prefix_sum.pass_1_threads, 1, 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
+
+            unsafe {
+                let program = &mut cls_renderer.compact_clusters_2_program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                    gl.dispatch_compute(dispatch_count, 1, 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
 
             cluster_data_vec.push(cluster_data);
         }
@@ -1022,7 +1076,7 @@ fn main() {
                             cluster_resources: &cluster_resources,
                             cluster_data: &cluster_data,
                             configuration: &configuration.clustered_light_shading,
-                            cls_to_clp: (cam_to_clp * wld_to_cam * cluster_data.cls_to_wld).cast().unwrap()
+                            cls_to_clp: (cam_to_clp * wld_to_cam * cluster_data.cls_to_wld).cast().unwrap(),
                         },
                         &mut world,
                         &resources,
@@ -1228,6 +1282,10 @@ fn process_fs_events(
         for key in CameraKey::iter() {
             world.cameras[key].maximum_smoothness = configuration.camera.maximum_smoothness;
         }
+
+        world
+            .shader_compiler
+            .replace_prefix_sum(&mut world.current, configuration.prefix_sum);
 
         unsafe {
             if configuration.global.framebuffer_srgb {
