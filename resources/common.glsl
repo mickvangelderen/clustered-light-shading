@@ -1,4 +1,4 @@
-vec3 from_homogeneous(vec4 p) { return p.xyz / p.z; }
+vec3 from_homogeneous(vec4 p) { return p.xyz / p.w; }
 
 vec4 to_homogeneous(vec3 p) { return vec4(p, 1.0); }
 
