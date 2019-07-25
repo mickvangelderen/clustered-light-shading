@@ -137,9 +137,9 @@ void main() {
   offsets[tid] = values[tid];
 
   // Emit indirect draw and indirect compute data.
-  if (tid == 0) {
-    uint active_cluster_count = offsets[PASS_1_THREADS - 1];
-    draw_command.count = active_cluster_count;
+  if (tid == PASS_1_THREADS - 1) {
+    uint active_cluster_count = values[tid];
+    draw_command.prim_count = active_cluster_count;
     compute_command.work_group_x = active_cluster_count;
   }
 }

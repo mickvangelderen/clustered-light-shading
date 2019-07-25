@@ -129,6 +129,8 @@ pub struct ClusterResources {
     pub fragments_per_cluster_buffer_name: gl::BufferName,
     pub offset_buffer_name: gl::BufferName,
     pub active_cluster_buffer_name: gl::BufferName,
+    pub draw_command_buffer_name: gl::BufferName,
+    pub compute_command_buffer_name: gl::BufferName,
     pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
@@ -144,6 +146,28 @@ impl ClusterResources {
             fragments_per_cluster_buffer_name: unsafe { gl.create_buffer() },
             offset_buffer_name: unsafe { gl.create_buffer() },
             active_cluster_buffer_name: unsafe { gl.create_buffer() },
+            draw_command_buffer_name: unsafe {
+                let name = gl.create_buffer();
+                let data = rendering::DrawCommand {
+                    count: 24,
+                    prim_count: 0,
+                    first_index: 0,
+                    base_vertex: 0,
+                    base_instance: 0,
+                };
+                gl.named_buffer_data(name, data.value_as_bytes(), gl::STATIC_DRAW);
+                name
+            },
+            compute_command_buffer_name: unsafe {
+                let name = gl.create_buffer();
+                let data = rendering::ComputeCommand {
+                    work_group_x: 0,
+                    work_group_y: 1,
+                    work_group_z: 1,
+                };
+                gl.named_buffer_data(name, data.value_as_bytes(), gl::STATIC_DRAW);
+                name
+            },
             cameras: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),

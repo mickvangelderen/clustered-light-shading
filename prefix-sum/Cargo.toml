@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 glutin = "0.22.0-alpha1"
-gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", tag = "0.6.0" }
+gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", branch = "master" }
 rand = "0.7.0"
 toml = "0.5.1"
 serde = { version = "1.0.94", features = ["derive"] }

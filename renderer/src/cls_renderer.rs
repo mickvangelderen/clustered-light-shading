@@ -74,6 +74,8 @@ pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::ne
 pub const FRAGMENTS_PER_CLUSTER_BINDING: u32 = 0;
 pub const OFFSET_BINDING: u32 = 1;
 pub const ACTIVE_CLUSTER_BINDING: u32 = 2;
+pub const DRAW_COMMAND_BINDING: u32 = 3;
+pub const COMPUTE_COMMAND_BINDING: u32 = 4;
 
 impl Renderer {
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
