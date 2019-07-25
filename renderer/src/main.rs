@@ -20,6 +20,7 @@ mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
+mod cls;
 mod cls_renderer;
 mod cluster_renderer;
 mod cluster_shading;
@@ -413,6 +414,7 @@ fn main() {
     let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
     let mut text_renderer = text_renderer::Renderer::new(&gl, &mut world);
     let mut cls_renderer = cls_renderer::Renderer::new(&gl, &mut world);
+    let mut count_lights_program = cls::count_lights::CountLightsProgram::new(&gl, &mut world);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
@@ -834,6 +836,60 @@ fn main() {
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
+
+            // We have our active clusters.
+
+            // unsafe {
+            //     let data: Vec<[f32; 4]> = point_lights
+            //         .iter()
+            //         .map(|&light| {
+            //             let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
+            //             let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
+            //             [x, y, z, light.attenuation.clip_far]
+            //         })
+            //         .collect();
+
+            //     let buffer_name = cluster_resources.light_buffer_name;
+            //     gl.named_buffer_data(buffer_name, data.vec_as_bytes(), gl::STREAM_DRAW);
+
+            //     gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer_name);
+            // }
+
+            // unsafe {
+            //     let buffer_name = cluster_resources.light_count_buffer_name;
+            //     let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+            //     gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
+            //     gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
+            //     gl.bind_buffer_base(
+            //         gl::SHADER_STORAGE_BUFFER,
+            //         cls_renderer::LIGHT_COUNT_BINDING,
+            //         buffer_name,
+            //     );
+            // }
+
+            // unsafe {
+            //     let program = &mut count_lights_program.program;
+            //     program.update(&gl, &mut world);
+            //     if let ProgramName::Linked(name) = program.name {
+            //         gl.use_program(name);
+            //         gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+            //         gl.uniform_3f(
+            //             cls::count_lights::TRANSLATION_LOC,
+            //             cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+            //         );
+            //         gl.uniform_3f(
+            //             cls::count_lights::SCALE_LOC,
+            //             cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+            //         );
+            //         gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
+            //         gl.bind_buffer(
+            //             gl::DISPATCH_INDIRECT_BUFFER,
+            //             cluster_resources.compute_command_buffer_name,
+            //         );
+            //         // gl.dispatch_compute_indirect(0);
+            //         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+            //     }
+            // }
 
             cluster_data_vec.push(cluster_data);
         }
