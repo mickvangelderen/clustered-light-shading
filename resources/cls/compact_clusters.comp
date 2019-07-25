@@ -2,26 +2,7 @@
 
 #include "../compute_indirect.glsl"
 #include "../draw_indirect.glsl"
-
-layout(std430, binding = 0) buffer InputBuffer {
-  uint fragments_per_cluster[];
-};
-
-layout(std430, binding = 1) buffer OffsetBuffer {
-  uint offsets[PASS_1_THREADS];
-};
-
-layout(std430, binding = 2) buffer OutputBuffer {
-  uint active_cluster_indices[];
-};
-
-layout(std430, binding = 3) buffer DrawIndirectBuffer {
-  DrawCommand draw_command;
-};
-
-layout(std430, binding = 4) buffer ComputeIndirectBuffer {
-  ComputeCommand compute_command;
-};
+#include "cls.glsl"
 
 layout(location = 0) uniform uint ITEM_COUNT;
 

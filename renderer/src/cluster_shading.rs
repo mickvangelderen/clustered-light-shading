@@ -131,6 +131,8 @@ pub struct ClusterResources {
     pub active_cluster_buffer_name: gl::BufferName,
     pub draw_command_buffer_name: gl::BufferName,
     pub compute_command_buffer_name: gl::BufferName,
+    pub light_buffer_name: gl::BufferName,
+    pub light_count_buffer_name: gl::BufferName,
     pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
@@ -149,7 +151,7 @@ impl ClusterResources {
             draw_command_buffer_name: unsafe {
                 let name = gl.create_buffer();
                 let data = rendering::DrawCommand {
-                    count: 24,
+                    count: 36,
                     prim_count: 0,
                     first_index: 0,
                     base_vertex: 0,
@@ -168,6 +170,8 @@ impl ClusterResources {
                 gl.named_buffer_data(name, data.value_as_bytes(), gl::STATIC_DRAW);
                 name
             },
+            light_buffer_name: unsafe { gl.create_buffer() },
+            light_count_buffer_name: unsafe { gl.create_buffer() },
             cameras: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),

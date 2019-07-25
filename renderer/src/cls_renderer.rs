@@ -5,7 +5,6 @@ pub struct Renderer {
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
-    // pub fb_dims_loc: gl::OptionUniformLocation,
 }
 
 pub struct Buffer {
@@ -76,6 +75,8 @@ pub const OFFSET_BINDING: u32 = 1;
 pub const ACTIVE_CLUSTER_BINDING: u32 = 2;
 pub const DRAW_COMMAND_BINDING: u32 = 3;
 pub const COMPUTE_COMMAND_BINDING: u32 = 4;
+pub const LIGHT_BINDING: u32 = 5;
+pub const LIGHT_COUNT_BINDING: u32 = 6;
 
 impl Renderer {
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {

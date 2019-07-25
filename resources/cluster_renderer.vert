@@ -8,7 +8,7 @@ out vec2 fs_pos_in_tex;
 flat out uvec4 fs_indices;
 
 void main() {
-  uint cluster_index = active_cluster[gl_InstanceID];
+  uint cluster_index = active_cluster_indices[gl_InstanceID];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_dims);
   vec3 pos_in_cls = vec3(idx_in_cls) + vs_pos_in_obj;
 
