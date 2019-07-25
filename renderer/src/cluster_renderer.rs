@@ -10,6 +10,7 @@ pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::
 pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(2) };
 
 pub const FRAGMENTS_PER_CLUSTER_BINDING: u32 = 0;
+pub const ACTIVE_CLUSTER_BINDING: u32 = 1;
 
 pub struct Parameters<'a> {
     pub cluster_resources: &'a cluster_shading::ClusterResources,
@@ -32,36 +33,35 @@ impl Renderer {
                     params.cluster_resources.fragments_per_cluster_buffer_name,
                 );
 
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    ACTIVE_CLUSTER_BINDING,
+                    params.cluster_resources.active_cluster_buffer_name,
+                );
+
+                gl.bind_buffer(
+                    gl::DRAW_INDIRECT_BUFFER,
+                    params.cluster_resources.draw_command_buffer_name,
+                );
+
                 gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());
                 gl.uniform_3ui(CLUSTER_DIMS_LOC, params.cluster_data.dimensions.into());
                 gl.uniform_1ui(PASS_LOC, 0);
 
-                gl.draw_elements_instanced_base_vertex(
-                    gl::TRIANGLES,
-                    resources.cluster_element_count,
-                    gl::UNSIGNED_INT,
-                    0,
-                    params.cluster_data.cluster_count(),
-                    0,
-                );
+                gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
 
                 gl.depth_mask(gl::FALSE);
                 gl.enable(gl::BLEND);
                 gl.blend_func(gl::SRC_ALPHA, gl::ONE);
+                // gl.color_mask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
 
                 gl.uniform_1ui(PASS_LOC, 1);
 
-                gl.draw_elements_instanced_base_vertex(
-                    gl::TRIANGLES,
-                    resources.cluster_element_count,
-                    gl::UNSIGNED_INT,
-                    0,
-                    params.cluster_data.cluster_count(),
-                    0,
-                );
+                gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
 
                 gl.depth_mask(gl::TRUE);
                 gl.disable(gl::BLEND);
+                // gl.color_mask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
 
                 gl.unbind_vertex_array();
                 gl.unuse_program();

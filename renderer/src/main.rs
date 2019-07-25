@@ -790,6 +790,19 @@ fn main() {
             }
 
             unsafe {
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::DRAW_COMMAND_BINDING,
+                    cluster_resources.draw_command_buffer_name,
+                );
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::COMPUTE_COMMAND_BINDING,
+                    cluster_resources.compute_command_buffer_name,
+                );
+            }
+
+            unsafe {
                 let program = &mut cls_renderer.compact_clusters_0_program;
                 program.update(&gl, &mut world);
                 if let ProgramName::Linked(name) = program.name {
