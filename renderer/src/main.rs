@@ -839,21 +839,23 @@ fn main() {
 
             // We have our active clusters.
 
-            // unsafe {
-            //     let data: Vec<[f32; 4]> = point_lights
-            //         .iter()
-            //         .map(|&light| {
-            //             let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
-            //             let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
-            //             [x, y, z, light.attenuation.clip_far]
-            //         })
-            //         .collect();
+            unsafe {
+                dbg!(point_lights.len());
+                let data: Vec<[f32; 4]> = point_lights
+                    .iter()
+                    .map(|&light| {
+                        let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
+                        let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
+                        [x, y, z, light.attenuation.clip_far]
+                    })
+                    .collect();
+                dbg!(data.len());
 
-            //     let buffer_name = cluster_resources.light_buffer_name;
-            //     gl.named_buffer_data(buffer_name, data.vec_as_bytes(), gl::STREAM_DRAW);
+                let buffer_name = cluster_resources.light_buffer_name;
+                gl.named_buffer_data(buffer_name, data.vec_as_bytes(), gl::STATIC_DRAW);
 
-            //     gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer_name);
-            // }
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer_name);
+            }
 
             // unsafe {
             //     let buffer_name = cluster_resources.light_count_buffer_name;
