@@ -17,6 +17,9 @@ cluster_side = 1.5
 min_light_count = 1
 # animate_z = 2.0
 # animate_light_count = 2.0
+max_cluster_count = 16777216 # 2^24 u32 64MB * (fragments, light counts, light offsets)
+max_active_cluster_count = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
+max_light_index_count = 1048576 # 2^20 u32 4MB * (light index)
 
 [virtual_stereo]
 enabled = false

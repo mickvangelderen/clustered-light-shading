@@ -13,8 +13,8 @@ void main() {
   uint cluster_index = fs_cluster_index;
   uint active_cluster_index = fs_active_cluster_index;
 
-  uint frag_count = fragments_per_cluster[cluster_index];
-  uint light_count = light_counts[active_cluster_index];
+  uint frag_count = cluster_fragment_counts[cluster_index];
+  uint light_count = active_cluster_light_counts[active_cluster_index];
 
   // COLORS
   // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 1.0);

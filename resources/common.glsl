@@ -14,3 +14,8 @@ uvec3 index_1_to_3(uint index_1, uvec3 dimensions) {
   uint z = index_1;
   return uvec3(x, y, z);
 }
+
+uint uint_div_ceil(uint n, uint d) {
+  uint r = n / d;
+  return ((n % d) == 0) ? r : r + 1;
+}

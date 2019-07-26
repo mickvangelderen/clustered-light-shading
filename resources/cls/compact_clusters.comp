@@ -3,6 +3,7 @@
 #include "../compute_indirect.glsl"
 #include "../draw_indirect.glsl"
 #include "cls.glsl"
+#include "../common.glsl"
 
 layout(location = 0) uniform uint ITEM_COUNT;
 
@@ -70,11 +71,6 @@ void scan() {
 #endif
 }
 
-uint uint_div_ceil(uint n, uint d) {
-  uint r = n / d;
-  return ((n % d) == 0) ? r : r + 1;
-}
-
 #if PASS == 0
 void main() {
   uint blocks_per_dispatch = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
@@ -87,7 +83,7 @@ void main() {
   uint acc = 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
-    uint value = fragments_per_cluster[offset + tid];
+    uint value = cluster_fragment_counts[offset + tid];
     if (value > 0) {
       acc += 1;
     }
@@ -136,7 +132,7 @@ void main() {
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     // Initialize shared memory
-    uint cluster_active = ((fragments_per_cluster[offset + tid]) == 0 ? 0 : 1);
+    uint cluster_active = ((cluster_fragment_counts[offset + tid]) == 0 ? 0 : 1);
     values[tid] = cluster_active;
     memoryBarrierShared();
     barrier();

@@ -601,7 +601,7 @@ fn main() {
             let cluster_resources_index = cluster_data_vec.len();
 
             if cluster_resources_vec.len() < cluster_resources_index + 1 {
-                cluster_resources_vec.push(ClusterResources::new(&gl));
+                cluster_resources_vec.push(ClusterResources::new(&gl, &configuration.clustered_light_shading));
                 debug_assert_eq!(cluster_resources_vec.len(), cluster_resources_index + 1);
             }
 
@@ -700,10 +700,10 @@ fn main() {
             let padded_item_count = dispatch_count * items_per_dispatch;
 
             unsafe {
-                let buffer = &mut cluster_resources.fragments_per_cluster_buffer;
+                let buffer = &mut cluster_resources.cluster_fragment_counts_buffer;
                 let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
                 buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, byte_count);
+                // buffer.ensure_capacity(&gl, byte_count);
                 buffer.clear_0u32(&gl, byte_count);
             }
 
@@ -741,8 +741,8 @@ fn main() {
 
                         gl.bind_buffer_base(
                             gl::SHADER_STORAGE_BUFFER,
-                            cls_renderer::FRAGMENTS_PER_CLUSTER_BINDING,
-                            cluster_resources.fragments_per_cluster_buffer.name(),
+                            cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
+                            cluster_resources.cluster_fragment_counts_buffer.name(),
                         );
 
                         // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
@@ -781,14 +781,14 @@ fn main() {
             }
 
             unsafe {
-                let buffer = &mut cluster_resources.active_cluster_buffer;
+                let buffer = &mut cluster_resources.active_cluster_indices_buffer;
                 let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
                 buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, byte_count);
+                // buffer.ensure_capacity(&gl, byte_count);
                 buffer.clear_0u32(&gl, byte_count);
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_BINDING,
+                    cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
                     buffer.name(),
                 );
             }
@@ -856,31 +856,26 @@ fn main() {
                 let bytes = data.vec_as_bytes();
                 let padded_byte_count = bytes.len().ceil_to_multiple(64);
 
-                let buffer = &mut cluster_resources.light_buffer;
+                let buffer = &mut cluster_resources.light_xyzr_buffer;
                 buffer.invalidate(&gl);
                 buffer.ensure_capacity(&gl, padded_byte_count);
-
-                // DOESN'T HELP
-                // gl.bind_buffer(gl::SHADER_STORAGE_BUFFER, buffer.name());
-                // gl.buffer_data(gl::SHADER_STORAGE_BUFFER, data.vec_as_bytes(), gl::DYNAMIC_DRAW);
-
                 buffer.write(&gl, data.vec_as_bytes());
-                // buffer.clear_0u32(&gl, padded_byte_count);
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer.name());
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_XYZR_BINDING, buffer.name());
             }
 
             unsafe {
-                let buffer = &mut cluster_resources.light_count_buffer;
+                let buffer = &mut cluster_resources.active_cluster_light_counts_buffer;
                 let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
                 buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, byte_count);
+                // buffer.ensure_capacity(&gl, byte_count);
                 buffer.clear_0u32(&gl, byte_count);
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::LIGHT_COUNT_BINDING,
+                    cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
                     buffer.name(),
                 );
             }
+
             unsafe {
                 let program = &mut count_lights_program.program;
                 program.update(&gl, &mut world);
@@ -905,6 +900,8 @@ fn main() {
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
+
+
 
             cluster_data_vec.push(cluster_data);
         }

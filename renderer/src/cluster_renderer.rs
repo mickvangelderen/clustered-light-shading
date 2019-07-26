@@ -26,20 +26,20 @@ impl Renderer {
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::FRAGMENTS_PER_CLUSTER_BINDING,
-                    params.cluster_resources.fragments_per_cluster_buffer.name(),
+                    cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
+                    params.cluster_resources.cluster_fragment_counts_buffer.name(),
                 );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_BINDING,
-                    params.cluster_resources.active_cluster_buffer.name(),
+                    cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
+                    params.cluster_resources.active_cluster_indices_buffer.name(),
                 );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::LIGHT_COUNT_BINDING,
-                    params.cluster_resources.light_count_buffer.name(),
+                    cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                    params.cluster_resources.active_cluster_light_counts_buffer.name(),
                 );
 
                 gl.bind_buffer(

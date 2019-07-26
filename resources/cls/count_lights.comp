@@ -61,12 +61,6 @@ void scan() {
 #endif
 }
 
-
-uint uint_div_ceil(uint n, uint d) {
-  uint r = n / d;
-  return ((n % d) == 0) ? r : r + 1;
-}
-
 void main() {
   uint cluster_index = active_cluster_indices[wid];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_dims);
@@ -106,6 +100,6 @@ void main() {
   scan();
 
   if (tid == LOCAL_X - 1) {
-    light_counts[wid] = values[tid];
+    active_cluster_light_counts[wid] = values[tid];
   }
 }
