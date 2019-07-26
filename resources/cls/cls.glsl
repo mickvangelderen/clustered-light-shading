@@ -39,7 +39,9 @@ layout(std430, binding = 7) buffer DrawCommandBuffer {
   DrawCommand draw_command;
 };
 
+#define COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT 0
+#define COMPUTE_COMMAND_INDEX_PREFIX_SUM_LIGHT_COUNTS 1
 layout(std430, binding = 8) buffer ComputeCommandBuffer {
-  ComputeCommand compute_command;
+  ComputeCommand compute_commands[];
 };
 

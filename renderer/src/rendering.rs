@@ -377,6 +377,10 @@ where
         self.name
     }
 
+    pub fn byte_capacity(&self) -> usize {
+        self.byte_capacity
+    }
+
     pub unsafe fn invalidate(&mut self, gl: &gl::Gl) {
         if self.byte_capacity > 0 {
             // Invalidate buffer using old capacity.

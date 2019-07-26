@@ -15,6 +15,8 @@ void main() {
 
   uint frag_count = cluster_fragment_counts[cluster_index];
   uint light_count = active_cluster_light_counts[active_cluster_index];
+  // FIXME: doesnt work yet
+  // uint light_count = cluster_metas[cluster_index].light_index_count;
 
   // COLORS
   // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 1.0);
