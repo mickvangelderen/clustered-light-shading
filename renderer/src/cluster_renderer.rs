@@ -27,18 +27,18 @@ impl Renderer {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::FRAGMENTS_PER_CLUSTER_BINDING,
-                    params.cluster_resources.fragments_per_cluster_buffer_name,
+                    params.cluster_resources.fragments_per_cluster_buffer.name(),
                 );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::ACTIVE_CLUSTER_BINDING,
-                    params.cluster_resources.active_cluster_buffer_name,
+                    params.cluster_resources.active_cluster_buffer.name(),
                 );
 
                 gl.bind_buffer(
                     gl::DRAW_INDIRECT_BUFFER,
-                    params.cluster_resources.draw_command_buffer_name,
+                    params.cluster_resources.draw_command_buffer.name(),
                 );
 
                 gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());

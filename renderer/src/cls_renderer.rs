@@ -7,49 +7,6 @@ pub struct Renderer {
     pub compact_clusters_2_program: rendering::Program,
 }
 
-pub struct Buffer {
-    name: gl::BufferName,
-    byte_capacity: usize,
-}
-
-impl Buffer {
-    pub fn new(gl: &gl::Gl) -> Self {
-        unsafe {
-            Self {
-                name: gl.create_buffer(),
-                byte_capacity: 0,
-            }
-        }
-    }
-
-    pub fn ensure_capacity<T>(&mut self, gl: &gl::Gl, capacity: usize) {
-        unsafe {
-            let byte_capacity = std::mem::size_of::<T>() * capacity;
-
-            if self.byte_capacity < capacity {
-                gl.named_buffer_reserve(self.name, byte_capacity, gl::DYNAMIC_DRAW);
-                self.byte_capacity = byte_capacity;
-            }
-        }
-    }
-}
-
-pub struct Resources {
-    pub fragments_per_cluster_buffer: Buffer,
-    pub offset_buffer: Buffer,
-    pub active_cluster_buffer: Buffer,
-}
-
-impl Resources {
-    pub fn new(gl: &gl::Gl) -> Self {
-        Self {
-            fragments_per_cluster_buffer: Buffer::new(gl),
-            offset_buffer: Buffer::new(gl),
-            active_cluster_buffer: Buffer::new(gl),
-        }
-    }
-}
-
 pub struct RenderParams<'a> {
     pub gl: &'a gl::Gl,
     pub world: &'a mut World,

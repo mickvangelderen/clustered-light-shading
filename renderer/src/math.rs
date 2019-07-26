@@ -17,6 +17,30 @@ where
     }
 }
 
+pub trait CeilToMultiple {
+    fn ceil_to_multiple(self, rhs: Self) -> Self;
+}
+
+impl<T> CeilToMultiple for T
+where
+    T: Copy
+        + std::ops::Add<Output = Self>
+        + std::ops::Sub<Output = Self>
+        + std::ops::Rem<Output = Self>
+        + Eq
+        + Zero
+        + One,
+{
+    fn ceil_to_multiple(self, rhs: Self) -> Self {
+        let rem = self % rhs;
+        if rem == T::ZERO {
+            self
+        } else {
+            self - rem + rhs
+        }
+    }
+}
+
 pub trait Zero {
     const ZERO: Self;
 }
