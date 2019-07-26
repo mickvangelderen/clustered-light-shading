@@ -126,13 +126,13 @@ pub struct ClusterCamera {
 
 pub struct ClusterResources {
     pub buffer_name: gl::BufferName,
-    pub fragments_per_cluster_buffer_name: gl::BufferName,
-    pub offset_buffer_name: gl::BufferName,
-    pub active_cluster_buffer_name: gl::BufferName,
-    pub draw_command_buffer_name: gl::BufferName,
-    pub compute_command_buffer_name: gl::BufferName,
-    pub light_buffer_name: gl::BufferName,
-    pub light_count_buffer_name: gl::BufferName,
+    pub fragments_per_cluster_buffer: DynamicBuffer,
+    pub offset_buffer: DynamicBuffer,
+    pub active_cluster_buffer: DynamicBuffer,
+    pub draw_command_buffer: DynamicBuffer,
+    pub compute_command_buffer: DynamicBuffer,
+    pub light_buffer: DynamicBuffer,
+    pub light_count_buffer: DynamicBuffer,
     pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
@@ -145,11 +145,11 @@ impl ClusterResources {
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
             buffer_name: unsafe { gl.create_buffer() },
-            fragments_per_cluster_buffer_name: unsafe { gl.create_buffer() },
-            offset_buffer_name: unsafe { gl.create_buffer() },
-            active_cluster_buffer_name: unsafe { gl.create_buffer() },
-            draw_command_buffer_name: unsafe {
-                let name = gl.create_buffer();
+            fragments_per_cluster_buffer: unsafe { Buffer::new(gl) },
+            offset_buffer: unsafe { Buffer::new(gl) },
+            active_cluster_buffer: unsafe { Buffer::new(gl) },
+            draw_command_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
                 let data = rendering::DrawCommand {
                     count: 36,
                     prim_count: 0,
@@ -157,21 +157,23 @@ impl ClusterResources {
                     base_vertex: 0,
                     base_instance: 0,
                 };
-                gl.named_buffer_data(name, data.value_as_bytes(), gl::STATIC_DRAW);
-                name
+                buffer.ensure_capacity(gl, data.value_as_bytes().len());
+                buffer.write(gl, data.value_as_bytes());
+                buffer
             },
-            compute_command_buffer_name: unsafe {
-                let name = gl.create_buffer();
+            compute_command_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
                 let data = rendering::ComputeCommand {
                     work_group_x: 0,
                     work_group_y: 1,
                     work_group_z: 1,
                 };
-                gl.named_buffer_data(name, data.value_as_bytes(), gl::STATIC_DRAW);
-                name
+                buffer.ensure_capacity(gl, data.value_as_bytes().len());
+                buffer.write(gl, data.value_as_bytes());
+                buffer
             },
-            light_buffer_name: unsafe { gl.create_buffer() },
-            light_count_buffer_name: unsafe { gl.create_buffer() },
+            light_buffer: unsafe { Buffer::new(gl) },
+            light_count_buffer: unsafe { Buffer::new(gl) },
             cameras: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),

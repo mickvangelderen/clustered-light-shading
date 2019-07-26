@@ -54,7 +54,7 @@ use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
-use crate::math::DivCeil;
+use crate::math::{CeilToMultiple, DivCeil};
 use crate::profiling::*;
 use crate::shader_compiler::{EntryPoint, ShaderCompiler};
 use crate::text_rendering::{FontContext, TextBox};
@@ -700,15 +700,16 @@ fn main() {
             let padded_item_count = dispatch_count * items_per_dispatch;
 
             unsafe {
-                let buffer_name = cluster_resources.fragments_per_cluster_buffer_name;
+                let buffer = &mut cluster_resources.fragments_per_cluster_buffer;
                 let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
-                gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
-                gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::FRAGMENTS_PER_CLUSTER_BINDING,
-                    buffer_name,
+                    buffer.name(),
                 );
             }
 
@@ -770,24 +771,24 @@ fn main() {
             // We have our fragments per cluster buffer here.
 
             unsafe {
-                let buffer_name = cluster_resources.offset_buffer_name;
+                let buffer = &mut cluster_resources.offset_buffer;
                 let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
-                gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
-                gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
-
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer_name);
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
             }
 
             unsafe {
-                let buffer_name = cluster_resources.active_cluster_buffer_name;
+                let buffer = &mut cluster_resources.active_cluster_buffer;
                 let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
-                gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
-                gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
-
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::ACTIVE_CLUSTER_BINDING,
-                    buffer_name,
+                    buffer.name(),
                 );
             }
 
@@ -795,12 +796,12 @@ fn main() {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::DRAW_COMMAND_BINDING,
-                    cluster_resources.draw_command_buffer_name,
+                    cluster_resources.draw_command_buffer.name(),
                 );
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::COMPUTE_COMMAND_BINDING,
-                    cluster_resources.compute_command_buffer_name,
+                    cluster_resources.compute_command_buffer.name(),
                 );
             }
 
@@ -840,7 +841,6 @@ fn main() {
             // We have our active clusters.
 
             unsafe {
-                dbg!(point_lights.len());
                 let data: Vec<[f32; 4]> = point_lights
                     .iter()
                     .map(|&light| {
@@ -849,25 +849,28 @@ fn main() {
                         [x, y, z, light.attenuation.clip_far]
                     })
                     .collect();
-                dbg!(data.len());
+                let bytes = data.vec_as_bytes();
+                let padded_byte_count = bytes.len().ceil_to_multiple(64);
 
-                let buffer_name = cluster_resources.light_buffer_name;
-                gl.named_buffer_data(buffer_name, data.vec_as_bytes(), gl::STATIC_DRAW);
-
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer_name);
+                let buffer = &mut cluster_resources.light_buffer;
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, padded_byte_count);
+                buffer.write(&gl, data.vec_as_bytes());
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer.name());
             }
 
-            // unsafe {
-            //     let buffer_name = cluster_resources.light_count_buffer_name;
-            //     let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
-            //     gl.named_buffer_reserve(buffer_name, byte_count, gl::STREAM_DRAW);
-            //     gl.clear_named_buffer_sub_data(buffer_name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
-            //     gl.bind_buffer_base(
-            //         gl::SHADER_STORAGE_BUFFER,
-            //         cls_renderer::LIGHT_COUNT_BINDING,
-            //         buffer_name,
-            //     );
-            // }
+            unsafe {
+                let buffer = &mut cluster_resources.light_count_buffer;
+                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::LIGHT_COUNT_BINDING,
+                    buffer.name(),
+                );
+            }
 
             // unsafe {
             //     let program = &mut count_lights_program.program;
