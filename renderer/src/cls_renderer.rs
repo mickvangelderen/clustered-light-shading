@@ -27,13 +27,17 @@ pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::
 // compact clusters
 pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
 
-pub const FRAGMENTS_PER_CLUSTER_BINDING: u32 = 0;
-pub const OFFSET_BINDING: u32 = 1;
-pub const ACTIVE_CLUSTER_BINDING: u32 = 2;
-pub const DRAW_COMMAND_BINDING: u32 = 3;
-pub const COMPUTE_COMMAND_BINDING: u32 = 4;
-pub const LIGHT_BINDING: u32 = 5;
-pub const LIGHT_COUNT_BINDING: u32 = 6;
+pub const CLUSTER_FRAGMENT_COUNTS_BINDING: u32 = 0;
+pub const CLUSTER_META_BINDING: u32 = 1;
+
+pub const ACTIVE_CLUSTER_INDICES_BINDING: u32 = 2;
+pub const ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING: u32 = 3;
+pub const ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING: u32 = 4;
+
+pub const LIGHT_XYZR_BINDING: u32 = 5;
+pub const OFFSET_BINDING: u32 = 6;
+pub const DRAW_COMMAND_BINDING: u32 = 7;
+pub const COMPUTE_COMMAND_BINDING: u32 = 8;
 
 impl Renderer {
     pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
