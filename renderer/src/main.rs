@@ -805,7 +805,7 @@ fn main() {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::COMPUTE_COMMAND_BINDING,
-                    cluster_resources.compute_command_buffer.name(),
+                    cluster_resources.compute_commands_buffer.name(),
                 );
             }
 
@@ -826,7 +826,7 @@ fn main() {
                 if let ProgramName::Linked(name) = program.name {
                     gl.use_program(name);
                     gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
-                    gl.dispatch_compute(configuration.prefix_sum.pass_1_threads, 1, 1);
+                    gl.dispatch_compute(1, 1, 1);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
@@ -893,15 +893,67 @@ fn main() {
                     gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
                     gl.bind_buffer(
                         gl::DISPATCH_INDIRECT_BUFFER,
-                        cluster_resources.compute_command_buffer.name(),
+                        cluster_resources.compute_commands_buffer.name(),
                     );
                     gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
-                    gl.dispatch_compute_indirect(0);
+                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
 
+            // We have our light counts.
 
+            unsafe {
+                let buffer = &mut cluster_resources.offset_buffer;
+                let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
+            }
+
+            unsafe {
+                let buffer = &mut cluster_resources.cluster_metas_buffer;
+                let byte_count = std::mem::size_of::<ClusterMeta>() * padded_item_count as usize;
+                buffer.invalidate(&gl);
+                // buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::CLUSTER_METAS_BINDING,
+                    buffer.name(),
+                );
+            }
+
+            unsafe {
+                let program = &mut cls_renderer.compact_light_counts_0_program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
+
+            unsafe {
+                let program = &mut cls_renderer.compact_light_counts_1_program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.dispatch_compute(1, 1, 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
+
+            unsafe {
+                let program = &mut cls_renderer.compact_light_counts_2_program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
 
             cluster_data_vec.push(cluster_data);
         }

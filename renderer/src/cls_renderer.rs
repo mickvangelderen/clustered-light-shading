@@ -5,6 +5,9 @@ pub struct Renderer {
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
+    pub compact_light_counts_0_program: rendering::Program,
+    pub compact_light_counts_1_program: rendering::Program,
+    pub compact_light_counts_2_program: rendering::Program,
 }
 
 pub struct RenderParams<'a> {
@@ -28,11 +31,11 @@ pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::
 pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
 
 pub const CLUSTER_FRAGMENT_COUNTS_BINDING: u32 = 0;
-pub const CLUSTER_META_BINDING: u32 = 1;
+pub const CLUSTER_METAS_BINDING: u32 = 1;
 
 pub const ACTIVE_CLUSTER_INDICES_BINDING: u32 = 2;
 pub const ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING: u32 = 3;
-pub const ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING: u32 = 4;
+// pub const ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING: u32 = 4;
 
 pub const LIGHT_XYZR_BINDING: u32 = 5;
 pub const OFFSET_BINDING: u32 = 6;
@@ -72,6 +75,30 @@ impl Renderer {
                     gl,
                     gl::COMPUTE_SHADER,
                     EntryPoint::new(world, "cls/compact_clusters_2.comp"),
+                )],
+            ),
+            compact_light_counts_0_program: rendering::Program::new(
+                gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(world, "cls/compact_light_counts_0.comp"),
+                )],
+            ),
+            compact_light_counts_1_program: rendering::Program::new(
+                gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(world, "cls/compact_light_counts_1.comp"),
+                )],
+            ),
+            compact_light_counts_2_program: rendering::Program::new(
+                gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(world, "cls/compact_light_counts_2.comp"),
                 )],
             ),
         }

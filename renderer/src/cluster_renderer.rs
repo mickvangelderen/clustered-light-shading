@@ -32,6 +32,12 @@ impl Renderer {
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::CLUSTER_METAS_BINDING,
+                    params.cluster_resources.cluster_metas_buffer.name(),
+                );
+
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
                     params.cluster_resources.active_cluster_indices_buffer.name(),
                 );

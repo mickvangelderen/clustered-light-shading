@@ -1,11 +1,9 @@
 #include "native/PREFIX_SUM"
 
+#include "../common.glsl"
 #include "../compute_indirect.glsl"
 #include "../draw_indirect.glsl"
 #include "cls.glsl"
-#include "../common.glsl"
-
-layout(location = 0) uniform uint ITEM_COUNT;
 
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS
@@ -73,7 +71,10 @@ void scan() {
 
 #if PASS == 0
 void main() {
-  uint blocks_per_dispatch = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint item_count =
+      compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
+  uint blocks_per_dispatch =
+      uint_div_ceil(item_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
@@ -83,10 +84,7 @@ void main() {
   uint acc = 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
-    uint value = cluster_fragment_counts[offset + tid];
-    if (value > 0) {
-      acc += 1;
-    }
+    acc += active_cluster_light_counts[offset + tid];
   }
 
   // Initialize shared memory
@@ -97,8 +95,8 @@ void main() {
   scan();
 
   // Emit output from shared memory.
-  if (tid == 0) {
-    offsets[wid] = values[LOCAL_X - 1];
+  if (tid == LOCAL_X - 1) {
+    offsets[wid] = values[tid];
   }
 }
 #elif PASS == 1
@@ -112,47 +110,35 @@ void main() {
 
   // Emit output from shared memory.
   offsets[tid] = values[tid];
-
-  // Emit indirect draw and indirect compute data.
-  if (tid == PASS_1_THREADS - 1) {
-    uint active_cluster_count = values[tid];
-
-    draw_command.prim_count = active_cluster_count;
-
-    compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x = active_cluster_count;
-
-    uint blocks_per_dispatch = uint_div_ceil(active_cluster_count, PASS_0_THREADS * PASS_1_THREADS);
-    uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
-    uint dispatch_count = uint_div_ceil(active_cluster_count, items_per_dispatch);
-
-    compute_commands[COMPUTE_COMMAND_INDEX_PREFIX_SUM_LIGHT_COUNTS].work_group_x = dispatch_count;
-  }
 }
 #elif PASS == 2
 void main() {
-  uint blocks_per_dispatch = uint_div_ceil(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint item_count =
+      compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
+  uint blocks_per_dispatch =
+      uint_div_ceil(item_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
   uint offset_end = offset_begin + items_per_dispatch;
 
+  uint cluster_index = active_cluster_indices[wid];
+
   uint acc = (wid > 0) ? offsets[wid - 1] : 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     // Initialize shared memory
-    uint cluster_active = ((cluster_fragment_counts[offset + tid]) == 0 ? 0 : 1);
-    values[tid] = cluster_active;
+    uint light_count = active_cluster_light_counts[offset + tid];
+    values[tid] = light_count;
     memoryBarrierShared();
     barrier();
 
     scan();
 
-    if (cluster_active > 0) {
-      // Instead of writing out the offsets, we use them immediately to emit
-      // active cluster indices.
-      uint active_cluster_index_index = acc + values[tid] - 1;
-      active_cluster_indices[active_cluster_index_index] = offset + tid;
-    }
+    // Emit cluster meta.
+    uint light_offset = acc + (tid > 0 ? values[tid - 1] : 0);
+    cluster_metas[cluster_index].light_index_count = light_count;
+    cluster_metas[cluster_index].light_index_offset = light_offset;
 
     // Add the total sum of the current segment to the accumulator.
     acc += values[LOCAL_X - 1];
