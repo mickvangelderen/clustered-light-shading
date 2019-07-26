@@ -69,11 +69,11 @@ impl ClusterData {
         }
 
         if dimensions.y > 512.0 {
-            dimensions.x = 512.0
+            dimensions.y = 512.0
         }
 
         if dimensions.z > 512.0 {
-            dimensions.x = 512.0
+            dimensions.z = 512.0
         }
 
         let trans_from_hmd_to_cls = Point3::origin() - bb.min;
