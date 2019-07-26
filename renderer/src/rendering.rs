@@ -145,7 +145,6 @@ impl Shader {
                     COMMON_DECLARATION,
                     CAMERA_BUFFER_DECLARATION,
                     crate::light::LIGHT_BUFFER_DECLARATION,
-                    crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
                     &self.entry_point.contents,
                 ]
                 .iter(),

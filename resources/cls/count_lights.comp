@@ -1,5 +1,5 @@
-#include "cls.glsl"
 #include "../common.glsl"
+#include "cls.glsl"
 
 #define tid gl_LocalInvocationID.x
 #define wid gl_WorkGroupID.x
@@ -10,7 +10,57 @@ layout(location = 1) uniform vec3 scale_from_cls_to_hmd;
 layout(location = 2) uniform vec3 trans_from_cls_to_hmd;
 layout(location = 3) uniform uint light_count;
 
+shared uint values[LOCAL_X];
+
 layout(local_size_x = LOCAL_X) in;
+
+void sum_2(uint s) {
+  uint acc = values[tid] + (tid >= s ? values[tid - s] : 0);
+  memoryBarrierShared();
+  barrier();
+
+  values[tid] = acc;
+  memoryBarrierShared();
+  barrier();
+}
+
+// Assumes values are loaded in shared memory.
+void scan() {
+#if (1 << 0) < LOCAL_X
+  sum_2(1 << 0);
+#endif
+#if (1 << 1) < LOCAL_X
+  sum_2(1 << 1);
+#endif
+#if (1 << 2) < LOCAL_X
+  sum_2(1 << 2);
+#endif
+#if (1 << 3) < LOCAL_X
+  sum_2(1 << 3);
+#endif
+#if (1 << 4) < LOCAL_X
+  sum_2(1 << 4);
+#endif
+#if (1 << 5) < LOCAL_X
+  sum_2(1 << 5);
+#endif
+#if (1 << 6) < LOCAL_X
+  sum_2(1 << 6);
+#endif
+#if (1 << 7) < LOCAL_X
+  sum_2(1 << 7);
+#endif
+#if (1 << 8) < LOCAL_X
+  sum_2(1 << 8);
+#endif
+#if (1 << 9) < LOCAL_X
+  sum_2(1 << 9);
+#endif
+#if (1 << 10) < LOCAL_X
+#error Loop insufficiently unrolled.
+#endif
+}
+
 
 uint uint_div_ceil(uint n, uint d) {
   uint r = n / d;
@@ -18,36 +68,44 @@ uint uint_div_ceil(uint n, uint d) {
 }
 
 void main() {
-  uint cluster_index = active_cluster[wid];
+  uint cluster_index = active_cluster_indices[wid];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_dims);
   vec3 p0 = vec3(idx_in_cls) * scale_from_cls_to_hmd + trans_from_cls_to_hmd;
-  vec3 p1 = vec3(idx_in_cls + uvec3(1)) * scale_from_cls_to_hmd + trans_from_cls_to_hmd;
+  vec3 p1 = vec3(idx_in_cls + uvec3(1)) * scale_from_cls_to_hmd +
+            trans_from_cls_to_hmd;
 
   uint intersection_count = 0;
   for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
-    vec4 light = light_xyzr[light_base + tid];
-    float d = 0;
-    if (light.x < p0.x) {
-      d += (p0.x - light.x) * (p0.x - light.x);
-    } else if (p1.x <= light.x) {
-      d += (light.x - p1.x) * (light.x - p1.x);
-    }
-    if (light.y < p0.y) {
-      d += (p0.y - light.y) * (p0.y - light.y);
-    } else if (p1.y <= light.y) {
-      d += (light.y - p1.y) * (light.y - p1.y);
-    }
-    if (light.z < p0.z) {
-      d += (p0.z - light.z) * (p0.z - light.z);
-    } else if (p1.z <= light.z) {
-      d += (light.z - p1.z) * (light.z - p1.z);
-    }
-    if (d < light.w) {
-      intersection_count += 1;
+    uint light_index = light_base + tid;
+    if (light_index < light_count) {
+      vec4 light = light_xyzr[light_index];
+      float d = 0;
+      float r;
+      r = (light.x < p0.x ? p0.x - light.x : light.x - p1.x);
+      if (r >= 0.0) {
+        d += r*r;
+      }
+      r = (light.y < p0.y ? p0.y - light.y : light.y - p1.y);
+      if (r >= 0.0) {
+        d += r*r;
+      }
+      r = (light.z < p0.z ? p0.z - light.z : light.z - p1.z);
+      if (r >= 0.0) {
+        d += r*r;
+      }
+      if (d <= light.w * light.w) {
+        intersection_count += 1;
+      }
     }
   }
 
-  if (d < light.w) {
-    light_count[wid];
+  values[tid] = intersection_count;
+  memoryBarrierShared();
+  barrier();
+
+  scan();
+
+  if (tid == LOCAL_X - 1) {
+    light_counts[wid] = values[tid];
   }
 }

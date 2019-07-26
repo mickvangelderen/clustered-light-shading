@@ -810,38 +810,6 @@ fn main() {
             }
 
             unsafe {
-                let data: Vec<[f32; 4]> = point_lights
-                    .iter()
-                    .map(|&light| {
-                        let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
-                        let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
-                        [x, y, z, light.attenuation.clip_far]
-                    })
-                    .collect();
-                let bytes = data.vec_as_bytes();
-                let padded_byte_count = bytes.len().ceil_to_multiple(64);
-
-                let buffer = &mut cluster_resources.light_buffer;
-                buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, padded_byte_count);
-                buffer.write(&gl, data.vec_as_bytes());
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer.name());
-            }
-
-            unsafe {
-                let buffer = &mut cluster_resources.light_count_buffer;
-                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
-                buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, byte_count);
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::LIGHT_COUNT_BINDING,
-                    buffer.name(),
-                );
-            }
-
-            unsafe {
                 let program = &mut cls_renderer.compact_clusters_0_program;
                 program.update(&gl, &mut world);
                 if let ProgramName::Linked(name) = program.name {
@@ -876,29 +844,67 @@ fn main() {
 
             // We have our active clusters.
 
-            // unsafe {
-            //     let program = &mut count_lights_program.program;
-            //     program.update(&gl, &mut world);
-            //     if let ProgramName::Linked(name) = program.name {
-            //         gl.use_program(name);
-            //         gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
-            //         gl.uniform_3f(
-            //             cls::count_lights::TRANSLATION_LOC,
-            //             cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
-            //         );
-            //         gl.uniform_3f(
-            //             cls::count_lights::SCALE_LOC,
-            //             cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
-            //         );
-            //         gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
-            //         gl.bind_buffer(
-            //             gl::DISPATCH_INDIRECT_BUFFER,
-            //             cluster_resources.compute_command_buffer_name,
-            //         );
-            //         // gl.dispatch_compute_indirect(0);
-            //         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
-            //     }
-            // }
+            unsafe {
+                let data: Vec<[f32; 4]> = point_lights
+                    .iter()
+                    .map(|&light| {
+                        let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
+                        let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
+                        [x, y, z, light.attenuation.clip_far]
+                    })
+                    .collect();
+                let bytes = data.vec_as_bytes();
+                let padded_byte_count = bytes.len().ceil_to_multiple(64);
+
+                let buffer = &mut cluster_resources.light_buffer;
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, padded_byte_count);
+
+                // DOESN'T HELP
+                // gl.bind_buffer(gl::SHADER_STORAGE_BUFFER, buffer.name());
+                // gl.buffer_data(gl::SHADER_STORAGE_BUFFER, data.vec_as_bytes(), gl::DYNAMIC_DRAW);
+
+                buffer.write(&gl, data.vec_as_bytes());
+                // buffer.clear_0u32(&gl, padded_byte_count);
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_BINDING, buffer.name());
+            }
+
+            unsafe {
+                let buffer = &mut cluster_resources.light_count_buffer;
+                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                buffer.invalidate(&gl);
+                buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::LIGHT_COUNT_BINDING,
+                    buffer.name(),
+                );
+            }
+            unsafe {
+                let program = &mut count_lights_program.program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                    gl.uniform_3f(
+                        cls::count_lights::SCALE_LOC,
+                        cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                    );
+                    gl.uniform_3f(
+                        cls::count_lights::TRANSLATION_LOC,
+                        cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                    );
+                    gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
+                    gl.bind_buffer(
+                        gl::DISPATCH_INDIRECT_BUFFER,
+                        cluster_resources.compute_command_buffer.name(),
+                    );
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+                    gl.dispatch_compute_indirect(0);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
 
             cluster_data_vec.push(cluster_data);
         }
