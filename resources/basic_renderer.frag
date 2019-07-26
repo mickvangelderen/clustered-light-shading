@@ -200,7 +200,7 @@ void main() {
   vec3 color_accumulator = vec3(0.0);
   for (uint i = 0; i < light_count.x; i++) {
     color_accumulator +=
-      point_light_contribution(point_lights[i], nor_in_lgt,
+      point_light_contribution(light_buffer.point_lights[i], nor_in_lgt,
                                fs_pos_in_lgt, cam_dir_in_lgt_norm);
     // atomicCounterIncrement(shading_ops);
   }
@@ -226,8 +226,11 @@ void main() {
       (((fs_idx_in_cls.z * cluster_dims.y) + fs_idx_in_cls.y) * cluster_dims.x +
        fs_idx_in_cls.x) * 2;
 
-  uint cluster_offset = clusters[cluster_meta_index];
-  uint cluster_length = clusters[cluster_meta_index + 1];
+  // FIXME
+  // uint cluster_offset = clusters[cluster_meta_index];
+  // uint cluster_length = clusters[cluster_meta_index + 1];
+  uint cluster_offset = 0;
+  uint cluster_length = 0;
 
   // CLUSTER LENGHTS
   // frag_color = vec4(vec3(float(cluster_length) / 132.0), 1.0);
@@ -240,17 +243,19 @@ void main() {
   // frag_color = vec4(vec3(float(cluster_length)/2.0) * cluster_index_colors, 1.0);
 
   // CLUSTERED SHADING
-  uint cluster_lights_offset = cluster_dims.x * cluster_dims.y * cluster_dims.z * 2;
-  vec3 color_accumulator = vec3(0.0);
-  for (uint i = 0; i < cluster_length; i++) {
-    uint light_index = clusters[cluster_lights_offset + cluster_offset + i];
+  // uint cluster_lights_offset = cluster_dims.x * cluster_dims.y * cluster_dims.z * 2;
+  // vec3 color_accumulator = vec3(0.0);
+  // for (uint i = 0; i < cluster_length; i++) {
+  //   uint light_index = clusters[cluster_lights_offset + cluster_offset + i];
 
-    color_accumulator +=
-        point_light_contribution(point_lights[light_index], nor_in_lgt,
-                                 fs_pos_in_lgt, cam_dir_in_lgt_norm);
-    // atomicCounterIncrement(shading_ops);
-  }
-  frag_color = vec4(color_accumulator, 1.0);
+  //   color_accumulator +=
+  //       point_light_contribution(light_buffer.point_lights[light_index], nor_in_lgt,
+  //                                fs_pos_in_lgt, cam_dir_in_lgt_norm);
+  //   // atomicCounterIncrement(shading_ops);
+  // }
+  // frag_color = vec4(color_accumulator, 1.0);
+  // TODO: Remove me when I turn the lights back on :')
+  frag_color = texture(diffuse_sampler, fs_pos_in_tex);
 #else
 #error Unimplemented render technique!
 #endif

@@ -64,16 +64,16 @@ impl ClusterData {
         let mut dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
 
         // TODO: Warn?
-        if dimensions.x > 512.0 {
-            dimensions.x = 512.0
+        if dimensions.x > 256.0 {
+            dimensions.x = 256.0
         }
 
-        if dimensions.y > 512.0 {
-            dimensions.y = 512.0
+        if dimensions.y > 256.0 {
+            dimensions.y = 256.0
         }
 
-        if dimensions.z > 512.0 {
-            dimensions.z = 512.0
+        if dimensions.z > 256.0 {
+            dimensions.z = 256.0
         }
 
         let trans_from_hmd_to_cls = Point3::origin() - bb.min;
@@ -410,27 +410,28 @@ impl ClusterResources {
                 }
             }
         }
-        unsafe {
-            let header = ClusterHeader {
-                dimensions: dimensions_u32.extend(0),
-                wld_to_cls: wld_to_cls.cast().unwrap(),
-                cls_to_wld: cls_to_wld.cast().unwrap(),
-            };
+        // FIXME
+        // unsafe {
+        //     let header = ClusterHeader {
+        //         dimensions: dimensions_u32.extend(0),
+        //         wld_to_cls: wld_to_cls.cast().unwrap(),
+        //         cls_to_wld: cls_to_wld.cast().unwrap(),
+        //     };
 
-            let header_bytes = header.value_as_bytes();
-            let header_bytes_offset = 0;
-            let meta_bytes = self.cluster_meta.vec_as_bytes();
-            let meta_bytes_offset = header_bytes_offset + header_bytes.len();
-            let light_indices_bytes = self.light_indices.vec_as_bytes();
-            let light_indices_bytes_offset = meta_bytes_offset + meta_bytes.len();
-            let total_byte_count = light_indices_bytes_offset + light_indices_bytes.len();
+        //     let header_bytes = header.value_as_bytes();
+        //     let header_bytes_offset = 0;
+        //     let meta_bytes = self.cluster_meta.vec_as_bytes();
+        //     let meta_bytes_offset = header_bytes_offset + header_bytes.len();
+        //     let light_indices_bytes = self.light_indices.vec_as_bytes();
+        //     let light_indices_bytes_offset = meta_bytes_offset + meta_bytes.len();
+        //     let total_byte_count = light_indices_bytes_offset + light_indices_bytes.len();
 
-            gl.named_buffer_reserve(self.buffer_name, total_byte_count, gl::STREAM_DRAW);
-            gl.named_buffer_sub_data(self.buffer_name, header_bytes_offset, header_bytes);
-            gl.named_buffer_sub_data(self.buffer_name, meta_bytes_offset, meta_bytes);
-            gl.named_buffer_sub_data(self.buffer_name, light_indices_bytes_offset, light_indices_bytes);
-            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
-        }
+        //     gl.named_buffer_reserve(self.buffer_name, total_byte_count, gl::STREAM_DRAW);
+        //     gl.named_buffer_sub_data(self.buffer_name, header_bytes_offset, header_bytes);
+        //     gl.named_buffer_sub_data(self.buffer_name, meta_bytes_offset, meta_bytes);
+        //     gl.named_buffer_sub_data(self.buffer_name, light_indices_bytes_offset, light_indices_bytes);
+        //     gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
+        // }
         self.cpu_end = Some(Instant::now());
     }
 }

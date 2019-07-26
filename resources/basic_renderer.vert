@@ -27,7 +27,7 @@ void main() {
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
   fs_pos_in_cls = (wld_to_cls * obj_to_wld * pos_in_obj).xyz;
 #endif
-  mat4 obj_to_lgt = wld_to_lgt * obj_to_wld;
+  mat4 obj_to_lgt = light_buffer.wld_to_lgt * obj_to_wld;
   fs_pos_in_lgt = mat4x3(obj_to_lgt) * pos_in_obj;
   fs_nor_in_lgt = transpose(inverse(mat3(obj_to_lgt))) * vs_nor_in_obj;
   fs_tan_in_lgt = mat3(obj_to_lgt) * vs_tan_in_obj;

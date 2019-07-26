@@ -36,6 +36,12 @@ impl Renderer {
                     params.cluster_resources.active_cluster_buffer.name(),
                 );
 
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::LIGHT_COUNT_BINDING,
+                    params.cluster_resources.light_count_buffer.name(),
+                );
+
                 gl.bind_buffer(
                     gl::DRAW_INDIRECT_BUFFER,
                     params.cluster_resources.draw_command_buffer.name(),
