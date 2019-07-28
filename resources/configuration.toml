@@ -12,7 +12,7 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-cluster_side = 0.8
+cluster_side = 2.0
 # light_index = 2
 min_light_count = 1
 # animate_z = 2.0
@@ -30,14 +30,14 @@ yaw_deg = 5.0
 maximum_smoothness = 0.80
 
 [main_camera]
-z0 = -0.1
-z1 = -40.0
+z0 = -0.2
+z1 = -80.0
 positional_velocity = 8.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
 
 [debug_camera]
-z0 = -2.0
+z0 = -0.2
 z1 = -200.0
 positional_velocity = 16.0
 angular_velocity = 0.4
