@@ -31,7 +31,6 @@ pub const CAMERA_BUFFER_BINDING: u32 = 1;
 pub const MATERIAL_BUFFER_BINDING: u32 = 2;
 pub const LIGHT_BUFFER_BINDING: u32 = 3;
 pub const TILE_BUFFER_BINDING: u32 = 4;
-pub const CLUSTER_BUFFER_BINDING: u32 = 5;
 
 macro_rules! buffer_binding_declaration {
     () => {
@@ -41,7 +40,6 @@ macro_rules! buffer_binding_declaration {
 #define MATERIAL_BUFFER_BINDING 2
 #define LIGHT_BUFFER_BINDING 3
 #define TILE_BUFFER_BINDING 4
-#define CLUSTER_BUFFER_BINDING 5
 "
     };
 }

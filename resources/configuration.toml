@@ -12,7 +12,7 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-cluster_side = 1.5
+cluster_side = 0.8
 # light_index = 2
 min_light_count = 1
 # animate_z = 2.0

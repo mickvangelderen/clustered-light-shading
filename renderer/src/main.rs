@@ -860,8 +860,12 @@ fn main() {
                 let buffer = &mut cluster_resources.light_xyzr_buffer;
                 buffer.invalidate(&gl);
                 buffer.ensure_capacity(&gl, padded_byte_count);
-                buffer.write(&gl, data.vec_as_bytes());
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_XYZR_BINDING, buffer.name());
+                buffer.write(&gl, bytes);
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::LIGHT_XYZR_BINDING,
+                    buffer.name(),
+                );
             }
 
             unsafe {
@@ -959,6 +963,14 @@ fn main() {
             // We have our light offsets.
 
             unsafe {
+                let buffer = &mut cluster_resources.light_indices_buffer;
+                buffer.invalidate(&gl);
+                // buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, buffer.byte_capacity());
+                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_INDICES_BINDING, buffer.name());
+            }
+
+            unsafe {
                 let program = &mut assign_lights_program.program;
                 program.update(&gl, &mut world);
                 if let ProgramName::Linked(name) = program.name {
@@ -982,7 +994,6 @@ fn main() {
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
-
 
             cluster_data_vec.push(cluster_data);
         }
@@ -1199,12 +1210,23 @@ fn main() {
             let main_resources = &mut main_pool.resources[main_index];
             let main_data = &mut main_pool.data[main_index];
 
+            let cluster_parameters = if world.shader_compiler.variables.render_technique == RenderTechnique::Clustered {
+                Some(basic_renderer::ClusterParameters {
+                    // FIXME: Think harder about this.
+                    data: &cluster_data_vec[0],
+                    resources: &cluster_resources_vec[0],
+                })
+            } else {
+                None
+            };
+
             render_main(
                 &gl,
                 main_resources,
                 main_data,
                 &resources,
                 &mut world,
+                cluster_parameters,
                 &mut depth_renderer,
                 &mut basic_renderer,
             );
@@ -1685,6 +1707,7 @@ pub fn render_main(
     main_data: &mut MainData,
     resources: &Resources,
     world: &mut World,
+    cluster_parameters: Option<basic_renderer::ClusterParameters>,
     depth_renderer: &mut depth_renderer::Renderer,
     basic_renderer: &mut basic_renderer::Renderer,
 ) {
@@ -1720,6 +1743,7 @@ pub fn render_main(
             CameraKey::Main => 0,
             CameraKey::Debug => world.display_mode,
         },
+        cluster: cluster_parameters,
     };
 
     main_data.basic = Some(

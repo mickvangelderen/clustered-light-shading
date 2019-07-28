@@ -177,7 +177,7 @@ impl ClusterResources {
             },
             offset_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
-                gl.buffer_label(&buffer, "offset_bufer");
+                gl.buffer_label(&buffer, "offsets");
                 buffer
             },
             draw_command_buffer: unsafe {
