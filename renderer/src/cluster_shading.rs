@@ -120,14 +120,15 @@ pub struct ClusterCamera {
 
 pub struct ClusterResources {
     pub cluster_fragment_counts_buffer: DynamicBuffer,
-    pub cluster_metas_buffer: DynamicBuffer,
+    // pub cluster_metas_buffer: DynamicBuffer,
     pub active_cluster_indices_buffer: DynamicBuffer,
     pub active_cluster_light_counts_buffer: DynamicBuffer,
-    // pub active_cluster_light_offsets_buffer: DynamicBuffer,
+    pub active_cluster_light_offsets_buffer: DynamicBuffer,
     pub light_xyzr_buffer: DynamicBuffer,
     pub offset_buffer: DynamicBuffer,
     pub draw_command_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
+    pub light_indices_buffer: DynamicBuffer,
     pub cameras: Vec<ClusterCamera>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
@@ -147,33 +148,41 @@ impl ClusterResources {
         Self {
             cluster_fragment_counts_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "cluster_fragment_counts");
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_cluster_count as usize);
-                buffer
-            },
-            cluster_metas_buffer: unsafe {
-                let mut buffer = Buffer::new(gl);
-                buffer.ensure_capacity(gl, std::mem::size_of::<ClusterMeta>() * cfg.max_cluster_count as usize);
                 buffer
             },
             active_cluster_indices_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "active_cluster_indices");
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
                 buffer
             },
             active_cluster_light_counts_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "active_cluster_light_counts");
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
                 buffer
             },
-            // active_cluster_light_offsets_buffer: unsafe {
-            //     let mut buffer = Buffer::new(gl);
-            //     buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
-            //     buffer
-            // },
-            light_xyzr_buffer: unsafe { Buffer::new(gl) },
-            offset_buffer: unsafe { Buffer::new(gl) },
+            active_cluster_light_offsets_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "active_cluster_light_offsets");
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
+                buffer
+            },
+            light_xyzr_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "light_xyrz");
+                buffer
+            },
+            offset_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "offset_bufer");
+                buffer
+            },
             draw_command_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "draw_comands");
                 let data = rendering::DrawCommand {
                     count: 36,
                     prim_count: 0,
@@ -187,6 +196,7 @@ impl ClusterResources {
             },
             compute_commands_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "compute_commands");
                 let data = vec![
                     rendering::ComputeCommand {
                         work_group_x: 0,
@@ -201,6 +211,12 @@ impl ClusterResources {
                 ];
                 buffer.ensure_capacity(gl, data.vec_as_bytes().len());
                 buffer.write(gl, data.vec_as_bytes());
+                buffer
+            },
+            light_indices_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "light_indices");
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_index_count as usize);
                 buffer
             },
             cameras: Vec::new(),

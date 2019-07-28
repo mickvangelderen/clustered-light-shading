@@ -30,11 +30,11 @@ impl Renderer {
                     params.cluster_resources.cluster_fragment_counts_buffer.name(),
                 );
 
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::CLUSTER_METAS_BINDING,
-                    params.cluster_resources.cluster_metas_buffer.name(),
-                );
+                // gl.bind_buffer_base(
+                //     gl::SHADER_STORAGE_BUFFER,
+                //     cls_renderer::CLUSTER_METAS_BINDING,
+                //     params.cluster_resources.cluster_metas_buffer.name(),
+                // );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
@@ -48,10 +48,23 @@ impl Renderer {
                     params.cluster_resources.active_cluster_light_counts_buffer.name(),
                 );
 
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                    params.cluster_resources.active_cluster_light_offsets_buffer.name(),
+                );
+
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::LIGHT_INDICES_BINDING,
+                    params.cluster_resources.light_indices_buffer.name(),
+                );
+
                 gl.bind_buffer(
                     gl::DRAW_INDIRECT_BUFFER,
                     params.cluster_resources.draw_command_buffer.name(),
                 );
+
 
                 gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());
                 gl.uniform_3ui(CLUSTER_DIMS_LOC, params.cluster_data.dimensions.into());

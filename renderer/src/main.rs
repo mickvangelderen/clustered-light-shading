@@ -415,6 +415,7 @@ fn main() {
     let mut text_renderer = text_renderer::Renderer::new(&gl, &mut world);
     let mut cls_renderer = cls_renderer::Renderer::new(&gl, &mut world);
     let mut count_lights_program = cls::count_lights::CountLightsProgram::new(&gl, &mut world);
+    let mut assign_lights_program = cls::assign_lights::AssignLightsProgram::new(&gl, &mut world);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
@@ -895,7 +896,7 @@ fn main() {
                         gl::DISPATCH_INDIRECT_BUFFER,
                         cluster_resources.compute_commands_buffer.name(),
                     );
-                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
                     gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
@@ -913,16 +914,16 @@ fn main() {
             }
 
             unsafe {
-                let buffer = &mut cluster_resources.cluster_metas_buffer;
-                let byte_count = std::mem::size_of::<ClusterMeta>() * padded_item_count as usize;
+                let buffer = &mut cluster_resources.active_cluster_light_offsets_buffer;
                 buffer.invalidate(&gl);
                 // buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, byte_count);
+                buffer.clear_0u32(&gl, buffer.byte_capacity());
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::CLUSTER_METAS_BINDING,
+                    cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
                     buffer.name(),
                 );
+                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
             }
 
             unsafe {
@@ -954,6 +955,34 @@ fn main() {
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
+
+            // We have our light offsets.
+
+            unsafe {
+                let program = &mut assign_lights_program.program;
+                program.update(&gl, &mut world);
+                if let ProgramName::Linked(name) = program.name {
+                    gl.use_program(name);
+                    gl.uniform_3ui(cls::assign_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                    gl.uniform_3f(
+                        cls::assign_lights::SCALE_LOC,
+                        cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                    );
+                    gl.uniform_3f(
+                        cls::assign_lights::TRANSLATION_LOC,
+                        cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                    );
+                    gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
+                    gl.bind_buffer(
+                        gl::DISPATCH_INDIRECT_BUFFER,
+                        cluster_resources.compute_commands_buffer.name(),
+                    );
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+            }
+
 
             cluster_data_vec.push(cluster_data);
         }
