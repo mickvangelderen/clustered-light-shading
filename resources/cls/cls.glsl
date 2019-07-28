@@ -11,9 +11,9 @@ struct ClusterMeta {
   uint light_index_offset;
 };
 
-layout(std430, binding = 1) buffer ClusterMetaBuffer {
-  ClusterMeta cluster_metas[];
-};
+// layout(std430, binding = 1) buffer ClusterMetaBuffer {
+//   ClusterMeta cluster_metas[];
+// };
 
 layout(std430, binding = 2) buffer ActiveClusterIndicesBuffer {
   uint active_cluster_indices[];
@@ -45,3 +45,7 @@ layout(std430, binding = 8) buffer ComputeCommandBuffer {
   ComputeCommand compute_commands[];
 };
 
+
+layout(std430, binding = 9) buffer LightIndicesBuffer {
+  uint light_indices[];
+};

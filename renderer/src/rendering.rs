@@ -413,6 +413,12 @@ where
     }
 }
 
+impl<U> AsRef<gl::BufferName> for Buffer<U> {
+    fn as_ref(&self) -> &gl::BufferName {
+        &self.name
+    }
+}
+
 // impl<U> std::ops::Deref for Buffer<U> {
 //     type Target = gl::BufferName;
 

@@ -15,8 +15,7 @@ void main() {
 
   uint frag_count = cluster_fragment_counts[cluster_index];
   uint light_count = active_cluster_light_counts[active_cluster_index];
-  // FIXME: doesnt work yet
-  // uint light_count = cluster_metas[cluster_index].light_index_count;
+  uint light_offset = active_cluster_light_offsets[active_cluster_index];
 
   // COLORS
   // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 1.0);
@@ -26,7 +25,7 @@ void main() {
       fs_pos_in_tex.y > 0.03 && fs_pos_in_tex.y < 0.97
       ) {
     if (pass == 1) {
-      frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/10.0);
+      frag_color = vec4(1.0, 0.6, 0.2, float(frag_count)/1000.0);
       // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 0.1);
     } else {
       discard;

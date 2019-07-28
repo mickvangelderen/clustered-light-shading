@@ -541,7 +541,7 @@ dependencies = [
 [[package]]
 name = "gl-typed"
 version = "0.6.0"
-source = "git+https://github.com/mickvangelderen/gl-typed-rust#e8909bbafe2d3e2bb3755cab6fc5df008e9fc721"
+source = "git+https://github.com/mickvangelderen/gl-typed-rust#3a001293761072a473fda5aaf34971b5404a690b"
 dependencies = [
  "bitflags 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "gl_generator 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",

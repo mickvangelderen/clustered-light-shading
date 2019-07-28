@@ -151,7 +151,13 @@ void main() {
       // Instead of writing out the offsets, we use them immediately to emit
       // active cluster indices.
       uint active_cluster_index_index = acc + values[tid] - 1;
-      active_cluster_indices[active_cluster_index_index] = offset + tid;
+      uint cluster_index = offset + tid;
+      active_cluster_indices[active_cluster_index_index] = cluster_index;
+      // We also write the active cluster index back into the fragment count
+      // buffer, except we use 0 as a sentinel value to denote the cluster is
+      // inactive. Therefore we store the active cluster index incremented by
+      // one.
+      cluster_fragment_counts[cluster_index] = active_cluster_index_index + 1;
     }
 
     // Add the total sum of the current segment to the accumulator.
