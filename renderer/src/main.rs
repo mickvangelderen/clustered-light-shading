@@ -1495,6 +1495,7 @@ pub fn process_window_events(
     let mut new_light_space = world.shader_compiler.light_space();
     let mut new_attenuation_mode = world.shader_compiler.attenuation_mode();
     let mut new_render_technique = world.shader_compiler.render_technique();
+    let mut reset_debug_camera = false;
 
     events_loop.poll_events(|event| {
         use glutin::Event;
@@ -1550,6 +1551,9 @@ pub fn process_window_events(
                                     VirtualKeyCode::Key5 => {
                                         world.depth_prepass = !world.depth_prepass;
                                     }
+                                    VirtualKeyCode::R => {
+                                        reset_debug_camera = true;
+                                    }
                                     VirtualKeyCode::Backslash => {
                                         configuration.virtual_stereo.enabled = !configuration.virtual_stereo.enabled;
                                     }
@@ -1600,6 +1604,11 @@ pub fn process_window_events(
 
     if new_target_camera_key != world.target_camera_key {
         world.target_camera_key = new_target_camera_key;
+        world.transition_camera.start_transition();
+    }
+
+    if reset_debug_camera {
+        world.cameras.debug.target_transform = world.cameras.main.target_transform;
         world.transition_camera.start_transition();
     }
 
