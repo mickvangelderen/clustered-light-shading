@@ -68,7 +68,8 @@ void main() {
   vec3 p1 = vec3(idx_in_cls + uvec3(1)) * scale_from_cls_to_hmd +
             trans_from_cls_to_hmd;
 
-  uint acc = wid > 0 ? active_cluster_light_offsets[wid - 1] : 0;
+  // NOTE: Offset is already corrected to have first value 0.
+  uint acc = active_cluster_light_offsets[wid];
   for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;
     if (light_index < light_count) {
@@ -96,7 +97,8 @@ void main() {
       scan();
 
       if (did_intersect) {
-        light_indices[acc + values[tid]] = light_index;
+        uint group_offset = tid > 0 ? values[tid - 1] : 0;
+        light_indices[acc + group_offset] = light_index;
       }
       acc += values[LOCAL_X - 1];
     }
