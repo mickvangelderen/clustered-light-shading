@@ -1770,7 +1770,7 @@ pub fn process_window_events(
                 rain_drop.update(delta_time, &mut rng, p0, p1);
             }
 
-            for _ in 0..1 {
+            for _ in 0..100 {
                 if world.rain_drops.len() < configuration.global.rain_drop_max as usize {
                     world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
                 }
