@@ -100,7 +100,7 @@ impl ClusterData {
     }
 }
 
-pub struct ClusterCamera {
+pub struct ClusterCameraData {
     // Depth pass.
     pub frame_dims: Vector2<i32>,
 
@@ -118,6 +118,29 @@ pub struct ClusterCamera {
     pub clp_to_hmd: Matrix4<f64>,
 }
 
+pub struct ClusterCameraResources {
+    pub profiler_pools: CameraStages<ProfilerPool>,
+}
+
+impl_enum_and_enum_map! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+    enum CameraStage => struct CameraStages {
+        RenderDepth => render_depth,
+        CountFrags => count_frags,
+    }
+}
+
+impl CameraStage {
+    pub const VALUES: [CameraStage; 2] = [CameraStage::RenderDepth, CameraStage::CountFrags];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            CameraStage::RenderDepth => "render depth",
+            CameraStage::CountFrags => "count #frags",
+        }
+    }
+}
+
 pub struct ClusterResources {
     pub cluster_fragment_counts_buffer: DynamicBuffer,
     // pub cluster_metas_buffer: DynamicBuffer,
@@ -129,12 +152,43 @@ pub struct ClusterResources {
     pub draw_command_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
-    pub cameras: Vec<ClusterCamera>,
+    pub profiler_pools: ClusterStages<ProfilerPool>,
+    pub camera_data: Vec<ClusterCameraData>,
+    pub camera_res: Vec<ClusterCameraResources>,
     pub cluster_lengths: Vec<u32>,
     pub cluster_meta: Vec<ClusterMeta>,
     pub light_indices: Vec<u32>,
-    pub cpu_start: Option<Instant>,
-    pub cpu_end: Option<Instant>,
+}
+
+impl_enum_and_enum_map! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+    enum ClusterStage => struct ClusterStages {
+        CompactClusters => compact_clusters,
+        UploadLights => upload_lights,
+        CountLights => count_lights,
+        LightOffsets => light_offsets,
+        AssignLights => assign_lights,
+    }
+}
+
+impl ClusterStage {
+    pub const VALUES: [ClusterStage; 5] = [
+        ClusterStage::CompactClusters,
+        ClusterStage::UploadLights,
+        ClusterStage::CountLights,
+        ClusterStage::LightOffsets,
+        ClusterStage::AssignLights,
+    ];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            ClusterStage::CompactClusters => "compact clusters",
+            ClusterStage::UploadLights => "upload lights",
+            ClusterStage::CountLights => "count lights",
+            ClusterStage::LightOffsets => "comp light offs",
+            ClusterStage::AssignLights => "assign lights",
+        }
+    }
 }
 
 #[repr(C)]
@@ -194,6 +248,7 @@ impl ClusterResources {
                 buffer.write(gl, data.value_as_bytes());
                 buffer
             },
+            profiler_pools: ClusterStages::new(|_| ProfilerPool::new(gl)),
             compute_commands_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "compute_commands");
@@ -219,13 +274,27 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_index_count as usize);
                 buffer
             },
-            cameras: Vec::new(),
+            camera_data: Vec::new(),
+            camera_res: Vec::new(),
             cluster_lengths: Vec::new(),
             cluster_meta: Vec::new(),
             light_indices: Vec::new(),
-            cpu_start: None,
-            cpu_end: None,
         }
+    }
+
+    pub fn add_camera(&mut self, gl: &gl::Gl, data: ClusterCameraData) -> usize {
+        let index = self.camera_data.len();
+        if self.camera_res.len() <= index {
+            self.camera_res.push(ClusterCameraResources {
+                profiler_pools: CameraStages::new(|_| ProfilerPool::new(gl)),
+            });
+        }
+        self.camera_data.push(data);
+        index
+    }
+
+    pub fn clear(&mut self) {
+        self.camera_data.clear();
     }
 }
 
@@ -269,7 +338,7 @@ impl ClusterResources {
         space: &ClusterData,
         point_lights: &[light::PointLight],
     ) {
-        self.cpu_start = Some(Instant::now());
+        // self.cpu_start = Some(Instant::now());
 
         // let ClusterData {
         //     dimensions,
@@ -477,7 +546,7 @@ impl ClusterResources {
         //     gl.named_buffer_sub_data(self.buffer_name, light_indices_bytes_offset, light_indices_bytes);
         //     gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
         // }
-        self.cpu_end = Some(Instant::now());
+        // self.cpu_end = Some(Instant::now());
     }
 }
 
