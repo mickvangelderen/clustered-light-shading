@@ -762,7 +762,7 @@ fn main() {
 
                         gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
 
-                        gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER);
 
                         gl.dispatch_compute(main_resources.dims.x as u32 / 16, main_resources.dims.y as u32 / 16, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
