@@ -135,8 +135,8 @@ pub struct MainResources {
     pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
     pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
     // Profiling
-    pub depth_pass_profiler: Profiler,
-    pub basic_pass_profiler: Profiler,
+    pub depth_pass_profiler: ProfilerPool,
+    pub basic_pass_profiler: ProfilerPool,
 }
 
 impl MainResources {
@@ -177,8 +177,8 @@ impl MainResources {
                 color_texture,
                 depth_texture,
                 nor_in_cam_texture,
-                depth_pass_profiler: Profiler::new(&gl),
-                basic_pass_profiler: Profiler::new(&gl),
+                depth_pass_profiler: ProfilerPool::new(&gl),
+                basic_pass_profiler: ProfilerPool::new(&gl),
             }
         }
     }
@@ -608,7 +608,7 @@ fn main() {
 
             let cluster_resources = &mut cluster_resources_vec[cluster_resources_index];
 
-            cluster_resources.cameras.clear();
+            cluster_resources.clear();
             let hmd_to_wld;
             let wld_to_hmd;
 
@@ -634,21 +634,24 @@ fn main() {
                         let clp_to_hmd = cam_to_hmd * clp_to_cam;
                         let hmd_to_clp = clp_to_hmd.invert().unwrap();
 
-                        cluster_resources.cameras.push(ClusterCamera {
-                            frame_dims: win_size,
+                        cluster_resources.add_camera(
+                            &gl,
+                            ClusterCameraData {
+                                frame_dims: win_size,
 
-                            wld_to_cam,
-                            cam_to_wld,
+                                wld_to_cam,
+                                cam_to_wld,
 
-                            cam_to_clp,
-                            clp_to_cam,
+                                cam_to_clp,
+                                clp_to_cam,
 
-                            hmd_to_clp,
-                            clp_to_hmd,
+                                hmd_to_clp,
+                                clp_to_hmd,
 
-                            wld_to_hmd,
-                            hmd_to_wld,
-                        });
+                                wld_to_hmd,
+                                hmd_to_wld,
+                            },
+                        );
                     }
                 }
                 None => {
@@ -665,30 +668,33 @@ fn main() {
                     let clp_to_hmd = clp_to_cam;
                     let hmd_to_clp = cam_to_clp;
 
-                    cluster_resources.cameras.push(ClusterCamera {
-                        frame_dims,
+                    cluster_resources.add_camera(
+                        &gl,
+                        ClusterCameraData {
+                            frame_dims,
 
-                        wld_to_cam: wld_to_bdy,
-                        cam_to_wld: bdy_to_wld,
+                            wld_to_cam: wld_to_bdy,
+                            cam_to_wld: bdy_to_wld,
 
-                        cam_to_clp,
-                        clp_to_cam,
+                            cam_to_clp,
+                            clp_to_cam,
 
-                        hmd_to_clp,
-                        clp_to_hmd,
+                            hmd_to_clp,
+                            clp_to_hmd,
 
-                        wld_to_hmd,
-                        hmd_to_wld,
-                    });
+                            wld_to_hmd,
+                            hmd_to_wld,
+                        },
+                    );
                 }
             }
 
             let cluster_data = ClusterData::new(
                 &configuration.clustered_light_shading,
                 cluster_resources
-                    .cameras
+                    .camera_data
                     .iter()
-                    .map(|&ClusterCamera { clp_to_hmd, .. }| clp_to_hmd),
+                    .map(|&ClusterCameraData { clp_to_hmd, .. }| clp_to_hmd),
                 wld_to_hmd,
                 hmd_to_wld,
             );
@@ -708,266 +714,330 @@ fn main() {
                 buffer.clear_0u32(&gl, byte_count);
             }
 
-            for camera in cluster_resources.cameras.iter() {
+            for (camera_index, camera) in cluster_resources.camera_data.iter_mut().enumerate() {
+                let camera_resources = &mut cluster_resources.camera_res[camera_index];
                 let main_index = main_pool.reserve(&gl, camera.frame_dims);
                 let main_resources = &mut main_pool.resources[main_index];
 
-                unsafe {
-                    let camera_buffer = CameraBuffer {
-                        wld_to_cam: camera.wld_to_cam.cast().unwrap(),
-                        cam_to_wld: camera.cam_to_wld.cast().unwrap(),
+                {
+                    let profiler = &mut camera_resources.profiler_pools.render_depth[world.tick];
+                    profiler.clear();
+                    profiler.start(&gl, world.epoch);
 
-                        cam_to_clp: camera.cam_to_clp.cast().unwrap(),
-                        clp_to_cam: camera.clp_to_cam.cast().unwrap(),
+                    unsafe {
+                        let camera_buffer = CameraBuffer {
+                            wld_to_cam: camera.wld_to_cam.cast().unwrap(),
+                            cam_to_wld: camera.cam_to_wld.cast().unwrap(),
 
-                        // NOTE: Doesn't matter for depth pass!
-                        cam_pos_in_lgt: Vector4::zero(),
-                    };
+                            cam_to_clp: camera.cam_to_clp.cast().unwrap(),
+                            clp_to_cam: camera.clp_to_cam.cast().unwrap(),
 
-                    let buffer_index = camera_buffer_pool.unused(&gl);
-                    let buffer_name = camera_buffer_pool[buffer_index];
+                            // NOTE: Doesn't matter for depth pass!
+                            cam_pos_in_lgt: Vector4::zero(),
+                        };
 
-                    gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
-                    gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
+                        let buffer_index = camera_buffer_pool.unused(&gl);
+                        let buffer_name = camera_buffer_pool[buffer_index];
+
+                        gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
+                        gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
+                    }
+
+                    render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
+
+                    profiler.stop(&gl, world.epoch);
                 }
 
-                render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
+                {
+                    let profiler = &mut camera_resources.profiler_pools.count_frags[world.tick];
+                    profiler.clear();
+                    profiler.start(&gl, world.epoch);
 
-                unsafe {
-                    // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
-                    let program = &mut cls_renderer.fragments_per_cluster_program;
-                    program.update(&gl, &mut world);
-                    if let ProgramName::Linked(name) = program.name {
-                        gl.use_program(name);
+                    unsafe {
+                        // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
+                        let program = &mut cls_renderer.fragments_per_cluster_program;
+                        program.update(&gl, &mut world);
+                        if let ProgramName::Linked(name) = program.name {
+                            gl.use_program(name);
 
-                        gl.bind_buffer_base(
-                            gl::SHADER_STORAGE_BUFFER,
-                            cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
-                            cluster_resources.cluster_fragment_counts_buffer.name(),
-                        );
+                            gl.bind_buffer_base(
+                                gl::SHADER_STORAGE_BUFFER,
+                                cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
+                                cluster_resources.cluster_fragment_counts_buffer.name(),
+                            );
 
-                        // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
-                        gl.bind_texture_unit(0, main_resources.depth_texture.name());
+                            // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
+                            gl.bind_texture_unit(0, main_resources.depth_texture.name());
 
-                        gl.uniform_2f(
-                            cls_renderer::FB_DIMS_LOC,
-                            main_resources.dims.cast::<f32>().unwrap().into(),
-                        );
+                            gl.uniform_2f(
+                                cls_renderer::FB_DIMS_LOC,
+                                main_resources.dims.cast::<f32>().unwrap().into(),
+                            );
 
-                        let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
-                            .cast::<f32>()
-                            .unwrap();
+                            let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
+                                .cast::<f32>()
+                                .unwrap();
 
-                        gl.uniform_matrix4f(cls_renderer::CLP_TO_CLS_LOC, gl::MajorAxis::Column, clp_to_cls.as_ref());
+                            gl.uniform_matrix4f(
+                                cls_renderer::CLP_TO_CLS_LOC,
+                                gl::MajorAxis::Column,
+                                clp_to_cls.as_ref(),
+                            );
 
-                        gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                            gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
 
-                        gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER);
+                            gl.memory_barrier(
+                                gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
+                            );
 
-                        gl.dispatch_compute(main_resources.dims.x as u32 / 16, main_resources.dims.y as u32 / 16, 1);
-                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                            gl.dispatch_compute(
+                                main_resources.dims.x as u32 / 16,
+                                main_resources.dims.y as u32 / 16,
+                                1,
+                            );
+                            gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                        }
                     }
+                    profiler.stop(&gl, world.epoch);
                 }
             }
 
             // We have our fragments per cluster buffer here.
 
-            unsafe {
-                let buffer = &mut cluster_resources.offset_buffer;
-                let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
-                buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, byte_count);
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
-            }
+            {
+                let profiler = &mut cluster_resources.profiler_pools.compact_clusters[world.tick];
+                profiler.clear();
+                profiler.start(&gl, world.epoch);
 
-            unsafe {
-                let buffer = &mut cluster_resources.active_cluster_indices_buffer;
-                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
-                buffer.invalidate(&gl);
-                // buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, byte_count);
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
-                    buffer.name(),
-                );
-            }
-
-            unsafe {
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::DRAW_COMMAND_BINDING,
-                    cluster_resources.draw_command_buffer.name(),
-                );
-            }
-
-            unsafe {
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::COMPUTE_COMMAND_BINDING,
-                    cluster_resources.compute_commands_buffer.name(),
-                );
-            }
-
-            unsafe {
-                let program = &mut cls_renderer.compact_clusters_0_program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
-                    gl.dispatch_compute(dispatch_count, 1, 1);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                unsafe {
+                    let buffer = &mut cluster_resources.offset_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
+                    buffer.invalidate(&gl);
+                    buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
                 }
-            }
 
-            unsafe {
-                let program = &mut cls_renderer.compact_clusters_1_program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
-                    gl.dispatch_compute(1, 1, 1);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                unsafe {
+                    let buffer = &mut cluster_resources.active_cluster_indices_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
+                        buffer.name(),
+                    );
                 }
-            }
 
-            unsafe {
-                let program = &mut cls_renderer.compact_clusters_2_program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
-                    gl.dispatch_compute(dispatch_count, 1, 1);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                unsafe {
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::DRAW_COMMAND_BINDING,
+                        cluster_resources.draw_command_buffer.name(),
+                    );
                 }
+
+                unsafe {
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::COMPUTE_COMMAND_BINDING,
+                        cluster_resources.compute_commands_buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_clusters_0_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.dispatch_compute(dispatch_count, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_clusters_1_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.dispatch_compute(1, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_clusters_2_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.dispatch_compute(dispatch_count, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.epoch);
             }
 
             // We have our active clusters.
 
-            unsafe {
-                let data: Vec<[f32; 4]> = point_lights
-                    .iter()
-                    .map(|&light| {
-                        let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
-                        let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
-                        [x, y, z, light.attenuation.clip_far]
-                    })
-                    .collect();
-                let bytes = data.vec_as_bytes();
-                let padded_byte_count = bytes.len().ceil_to_multiple(64);
+            {
+                let profiler = &mut cluster_resources.profiler_pools.upload_lights[world.tick];
+                profiler.clear();
+                profiler.start(&gl, world.epoch);
 
-                let buffer = &mut cluster_resources.light_xyzr_buffer;
-                buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, padded_byte_count);
-                buffer.write(&gl, bytes);
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::LIGHT_XYZR_BINDING,
-                    buffer.name(),
-                );
-            }
+                unsafe {
+                    let data: Vec<[f32; 4]> = point_lights
+                        .iter()
+                        .map(|&light| {
+                            let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
+                            let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
+                            [x, y, z, light.attenuation.clip_far]
+                        })
+                        .collect();
+                    let bytes = data.vec_as_bytes();
+                    let padded_byte_count = bytes.len().ceil_to_multiple(64);
 
-            unsafe {
-                let buffer = &mut cluster_resources.active_cluster_light_counts_buffer;
-                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
-                buffer.invalidate(&gl);
-                // buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, byte_count);
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
-                    buffer.name(),
-                );
-            }
-
-            unsafe {
-                let program = &mut count_lights_program.program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
-                    gl.uniform_3f(
-                        cls::count_lights::SCALE_LOC,
-                        cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                    let buffer = &mut cluster_resources.light_xyzr_buffer;
+                    buffer.invalidate(&gl);
+                    buffer.ensure_capacity(&gl, padded_byte_count);
+                    buffer.write(&gl, bytes);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::LIGHT_XYZR_BINDING,
+                        buffer.name(),
                     );
-                    gl.uniform_3f(
-                        cls::count_lights::TRANSLATION_LOC,
-                        cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
-                    );
-                    gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
-                    gl.bind_buffer(
-                        gl::DISPATCH_INDIRECT_BUFFER,
-                        cluster_resources.compute_commands_buffer.name(),
-                    );
-                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
-                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
+
+                profiler.stop(&gl, world.epoch);
+            }
+
+            {
+                let profiler = &mut cluster_resources.profiler_pools.count_lights[world.tick];
+                profiler.clear();
+                profiler.start(&gl, world.epoch);
+
+                unsafe {
+                    let buffer = &mut cluster_resources.active_cluster_light_counts_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                        buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    let program = &mut count_lights_program.program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                        gl.uniform_3f(
+                            cls::count_lights::SCALE_LOC,
+                            cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                        );
+                        gl.uniform_3f(
+                            cls::count_lights::TRANSLATION_LOC,
+                            cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                        );
+                        gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
+                        gl.bind_buffer(
+                            gl::DISPATCH_INDIRECT_BUFFER,
+                            cluster_resources.compute_commands_buffer.name(),
+                        );
+                        gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.epoch);
             }
 
             // We have our light counts.
 
-            unsafe {
-                let buffer = &mut cluster_resources.offset_buffer;
-                let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
-                buffer.invalidate(&gl);
-                buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, byte_count);
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
-            }
+            {
+                let profiler = &mut cluster_resources.profiler_pools.light_offsets[world.tick];
+                profiler.clear();
+                profiler.start(&gl, world.epoch);
 
-            unsafe {
-                let buffer = &mut cluster_resources.active_cluster_light_offsets_buffer;
-                buffer.invalidate(&gl);
-                // buffer.ensure_capacity(&gl, byte_count);
-                buffer.clear_0u32(&gl, buffer.byte_capacity());
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
-                    buffer.name(),
-                );
-                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
-            }
-
-            unsafe {
-                let program = &mut cls_renderer.compact_light_counts_0_program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                unsafe {
+                    let buffer = &mut cluster_resources.offset_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
+                    buffer.invalidate(&gl);
+                    buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
                 }
-            }
 
-            unsafe {
-                let program = &mut cls_renderer.compact_light_counts_1_program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.dispatch_compute(1, 1, 1);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                unsafe {
+                    let buffer = &mut cluster_resources.active_cluster_light_offsets_buffer;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, buffer.byte_capacity());
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                        buffer.name(),
+                    );
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
                 }
-            }
 
-            unsafe {
-                let program = &mut cls_renderer.compact_light_counts_2_program;
-                program.update(&gl, &mut world);
-                if let ProgramName::Linked(name) = program.name {
-                    gl.use_program(name);
-                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
-                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                unsafe {
+                    let program = &mut cls_renderer.compact_light_counts_0_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
                 }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_light_counts_1_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.dispatch_compute(1, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_light_counts_2_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.epoch);
             }
 
             // We have our light offsets.
+
+            {
+                let profiler = &mut cluster_resources.profiler_pools.assign_lights[world.tick];
+                profiler.clear();
+                profiler.start(&gl, world.epoch);
 
             unsafe {
                 let buffer = &mut cluster_resources.light_indices_buffer;
                 buffer.invalidate(&gl);
                 // buffer.ensure_capacity(&gl, byte_count);
                 buffer.clear_0u32(&gl, buffer.byte_capacity());
-                gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_INDICES_BINDING, buffer.name());
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::LIGHT_INDICES_BINDING,
+                    buffer.name(),
+                );
             }
 
             unsafe {
@@ -993,6 +1063,8 @@ fn main() {
                     gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
+            }
+                profiler.stop(&gl, world.epoch);
             }
 
             cluster_data_vec.push(cluster_data);
@@ -1242,7 +1314,7 @@ fn main() {
                     let cluster_data = &cluster_data_vec[cluster_index];
                     let cluster_resources = &cluster_resources_vec[cluster_index];
 
-                    for camera in cluster_resources.cameras.iter() {
+                    for camera in cluster_resources.camera_data.iter() {
                         line_renderer.render(
                             &gl,
                             &line_renderer::Parameters {
@@ -1308,19 +1380,13 @@ fn main() {
             ),
         );
 
-        for i in 0..cluster_data_vec.len() {
-            let res = &cluster_resources_vec[i];
-            let data = &cluster_data_vec[i];
+        for cluster_index in 0..cluster_data_vec.len() {
+            let res = &mut cluster_resources_vec[cluster_index];
+            let data = &cluster_data_vec[cluster_index];
             let dimensions_u32 = data.dimensions;
 
             let header_bytes = res.cluster_meta.vec_as_bytes().len();
             let body_bytes = res.light_indices.vec_as_bytes().len();
-
-            let elapsed = if let (Some(start), Some(end)) = (res.cpu_start, res.cpu_end) {
-                end.duration_since(start).as_nanos()
-            } else {
-                0
-            };
 
             overlay_textbox.write(
                 &monospace,
@@ -1328,7 +1394,6 @@ fn main() {
                     concat!(
                         "Cluster Dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
                         "Cluster Memory {{ header: {:2}.{:03}MB, body: {:2}.{:03}MB }}\n",
-                        "Cluster Computation CPU: {:6}.{:03}μs\n\n",
                     ),
                     dimensions_u32.x,
                     dimensions_u32.y,
@@ -1337,10 +1402,54 @@ fn main() {
                     (header_bytes / 1000) % 1000,
                     body_bytes / 1000_000,
                     (body_bytes / 1000) % 1000,
-                    elapsed / 1000,
-                    elapsed % 1000,
                 ),
             );
+
+            for (camera_index, _camera) in res.camera_data.iter().enumerate() {
+                let camera_resources = &mut res.camera_res[camera_index];
+                for &stage in &CameraStage::VALUES {
+                    let profiler = &mut camera_resources.profiler_pools[stage][world.tick + 1];
+                    if let Some(profile) = profiler.read(&gl) {
+                        let cpu = profile.cpu.delta();
+                        let gpu = profile.gpu.delta();
+
+                        overlay_textbox.write(
+                            &monospace,
+                            &format!(
+                                "[{}][{}] {:<20} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU\n",
+                                cluster_index,
+                                camera_index,
+                                stage.title(),
+                                cpu / 1000,
+                                cpu % 1000,
+                                gpu / 1000,
+                                gpu % 1000,
+                            ),
+                        );
+                    }
+                }
+            }
+
+            for &stage in &ClusterStage::VALUES {
+                let profiler = &mut res.profiler_pools[stage][world.tick + 1];
+                if let Some(profile) = profiler.read(&gl) {
+                    let cpu = profile.cpu.delta();
+                    let gpu = profile.gpu.delta();
+
+                    overlay_textbox.write(
+                        &monospace,
+                        &format!(
+                            "[{}]    {:<20} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU\n",
+                            cluster_index,
+                            stage.title(),
+                            cpu / 1000,
+                            cpu % 1000,
+                            gpu / 1000,
+                            gpu % 1000,
+                        ),
+                    );
+                }
+            }
         }
 
         for (i, data) in main_pool.data.iter().enumerate() {
@@ -1352,7 +1461,7 @@ fn main() {
                     overlay_textbox.write(
                         &monospace,
                         &format!(
-                            "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU\n",
+                            "[{}]    {:<20} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU\n",
                             i,
                             name,
                             cpu / 1000,
@@ -1733,18 +1842,18 @@ pub fn render_main(
     }
 
     if world.depth_prepass {
-        main_data.depth = Some(
-            main_resources
-                .depth_pass_profiler
-                .measure(&gl, world.epoch, world.tick, || {
-                    depth_renderer.render(gl, world, resources);
+        let profiler = &mut main_resources.depth_pass_profiler[world.tick];
+        main_data.depth = profiler.read(&gl);
+        profiler.start(&gl, world.epoch);
 
-                    unsafe {
-                        gl.depth_func(gl::GEQUAL);
-                        gl.depth_mask(gl::FALSE);
-                    }
-                }),
-        );
+        depth_renderer.render(gl, world, resources);
+
+        unsafe {
+            gl.depth_func(gl::GEQUAL);
+            gl.depth_mask(gl::FALSE);
+        }
+
+        profiler.stop(&gl, world.epoch);
     }
 
     let basic_params = &basic_renderer::Parameters {
@@ -1755,19 +1864,20 @@ pub fn render_main(
         cluster: cluster_parameters,
     };
 
-    main_data.basic = Some(
-        main_resources
-            .basic_pass_profiler
-            .measure(&gl, world.epoch, world.tick, || {
-                basic_renderer.render(gl, basic_params, world, resources);
-            }),
-    );
+    {
+        let profiler = &mut main_resources.basic_pass_profiler[world.tick];
+        main_data.basic = profiler.read(&gl);
+        profiler.start(&gl, world.epoch);
 
-    if world.depth_prepass {
-        unsafe {
-            gl.depth_func(gl::GREATER);
-            gl.depth_mask(gl::TRUE);
+        basic_renderer.render(gl, basic_params, world, resources);
+        if world.depth_prepass {
+            unsafe {
+                gl.depth_func(gl::GREATER);
+                gl.depth_mask(gl::TRUE);
+            }
         }
+
+        profiler.stop(&gl, world.epoch);
     }
 }
 
