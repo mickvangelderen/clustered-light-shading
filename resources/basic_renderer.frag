@@ -1,4 +1,5 @@
 #include "common.glsl"
+#include "cotangent_frame.glsl"
 #include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
 
@@ -191,12 +192,18 @@ void main() {
   // Perturbed normal in camera space.
   // TODO: Consider https://github.com/mickvangelderen/vr-lab/issues/3
   vec3 fs_nor_in_lgt_norm = normalize(fs_nor_in_lgt);
+#define PER_PIXEL_COTANGENT_FRAME
+#if defined(PER_PIXEL_COTANGENT_FRAME)
+  mat3 tbn = cotangent_frame(fs_nor_in_lgt, fs_pos_in_lgt, fs_pos_in_tex);
+  vec3 nor_in_lgt = tbn * sample_nor_in_tan(fs_pos_in_tex);
+#else
   vec3 fs_bitan_in_lgt_norm =
       cross(fs_nor_in_lgt_norm, normalize(fs_tan_in_lgt));
   vec3 fs_tan_in_lgt_norm = cross(fs_bitan_in_lgt_norm, fs_nor_in_lgt_norm);
   mat3 dir_from_tan_to_cam =
       mat3(fs_tan_in_lgt_norm, fs_bitan_in_lgt_norm, fs_nor_in_lgt_norm);
   vec3 nor_in_lgt = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
+#endif
   frag_nor_in_lgt = nor_in_lgt * 0.5 + vec3(0.5);
 
   // TODO: Render unmasked and masked materials separately.
