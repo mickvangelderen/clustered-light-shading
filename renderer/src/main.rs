@@ -351,6 +351,7 @@ fn main() {
             resource_dir,
             configuration_path,
             tick: 0,
+            frame: 0,
             paused: false,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
@@ -720,7 +721,7 @@ fn main() {
                 let main_resources = &mut main_pool.resources[main_index];
 
                 {
-                    let profiler = &mut camera_resources.profiler_pools.render_depth[world.tick];
+                    let profiler = &mut camera_resources.profiler_pools.render_depth[world.frame];
                     profiler.clear();
                     profiler.start(&gl, world.epoch);
 
@@ -749,7 +750,7 @@ fn main() {
                 }
 
                 {
-                    let profiler = &mut camera_resources.profiler_pools.count_frags[world.tick];
+                    let profiler = &mut camera_resources.profiler_pools.count_frags[world.frame];
                     profiler.clear();
                     profiler.start(&gl, world.epoch);
 
@@ -805,7 +806,7 @@ fn main() {
             // We have our fragments per cluster buffer here.
 
             {
-                let profiler = &mut cluster_resources.profiler_pools.compact_clusters[world.tick];
+                let profiler = &mut cluster_resources.profiler_pools.compact_clusters[world.frame];
                 profiler.clear();
                 profiler.start(&gl, world.epoch);
 
@@ -885,7 +886,7 @@ fn main() {
             // We have our active clusters.
 
             {
-                let profiler = &mut cluster_resources.profiler_pools.upload_lights[world.tick];
+                let profiler = &mut cluster_resources.profiler_pools.upload_lights[world.frame];
                 profiler.clear();
                 profiler.start(&gl, world.epoch);
 
@@ -916,7 +917,7 @@ fn main() {
             }
 
             {
-                let profiler = &mut cluster_resources.profiler_pools.count_lights[world.tick];
+                let profiler = &mut cluster_resources.profiler_pools.count_lights[world.frame];
                 profiler.clear();
                 profiler.start(&gl, world.epoch);
 
@@ -963,7 +964,7 @@ fn main() {
             // We have our light counts.
 
             {
-                let profiler = &mut cluster_resources.profiler_pools.light_offsets[world.tick];
+                let profiler = &mut cluster_resources.profiler_pools.light_offsets[world.frame];
                 profiler.clear();
                 profiler.start(&gl, world.epoch);
 
@@ -1024,7 +1025,7 @@ fn main() {
             // We have our light offsets.
 
             {
-                let profiler = &mut cluster_resources.profiler_pools.assign_lights[world.tick];
+                let profiler = &mut cluster_resources.profiler_pools.assign_lights[world.frame];
                 profiler.clear();
                 profiler.start(&gl, world.epoch);
 
@@ -1408,7 +1409,7 @@ fn main() {
             for (camera_index, _camera) in res.camera_data.iter().enumerate() {
                 let camera_resources = &mut res.camera_res[camera_index];
                 for &stage in &CameraStage::VALUES {
-                    let profiler = &mut camera_resources.profiler_pools[stage][world.tick + 1];
+                    let profiler = &mut camera_resources.profiler_pools[stage][world.frame + 1];
                     if let Some(profile) = profiler.read(&gl) {
                         let cpu = profile.cpu.delta();
                         let gpu = profile.gpu.delta();
@@ -1431,7 +1432,7 @@ fn main() {
             }
 
             for &stage in &ClusterStage::VALUES {
-                let profiler = &mut res.profiler_pools[stage][world.tick + 1];
+                let profiler = &mut res.profiler_pools[stage][world.frame + 1];
                 if let Some(profile) = profiler.read(&gl) {
                     let cpu = profile.cpu.delta();
                     let gpu = profile.gpu.delta();
@@ -1483,6 +1484,7 @@ fn main() {
         }
 
         gl_window.swap_buffers().unwrap();
+        world.frame += 1;
 
         // TODO: Borrow the pool instead.
         camera_buffer_pool.reset(&gl);
@@ -1842,7 +1844,7 @@ pub fn render_main(
     }
 
     if world.depth_prepass {
-        let profiler = &mut main_resources.depth_pass_profiler[world.tick];
+        let profiler = &mut main_resources.depth_pass_profiler[world.frame];
         main_data.depth = profiler.read(&gl);
         profiler.start(&gl, world.epoch);
 
@@ -1865,7 +1867,7 @@ pub fn render_main(
     };
 
     {
-        let profiler = &mut main_resources.basic_pass_profiler[world.tick];
+        let profiler = &mut main_resources.basic_pass_profiler[world.frame];
         main_data.basic = profiler.read(&gl);
         profiler.start(&gl, world.epoch);
 
