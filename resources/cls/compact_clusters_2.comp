@@ -1,0 +1,4 @@
+#define PASS 2
+
+#include "compact_clusters.comp"
+

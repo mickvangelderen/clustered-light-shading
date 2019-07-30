@@ -115,7 +115,7 @@ layout(std140, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
     uvec4 light_count;
 
     PointLight point_lights[];
-};
+} light_buffer;
 ";
 
 pub struct LightResources {
