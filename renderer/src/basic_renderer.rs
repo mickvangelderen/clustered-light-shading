@@ -4,6 +4,8 @@ pub struct Renderer {
     pub program: rendering::Program,
     //
     pub obj_to_wld_loc: gl::OptionUniformLocation,
+    pub wld_to_cls_loc: gl::OptionUniformLocation,
+    pub cluster_dims_loc: gl::OptionUniformLocation,
 
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
     pub normal_sampler_loc: gl::OptionUniformLocation,
@@ -16,9 +18,21 @@ pub struct Renderer {
     pub display_mode_loc: gl::OptionUniformLocation,
 }
 
-pub struct Parameters {
-    pub mode: u32,
+#[derive(Copy, Clone)]
+pub struct ClusterParameters<'a> {
+    pub data: &'a ClusterData,
+    pub resources: &'a ClusterResources,
 }
+
+pub struct Parameters<'a> {
+    pub mode: u32,
+    pub cluster: Option<ClusterParameters<'a>>,
+}
+
+pub const MAYBE_ACTIVE_CLUSTER_INDICES_BINDING: u32 = 10;
+pub const ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING: u32 = 11;
+pub const ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING: u32 = 12;
+pub const LIGHT_INDICES_BUFFER: u32 = 13;
 
 impl Renderer {
     pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
@@ -26,6 +40,48 @@ impl Renderer {
             self.update(gl, world);
             if let ProgramName::Linked(ref program_name) = self.program.name {
                 gl.use_program(*program_name);
+
+                if let Some(cluster) = params.cluster {
+                    debug_assert_eq!(
+                        RenderTechnique::Clustered,
+                        world.shader_compiler.variables.render_technique
+                    );
+
+                    gl.uniform_matrix4f(
+                        Option::from(self.wld_to_cls_loc).unwrap(),
+                        gl::MajorAxis::Column,
+                        cluster.data.wld_to_cls.cast().unwrap().as_ref(),
+                    );
+
+                    gl.uniform_3ui(
+                        Option::from(self.cluster_dims_loc).unwrap(),
+                        cluster.data.dimensions.cast().unwrap().into(),
+                    );
+
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        MAYBE_ACTIVE_CLUSTER_INDICES_BINDING,
+                        cluster.resources.cluster_fragment_counts_buffer.name(),
+                    );
+
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                        cluster.resources.active_cluster_light_counts_buffer.name(),
+                    );
+
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                        cluster.resources.active_cluster_light_offsets_buffer.name(),
+                    );
+
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        LIGHT_INDICES_BUFFER,
+                        cluster.resources.light_indices_buffer.name(),
+                    );
+                }
 
                 if let Some(loc) = self.diffuse_sampler_loc.into() {
                     gl.uniform_1i(loc, 1);
@@ -107,6 +163,8 @@ impl Renderer {
             if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
                     self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
+                    self.wld_to_cls_loc = get_uniform_location!(gl, name, "wld_to_cls");
+                    self.cluster_dims_loc = get_uniform_location!(gl, name, "cluster_dims");
 
                     self.diffuse_sampler_loc = get_uniform_location!(gl, name, "diffuse_sampler");
                     self.normal_sampler_loc = get_uniform_location!(gl, name, "normal_sampler");
@@ -127,6 +185,8 @@ impl Renderer {
             program: vs_fs_program(gl, world, "basic_renderer.vert", "basic_renderer.frag"),
 
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
+            wld_to_cls_loc: gl::OptionUniformLocation::NONE,
+            cluster_dims_loc: gl::OptionUniformLocation::NONE,
 
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
             normal_sampler_loc: gl::OptionUniformLocation::NONE,

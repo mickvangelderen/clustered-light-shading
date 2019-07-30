@@ -10,6 +10,7 @@ pub struct World {
     pub configuration_path: PathBuf,
     pub keyboard_state: KeyboardState,
     pub tick: u64,
+    pub frame: u64,
     pub paused: bool,
     pub current: ::incremental::Current,
     pub clear_color: [f32; 3],

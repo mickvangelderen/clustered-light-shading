@@ -20,6 +20,7 @@ mod bounding_box;
 pub mod camera;
 mod cgmath_ext;
 pub mod clamp;
+mod cls;
 mod cls_renderer;
 mod cluster_renderer;
 mod cluster_shading;
@@ -33,6 +34,7 @@ mod glutin_ext;
 mod keyboard;
 mod light;
 mod line_renderer;
+mod math;
 mod mono_stereo;
 mod overlay_renderer;
 mod profiling;
@@ -52,6 +54,7 @@ use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
+use crate::math::{CeilToMultiple, DivCeil};
 use crate::profiling::*;
 use crate::shader_compiler::{EntryPoint, ShaderCompiler};
 use crate::text_rendering::{FontContext, TextBox};
@@ -125,8 +128,7 @@ impl_enum_map! {
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
 pub struct MainResources {
-    pub width: i32,
-    pub height: i32,
+    pub dims: Vector2<i32>,
     // Main frame resources.
     pub framebuffer_name: gl::NonDefaultFramebufferName,
     pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
@@ -138,11 +140,11 @@ pub struct MainResources {
 }
 
 impl MainResources {
-    pub fn new(gl: &gl::Gl, width: i32, height: i32) -> Self {
+    pub fn new(gl: &gl::Gl, dims: Vector2<i32>) -> Self {
         unsafe {
             // Textures.
             let texture_update = TextureUpdate::new()
-                .data(width, height, None)
+                .data(dims.x, dims.y, None)
                 .min_filter(gl::NEAREST.into())
                 .mag_filter(gl::NEAREST.into())
                 .max_level(0)
@@ -170,8 +172,7 @@ impl MainResources {
             // Uniform block buffers,
 
             MainResources {
-                width,
-                height,
+                dims,
                 framebuffer_name,
                 color_texture,
                 depth_texture,
@@ -182,12 +183,11 @@ impl MainResources {
         }
     }
 
-    pub fn resize(&mut self, gl: &gl::Gl, width: i32, height: i32) {
-        if width != self.width || height != self.height {
-            self.width = width;
-            self.height = height;
+    pub fn resize(&mut self, gl: &gl::Gl, dims: Vector2<i32>) {
+        if self.dims != dims {
+            self.dims = dims;
 
-            let texture_update = TextureUpdate::new().data(width, height, None);
+            let texture_update = TextureUpdate::new().data(dims.x, dims.y, None);
             self.color_texture.update(gl, texture_update);
             self.depth_texture.update(gl, texture_update);
             self.nor_in_cam_texture.update(gl, texture_update);
@@ -206,8 +206,38 @@ impl MainResources {
 
 #[derive(Debug, Default)]
 pub struct MainData {
-    pub depth: Option<GpuCpuTimeSpan>,
-    pub basic: Option<GpuCpuTimeSpan>,
+}
+
+pub struct MainPool {
+    pub resources: Vec<MainResources>,
+    pub data: Vec<MainData>,
+}
+
+impl MainPool {
+    pub fn new() -> Self {
+        Self {
+            resources: Vec::new(),
+            data: Vec::new(),
+        }
+    }
+
+    pub fn reserve(&mut self, gl: &gl::Gl, dims: Vector2<i32>) -> usize {
+        let index = self.data.len();
+        self.data.push(MainData::default());
+
+        if self.resources.len() < index + 1 {
+            self.resources.push(MainResources::new(&gl, dims));
+        }
+
+        let resources = &mut self.resources[index];
+        resources.resize(&gl, dims);
+
+        index
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
@@ -305,6 +335,7 @@ fn main() {
                 light_space: LightSpace::Wld,
                 render_technique: RenderTechnique::Clustered,
                 attenuation_mode: AttenuationMode::Interpolated,
+                prefix_sum: configuration.prefix_sum,
             },
         );
 
@@ -318,6 +349,7 @@ fn main() {
             resource_dir,
             configuration_path,
             tick: 0,
+            frame: 0,
             paused: false,
             clear_color: [0.0, 0.0, 0.0],
             window_mode: WindowMode::Main,
@@ -381,6 +413,8 @@ fn main() {
     let mut cluster_renderer = cluster_renderer::Renderer::new(&gl, &mut world);
     let mut text_renderer = text_renderer::Renderer::new(&gl, &mut world);
     let mut cls_renderer = cls_renderer::Renderer::new(&gl, &mut world);
+    let mut count_lights_program = cls::count_lights::CountLightsProgram::new(&gl, &mut world);
+    let mut assign_lights_program = cls::assign_lights::AssignLightsProgram::new(&gl, &mut world);
 
     let resources = resources::Resources::new(&gl, &world.resource_dir, &configuration);
 
@@ -402,8 +436,7 @@ fn main() {
     let mut cluster_resources_vec: Vec<ClusterResources> = Vec::new();
     let mut cluster_data_vec: Vec<ClusterData> = Vec::new();
 
-    let mut main_resources_vec: Vec<MainResources> = Vec::new();
-    let mut main_data_vec: Vec<MainData> = Vec::new();
+    let mut main_pool = MainPool::new();
 
     let mut point_lights = Vec::new();
 
@@ -512,7 +545,7 @@ fn main() {
 
         light_params_vec.clear();
         cluster_data_vec.clear();
-        main_data_vec.clear();
+        main_pool.clear();
 
         {
             point_lights.clear();
@@ -544,18 +577,6 @@ fn main() {
             });
         }
 
-        struct ClusterParameters {
-            pub render_dims: Vector2<u32>,
-
-            pub wld_to_cam: Matrix4<f64>,
-            pub cam_to_wld: Matrix4<f64>,
-
-            pub cam_to_clp: Matrix4<f64>,
-            pub clp_to_cam: Matrix4<f64>,
-
-            pub cam_pos_in_wld: Point3<f64>,
-        }
-
         if world.shader_compiler.render_technique() == RenderTechnique::Clustered {
             let cluster_camera = &world.cameras.main;
             let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
@@ -568,23 +589,30 @@ fn main() {
             let cluster_resources_index = cluster_data_vec.len();
 
             if cluster_resources_vec.len() < cluster_resources_index + 1 {
-                cluster_resources_vec.push(ClusterResources::new(&gl));
+                cluster_resources_vec.push(ClusterResources::new(&gl, &configuration.clustered_light_shading));
                 debug_assert_eq!(cluster_resources_vec.len(), cluster_resources_index + 1);
             }
 
             let cluster_resources = &mut cluster_resources_vec[cluster_resources_index];
 
-            cluster_resources.cameras.clear();
+            cluster_resources.clear();
             let hmd_to_wld;
             let wld_to_hmd;
 
             match stereo_data.as_ref() {
-                Some(&StereoData { hmd_to_bdy, eyes, .. }) => {
+                Some(&StereoData {
+                    hmd_to_bdy,
+                    eyes,
+                    win_size,
+                }) => {
                     hmd_to_wld = bdy_to_wld * hmd_to_bdy;
                     wld_to_hmd = hmd_to_wld.invert().unwrap();
 
                     for &eye in EYE_KEYS.iter() {
                         let EyeData { tangents, cam_to_hmd } = eyes[eye];
+
+                        let cam_to_wld = cam_to_hmd * hmd_to_wld;
+                        let wld_to_cam = cam_to_wld.invert().unwrap();
 
                         let frustrum = stereo_frustrum(&cluster_camera.properties, tangents);
                         let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
@@ -593,12 +621,24 @@ fn main() {
                         let clp_to_hmd = cam_to_hmd * clp_to_cam;
                         let hmd_to_clp = clp_to_hmd.invert().unwrap();
 
-                        cluster_resources.cameras.push(ClusterCamera {
-                            hmd_to_clp,
-                            clp_to_hmd,
-                            wld_to_hmd,
-                            hmd_to_wld,
-                        });
+                        cluster_resources.add_camera(
+                            &gl,
+                            ClusterCameraData {
+                                frame_dims: win_size,
+
+                                wld_to_cam,
+                                cam_to_wld,
+
+                                cam_to_clp,
+                                clp_to_cam,
+
+                                hmd_to_clp,
+                                clp_to_hmd,
+
+                                wld_to_hmd,
+                                hmd_to_wld,
+                            },
+                        );
                     }
                 }
                 None => {
@@ -606,8 +646,8 @@ fn main() {
                     hmd_to_wld = bdy_to_wld;
                     wld_to_hmd = wld_to_bdy;
 
-                    let dimensions = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
-                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), dimensions);
+                    let frame_dims = Vector2::new(world.win_size.width as i32, world.win_size.height as i32);
+                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), frame_dims);
                     let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                     let clp_to_cam = cam_to_clp.invert().unwrap();
 
@@ -615,31 +655,397 @@ fn main() {
                     let clp_to_hmd = clp_to_cam;
                     let hmd_to_clp = cam_to_clp;
 
-                    cluster_resources.cameras.push(ClusterCamera {
-                        hmd_to_clp,
-                        clp_to_hmd,
-                        wld_to_hmd,
-                        hmd_to_wld,
-                    });
+                    cluster_resources.add_camera(
+                        &gl,
+                        ClusterCameraData {
+                            frame_dims,
+
+                            wld_to_cam: wld_to_bdy,
+                            cam_to_wld: bdy_to_wld,
+
+                            cam_to_clp,
+                            clp_to_cam,
+
+                            hmd_to_clp,
+                            clp_to_hmd,
+
+                            wld_to_hmd,
+                            hmd_to_wld,
+                        },
+                    );
                 }
             }
 
             let cluster_data = ClusterData::new(
                 &configuration.clustered_light_shading,
                 cluster_resources
-                    .cameras
+                    .camera_data
                     .iter()
-                    .map(|&ClusterCamera { clp_to_hmd, .. }| clp_to_hmd),
+                    .map(|&ClusterCameraData { clp_to_hmd, .. }| clp_to_hmd),
                 wld_to_hmd,
                 hmd_to_wld,
             );
 
-            cluster_resources.compute_and_upload(
-                &gl,
-                &configuration.clustered_light_shading,
-                &cluster_data,
-                &point_lights[..],
-            );
+            let item_count = cluster_data.cluster_count();
+            let blocks_per_dispatch =
+                item_count.div_ceil(configuration.prefix_sum.pass_0_threads * configuration.prefix_sum.pass_1_threads);
+            let items_per_dispatch = configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
+            let dispatch_count = item_count.div_ceil(items_per_dispatch);
+            let padded_item_count = dispatch_count * items_per_dispatch;
+
+            unsafe {
+                let buffer = &mut cluster_resources.cluster_fragment_counts_buffer;
+                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                buffer.invalidate(&gl);
+                // buffer.ensure_capacity(&gl, byte_count);
+                buffer.clear_0u32(&gl, byte_count);
+            }
+
+            for (camera_index, camera) in cluster_resources.camera_data.iter_mut().enumerate() {
+                let camera_resources = &mut cluster_resources.camera_res[camera_index];
+                let main_index = main_pool.reserve(&gl, camera.frame_dims);
+                let main_resources = &mut main_pool.resources[main_index];
+
+                {
+                    let profiler = &mut camera_resources.profilers.render_depth;
+                    profiler.start(&gl, world.frame, world.epoch);
+
+                    unsafe {
+                        let camera_buffer = CameraBuffer {
+                            wld_to_cam: camera.wld_to_cam.cast().unwrap(),
+                            cam_to_wld: camera.cam_to_wld.cast().unwrap(),
+
+                            cam_to_clp: camera.cam_to_clp.cast().unwrap(),
+                            clp_to_cam: camera.clp_to_cam.cast().unwrap(),
+
+                            // NOTE: Doesn't matter for depth pass!
+                            cam_pos_in_lgt: Vector4::zero(),
+                        };
+
+                        let buffer_index = camera_buffer_pool.unused(&gl);
+                        let buffer_name = camera_buffer_pool[buffer_index];
+
+                        gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
+                        gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
+                    }
+
+                    render_depth(&gl, main_resources, &resources, &mut world, &mut depth_renderer);
+
+                    profiler.stop(&gl, world.frame, world.epoch);
+                }
+
+                {
+                    let profiler = &mut camera_resources.profilers.count_frags;
+                    profiler.start(&gl, world.frame, world.epoch);
+
+                    unsafe {
+                        // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
+                        let program = &mut cls_renderer.fragments_per_cluster_program;
+                        program.update(&gl, &mut world);
+                        if let ProgramName::Linked(name) = program.name {
+                            gl.use_program(name);
+
+                            gl.bind_buffer_base(
+                                gl::SHADER_STORAGE_BUFFER,
+                                cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
+                                cluster_resources.cluster_fragment_counts_buffer.name(),
+                            );
+
+                            // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
+                            gl.bind_texture_unit(0, main_resources.depth_texture.name());
+
+                            gl.uniform_2f(
+                                cls_renderer::FB_DIMS_LOC,
+                                main_resources.dims.cast::<f32>().unwrap().into(),
+                            );
+
+                            let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
+                                .cast::<f32>()
+                                .unwrap();
+
+                            gl.uniform_matrix4f(
+                                cls_renderer::CLP_TO_CLS_LOC,
+                                gl::MajorAxis::Column,
+                                clp_to_cls.as_ref(),
+                            );
+
+                            gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+
+                            gl.memory_barrier(
+                                gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
+                            );
+
+                            gl.dispatch_compute(
+                                main_resources.dims.x as u32 / 16,
+                                main_resources.dims.y as u32 / 16,
+                                1,
+                            );
+                            gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                        }
+                    }
+                    profiler.stop(&gl, world.frame, world.epoch);
+                }
+            }
+
+            // We have our fragments per cluster buffer here.
+
+            {
+                let profiler = &mut cluster_resources.profilers.compact_clusters;
+                profiler.start(&gl, world.frame, world.epoch);
+
+                unsafe {
+                    let buffer = &mut cluster_resources.offset_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
+                    buffer.invalidate(&gl);
+                    buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
+                }
+
+                unsafe {
+                    let buffer = &mut cluster_resources.active_cluster_indices_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
+                        buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::DRAW_COMMAND_BINDING,
+                        cluster_resources.draw_command_buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::COMPUTE_COMMAND_BINDING,
+                        cluster_resources.compute_commands_buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_clusters_0_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.dispatch_compute(dispatch_count, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_clusters_1_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.dispatch_compute(1, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_clusters_2_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.dispatch_compute(dispatch_count, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.frame, world.epoch);
+            }
+
+            // We have our active clusters.
+
+            {
+                let profiler = &mut cluster_resources.profilers.upload_lights;
+                profiler.start(&gl, world.frame, world.epoch);
+
+                unsafe {
+                    let data: Vec<[f32; 4]> = point_lights
+                        .iter()
+                        .map(|&light| {
+                            let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
+                            let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
+                            [x, y, z, light.attenuation.clip_far]
+                        })
+                        .collect();
+                    let bytes = data.vec_as_bytes();
+                    let padded_byte_count = bytes.len().ceil_to_multiple(64);
+
+                    let buffer = &mut cluster_resources.light_xyzr_buffer;
+                    buffer.invalidate(&gl);
+                    buffer.ensure_capacity(&gl, padded_byte_count);
+                    buffer.write(&gl, bytes);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::LIGHT_XYZR_BINDING,
+                        buffer.name(),
+                    );
+                }
+
+                profiler.stop(&gl, world.frame, world.epoch);
+            }
+
+            {
+                let profiler = &mut cluster_resources.profilers.count_lights;
+                profiler.start(&gl, world.frame, world.epoch);
+
+                unsafe {
+                    let buffer = &mut cluster_resources.active_cluster_light_counts_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                        buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    let program = &mut count_lights_program.program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                        gl.uniform_3f(
+                            cls::count_lights::SCALE_LOC,
+                            cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                        );
+                        gl.uniform_3f(
+                            cls::count_lights::TRANSLATION_LOC,
+                            cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                        );
+                        gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
+                        gl.bind_buffer(
+                            gl::DISPATCH_INDIRECT_BUFFER,
+                            cluster_resources.compute_commands_buffer.name(),
+                        );
+                        gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.frame, world.epoch);
+            }
+
+            // We have our light counts.
+
+            {
+                let profiler = &mut cluster_resources.profilers.light_offsets;
+                profiler.start(&gl, world.frame, world.epoch);
+
+                unsafe {
+                    let buffer = &mut cluster_resources.offset_buffer;
+                    let byte_count = std::mem::size_of::<u32>() * configuration.prefix_sum.pass_1_threads as usize;
+                    buffer.invalidate(&gl);
+                    buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, byte_count);
+                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
+                }
+
+                unsafe {
+                    let buffer = &mut cluster_resources.active_cluster_light_offsets_buffer;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, buffer.byte_capacity());
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                        buffer.name(),
+                    );
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_light_counts_0_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_light_counts_1_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.dispatch_compute(1, 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+
+                unsafe {
+                    let program = &mut cls_renderer.compact_light_counts_2_program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.frame, world.epoch);
+            }
+
+            // We have our light offsets.
+
+            {
+                let profiler = &mut cluster_resources.profilers.assign_lights;
+                profiler.start(&gl, world.frame, world.epoch);
+
+                unsafe {
+                    let buffer = &mut cluster_resources.light_indices_buffer;
+                    buffer.invalidate(&gl);
+                    // buffer.ensure_capacity(&gl, byte_count);
+                    buffer.clear_0u32(&gl, buffer.byte_capacity());
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::LIGHT_INDICES_BINDING,
+                        buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    let program = &mut assign_lights_program.program;
+                    program.update(&gl, &mut world);
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.uniform_3ui(cls::assign_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                        gl.uniform_3f(
+                            cls::assign_lights::SCALE_LOC,
+                            cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                        );
+                        gl.uniform_3f(
+                            cls::assign_lights::TRANSLATION_LOC,
+                            cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                        );
+                        gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, point_lights.len() as u32);
+                        gl.bind_buffer(
+                            gl::DISPATCH_INDIRECT_BUFFER,
+                            cluster_resources.compute_commands_buffer.name(),
+                        );
+                        gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+                profiler.stop(&gl, world.frame, world.epoch);
+            }
 
             cluster_data_vec.push(cluster_data);
         }
@@ -852,28 +1258,25 @@ fn main() {
                 gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
             }
 
-            let main_index = main_data_vec.len();
-            main_data_vec.push(MainData::default());
-            if main_resources_vec.len() < main_index + 1 {
-                let main_resources = MainResources::new(&gl, dimensions.x, dimensions.y);
-                main_resources_vec.push(main_resources);
-            }
+            let main_index = main_pool.reserve(&gl, dimensions);
+            let main_resources = &mut main_pool.resources[main_index];
 
-            let main_resources = &mut main_resources_vec[main_index];
-            let main_data = &mut main_data_vec[main_index];
-
-            main_resources.resize(&gl, dimensions.x, dimensions.y);
-
-            unsafe {
-                gl.viewport(0, 0, dimensions.x, dimensions.y);
-            }
+            let cluster_parameters = if world.shader_compiler.variables.render_technique == RenderTechnique::Clustered {
+                Some(basic_renderer::ClusterParameters {
+                    // FIXME: Think harder about this.
+                    data: &cluster_data_vec[0],
+                    resources: &cluster_resources_vec[0],
+                })
+            } else {
+                None
+            };
 
             render_main(
                 &gl,
                 main_resources,
-                main_data,
                 &resources,
                 &mut world,
+                cluster_parameters,
                 &mut depth_renderer,
                 &mut basic_renderer,
             );
@@ -889,7 +1292,7 @@ fn main() {
                     let cluster_data = &cluster_data_vec[cluster_index];
                     let cluster_resources = &cluster_resources_vec[cluster_index];
 
-                    for camera in cluster_resources.cameras.iter() {
+                    for camera in cluster_resources.camera_data.iter() {
                         line_renderer.render(
                             &gl,
                             &line_renderer::Parameters {
@@ -907,6 +1310,7 @@ fn main() {
                             cluster_resources: &cluster_resources,
                             cluster_data: &cluster_data,
                             configuration: &configuration.clustered_light_shading,
+                            cls_to_clp: (cam_to_clp * wld_to_cam * cluster_data.cls_to_wld).cast().unwrap(),
                         },
                         &mut world,
                         &resources,
@@ -943,66 +1347,98 @@ fn main() {
         overlay_textbox.write(
             &monospace,
             &format!(
-                concat!(
-                    "Attenuation Mode: {:?}\n",
-                    "Render Technique: {:?}\n",
-                    "Lighting Space:   {:?}\n\n",
-                ),
+                "\
+                 Attenuation Mode: {:?}\n\
+                 Render Technique: {:?}\n\
+                 Lighting Space:   {:?}\n\
+                 Light Count:      {}\n\
+                 ",
                 world.shader_compiler.attenuation_mode(),
                 world.shader_compiler.render_technique(),
                 world.shader_compiler.light_space(),
+                point_lights.len(),
             ),
         );
 
-        for i in 0..cluster_data_vec.len() {
-            let res = &cluster_resources_vec[i];
-            let data = &cluster_data_vec[i];
-            let dimensions_u32 = data.dimensions.cast::<u32>().unwrap();
-            let start = res.cpu_start.unwrap();
-            let end = res.cpu_end.unwrap();
-
-            let header_bytes = res.cluster_meta.vec_as_bytes().len();
-            let body_bytes = res.light_indices.vec_as_bytes().len();
-
-            let elapsed = end.duration_since(start).as_nanos();
+        for cluster_index in 0..cluster_data_vec.len() {
+            let res = &mut cluster_resources_vec[cluster_index];
+            let data = &cluster_data_vec[cluster_index];
+            let dimensions_u32 = data.dimensions;
 
             overlay_textbox.write(
                 &monospace,
                 &format!(
-                    concat!(
-                        "Cluster Dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
-                        "Cluster Memory {{ header: {:2}.{:03}MB, body: {:2}.{:03}MB }}\n",
-                        "Cluster Computation CPU: {:6}.{:03}μs\n\n",
-                    ),
-                    dimensions_u32.x,
-                    dimensions_u32.y,
-                    dimensions_u32.z,
-                    header_bytes / 1000_000,
-                    (header_bytes / 1000) % 1000,
-                    body_bytes / 1000_000,
-                    (body_bytes / 1000) % 1000,
-                    elapsed / 1000,
-                    elapsed % 1000,
+                    "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
+                    cluster_index, dimensions_u32.x, dimensions_u32.y, dimensions_u32.z,
                 ),
             );
-        }
 
-        for (i, data) in main_data_vec.iter().enumerate() {
-            for (name, span) in [("depth", &data.depth), ("basic", &data.basic)].iter() {
-                if let Some(span) = span {
-                    let cpu = span.cpu.delta();
-                    let gpu = span.gpu.delta();
+            for (camera_index, _camera) in res.camera_data.iter().enumerate() {
+                let camera_resources = &mut res.camera_res[camera_index];
+                for &stage in &CameraStage::VALUES {
+                    let stats = &mut camera_resources.profilers[stage].stats(world.frame);
+                    if let Some(stats) = stats {
+                        overlay_textbox.write(
+                            &monospace,
+                            &format!(
+                                "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                cluster_index,
+                                camera_index,
+                                stage.title(),
+                                stats.cpu_elapsed_min as f64 / 1000.0,
+                                stats.cpu_elapsed_avg as f64 / 1000.0,
+                                stats.cpu_elapsed_max as f64 / 1000.0,
+                                stats.gpu_elapsed_min as f64 / 1000.0,
+                                stats.gpu_elapsed_avg as f64 / 1000.0,
+                                stats.gpu_elapsed_max as f64 / 1000.0,
+                            ),
+                        );
+                    }
+                }
+            }
 
+            for &stage in &ClusterStage::VALUES {
+                let stats = &mut res.profilers[stage].stats(world.frame);
+                if let Some(stats) = stats {
                     overlay_textbox.write(
                         &monospace,
                         &format!(
-                            "[{}] {:>10} | {:6}.{:03}μs CPU | {:6}.{:03}μs GPU\n",
-                            i,
+                            "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                            cluster_index,
+                            stage.title(),
+                            stats.cpu_elapsed_min as f64 / 1000.0,
+                            stats.cpu_elapsed_avg as f64 / 1000.0,
+                            stats.cpu_elapsed_max as f64 / 1000.0,
+                            stats.gpu_elapsed_min as f64 / 1000.0,
+                            stats.gpu_elapsed_avg as f64 / 1000.0,
+                            stats.gpu_elapsed_max as f64 / 1000.0,
+                        ),
+                    );
+                }
+            }
+        }
+
+        for (main_index, main_resources) in main_pool.resources.iter().enumerate() {
+            for (name, profiler) in [
+                ("depth", &main_resources.depth_pass_profiler),
+                ("basic", &main_resources.basic_pass_profiler),
+            ]
+            .iter()
+            {
+                let stats = profiler.stats(world.frame);
+                if let Some(stats) = stats {
+                    overlay_textbox.write(
+                        &monospace,
+                        &format!(
+                            "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                            main_index,
                             name,
-                            cpu / 1000,
-                            cpu % 1000,
-                            gpu / 1000,
-                            gpu % 1000,
+                            stats.cpu_elapsed_min as f64 / 1000.0,
+                            stats.cpu_elapsed_avg as f64 / 1000.0,
+                            stats.cpu_elapsed_max as f64 / 1000.0,
+                            stats.gpu_elapsed_min as f64 / 1000.0,
+                            stats.gpu_elapsed_avg as f64 / 1000.0,
+                            stats.gpu_elapsed_max as f64 / 1000.0,
                         ),
                     );
                 }
@@ -1018,6 +1454,7 @@ fn main() {
         }
 
         gl_window.swap_buffers().unwrap();
+        world.frame += 1;
 
         // TODO: Borrow the pool instead.
         camera_buffer_pool.reset(&gl);
@@ -1083,7 +1520,9 @@ fn process_fs_events(
                 );
 
                 if let Some(source_index) = world.shader_compiler.memory.source_index(&path) {
-                    world.shader_compiler.source_mut(source_index)
+                    world
+                        .shader_compiler
+                        .source_mut(source_index)
                         .last_modified
                         .modify(&mut world.current);
                 }
@@ -1109,6 +1548,10 @@ fn process_fs_events(
             world.cameras[key].maximum_smoothness = configuration.camera.maximum_smoothness;
         }
 
+        world
+            .shader_compiler
+            .replace_prefix_sum(&mut world.current, configuration.prefix_sum);
+
         unsafe {
             if configuration.global.framebuffer_srgb {
                 gl.enable(gl::FRAMEBUFFER_SRGB);
@@ -1133,6 +1576,7 @@ pub fn process_window_events(
     let mut new_light_space = world.shader_compiler.light_space();
     let mut new_attenuation_mode = world.shader_compiler.attenuation_mode();
     let mut new_render_technique = world.shader_compiler.render_technique();
+    let mut reset_debug_camera = false;
 
     events_loop.poll_events(|event| {
         use glutin::Event;
@@ -1188,6 +1632,9 @@ pub fn process_window_events(
                                     VirtualKeyCode::Key5 => {
                                         world.depth_prepass = !world.depth_prepass;
                                     }
+                                    VirtualKeyCode::R => {
+                                        reset_debug_camera = true;
+                                    }
                                     VirtualKeyCode::Backslash => {
                                         configuration.virtual_stereo.enabled = !configuration.virtual_stereo.enabled;
                                     }
@@ -1241,6 +1688,11 @@ pub fn process_window_events(
         world.transition_camera.start_transition();
     }
 
+    if reset_debug_camera {
+        world.cameras.debug.target_transform = world.cameras.main.target_transform;
+        world.transition_camera.start_transition();
+    }
+
     for key in CameraKey::iter() {
         let is_target = world.target_camera_key == key;
         let delta = camera::CameraDelta {
@@ -1290,7 +1742,7 @@ pub fn process_window_events(
                 rain_drop.update(delta_time, &mut rng, p0, p1);
             }
 
-            for _ in 0..1 {
+            for _ in 0..100 {
                 if world.rain_drops.len() < configuration.global.rain_drop_max as usize {
                     world.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
                 }
@@ -1317,16 +1769,39 @@ pub fn process_vr_events(vr_context: &Option<vr::Context>) {
     }
 }
 
+pub fn render_depth(
+    gl: &gl::Gl,
+    main_resources: &mut MainResources,
+    resources: &Resources,
+    world: &mut World,
+    depth_renderer: &mut depth_renderer::Renderer,
+) {
+    unsafe {
+        gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
+        gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
+        gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
+        // Reverse-Z.
+        gl.clear_depth(0.0);
+        gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
+        gl.enable(gl::DEPTH_TEST);
+        gl.enable(gl::CULL_FACE);
+        gl.cull_face(gl::BACK);
+    }
+
+    depth_renderer.render(gl, world, resources);
+}
+
 pub fn render_main(
     gl: &gl::Gl,
     main_resources: &mut MainResources,
-    main_data: &mut MainData,
     resources: &Resources,
     world: &mut World,
+    cluster_parameters: Option<basic_renderer::ClusterParameters>,
     depth_renderer: &mut depth_renderer::Renderer,
     basic_renderer: &mut basic_renderer::Renderer,
 ) {
     unsafe {
+        gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
         gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
         gl.clear_color(world.clear_color[0], world.clear_color[1], world.clear_color[2], 1.0);
         // Reverse-Z.
@@ -1338,18 +1813,17 @@ pub fn render_main(
     }
 
     if world.depth_prepass {
-        main_data.depth = Some(
-            main_resources
-                .depth_pass_profiler
-                .measure(&gl, world.epoch, world.tick, || {
-                    depth_renderer.render(gl, world, resources);
+        let profiler = &mut main_resources.depth_pass_profiler;
+        profiler.start(&gl, world.frame, world.epoch);
 
-                    unsafe {
-                        gl.depth_func(gl::GEQUAL);
-                        gl.depth_mask(gl::FALSE);
-                    }
-                }),
-        );
+        depth_renderer.render(gl, world, resources);
+
+        unsafe {
+            gl.depth_func(gl::GEQUAL);
+            gl.depth_mask(gl::FALSE);
+        }
+
+        profiler.stop(&gl, world.frame, world.epoch);
     }
 
     let basic_params = &basic_renderer::Parameters {
@@ -1357,21 +1831,22 @@ pub fn render_main(
             CameraKey::Main => 0,
             CameraKey::Debug => world.display_mode,
         },
+        cluster: cluster_parameters,
     };
 
-    main_data.basic = Some(
-        main_resources
-            .basic_pass_profiler
-            .measure(&gl, world.epoch, world.tick, || {
-                basic_renderer.render(gl, basic_params, world, resources);
-            }),
-    );
+    {
+        let profiler = &mut main_resources.basic_pass_profiler;
+        profiler.start(&gl, world.frame, world.epoch);
 
-    if world.depth_prepass {
-        unsafe {
-            gl.depth_func(gl::GREATER);
-            gl.depth_mask(gl::TRUE);
+        basic_renderer.render(gl, basic_params, world, resources);
+        if world.depth_prepass {
+            unsafe {
+                gl.depth_func(gl::GREATER);
+                gl.depth_mask(gl::TRUE);
+            }
         }
+
+        profiler.stop(&gl, world.frame, world.epoch);
     }
 }
 

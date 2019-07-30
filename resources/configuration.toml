@@ -1,7 +1,7 @@
 [global]
 diffuse_srgb = true
 framebuffer_srgb = true
-rain_drop_max = 100
+rain_drop_max = 10000
 
 [window]
 vsync = false
@@ -12,14 +12,17 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-cluster_side = 1.5
+cluster_side = 2.0
 # light_index = 2
 min_light_count = 1
 # animate_z = 2.0
 # animate_light_count = 2.0
+max_cluster_count = 16777216 # 2^24 u32 64MB * (fragments, light counts, light offsets)
+max_active_cluster_count = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
+max_light_index_count = 1048576 # 2^20 u32 4MB * (light index)
 
 [virtual_stereo]
-enabled = true
+enabled = false
 pitch_deg = 0.0
 yaw_deg = 5.0
 
@@ -27,19 +30,19 @@ yaw_deg = 5.0
 maximum_smoothness = 0.80
 
 [main_camera]
-z0 = -0.1
-z1 = -40.0
+z0 = -0.2
+z1 = -80.0
 positional_velocity = 8.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
 
 [debug_camera]
-z0 = -2.0
+z0 = -0.2
 z1 = -200.0
 positional_velocity = 16.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
 
 [prefix_sum]
-pass_0_threads = 64
-pass_1_threads = 64
+pass_0_threads = 128
+pass_1_threads = 128

@@ -31,7 +31,6 @@ pub const CAMERA_BUFFER_BINDING: u32 = 1;
 pub const MATERIAL_BUFFER_BINDING: u32 = 2;
 pub const LIGHT_BUFFER_BINDING: u32 = 3;
 pub const TILE_BUFFER_BINDING: u32 = 4;
-pub const CLUSTER_BUFFER_BINDING: u32 = 5;
 
 macro_rules! buffer_binding_declaration {
     () => {
@@ -41,7 +40,6 @@ macro_rules! buffer_binding_declaration {
 #define MATERIAL_BUFFER_BINDING 2
 #define LIGHT_BUFFER_BINDING 3
 #define TILE_BUFFER_BINDING 4
-#define CLUSTER_BUFFER_BINDING 5
 "
     };
 }
@@ -122,23 +120,6 @@ pub enum AttenuationMode {
     Smooth = 6,
 }
 
-impl AttenuationMode {
-    pub fn source(self) -> &'static str {
-        match self {
-            AttenuationMode::Step => "#define ATTENUATION_MODE_STEP\n",
-            AttenuationMode::Linear => "#define ATTENUATION_MODE_LINEAR\n",
-            AttenuationMode::Physical => "#define ATTENUATION_MODE_PHYSICAL\n",
-            AttenuationMode::Interpolated => "#define ATTENUATION_MODE_INTERPOLATED\n",
-            AttenuationMode::Reduced => "#define ATTENUATION_MODE_REDUCED\n",
-            AttenuationMode::Smooth => "#define ATTENUATION_MODE_SMOOTH\n",
-        }
-    }
-
-    pub fn regex() -> Regex {
-        Regex::new(r"\bATTENUATION_MODE_(STEP|LINEAR|PHYSICAL|INTERPOLATED|REDUCED|SMOOTH)\b").unwrap()
-    }
-}
-
 pub struct Shader {
     name: ShaderName,
     entry_point: EntryPoint,
@@ -162,7 +143,6 @@ impl Shader {
                     COMMON_DECLARATION,
                     CAMERA_BUFFER_DECLARATION,
                     crate::light::LIGHT_BUFFER_DECLARATION,
-                    crate::cluster_shading::CLUSTER_BUFFER_DECLARATION,
                     &self.entry_point.contents,
                 ]
                 .iter(),
@@ -324,3 +304,127 @@ impl std::ops::Index<BufferPoolIndex> for BufferPool {
         &self.buffers[index.0]
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct DrawCommand {
+    pub count: u32,
+    pub prim_count: u32,
+    pub first_index: u32,
+    pub base_vertex: u32,
+    pub base_instance: u32,
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct ComputeCommand {
+    pub work_group_x: u32,
+    pub work_group_y: u32,
+    pub work_group_z: u32,
+}
+
+pub mod buffer_usage {
+    use super::*;
+
+    pub trait Variant {
+        fn value() -> gl::BufferUsage;
+    }
+
+    pub enum Static {}
+    pub enum Dynamic {}
+    pub enum Stream {}
+
+    impl Variant for Static {
+        fn value() -> gl::BufferUsage {
+            gl::STATIC_DRAW.into()
+        }
+    }
+
+    impl Variant for Dynamic {
+        fn value() -> gl::BufferUsage {
+            gl::DYNAMIC_DRAW.into()
+        }
+    }
+
+    impl Variant for Stream {
+        fn value() -> gl::BufferUsage {
+            gl::STREAM_DRAW.into()
+        }
+    }
+}
+
+pub struct Buffer<U> {
+    name: gl::BufferName,
+    byte_capacity: usize,
+    usage: std::marker::PhantomData<U>,
+}
+
+impl<U> Buffer<U>
+where
+    U: buffer_usage::Variant,
+{
+    pub unsafe fn new(gl: &gl::Gl) -> Self {
+        Self {
+            name: gl.create_buffer(),
+            byte_capacity: 0,
+            usage: std::marker::PhantomData,
+        }
+    }
+
+    pub unsafe fn name(&self) -> gl::BufferName {
+        self.name
+    }
+
+    pub fn byte_capacity(&self) -> usize {
+        self.byte_capacity
+    }
+
+    pub unsafe fn invalidate(&mut self, gl: &gl::Gl) {
+        if self.byte_capacity > 0 {
+            // Invalidate buffer using old capacity.
+            gl.named_buffer_reserve(self.name, self.byte_capacity, U::value());
+        }
+    }
+
+    pub unsafe fn ensure_capacity(&mut self, gl: &gl::Gl, byte_capacity: usize) {
+        if self.byte_capacity >= byte_capacity {
+            return;
+        }
+
+        gl.named_buffer_reserve(self.name, byte_capacity, U::value());
+        self.byte_capacity = byte_capacity;
+    }
+
+    pub unsafe fn write(&mut self, gl: &gl::Gl, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= self.byte_capacity);
+        gl.named_buffer_data(self.name, bytes, U::value());
+    }
+
+    pub unsafe fn write_at(&mut self, gl: &gl::Gl, bytes: &[u8], offset: usize) {
+        debug_assert!(offset + bytes.len() <= self.byte_capacity);
+        gl.named_buffer_sub_data(self.name, offset, bytes);
+    }
+
+    pub unsafe fn clear_0u32(&mut self, gl: &gl::Gl, byte_count: usize) {
+        debug_assert!(byte_count <= self.byte_capacity);
+        gl.clear_named_buffer_sub_data(self.name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
+    }
+}
+
+impl<U> AsRef<gl::BufferName> for Buffer<U> {
+    fn as_ref(&self) -> &gl::BufferName {
+        &self.name
+    }
+}
+
+// impl<U> std::ops::Deref for Buffer<U> {
+//     type Target = gl::BufferName;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.name
+//     }
+// }
+
+pub type StaticBuffer = Buffer<buffer_usage::Static>;
+pub type DynamicBuffer = Buffer<buffer_usage::Dynamic>;
+pub type StreamBuffer = Buffer<buffer_usage::Stream>;
