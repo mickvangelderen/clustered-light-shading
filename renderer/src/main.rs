@@ -206,8 +206,6 @@ impl MainResources {
 
 #[derive(Debug, Default)]
 pub struct MainData {
-    pub depth: Option<GpuCpuTimeSpan>,
-    pub basic: Option<GpuCpuTimeSpan>,
 }
 
 pub struct MainPool {
@@ -577,18 +575,6 @@ fn main() {
                 wld_to_lgt: Matrix4::identity(),
                 lgt_to_wld: Matrix4::identity(),
             });
-        }
-
-        struct ClusterParameters {
-            pub render_dims: Vector2<u32>,
-
-            pub wld_to_cam: Matrix4<f64>,
-            pub cam_to_wld: Matrix4<f64>,
-
-            pub cam_to_clp: Matrix4<f64>,
-            pub clp_to_cam: Matrix4<f64>,
-
-            pub cam_pos_in_wld: Point3<f64>,
         }
 
         if world.shader_compiler.render_technique() == RenderTechnique::Clustered {
