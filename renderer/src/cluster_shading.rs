@@ -119,7 +119,7 @@ pub struct ClusterCameraData {
 }
 
 pub struct ClusterCameraResources {
-    pub profiler_pools: CameraStages<ProfilerPool>,
+    pub profilers: CameraStages<Profiler>,
 }
 
 impl_enum_and_enum_map! {
@@ -152,7 +152,7 @@ pub struct ClusterResources {
     pub draw_command_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
-    pub profiler_pools: ClusterStages<ProfilerPool>,
+    pub profilers: ClusterStages<Profiler>,
     pub camera_data: Vec<ClusterCameraData>,
     pub camera_res: Vec<ClusterCameraResources>,
     pub cluster_lengths: Vec<u32>,
@@ -248,7 +248,7 @@ impl ClusterResources {
                 buffer.write(gl, data.value_as_bytes());
                 buffer
             },
-            profiler_pools: ClusterStages::new(|_| ProfilerPool::new(gl)),
+            profilers: ClusterStages::new(|_| Profiler::new(gl)),
             compute_commands_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "compute_commands");
@@ -286,7 +286,7 @@ impl ClusterResources {
         let index = self.camera_data.len();
         if self.camera_res.len() <= index {
             self.camera_res.push(ClusterCameraResources {
-                profiler_pools: CameraStages::new(|_| ProfilerPool::new(gl)),
+                profilers: CameraStages::new(|_| Profiler::new(gl)),
             });
         }
         self.camera_data.push(data);
