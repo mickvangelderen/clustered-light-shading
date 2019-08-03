@@ -25,7 +25,7 @@ void main() {
       fs_pos_in_tex.y > 0.03 && fs_pos_in_tex.y < 0.97
       ) {
     if (pass == 1) {
-      frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/8.0);
+      frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/32.0);
       // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_dims), 0.1);
     } else {
       discard;
