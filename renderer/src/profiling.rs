@@ -36,7 +36,8 @@ pub struct TimeSpan {
 
 impl TimeSpan {
     pub fn delta(&self) -> u64 {
-        self.end - self.begin
+        // I'd rather see a 0 somewhere than crash when profiling timers overflow.
+        self.end.saturating_sub(self.begin)
     }
 }
 
