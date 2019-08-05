@@ -165,7 +165,7 @@ impl SourceReader {
                     #line {} {}\n\
                     #define CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS {}\n\
                     #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
-                    #define CLUSTERED_LIGHT_SHADING_MAX_LIGHTS {}\n\
+                    #define CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES {}\n\
                     ",
                     line!() - 4,
                     source_index,
