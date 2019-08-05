@@ -38,16 +38,12 @@ pub struct VirtualStereo {
     pub yaw_deg: f32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShading {
     pub cluster_side: f32,
-    pub light_index: Option<u32>,
-    pub min_light_count: u32,
-    pub animate_z: Option<f32>,
-    pub animate_light_count: Option<f32>,
-    pub max_cluster_count: u32,
-    pub max_active_cluster_count: u32,
-    pub max_light_index_count: u32,
+    pub max_clusters: u32,
+    pub max_active_clusters: u32,
+    pub max_light_indices: u32,
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]

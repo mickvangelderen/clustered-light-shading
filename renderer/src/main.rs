@@ -334,6 +334,7 @@ fn main() {
                 render_technique: RenderTechnique::Clustered,
                 attenuation_mode: AttenuationMode::Interpolated,
                 prefix_sum: configuration.prefix_sum,
+                clustered_light_shading: configuration.clustered_light_shading,
             },
         );
 
