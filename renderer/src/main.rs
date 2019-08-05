@@ -775,8 +775,8 @@ fn main() {
                             );
 
                             gl.dispatch_compute(
-                                main_resources.dims.x as u32 / 16,
-                                main_resources.dims.y as u32 / 16,
+                                main_resources.dims.x.div_ceil(16) as u32,
+                                main_resources.dims.y.div_ceil(16) as u32,
                                 1,
                             );
                             gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
