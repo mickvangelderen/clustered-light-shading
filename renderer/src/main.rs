@@ -685,16 +685,15 @@ fn main() {
                 hmd_to_wld,
             );
 
-            let item_count = cluster_data.cluster_count();
+            let cluster_count = cluster_data.cluster_count();
             let blocks_per_dispatch =
-                item_count.div_ceil(configuration.prefix_sum.pass_0_threads * configuration.prefix_sum.pass_1_threads);
-            let items_per_dispatch = configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
-            let dispatch_count = item_count.div_ceil(items_per_dispatch);
-            let padded_item_count = dispatch_count * items_per_dispatch;
+                cluster_count.div_ceil(configuration.prefix_sum.pass_0_threads * configuration.prefix_sum.pass_1_threads);
+            let clusters_per_dispatch = configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
+            let cluster_dispatch_count = cluster_count.div_ceil(clusters_per_dispatch);
 
             unsafe {
                 let buffer = &mut cluster_resources.cluster_fragment_counts_buffer;
-                let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
+                let byte_count = std::mem::size_of::<u32>() * cluster_data.cluster_count() as usize;
                 buffer.invalidate(&gl);
                 // buffer.ensure_capacity(&gl, byte_count);
                 buffer.clear_0u32(&gl, byte_count);
@@ -803,10 +802,9 @@ fn main() {
 
                 unsafe {
                     let buffer = &mut cluster_resources.active_cluster_indices_buffer;
-                    let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
                     buffer.invalidate(&gl);
                     // buffer.ensure_capacity(&gl, byte_count);
-                    buffer.clear_0u32(&gl, byte_count);
+                    buffer.clear_0u32(&gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
                         cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
@@ -836,7 +834,7 @@ fn main() {
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
                         gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
-                        gl.dispatch_compute(dispatch_count, 1, 1);
+                        gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
@@ -858,7 +856,7 @@ fn main() {
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
                         gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
-                        gl.dispatch_compute(dispatch_count, 1, 1);
+                        gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
@@ -903,10 +901,9 @@ fn main() {
 
                 unsafe {
                     let buffer = &mut cluster_resources.active_cluster_light_counts_buffer;
-                    let byte_count = std::mem::size_of::<u32>() * padded_item_count as usize;
                     buffer.invalidate(&gl);
                     // buffer.ensure_capacity(&gl, byte_count);
-                    buffer.clear_0u32(&gl, byte_count);
+                    buffer.clear_0u32(&gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
                         cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
