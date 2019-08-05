@@ -84,7 +84,10 @@ void main() {
   uint acc = 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
-    acc += active_cluster_light_counts[offset + tid];
+    uint active_cluster_index = offset + tid;
+    if (active_cluster_index < CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS) {
+      acc += active_cluster_light_counts[offset + tid];
+    }
   }
 
   // Initialize shared memory
@@ -125,17 +128,23 @@ void main() {
   uint acc = wid > 0 ? offsets[wid - 1] : 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
+    uint active_cluster_index = offset + tid;
+    bool within_buffer_bounds = active_cluster_index < CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS;
+
     // Initialize shared memory
-    uint light_count = active_cluster_light_counts[offset + tid];
-    values[tid] = light_count;
+    if (within_buffer_bounds) {
+      values[tid] = active_cluster_light_counts[active_cluster_index];
+    }
     memoryBarrierShared();
     barrier();
 
     scan();
 
     // Emit offset.
-    uint light_offset = acc + (tid > 0 ? values[tid - 1] : 0);
-    active_cluster_light_offsets[offset + tid] = light_offset;
+    if (within_buffer_bounds) {
+      uint light_offset = acc + (tid > 0 ? values[tid - 1] : 0);
+      active_cluster_light_offsets[active_cluster_index] = light_offset;
+    }
 
     // Add the total sum of the current segment to the accumulator.
     acc += values[LOCAL_X - 1];
