@@ -72,37 +72,43 @@ void main() {
   uint acc = active_cluster_light_offsets[wid];
   for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;
-    if (light_index < light_count) {
+    bool within_buffer_bounds = light_index < light_count;
+
+    bool did_intersect = false;
+
+    if (within_buffer_bounds) {
       vec4 light = light_xyzr[light_index];
       float d = 0;
       float r;
       r = (light.x < p0.x ? p0.x - light.x : light.x - p1.x);
-      if (r >= 0.0) {
+      if (r > 0.0) {
         d += r*r;
       }
       r = (light.y < p0.y ? p0.y - light.y : light.y - p1.y);
-      if (r >= 0.0) {
+      if (r > 0.0) {
         d += r*r;
       }
       r = (light.z < p0.z ? p0.z - light.z : light.z - p1.z);
-      if (r >= 0.0) {
+      if (r > 0.0) {
         d += r*r;
       }
 
-      bool did_intersect = d <= (light.w * light.w);
+      did_intersect = d <= (light.w * light.w);
       values[tid] = did_intersect ? 1 : 0;
-      memoryBarrierShared();
-      barrier();
-
-      scan();
-
-      if (did_intersect) {
-        uint light_index_index = acc + (tid > 0 ? values[tid - 1] : 0);
-        if (light_index_index < CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES) {
-          light_indices[light_index_index] = light_index;
-        }
-      }
-      acc += values[LOCAL_X - 1];
     }
+
+    memoryBarrierShared();
+    barrier();
+    scan();
+
+    // NOTE: did_intersect implies within_buffer_bounds!
+    if (did_intersect) {
+      uint light_index_index = acc + (tid > 0 ? values[tid - 1] : 0);
+      if (light_index_index < CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES) {
+        light_indices[light_index_index] = light_index;
+      }
+    }
+
+    acc += values[LOCAL_X - 1];
   }
 }
