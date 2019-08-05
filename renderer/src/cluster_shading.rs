@@ -1,19 +1,4 @@
 use crate::*;
-use std::time::Instant;
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct ClusterHeader {
-    pub dimensions: Vector4<u32>,
-    pub wld_to_cls: Matrix4<f32>,
-    pub cls_to_wld: Matrix4<f32>,
-}
-
-pub const CLUSTER_BUFFER_DECLARATION: &'static str = r"
-layout(std430, binding = CLUSTER_BUFFER_BINDING) buffer ClusterBuffer {
-    uint clusters[];
-};
-";
 
 fn compute_bounding_box<I>(clp_to_hmd: I) -> BoundingBox<f64>
 where
@@ -56,18 +41,13 @@ impl ClusterData {
 
         let bb_delta = bb.delta();
         let mut dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
+        let dimensions_u32 = dimensions.cast::<u32>().unwrap();
 
-        // TODO: Warn?
-        if dimensions.x > 256.0 {
-            dimensions.x = 256.0
-        }
-
-        if dimensions.y > 256.0 {
-            dimensions.y = 256.0
-        }
-
-        if dimensions.z > 256.0 {
-            dimensions.z = 256.0
+        if dimensions_u32.product() > cfg.max_clusters {
+            panic!(
+                "Cluster dimensions are too large: {} x {} x {} exceeds the maximum {}.",
+                dimensions_u32.x, dimensions_u32.y, dimensions_u32.z, cfg.max_clusters,
+            );
         }
 
         let trans_from_hmd_to_cls = Point3::origin() - bb.min;
@@ -142,8 +122,8 @@ impl CameraStage {
 }
 
 pub struct ClusterResources {
+    // GPU
     pub cluster_fragment_counts_buffer: DynamicBuffer,
-    // pub cluster_metas_buffer: DynamicBuffer,
     pub active_cluster_indices_buffer: DynamicBuffer,
     pub active_cluster_light_counts_buffer: DynamicBuffer,
     pub active_cluster_light_offsets_buffer: DynamicBuffer,
@@ -152,12 +132,15 @@ pub struct ClusterResources {
     pub draw_command_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
-    pub profilers: ClusterStages<Profiler>,
+    // CPU
+    pub active_clusters: Vec<u32>,
+    pub active_cluster_lengths: Vec<u32>,
+    pub active_cluster_offsets: Vec<u32>,
+    pub light_indices: Vec<u32>,
+    // Misc
     pub camera_data: Vec<ClusterCameraData>,
     pub camera_res: Vec<ClusterCameraResources>,
-    pub cluster_lengths: Vec<u32>,
-    pub cluster_meta: Vec<ClusterMeta>,
-    pub light_indices: Vec<u32>,
+    pub profilers: ClusterStages<Profiler>,
 }
 
 impl_enum_and_enum_map! {
@@ -191,46 +174,40 @@ impl ClusterStage {
     }
 }
 
-#[repr(C)]
-pub struct ClusterMeta {
-    light_index_count: u32,
-    light_index_offset: u32,
-}
-
 impl ClusterResources {
     pub fn new(gl: &gl::Gl, cfg: &configuration::ClusteredLightShading) -> Self {
         Self {
             cluster_fragment_counts_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "cluster_fragment_counts");
-                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_cluster_count as usize);
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_clusters as usize);
                 buffer
             },
             active_cluster_indices_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "active_cluster_indices");
-                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_clusters as usize);
                 buffer
             },
             active_cluster_light_counts_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "active_cluster_light_counts");
-                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_clusters as usize);
                 buffer
             },
             active_cluster_light_offsets_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "active_cluster_light_offsets");
-                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_cluster_count as usize);
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_clusters as usize);
                 buffer
             },
             light_xyzr_buffer: unsafe {
-                let mut buffer = Buffer::new(gl);
+                let buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "light_xyrz");
                 buffer
             },
             offset_buffer: unsafe {
-                let mut buffer = Buffer::new(gl);
+                let buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "offsets");
                 buffer
             },
@@ -271,13 +248,14 @@ impl ClusterResources {
             light_indices_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "light_indices");
-                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_index_count as usize);
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
                 buffer
             },
             camera_data: Vec::new(),
             camera_res: Vec::new(),
-            cluster_lengths: Vec::new(),
-            cluster_meta: Vec::new(),
+            active_clusters: Vec::new(),
+            active_cluster_lengths: Vec::new(),
+            active_cluster_offsets: Vec::new(),
             light_indices: Vec::new(),
         }
     }
@@ -330,228 +308,222 @@ impl ClusterResources {
 // 3.1. (cluster_lengths[CA]) intersect active clusters with lights and count.
 // 3.2. (light_indices[LI]) prefix sum cluster_lengths to get offsets, write light id.
 
-impl ClusterResources {
-    pub fn compute_and_upload(
-        &mut self,
-        gl: &gl::Gl,
-        cfg: &configuration::ClusteredLightShading,
-        space: &ClusterData,
-        point_lights: &[light::PointLight],
-    ) {
-        // self.cpu_start = Some(Instant::now());
+// impl ClusterResources {
+//     pub fn compute_and_upload(
+//         &mut self,
+//         gl: &gl::Gl,
+//         cfg: &configuration::ClusteredLightShading,
+//         space: &ClusterData,
+//         point_lights: &[light::PointLight],
+//     ) {
+//         self.cpu_start = Some(Instant::now());
 
-        // let ClusterData {
-        //     dimensions,
-        //     scale_from_cls_to_hmd,
-        //     scale_from_hmd_to_cls,
-        //     wld_to_cls,
-        //     cls_to_wld,
-        //     ..
-        // } = *space;
+//         let ClusterData {
+//             dimensions,
+//             scale_from_cls_to_hmd,
+//             scale_from_hmd_to_cls,
+//             wld_to_cls,
+//             cls_to_wld,
+//             ..
+//         } = *space;
 
-        // let dimensions_u32 = dimensions.cast::<u32>().unwrap();
-        // let dimensions = dimensions.cast::<f64>().unwrap();
+//         let dimensions_u32 = dimensions.cast::<u32>().unwrap();
+//         let dimensions = dimensions.cast::<f64>().unwrap();
 
-        // let cluster_count = dimensions_u32.product();
+//         let cluster_count = dimensions_u32.product();
 
-        // // First pass, compute cluster lengths and offsets.
-        // self.cluster_lengths.clear();
-        // self.cluster_lengths
-        //     .resize_with(cluster_count as usize, Default::default);
+//         // First pass, compute cluster lengths and offsets.
+//         self.cluster_lengths.clear();
+//         self.cluster_lengths
+//             .resize_with(cluster_count as usize, Default::default);
 
-        // for (i, l) in point_lights.iter().enumerate() {
-        //     if let Some(light_index) = cfg.light_index {
-        //         if i as u32 != light_index {
-        //             continue;
-        //         }
-        //     }
+//         for (i, l) in point_lights.iter().enumerate() {
+//             if let Some(light_index) = cfg.light_index {
+//                 if i as u32 != light_index {
+//                     continue;
+//                 }
+//             }
 
-        //     let pos_in_cls = wld_to_cls.transform_point(l.pos_in_wld.cast::<f64>().unwrap());
+//             let pos_in_cls = wld_to_cls.transform_point(l.pos_in_wld.cast::<f64>().unwrap());
 
-        //     let r = l.attenuation.clip_far as f64;
-        //     let r_sq = r * r;
+//             let r = l.attenuation.clip_far as f64;
+//             let r_sq = r * r;
 
-        //     let minima = Point3::partial_clamp_element_wise(
-        //         (pos_in_cls - scale_from_hmd_to_cls * r).map(f64::floor),
-        //         Point3::origin(),
-        //         Point3::from_vec(dimensions),
-        //     )
-        //     .map(|e| e as u32);
+//             let minima = Point3::partial_clamp_element_wise(
+//                 (pos_in_cls - scale_from_hmd_to_cls * r).map(f64::floor),
+//                 Point3::origin(),
+//                 Point3::from_vec(dimensions),
+//             )
+//             .map(|e| e as u32);
 
-        //     let centers = Point3::partial_clamp_element_wise(
-        //         (pos_in_cls).map(f64::floor),
-        //         Point3::origin(),
-        //         Point3::from_vec(dimensions),
-        //     )
-        //     .map(|e| e as u32);
+//             let centers = Point3::partial_clamp_element_wise(
+//                 (pos_in_cls).map(f64::floor),
+//                 Point3::origin(),
+//                 Point3::from_vec(dimensions),
+//             )
+//             .map(|e| e as u32);
 
-        //     let maxima = Point3::partial_clamp_element_wise(
-        //         (pos_in_cls + scale_from_hmd_to_cls * r).map(f64::ceil),
-        //         Point3::origin(),
-        //         Point3::from_vec(dimensions),
-        //     )
-        //     .map(|e| e as u32);
+//             let maxima = Point3::partial_clamp_element_wise(
+//                 (pos_in_cls + scale_from_hmd_to_cls * r).map(f64::ceil),
+//                 Point3::origin(),
+//                 Point3::from_vec(dimensions),
+//             )
+//             .map(|e| e as u32);
 
-        //     let Point3 { x: x0, y: y0, z: z0 } = minima;
-        //     let Point3 { x: x1, y: y1, z: z1 } = centers;
-        //     let Point3 { x: x2, y: y2, z: z2 } = maxima;
+//             let Point3 { x: x0, y: y0, z: z0 } = minima;
+//             let Point3 { x: x1, y: y1, z: z1 } = centers;
+//             let Point3 { x: x2, y: y2, z: z2 } = maxima;
 
-        //     // NOTE: We must clamp as f64 because the value might actually overflow.
+//             // NOTE: We must clamp as f64 because the value might actually overflow.
 
-        //     macro_rules! closest_face_dist {
-        //         ($x: ident, $x1: ident, $pos: ident) => {
-        //             if $x < $x1 {
-        //                 ($x + 1) as f64 - $pos.$x
-        //             } else if $x > $x1 {
-        //                 $x as f64 - $pos.$x
-        //             } else {
-        //                 0.0
-        //             }
-        //         };
-        //     }
+//             macro_rules! closest_face_dist {
+//                 ($x: ident, $x1: ident, $pos: ident) => {
+//                     if $x < $x1 {
+//                         ($x + 1) as f64 - $pos.$x
+//                     } else if $x > $x1 {
+//                         $x as f64 - $pos.$x
+//                     } else {
+//                         0.0
+//                     }
+//                 };
+//             }
 
-        //     for z in z0..z2 {
-        //         let dz = closest_face_dist!(z, z1, pos_in_cls) * scale_from_cls_to_hmd.z;
-        //         for y in y0..y2 {
-        //             let dy = closest_face_dist!(y, y1, pos_in_cls) * scale_from_cls_to_hmd.y;
-        //             for x in x0..x2 {
-        //                 let dx = closest_face_dist!(x, x1, pos_in_cls) * scale_from_cls_to_hmd.x;
-        //                 if dz * dz + dy * dy + dx * dx < r_sq {
-        //                     // It's a hit!
-        //                     let index = ((z * dimensions_u32.y) + y) * dimensions_u32.x + x;
-        //                     self.cluster_lengths[index as usize] += 1;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+//             for z in z0..z2 {
+//                 let dz = closest_face_dist!(z, z1, pos_in_cls) * scale_from_cls_to_hmd.z;
+//                 for y in y0..y2 {
+//                     let dy = closest_face_dist!(y, y1, pos_in_cls) * scale_from_cls_to_hmd.y;
+//                     for x in x0..x2 {
+//                         let dx = closest_face_dist!(x, x1, pos_in_cls) * scale_from_cls_to_hmd.x;
+//                         if dz * dz + dy * dy + dx * dx < r_sq {
+//                             // It's a hit!
+//                             let index = ((z * dimensions_u32.y) + y) * dimensions_u32.x + x;
+//                             self.cluster_lengths[index as usize] += 1;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
 
-        // let total_light_indices: u64 = self.cluster_lengths.iter().map(|&x| x as u64).sum();
+//         let total_light_indices: u64 = self.cluster_lengths.iter().map(|&x| x as u64).sum();
 
-        // // Scan cluster offsets from lengths.
-        // self.cluster_meta.clear();
-        // self.cluster_meta.reserve(cluster_count as usize);
+//         // Scan cluster offsets from lengths.
+//         self.cluster_meta.clear();
+//         self.cluster_meta.reserve(cluster_count as usize);
 
-        // self.cluster_meta
-        //     .extend(self.cluster_lengths.iter().scan(0, |offset, &length| {
-        //         let meta = ClusterMeta {
-        //             offset: *offset,
-        //             length: length,
-        //         };
-        //         *offset += length;
-        //         Some(meta)
-        //     }));
+//         self.cluster_meta
+//             .extend(self.cluster_lengths.iter().scan(0, |offset, &length| {
+//                 let meta = ClusterMeta {
+//                     offset: *offset,
+//                     length: length,
+//                 };
+//                 *offset += length;
+//                 Some(meta)
+//             }));
 
-        // // Second pass
-        // self.cluster_lengths.clear();
-        // self.cluster_lengths
-        //     .resize_with(cluster_count as usize, Default::default);
-        // self.light_indices
-        //     .resize_with(total_light_indices as usize, Default::default);
+//         // Second pass
+//         self.cluster_lengths.clear();
+//         self.cluster_lengths
+//             .resize_with(cluster_count as usize, Default::default);
+//         self.light_indices
+//             .resize_with(total_light_indices as usize, Default::default);
 
-        // for (i, l) in point_lights.iter().enumerate() {
-        //     if let Some(light_index) = cfg.light_index {
-        //         if i as u32 != light_index {
-        //             continue;
-        //         }
-        //     }
+//         for (i, l) in point_lights.iter().enumerate() {
+//             if let Some(light_index) = cfg.light_index {
+//                 if i as u32 != light_index {
+//                     continue;
+//                 }
+//             }
 
-        //     let pos_in_cls = wld_to_cls.transform_point(l.pos_in_wld.cast::<f64>().unwrap());
+//             let pos_in_cls = wld_to_cls.transform_point(l.pos_in_wld.cast::<f64>().unwrap());
 
-        //     let r = l.attenuation.clip_far as f64;
-        //     let r_sq = r * r;
+//             let r = l.attenuation.clip_far as f64;
+//             let r_sq = r * r;
 
-        //     let minima = Point3::partial_clamp_element_wise(
-        //         (pos_in_cls - scale_from_hmd_to_cls * r).map(f64::floor),
-        //         Point3::origin(),
-        //         Point3::from_vec(dimensions),
-        //     )
-        //     .map(|e| e as u32);
+//             let minima = Point3::partial_clamp_element_wise(
+//                 (pos_in_cls - scale_from_hmd_to_cls * r).map(f64::floor),
+//                 Point3::origin(),
+//                 Point3::from_vec(dimensions),
+//             )
+//             .map(|e| e as u32);
 
-        //     let centers = Point3::partial_clamp_element_wise(
-        //         (pos_in_cls).map(f64::floor),
-        //         Point3::origin(),
-        //         Point3::from_vec(dimensions),
-        //     )
-        //     .map(|e| e as u32);
+//             let centers = Point3::partial_clamp_element_wise(
+//                 (pos_in_cls).map(f64::floor),
+//                 Point3::origin(),
+//                 Point3::from_vec(dimensions),
+//             )
+//             .map(|e| e as u32);
 
-        //     let maxima = Point3::partial_clamp_element_wise(
-        //         (pos_in_cls + scale_from_hmd_to_cls * r).map(f64::ceil),
-        //         Point3::origin(),
-        //         Point3::from_vec(dimensions),
-        //     )
-        //     .map(|e| e as u32);
+//             let maxima = Point3::partial_clamp_element_wise(
+//                 (pos_in_cls + scale_from_hmd_to_cls * r).map(f64::ceil),
+//                 Point3::origin(),
+//                 Point3::from_vec(dimensions),
+//             )
+//             .map(|e| e as u32);
 
-        //     let Point3 { x: x0, y: y0, z: z0 } = minima;
-        //     let Point3 { x: x1, y: y1, z: z1 } = centers;
-        //     let Point3 { x: x2, y: y2, z: z2 } = maxima;
+//             let Point3 { x: x0, y: y0, z: z0 } = minima;
+//             let Point3 { x: x1, y: y1, z: z1 } = centers;
+//             let Point3 { x: x2, y: y2, z: z2 } = maxima;
 
-        //     // NOTE: We must clamp as f64 because the value might actually overflow.
+//             // NOTE: We must clamp as f64 because the value might actually overflow.
 
-        //     macro_rules! closest_face_dist {
-        //         ($x: ident, $x1: ident, $pos: ident) => {
-        //             if $x < $x1 {
-        //                 ($x + 1) as f64 - $pos.$x
-        //             } else if $x > $x1 {
-        //                 $x as f64 - $pos.$x
-        //             } else {
-        //                 0.0
-        //             }
-        //         };
-        //     }
+//             macro_rules! closest_face_dist {
+//                 ($x: ident, $x1: ident, $pos: ident) => {
+//                     if $x < $x1 {
+//                         ($x + 1) as f64 - $pos.$x
+//                     } else if $x > $x1 {
+//                         $x as f64 - $pos.$x
+//                     } else {
+//                         0.0
+//                     }
+//                 };
+//             }
 
-        //     for z in z0..z2 {
-        //         let dz = closest_face_dist!(z, z1, pos_in_cls) * scale_from_cls_to_hmd.z;
-        //         for y in y0..y2 {
-        //             let dy = closest_face_dist!(y, y1, pos_in_cls) * scale_from_cls_to_hmd.y;
-        //             for x in x0..x2 {
-        //                 let dx = closest_face_dist!(x, x1, pos_in_cls) * scale_from_cls_to_hmd.x;
-        //                 if dz * dz + dy * dy + dx * dx < r_sq {
-        //                     // It's a hit!
-        //                     let cluster_index = ((z * dimensions_u32.y) + y) * dimensions_u32.x + x;
-        //                     let light_offset = self.cluster_lengths[cluster_index as usize];
-        //                     self.cluster_lengths[cluster_index as usize] += 1;
+//             for z in z0..z2 {
+//                 let dz = closest_face_dist!(z, z1, pos_in_cls) * scale_from_cls_to_hmd.z;
+//                 for y in y0..y2 {
+//                     let dy = closest_face_dist!(y, y1, pos_in_cls) * scale_from_cls_to_hmd.y;
+//                     for x in x0..x2 {
+//                         let dx = closest_face_dist!(x, x1, pos_in_cls) * scale_from_cls_to_hmd.x;
+//                         if dz * dz + dy * dy + dx * dx < r_sq {
+//                             // It's a hit!
+//                             let cluster_index = ((z * dimensions_u32.y) + y) * dimensions_u32.x + x;
+//                             let light_offset = self.cluster_lengths[cluster_index as usize];
+//                             self.cluster_lengths[cluster_index as usize] += 1;
 
-        //                     let ClusterMeta {
-        //                         offset: cluster_offset,
-        //                         length: cluster_len,
-        //                     } = self.cluster_meta[cluster_index as usize];
-        //                     debug_assert!(light_offset < cluster_len);
+//                             let ClusterMeta {
+//                                 offset: cluster_offset,
+//                                 length: cluster_len,
+//                             } = self.cluster_meta[cluster_index as usize];
+//                             debug_assert!(light_offset < cluster_len);
 
-        //                     self.light_indices[(cluster_offset + light_offset) as usize] = i as u32;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        // FIXME
-        // unsafe {
-        //     let header = ClusterHeader {
-        //         dimensions: dimensions_u32.extend(0),
-        //         wld_to_cls: wld_to_cls.cast().unwrap(),
-        //         cls_to_wld: cls_to_wld.cast().unwrap(),
-        //     };
+//                             self.light_indices[(cluster_offset + light_offset) as usize] = i as u32;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//         FIXME
+//         unsafe {
+//             let header = ClusterHeader {
+//                 dimensions: dimensions_u32.extend(0),
+//                 wld_to_cls: wld_to_cls.cast().unwrap(),
+//                 cls_to_wld: cls_to_wld.cast().unwrap(),
+//             };
 
-        //     let header_bytes = header.value_as_bytes();
-        //     let header_bytes_offset = 0;
-        //     let meta_bytes = self.cluster_meta.vec_as_bytes();
-        //     let meta_bytes_offset = header_bytes_offset + header_bytes.len();
-        //     let light_indices_bytes = self.light_indices.vec_as_bytes();
-        //     let light_indices_bytes_offset = meta_bytes_offset + meta_bytes.len();
-        //     let total_byte_count = light_indices_bytes_offset + light_indices_bytes.len();
+//             let header_bytes = header.value_as_bytes();
+//             let header_bytes_offset = 0;
+//             let meta_bytes = self.cluster_meta.vec_as_bytes();
+//             let meta_bytes_offset = header_bytes_offset + header_bytes.len();
+//             let light_indices_bytes = self.light_indices.vec_as_bytes();
+//             let light_indices_bytes_offset = meta_bytes_offset + meta_bytes.len();
+//             let total_byte_count = light_indices_bytes_offset + light_indices_bytes.len();
 
-        //     gl.named_buffer_reserve(self.buffer_name, total_byte_count, gl::STREAM_DRAW);
-        //     gl.named_buffer_sub_data(self.buffer_name, header_bytes_offset, header_bytes);
-        //     gl.named_buffer_sub_data(self.buffer_name, meta_bytes_offset, meta_bytes);
-        //     gl.named_buffer_sub_data(self.buffer_name, light_indices_bytes_offset, light_indices_bytes);
-        //     gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
-        // }
-        // self.cpu_end = Some(Instant::now());
-    }
-}
-
-#[derive(Debug)]
-struct GlobalClusterResources {
-    pub fragments_per_cluster_program: ProgramName,
-    pub compress_active_clusters_program: ProgramName,
-}
+//             gl.named_buffer_reserve(self.buffer_name, total_byte_count, gl::STREAM_DRAW);
+//             gl.named_buffer_sub_data(self.buffer_name, header_bytes_offset, header_bytes);
+//             gl.named_buffer_sub_data(self.buffer_name, meta_bytes_offset, meta_bytes);
+//             gl.named_buffer_sub_data(self.buffer_name, light_indices_bytes_offset, light_indices_bytes);
+//             gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, CLUSTER_BUFFER_BINDING, self.buffer_name);
+//         }
+//         self.cpu_end = Some(Instant::now());
+//     }
+// }

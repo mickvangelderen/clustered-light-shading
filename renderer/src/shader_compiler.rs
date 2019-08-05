@@ -82,6 +82,7 @@ pub enum SourceReader {
     AttenuationMode,
     RenderTechnique,
     PrefixSum,
+    ClusteredLightShading,
 }
 
 impl SourceReader {
@@ -156,6 +157,21 @@ impl SourceReader {
                     source_index,
                     vars.prefix_sum.pass_0_threads,
                     vars.prefix_sum.pass_1_threads,
+                )));
+            }
+            SourceReader::ClusteredLightShading => {
+                tokens.push(Token::Literal(format!(
+                    "\
+                    #line {} {}\n\
+                    #define CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS {}\n\
+                    #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
+                    #define CLUSTERED_LIGHT_SHADING_MAX_LIGHTS {}\n\
+                    ",
+                    line!() - 4,
+                    source_index,
+                    vars.clustered_light_shading.max_clusters,
+                    vars.clustered_light_shading.max_active_clusters,
+                    vars.clustered_light_shading.max_light_indices,
                 )));
             }
         }
@@ -358,13 +374,15 @@ pub struct Variables {
     pub attenuation_mode: AttenuationMode,
     pub render_technique: RenderTechnique,
     pub prefix_sum: configuration::PrefixSum,
+    pub clustered_light_shading: configuration::ClusteredLightShading,
 }
 
 pub struct NativeSourceIndices {
     pub light_space: SourceIndex,
     pub attenuation_mode: SourceIndex,
     pub render_technique: SourceIndex,
-    pub prefix_sum: SourceIndex
+    pub prefix_sum: SourceIndex,
+    pub clustered_light_shading: SourceIndex,
 }
 
 pub struct ShaderCompiler {
@@ -394,6 +412,10 @@ impl ShaderCompiler {
             prefix_sum: memory.add_source(
                 PathBuf::from("native/PREFIX_SUM"),
                 Source::new(current, SourceReader::PrefixSum, PathBuf::from(file!())),
+            ),
+            clustered_light_shading: memory.add_source(
+                PathBuf::from("native/CLUSTERED_LIGHT_SHADING"),
+                Source::new(current, SourceReader::ClusteredLightShading, PathBuf::from(file!())),
             ),
         };
 
@@ -469,6 +491,20 @@ impl ShaderCompiler {
         let old = std::mem::replace(&mut self.variables.prefix_sum, prefix_sum);
         if old != prefix_sum {
             self.source_mut(self.indices.prefix_sum)
+                .last_modified
+                .modify(current);
+        }
+        old
+    }
+
+    pub fn replace_clustered_light_shading(
+        &mut self,
+        current: &mut Current,
+        clustered_light_shading: configuration::ClusteredLightShading,
+    ) -> configuration::ClusteredLightShading {
+        let old = std::mem::replace(&mut self.variables.clustered_light_shading, clustered_light_shading);
+        if old != clustered_light_shading {
+            self.source_mut(self.indices.clustered_light_shading)
                 .last_modified
                 .modify(current);
         }

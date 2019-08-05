@@ -97,8 +97,10 @@ void main() {
       scan();
 
       if (did_intersect) {
-        uint group_offset = tid > 0 ? values[tid - 1] : 0;
-        light_indices[acc + group_offset] = light_index;
+        uint light_index_index = acc + (tid > 0 ? values[tid - 1] : 0);
+        if (light_index_index < CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES) {
+          light_indices[acc + group_offset] = light_index;
+        }
       }
       acc += values[LOCAL_X - 1];
     }
