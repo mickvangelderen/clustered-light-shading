@@ -94,8 +94,11 @@ void main() {
       }
 
       did_intersect = d <= (light.w * light.w);
-      values[tid] = did_intersect ? 1 : 0;
     }
+    // NOTE: I could do its only if we're within buffer bounds but I'd rather
+    // ensure that all values are written to. This would only save a few writes
+    // on the last work group.
+    values[tid] = did_intersect ? 1 : 0;
 
     memoryBarrierShared();
     barrier();
@@ -109,6 +112,10 @@ void main() {
       }
     }
 
+    // NOTE: Ensure the total number of intersections in this iteration is read
+    // before the next iteration starts writing to shared memory.
     acc += values[LOCAL_X - 1];
+    memoryBarrierShared();
+    barrier();
   }
 }
