@@ -268,6 +268,18 @@ void main() {
       // CLUSTERED SHADING
       // frag_color = vec4(vec3(float(cluster_light_count) / 32.0), 1.0);
 
+      // HASH LIGHT INDICES
+      // uint hash = 0;
+      // uint p_pow = 1;
+      // for (uint i = 0; i < cluster_light_count; i++) {
+      //   uint light_index = light_indices[cluster_light_offset + i];
+      //   hash = (hash + light_index * p_pow) % 0xffff;
+      //   p_pow = (p_pow * 31) % 0xffff;
+      // }
+      // hash = cluster_light_offset;
+      // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
+
+      // ACTUAL SHADING
       vec3 color_accumulator = vec3(0.0);
       for (uint i = 0; i < cluster_light_count; i++) {
         uint light_index = light_indices[cluster_light_offset + i];
