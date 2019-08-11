@@ -20,7 +20,10 @@ pub struct Parameters {
 }
 
 impl Renderer {
-    pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World, resources: &Resources) {
+    pub fn render(&mut self, context: &mut Context, params: &Parameters) {
+        let Context {
+            ref gl, ref resources, ..
+        } = *context;
         unsafe {
             gl.disable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
@@ -29,7 +32,7 @@ impl Renderer {
             gl.viewport(params.x0, params.y0, params.x1 - params.x0, params.y1 - params.y0);
             gl.bind_framebuffer(gl::FRAMEBUFFER, params.framebuffer);
 
-            self.update(gl, world);
+            self.update(&mut rendering_context!(context));
             if let ProgramName::Linked(program_name) = self.program.name {
                 gl.use_program(program_name);
 
@@ -60,8 +63,9 @@ impl Renderer {
         }
     }
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        if self.program.update(gl, world) {
+    pub fn update(&mut self, context: &mut RenderingContext) {
+        if self.program.update(context) {
+            let gl = &context.gl;
             if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
                     self.color_sampler_loc = get_uniform_location!(gl, name, "color_sampler");
@@ -72,9 +76,9 @@ impl Renderer {
         }
     }
 
-    pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
+    pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(gl, world, "overlay_renderer.vert", "overlay_renderer.frag"),
+            program: vs_fs_program(context, "overlay_renderer.vert", "overlay_renderer.frag"),
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             default_colors_loc: gl::OptionUniformLocation::NONE,
             color_matrix_loc: gl::OptionUniformLocation::NONE,

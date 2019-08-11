@@ -40,7 +40,7 @@ impl ClusterData {
         let bb = compute_bounding_box(clp_to_hmd);
 
         let bb_delta = bb.delta();
-        let mut dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
+        let dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
         let dimensions_u32 = dimensions.cast::<u32>().unwrap();
 
         if dimensions_u32.product() > cfg.max_clusters {
@@ -214,7 +214,7 @@ impl ClusterResources {
             draw_command_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "draw_comands");
-                let data = rendering::DrawCommand {
+                let data = DrawCommand {
                     count: 36,
                     prim_count: 0,
                     first_index: 0,
@@ -230,12 +230,12 @@ impl ClusterResources {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "compute_commands");
                 let data = vec![
-                    rendering::ComputeCommand {
+                    ComputeCommand {
                         work_group_x: 0,
                         work_group_y: 1,
                         work_group_z: 1,
                     },
-                    rendering::ComputeCommand {
+                    ComputeCommand {
                         work_group_x: 0,
                         work_group_y: 1,
                         work_group_z: 1,

@@ -2,14 +2,14 @@
 
 //! http://www.angelcode.com/products/bmfont/doc/file_format.html
 
-mod num;
 mod bmfont;
+mod num;
 
 pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::ffi::CStr;
 
-pub use num::*;
 pub use bmfont::*;
+pub use num::*;
 
 /// Promise this type can be reinterpreted from a byte slice of the right size.
 pub unsafe trait Raw {}
@@ -136,7 +136,10 @@ impl<'a> Input<'a> {
         Self(bytes)
     }
 
-    pub fn read_raw<T>(&mut self) -> Option<&'a T> where T: Raw {
+    pub fn read_raw<T>(&mut self) -> Option<&'a T>
+    where
+        T: Raw,
+    {
         let byte_size = std::mem::size_of::<T>();
 
         if self.0.len() < byte_size {
@@ -148,18 +151,16 @@ impl<'a> Input<'a> {
         }
     }
 
-    pub fn read_raw_array<T>(&mut self, count: usize) -> Option<&'a [T]> where T: Raw {
+    pub fn read_raw_array<T>(&mut self, count: usize) -> Option<&'a [T]>
+    where
+        T: Raw,
+    {
         let byte_size = std::mem::size_of::<T>() * count;
 
         if self.0.len() < byte_size {
             None
         } else {
-            let output = unsafe {
-                std::slice::from_raw_parts(
-                    self.0.as_ptr() as *const T,
-                    count,
-                )
-            };
+            let output = unsafe { std::slice::from_raw_parts(self.0.as_ptr() as *const T, count) };
             self.0 = &self.0[byte_size..];
             Some(output)
         }

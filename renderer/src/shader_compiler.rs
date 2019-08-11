@@ -162,11 +162,11 @@ impl SourceReader {
             SourceReader::ClusteredLightShading => {
                 tokens.push(Token::Literal(format!(
                     "\
-                    #line {} {}\n\
-                    #define CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS {}\n\
-                    #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
-                    #define CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES {}\n\
-                    ",
+                     #line {} {}\n\
+                     #define CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS {}\n\
+                     #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
+                     #define CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES {}\n\
+                     ",
                     line!() - 4,
                     source_index,
                     vars.clustered_light_shading.max_clusters,
@@ -257,13 +257,13 @@ pub struct EntryPoint {
 }
 
 impl EntryPoint {
-    pub fn new(world: &mut World, relative_path: impl Into<PathBuf>) -> Self {
+    pub fn new(context: &mut ShaderCompilationContext, relative_path: impl Into<PathBuf>) -> Self {
         let relative_path = relative_path.into();
-        let absolute_path: PathBuf = [world.resource_dir.as_path(), relative_path.as_path()].iter().collect();
-        let source_index = world.shader_compiler.memory.add_source(
+        let absolute_path: PathBuf = [context.resource_dir, relative_path.as_path()].iter().collect();
+        let source_index = context.shader_compiler.memory.add_source(
             absolute_path.clone(),
             crate::shader_compiler::Source::new(
-                &world.current,
+                &context.current,
                 crate::shader_compiler::SourceReader::File(absolute_path),
                 relative_path,
             ),
@@ -278,9 +278,9 @@ impl EntryPoint {
         }
     }
 
-    pub fn update(&mut self, world: &mut World) -> bool {
-        if self.last_verified.should_verify(&world.current) {
-            self.last_verified.update_to(&world.current);
+    pub fn update(&mut self, context: &mut ShaderCompilationContext) -> bool {
+        if self.last_verified.should_verify(&context.current) {
+            self.last_verified.update_to(&context.current);
         } else {
             return false;
         }
@@ -288,9 +288,8 @@ impl EntryPoint {
         let mut should_recompute = false;
 
         {
-            let mem = &mut world.shader_compiler.memory;
             for &source_index in self.included.iter() {
-                let source = &mem.sources[source_index];
+                let source = &context.shader_compiler.memory.sources[source_index];
                 if self.last_computed.should_compute(&source.last_modified) {
                     should_recompute = true;
                     break;
@@ -302,28 +301,28 @@ impl EntryPoint {
             self.contents.clear();
             self.included.clear();
 
-            process(self, world, self.source_index);
+            process(self, context, self.source_index);
 
             true
         } else {
             false
         };
 
-        fn process(ep: &mut EntryPoint, world: &mut World, source_index: SourceIndex) {
+        fn process(ep: &mut EntryPoint, context: &mut ShaderCompilationContext, source_index: SourceIndex) {
             // Stop processing if we've already included this file.
             if let Presence::Duplicate = vec_set_add(&mut ep.included, source_index) {
                 return;
             }
 
-            let source = Rc::get_mut(&mut world.shader_compiler.memory.sources[source_index]).unwrap();
+            let source = Rc::get_mut(&mut context.shader_compiler.memory.sources[source_index]).unwrap();
             source.update(
                 source_index,
-                &world.shader_compiler.variables,
-                &world.shader_compiler.parser,
+                &context.shader_compiler.variables,
+                &context.shader_compiler.parser,
             );
 
             // Clone the source rc so we can access tokens while mutating the tokens vec.
-            let source = Rc::clone(&world.shader_compiler.memory.sources[source_index]);
+            let source = Rc::clone(&context.shader_compiler.memory.sources[source_index]);
 
             ep.last_computed.update_to(&source.last_modified);
 
@@ -334,7 +333,7 @@ impl EntryPoint {
                     }
                     Token::Include(ref relative_path) => {
                         let source_index = if relative_path.starts_with("native/") {
-                            world
+                            context
                                 .shader_compiler
                                 .memory
                                 .source_index(relative_path)
@@ -346,22 +345,22 @@ impl EntryPoint {
                             };
                             let absolute_path = std::fs::canonicalize(parent_path.join(relative_path)).unwrap();
 
-                            world
+                            context
                                 .shader_compiler
                                 .memory
                                 .source_index(&absolute_path)
                                 .unwrap_or_else(|| {
-                                    let resource_path = absolute_path.strip_prefix(&world.resource_dir).unwrap();
+                                    let resource_path = absolute_path.strip_prefix(&context.resource_dir).unwrap();
                                     let source = Source::new(
-                                        &world.current,
+                                        &context.current,
                                         SourceReader::File(absolute_path.clone()),
                                         resource_path.to_owned(),
                                     );
-                                    world.shader_compiler.memory.add_source(absolute_path, source)
+                                    context.shader_compiler.memory.add_source(absolute_path, source)
                                 })
                         };
 
-                        process(ep, world, source_index);
+                        process(ep, context, source_index);
                     }
                 }
             }
@@ -385,7 +384,14 @@ pub struct NativeSourceIndices {
     pub clustered_light_shading: SourceIndex,
 }
 
+pub struct ShaderCompilationContext<'a> {
+    pub resource_dir: &'a Path,
+    pub current: &'a mut incremental::Current,
+    pub shader_compiler: &'a mut ShaderCompiler,
+}
+
 pub struct ShaderCompiler {
+    pub log_regex: Regex,
     pub memory: Memory,
     pub parser: Parser,
     pub variables: Variables,
@@ -420,11 +426,22 @@ impl ShaderCompiler {
         };
 
         Self {
+            log_regex: RegexBuilder::new(r"^\d+").multi_line(true).build().unwrap(),
             memory,
             parser,
             variables,
             indices,
         }
+    }
+
+    /// Replaces source indices with their paths in an OpenGL error log.
+    pub fn process_log(&self, log: &str) -> String {
+        self.log_regex
+            .replace_all(log, |captures: &regex::Captures| {
+                let i: usize = captures[0].parse().unwrap();
+                self.memory.sources[i].name.to_str().unwrap()
+            })
+            .to_string()
     }
 
     pub fn source_mut(&mut self, source_index: SourceIndex) -> &mut Source {
@@ -490,9 +507,7 @@ impl ShaderCompiler {
     ) -> configuration::PrefixSum {
         let old = std::mem::replace(&mut self.variables.prefix_sum, prefix_sum);
         if old != prefix_sum {
-            self.source_mut(self.indices.prefix_sum)
-                .last_modified
-                .modify(current);
+            self.source_mut(self.indices.prefix_sum).last_modified.modify(current);
         }
         old
     }
