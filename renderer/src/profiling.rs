@@ -95,8 +95,12 @@ impl ProfilerTimer {
     pub fn read(&mut self, gl: &gl::Gl) -> Option<GpuCpuTimeSpan> {
         unsafe {
             self.cpu_begin.take().map(|cpu_begin| {
-                let gpu_begin = gl.try_query_result_u64(self.begin_query_name).expect("Query result was not ready!");
-                let gpu_end = gl.try_query_result_u64(self.end_query_name).expect("Query result was not ready!");
+                let gpu_begin = gl
+                    .try_query_result_u64(self.begin_query_name)
+                    .expect("Query result was not ready!");
+                let gpu_end = gl
+                    .try_query_result_u64(self.end_query_name)
+                    .expect("Query result was not ready!");
                 GpuCpuTimeSpan {
                     gpu: TimeSpan {
                         begin: gpu_begin.get(),
@@ -104,8 +108,12 @@ impl ProfilerTimer {
                     },
                     cpu: TimeSpan {
                         begin: cpu_begin.get(),
-                        end: self.cpu_end.take().expect("Profiler was started but never stopped!").get(),
-                    }
+                        end: self
+                            .cpu_end
+                            .take()
+                            .expect("Profiler was started but never stopped!")
+                            .get(),
+                    },
                 }
             })
         }
@@ -121,11 +129,7 @@ impl ProfilerTimerPool {
 
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
-            pool: [
-                ProfilerTimer::new(gl),
-                ProfilerTimer::new(gl),
-                ProfilerTimer::new(gl),
-            ]
+            pool: [ProfilerTimer::new(gl), ProfilerTimer::new(gl), ProfilerTimer::new(gl)],
         }
     }
 }
@@ -184,36 +188,39 @@ impl ProfilerSampleBuffer {
             first.map(move |first| {
                 let dg = first.gpu.delta();
                 let dc = first.cpu.delta();
-                let mut stats = iter.fold(GpuCpuStats {
-                    gpu_elapsed_avg: dg,
-                    gpu_elapsed_min: dg,
-                    gpu_elapsed_max: dg,
-                    cpu_elapsed_avg: dc,
-                    cpu_elapsed_min: dc,
-                    cpu_elapsed_max: dc,
-                }, |mut stats, item| {
-                    {
-                        let dg = item.gpu.delta();
-                        stats.gpu_elapsed_avg += dg;
-                        if dg < stats.gpu_elapsed_min {
-                            stats.gpu_elapsed_min = dg;
+                let mut stats = iter.fold(
+                    GpuCpuStats {
+                        gpu_elapsed_avg: dg,
+                        gpu_elapsed_min: dg,
+                        gpu_elapsed_max: dg,
+                        cpu_elapsed_avg: dc,
+                        cpu_elapsed_min: dc,
+                        cpu_elapsed_max: dc,
+                    },
+                    |mut stats, item| {
+                        {
+                            let dg = item.gpu.delta();
+                            stats.gpu_elapsed_avg += dg;
+                            if dg < stats.gpu_elapsed_min {
+                                stats.gpu_elapsed_min = dg;
+                            }
+                            if dg > stats.gpu_elapsed_max {
+                                stats.gpu_elapsed_max = dg;
+                            }
                         }
-                        if dg > stats.gpu_elapsed_max {
-                            stats.gpu_elapsed_max = dg;
+                        {
+                            let dc = item.cpu.delta();
+                            stats.cpu_elapsed_avg += dc;
+                            if dc < stats.cpu_elapsed_min {
+                                stats.cpu_elapsed_min = dc;
+                            }
+                            if dc > stats.cpu_elapsed_max {
+                                stats.cpu_elapsed_max = dc;
+                            }
                         }
-                    }
-                    {
-                        let dc = item.cpu.delta();
-                        stats.cpu_elapsed_avg += dc;
-                        if dc < stats.cpu_elapsed_min {
-                            stats.cpu_elapsed_min = dc;
-                        }
-                        if dc > stats.cpu_elapsed_max {
-                            stats.cpu_elapsed_max = dc;
-                        }
-                    }
-                    stats
-                });
+                        stats
+                    },
+                );
 
                 stats.gpu_elapsed_avg /= Self::CAPACITY as u64;
                 stats.cpu_elapsed_avg /= Self::CAPACITY as u64;

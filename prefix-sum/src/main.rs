@@ -361,7 +361,6 @@ impl PrefixSumResources {
     }
 }
 
-
 fn prefix_sum_program(
     gl: &gl::Gl,
     cfg: &configuration::PrefixSum,

@@ -157,3 +157,24 @@ macro_rules! create_framebuffer {
         framebuffer_name
     }}
 }
+
+macro_rules! rendering_context {
+    ($object: ident) => {
+        crate::rendering::RenderingContext {
+            gl: &$object.gl,
+            resource_dir: &$object.resource_dir,
+            current: &mut $object.current,
+            shader_compiler: &mut $object.shader_compiler,
+        }
+    };
+}
+
+macro_rules! shader_compilation_context {
+    ($object: ident) => {
+        crate::shader_compiler::ShaderCompilationContext {
+            resource_dir: &$object.resource_dir,
+            current: &mut $object.current,
+            shader_compiler: &mut $object.shader_compiler,
+        }
+    };
+}

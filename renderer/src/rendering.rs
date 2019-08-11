@@ -12,34 +12,16 @@ macro_rules! capability_declaration {
     };
 }
 
-// Constants.
-
-pub const POINT_LIGHT_CAPACITY: u32 = 1000;
-
-macro_rules! constant_declaration {
-    () => {
-        r"
-#define POINT_LIGHT_CAPACITY 1000
-"
-    };
-}
-
 // Storage buffer bindings.
 
-pub const GLOBAL_BUFFER_BINDING: u32 = 0;
 pub const CAMERA_BUFFER_BINDING: u32 = 1;
-pub const MATERIAL_BUFFER_BINDING: u32 = 2;
 pub const LIGHT_BUFFER_BINDING: u32 = 3;
-pub const TILE_BUFFER_BINDING: u32 = 4;
 
 macro_rules! buffer_binding_declaration {
     () => {
         r"
-#define GLOBAL_BUFFER_BINDING 0
 #define CAMERA_BUFFER_BINDING 1
-#define MATERIAL_BUFFER_BINDING 2
 #define LIGHT_BUFFER_BINDING 3
-#define TILE_BUFFER_BINDING 4
 "
     };
 }
@@ -64,7 +46,6 @@ macro_rules! attribute_location_declaration {
 
 pub const COMMON_DECLARATION: &'static str = concat!(
     capability_declaration!(),
-    constant_declaration!(),
     buffer_binding_declaration!(),
     attribute_location_declaration!(),
 );
@@ -120,6 +101,13 @@ pub enum AttenuationMode {
     Smooth = 6,
 }
 
+pub struct RenderingContext<'a> {
+    pub gl: &'a gl::Gl,
+    pub resource_dir: &'a Path,
+    pub current: &'a mut incremental::Current,
+    pub shader_compiler: &'a mut ShaderCompiler,
+}
+
 pub struct Shader {
     name: ShaderName,
     entry_point: EntryPoint,
@@ -133,8 +121,13 @@ impl Shader {
         }
     }
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> bool {
-        let updated = self.entry_point.update(world);
+    pub fn update(&mut self, context: &mut RenderingContext) -> bool {
+        let updated = self.entry_point.update(&mut shader_compilation_context!(context));
+        let RenderingContext {
+            ref gl,
+            ref shader_compiler,
+            ..
+        } = *context;
 
         if updated {
             self.name.compile(
@@ -149,19 +142,13 @@ impl Shader {
             );
 
             if self.name.is_compiled() {
-                let name = world.shader_compiler.memory.sources[self.entry_point.source_index]
+                let name = shader_compiler.memory.sources[self.entry_point.source_index]
                     .name
                     .to_str()
                     .unwrap();
                 info!("Compiled {}.", name);
             } else {
-                let log = self.name.log(gl);
-
-                let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-                    let i: usize = captures[0].parse().unwrap();
-                    world.shader_compiler.memory.sources[i].name.to_str().unwrap()
-                });
-
+                let log = context.shader_compiler.process_log(&self.name.log(gl));
                 error!("Compile error:\n{}", log);
             }
         }
@@ -187,11 +174,17 @@ impl Program {
         }
     }
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) -> bool {
+    pub fn update(&mut self, context: &mut RenderingContext) -> bool {
         let updated = self
             .shaders
             .iter_mut()
-            .fold(false, |updated, shader| shader.update(gl, world) || updated);
+            .fold(false, |updated, shader| shader.update(context) || updated);
+
+        let RenderingContext {
+            ref gl,
+            ref shader_compiler,
+            ..
+        } = *context;
 
         if updated {
             self.name.link(gl);
@@ -203,7 +196,7 @@ impl Program {
                     .iter()
                     .flat_map(|shader| {
                         std::iter::once(
-                            world.shader_compiler.memory.sources[shader.entry_point.source_index]
+                            shader_compiler.memory.sources[shader.entry_point.source_index]
                                 .name
                                 .to_str()
                                 .unwrap(),
@@ -215,13 +208,7 @@ impl Program {
             } else {
                 // Don't repeat messages spewed by shader already.
                 if self.shaders.iter().all(|shader| shader.name.is_compiled()) {
-                    let log = self.name.log(gl);
-
-                    let log = world.gl_log_regex.replace_all(&log, |captures: &regex::Captures| {
-                        let i: usize = captures[0].parse().unwrap();
-                        world.shader_compiler.memory.sources[i].name.to_str().unwrap()
-                    });
-
+                    let log = shader_compiler.process_log(&self.name.log(gl));
                     error!("Link error:\n{}", log);
                 }
             }
@@ -232,12 +219,21 @@ impl Program {
 }
 
 /// Utility function to create a very common single file vertex and single file fragment shader.
-pub fn vs_fs_program(gl: &gl::Gl, world: &mut World, vs: &'static str, fs: &'static str) -> Program {
+pub fn vs_fs_program(context: &mut RenderingContext, vs: &'static str, fs: &'static str) -> Program {
+    let gl = &context.gl;
     Program::new(
-        gl,
+        &gl,
         vec![
-            Shader::new(gl, gl::VERTEX_SHADER, EntryPoint::new(world, vs)),
-            Shader::new(gl, gl::FRAGMENT_SHADER, EntryPoint::new(world, fs)),
+            Shader::new(
+                &gl,
+                gl::VERTEX_SHADER,
+                EntryPoint::new(&mut shader_compilation_context!(context), vs),
+            ),
+            Shader::new(
+                gl,
+                gl::FRAGMENT_SHADER,
+                EntryPoint::new(&mut shader_compilation_context!(context), fs),
+            ),
         ],
     )
 }
@@ -305,126 +301,3 @@ impl std::ops::Index<BufferPoolIndex> for BufferPool {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-#[repr(C)]
-pub struct DrawCommand {
-    pub count: u32,
-    pub prim_count: u32,
-    pub first_index: u32,
-    pub base_vertex: u32,
-    pub base_instance: u32,
-}
-
-#[derive(Debug, Copy, Clone)]
-#[repr(C)]
-pub struct ComputeCommand {
-    pub work_group_x: u32,
-    pub work_group_y: u32,
-    pub work_group_z: u32,
-}
-
-pub mod buffer_usage {
-    use super::*;
-
-    pub trait Variant {
-        fn value() -> gl::BufferUsage;
-    }
-
-    pub enum Static {}
-    pub enum Dynamic {}
-    pub enum Stream {}
-
-    impl Variant for Static {
-        fn value() -> gl::BufferUsage {
-            gl::STATIC_DRAW.into()
-        }
-    }
-
-    impl Variant for Dynamic {
-        fn value() -> gl::BufferUsage {
-            gl::DYNAMIC_DRAW.into()
-        }
-    }
-
-    impl Variant for Stream {
-        fn value() -> gl::BufferUsage {
-            gl::STREAM_DRAW.into()
-        }
-    }
-}
-
-pub struct Buffer<U> {
-    name: gl::BufferName,
-    byte_capacity: usize,
-    usage: std::marker::PhantomData<U>,
-}
-
-impl<U> Buffer<U>
-where
-    U: buffer_usage::Variant,
-{
-    pub unsafe fn new(gl: &gl::Gl) -> Self {
-        Self {
-            name: gl.create_buffer(),
-            byte_capacity: 0,
-            usage: std::marker::PhantomData,
-        }
-    }
-
-    pub unsafe fn name(&self) -> gl::BufferName {
-        self.name
-    }
-
-    pub fn byte_capacity(&self) -> usize {
-        self.byte_capacity
-    }
-
-    pub unsafe fn invalidate(&mut self, gl: &gl::Gl) {
-        if self.byte_capacity > 0 {
-            // Invalidate buffer using old capacity.
-            gl.named_buffer_reserve(self.name, self.byte_capacity, U::value());
-        }
-    }
-
-    pub unsafe fn ensure_capacity(&mut self, gl: &gl::Gl, byte_capacity: usize) {
-        if self.byte_capacity >= byte_capacity {
-            return;
-        }
-
-        gl.named_buffer_reserve(self.name, byte_capacity, U::value());
-        self.byte_capacity = byte_capacity;
-    }
-
-    pub unsafe fn write(&mut self, gl: &gl::Gl, bytes: &[u8]) {
-        debug_assert!(bytes.len() <= self.byte_capacity);
-        gl.named_buffer_data(self.name, bytes, U::value());
-    }
-
-    pub unsafe fn write_at(&mut self, gl: &gl::Gl, bytes: &[u8], offset: usize) {
-        debug_assert!(offset + bytes.len() <= self.byte_capacity);
-        gl.named_buffer_sub_data(self.name, offset, bytes);
-    }
-
-    pub unsafe fn clear_0u32(&mut self, gl: &gl::Gl, byte_count: usize) {
-        debug_assert!(byte_count <= self.byte_capacity);
-        gl.clear_named_buffer_sub_data(self.name, gl::R32UI, 0, byte_count, gl::RED, gl::UNSIGNED_INT, None);
-    }
-}
-
-impl<U> AsRef<gl::BufferName> for Buffer<U> {
-    fn as_ref(&self) -> &gl::BufferName {
-        &self.name
-    }
-}
-
-// impl<U> std::ops::Deref for Buffer<U> {
-//     type Target = gl::BufferName;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.name
-//     }
-// }
-
-pub type StaticBuffer = Buffer<buffer_usage::Static>;
-pub type DynamicBuffer = Buffer<buffer_usage::Dynamic>;
-pub type StreamBuffer = Buffer<buffer_usage::Stream>;

@@ -1,2 +1,2 @@
-pub mod count_lights;
 pub mod assign_lights;
+pub mod count_lights;
