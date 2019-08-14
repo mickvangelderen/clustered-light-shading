@@ -21,7 +21,9 @@ pub mod cgmath_ext;
 pub mod clamp;
 mod cls;
 mod cls_renderer;
+mod cluster_camera_resources;
 mod cluster_renderer;
+mod cluster_resources;
 mod cluster_shading;
 mod configuration;
 mod convert;
@@ -48,6 +50,8 @@ mod window_mode;
 
 use crate::bounding_box::*;
 use crate::cgmath_ext::*;
+use crate::cluster_camera_resources::*;
+use crate::cluster_resources::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
@@ -215,7 +219,7 @@ pub struct Context {
     pub camera_buffer_pool: BufferPool,
     pub light_resources_vec: Vec<light::LightResources>,
     pub light_params_vec: Vec<light::LightParameters>,
-    pub cluster_resources_vec: Vec<ClusterResources>,
+    pub cluster_resources_pool: ClusterResourcesPool,
     pub cluster_data_vec: Vec<ClusterData>,
     pub main_resources_pool: MainResourcesPool,
     pub point_lights: Vec<light::PointLight>,
@@ -443,7 +447,7 @@ impl Context {
             camera_buffer_pool: BufferPool::new(),
             light_resources_vec: Vec::new(),
             light_params_vec: Vec::new(),
-            cluster_resources_vec: Vec::new(),
+            cluster_resources_pool: ClusterResourcesPool::new(),
             cluster_data_vec: Vec::new(),
             main_resources_pool: MainResourcesPool::new(),
             point_lights: Vec::new(),
@@ -813,6 +817,7 @@ impl Context {
         //  - cam --[projection]--> clp
 
         self.light_params_vec.clear();
+        self.cluster_resources_pool.reset();
         self.cluster_data_vec.clear();
         self.main_resources_pool.reset();
 
@@ -857,17 +862,11 @@ impl Context {
                 .cast::<f64>()
                 .unwrap();
 
-            let cluster_resources_index = self.cluster_data_vec.len();
+            let cluster_resources_index = self
+                .cluster_resources_pool
+                .next_unused(gl, &self.configuration.clustered_light_shading);
+            let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
 
-            if self.cluster_resources_vec.len() < cluster_resources_index + 1 {
-                self.cluster_resources_vec
-                    .push(ClusterResources::new(gl, &self.configuration.clustered_light_shading));
-                debug_assert_eq!(self.cluster_resources_vec.len(), cluster_resources_index + 1);
-            }
-
-            let cluster_resources = &mut self.cluster_resources_vec[cluster_resources_index];
-
-            cluster_resources.clear();
             let hmd_to_wld;
             let wld_to_hmd;
 
@@ -893,9 +892,9 @@ impl Context {
                         let clp_to_hmd = cam_to_hmd * clp_to_cam;
                         let hmd_to_clp = clp_to_hmd.invert().unwrap();
 
-                        cluster_resources.add_camera(
+                        let _ = cluster_resources.camera_resources_pool.next_unused(
                             gl,
-                            ClusterCameraData {
+                            ClusterCameraParameters {
                                 frame_dims: win_size,
 
                                 wld_to_cam,
@@ -927,9 +926,9 @@ impl Context {
                     let clp_to_hmd = clp_to_cam;
                     let hmd_to_clp = cam_to_clp;
 
-                    cluster_resources.add_camera(
+                    let _ = cluster_resources.camera_resources_pool.next_unused(
                         gl,
-                        ClusterCameraData {
+                        ClusterCameraParameters {
                             frame_dims,
 
                             wld_to_cam: wld_to_bdy,
@@ -951,9 +950,10 @@ impl Context {
             let cluster_data = ClusterData::new(
                 &self.configuration.clustered_light_shading,
                 cluster_resources
-                    .camera_data
+                    .camera_resources_pool
+                    .used_slice()
                     .iter()
-                    .map(|&ClusterCameraData { clp_to_hmd, .. }| clp_to_hmd),
+                    .map(|&ClusterCameraResources { ref parameters, .. }| parameters.clp_to_hmd),
                 wld_to_hmd,
                 hmd_to_wld,
             );
@@ -973,12 +973,14 @@ impl Context {
             }
 
             // NOTE: Work around borrow checker.
-            for camera_index in 0..cluster_resources.camera_data.len() {
+            for camera_resources_index in 0..cluster_resources.camera_resources_pool.used_count() {
+                // Because we can't have the pool borrowed during the entire iteration.
+                let camera_resources_index = ClusterCameraResourcesIndex(camera_resources_index);
                 // Reborrow.
                 let gl = &self.gl;
-                let cluster_resources = &mut self.cluster_resources_vec[cluster_resources_index];
-                let camera_resources = &mut cluster_resources.camera_res[camera_index];
-                let camera = &cluster_resources.camera_data[camera_index];
+                let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
+                let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
+                let camera = &camera_resources.parameters;
                 let profiler = &mut camera_resources.profilers.render_depth;
 
                 profiler.start(gl, self.frame, self.epoch);
@@ -1008,9 +1010,9 @@ impl Context {
 
                 // Reborrow.
                 let gl = &self.gl;
-                let cluster_resources = &mut self.cluster_resources_vec[cluster_resources_index];
-                let camera_resources = &mut cluster_resources.camera_res[camera_index];
-                let camera = &cluster_resources.camera_data[camera_index];
+                let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
+                let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
+                let camera = &camera_resources.parameters;
                 let profiler = &mut camera_resources.profilers.render_depth;
                 let main_resources = &mut self.main_resources_pool[main_resources_index];
 
@@ -1071,7 +1073,7 @@ impl Context {
 
             // Reborrow.
             let gl = &self.gl;
-            let cluster_resources = &mut self.cluster_resources_vec[cluster_resources_index];
+            let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
 
             // We have our fragments per cluster buffer here.
 
@@ -1535,13 +1537,15 @@ impl Context {
 
             let main_resources_index = self.main_resources_pool.next_unused(gl, dimensions);
 
-            let cluster_index = if self.shader_compiler.variables.render_technique == RenderTechnique::Clustered {
-                Some(0)
-            } else {
-                None
-            };
+            let cluster_resources_index =
+                if self.shader_compiler.variables.render_technique == RenderTechnique::Clustered {
+                    // TODO: Save this somewhere earlier when we do per-camera clustering.
+                    Some(ClusterResourcesIndex(0))
+                } else {
+                    None
+                };
 
-            self.clear_and_render_main(main_resources_index, cluster_index);
+            self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
             if self.target_camera_key == CameraKey::Debug {
                 let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
@@ -1550,17 +1554,21 @@ impl Context {
                     .map(|point| point.cast().unwrap().into())
                     .collect();
 
-                for cluster_index in 0..self.cluster_data_vec.len() {
-                    let cluster_data = &self.cluster_data_vec[cluster_index];
-                    let cluster_resources = &self.cluster_resources_vec[cluster_index];
+                for cluster_resources_index in 0..self.cluster_resources_pool.used_count() {
+                    let cluster_resources_index = ClusterResourcesIndex(cluster_resources_index);
+                    let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
+                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.0];
 
-                    for camera in cluster_resources.camera_data.iter() {
+                    for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
                         self.line_renderer.render(
                             &mut rendering_context!(self),
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &FRUSTRUM_LINE_MESH_INDICES[..],
-                                obj_to_wld: &(camera.hmd_to_wld * camera.clp_to_hmd).cast().unwrap(),
+                                obj_to_wld: &(camera_resources.parameters.hmd_to_wld
+                                    * camera_resources.parameters.clp_to_hmd)
+                                    .cast()
+                                    .unwrap(),
                             },
                         );
                     }
@@ -1568,7 +1576,7 @@ impl Context {
                     {
                         let cls_to_clp = (cam_to_clp * wld_to_cam * cluster_data.cls_to_wld).cast().unwrap();
                         self.render_debug_clusters(&cluster_renderer::Parameters {
-                            cluster_index,
+                            cluster_resources_index,
                             cls_to_clp,
                         });
                     }
@@ -1626,21 +1634,23 @@ impl Context {
             ..
         } = *self;
 
-        for cluster_index in 0..self.cluster_data_vec.len() {
-            let res = &mut self.cluster_resources_vec[cluster_index];
-            let data = &self.cluster_data_vec[cluster_index];
+        for cluster_resources_index in 0..self.cluster_resources_pool.used_count() {
+            let cluster_resources_index = ClusterResourcesIndex(cluster_resources_index);
+            let res = &mut self.cluster_resources_pool[cluster_resources_index];
+            let data = &self.cluster_data_vec[cluster_resources_index.0]; // FIXME: Merge parameters with resources?
             let dimensions_u32 = data.dimensions;
 
             overlay_textbox.write(
                 &monospace,
                 &format!(
                     "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
-                    cluster_index, dimensions_u32.x, dimensions_u32.y, dimensions_u32.z,
+                    cluster_resources_index.0, dimensions_u32.x, dimensions_u32.y, dimensions_u32.z,
                 ),
             );
 
-            for (camera_index, _camera) in res.camera_data.iter().enumerate() {
-                let camera_resources = &mut res.camera_res[camera_index];
+            for camera_resources_index in 0..res.camera_resources_pool.used_count() {
+                let camera_resources_index = ClusterCameraResourcesIndex(camera_resources_index);
+                let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
                 for &stage in &CameraStage::VALUES {
                     let stats = &mut camera_resources.profilers[stage].stats(self.frame);
                     if let Some(stats) = stats {
@@ -1648,8 +1658,8 @@ impl Context {
                             &monospace,
                             &format!(
                                 "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                cluster_index,
-                                camera_index,
+                                cluster_resources_index.0,
+                                camera_resources_index.0,
                                 stage.title(),
                                 stats.cpu_elapsed_min as f64 / 1000.0,
                                 stats.cpu_elapsed_avg as f64 / 1000.0,
@@ -1670,7 +1680,7 @@ impl Context {
                         &monospace,
                         &format!(
                             "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            cluster_index,
+                            cluster_resources_index.0,
                             stage.title(),
                             stats.cpu_elapsed_min as f64 / 1000.0,
                             stats.cpu_elapsed_avg as f64 / 1000.0,
@@ -1776,7 +1786,11 @@ impl Context {
         self.render_depth();
     }
 
-    fn clear_and_render_main(&mut self, main_resources_index: MainResourcesIndex, cluster_index: Option<usize>) {
+    fn clear_and_render_main(
+        &mut self,
+        main_resources_index: MainResourcesIndex,
+        cluster_resources_index: Option<ClusterResourcesIndex>,
+    ) {
         let Self {
             ref gl,
             ref clear_color,
@@ -1831,7 +1845,7 @@ impl Context {
                     CameraKey::Main => 0,
                     CameraKey::Debug => self.display_mode,
                 },
-                cluster_index,
+                cluster_resources_index,
             });
 
             // Reborrow.

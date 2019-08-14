@@ -108,13 +108,17 @@ impl MainResourcesPool {
         &self.resources[0..self.used]
     }
 
+    pub fn used_count(&self) -> usize {
+        self.used
+    }
+
     pub fn reset(&mut self) {
         self.used = 0;
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct MainResourcesIndex(usize);
+pub struct MainResourcesIndex(pub usize);
 
 impl std::ops::Index<MainResourcesIndex> for MainResourcesPool {
     type Output = MainResources;

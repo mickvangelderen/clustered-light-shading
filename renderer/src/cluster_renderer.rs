@@ -9,7 +9,7 @@ pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::
 pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(2) };
 
 pub struct Parameters {
-    pub cluster_index: usize,
+    pub cluster_resources_index: ClusterResourcesIndex,
     pub cls_to_clp: Matrix4<f32>,
 }
 
@@ -19,7 +19,7 @@ impl Context {
             let Self {
                 ref gl,
                 ref resources,
-                ref cluster_resources_vec,
+                ref cluster_resources_pool,
                 ref cluster_data_vec,
                 ref mut cluster_renderer,
                 ..
@@ -27,8 +27,8 @@ impl Context {
 
             cluster_renderer.program.update(&mut rendering_context!(self));
 
-            let cluster_resources = &cluster_resources_vec[params.cluster_index];
-            let cluster_data = &cluster_data_vec[params.cluster_index];
+            let cluster_resources = &cluster_resources_pool[params.cluster_resources_index];
+            let cluster_data = &cluster_data_vec[params.cluster_resources_index.0];
 
             if let ProgramName::Linked(program_name) = cluster_renderer.program.name {
                 gl.use_program(program_name);
