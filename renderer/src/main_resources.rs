@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::*;
 
 pub struct MainResources {
@@ -56,7 +58,7 @@ impl MainResources {
         }
     }
 
-    pub fn resize(&mut self, gl: &gl::Gl, dims: Vector2<i32>) {
+    pub fn reset(&mut self, gl: &gl::Gl, dims: Vector2<i32>) {
         if self.dims != dims {
             self.dims = dims;
 
@@ -77,59 +79,10 @@ impl MainResources {
     }
 }
 
-pub struct MainResourcesPool {
-    resources: Vec<MainResources>,
-    used: usize,
-}
-
-impl MainResourcesPool {
-    pub fn new() -> Self {
-        Self {
-            resources: Vec::new(),
-            used: 0,
-        }
-    }
-
-    pub fn next_unused(&mut self, gl: &gl::Gl, dims: Vector2<i32>) -> MainResourcesIndex {
-        let index = self.used;
-        self.used += 1;
-
-        if self.resources.len() < index + 1 {
-            self.resources.push(MainResources::new(&gl, dims));
-        }
-
-        let resources = &mut self.resources[index];
-        resources.resize(&gl, dims);
-
-        MainResourcesIndex(index)
-    }
-
-    pub fn used_slice(&self) -> &[MainResources] {
-        &self.resources[0..self.used]
-    }
-
-    pub fn used_count(&self) -> usize {
-        self.used
-    }
-
-    pub fn reset(&mut self) {
-        self.used = 0;
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct MainResourcesIndex(pub usize);
-
-impl std::ops::Index<MainResourcesIndex> for MainResourcesPool {
-    type Output = MainResources;
-
-    fn index(&self, index: MainResourcesIndex) -> &Self::Output {
-        &self.resources[index.0]
-    }
-}
-
-impl std::ops::IndexMut<MainResourcesIndex> for MainResourcesPool {
-    fn index_mut(&mut self, index: MainResourcesIndex) -> &mut Self::Output {
-        &mut self.resources[index.0]
-    }
+impl_frame_pool! {
+    MainResourcesPool,
+    MainResources,
+    MainResourcesIndex,
+    MainResourcesIndexIter,
+    (gl: &gl::Gl, dims: Vector2<i32>),
 }
