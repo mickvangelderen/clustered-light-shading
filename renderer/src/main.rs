@@ -33,6 +33,7 @@ mod glutin_ext;
 mod keyboard;
 mod light;
 mod line_renderer;
+mod main_resources;
 mod math;
 mod overlay_renderer;
 pub mod profiling;
@@ -50,6 +51,7 @@ use crate::cgmath_ext::*;
 use crate::cluster_shading::*;
 use crate::frustrum::*;
 use crate::gl_ext::*;
+use crate::main_resources::*;
 use crate::math::{CeilToMultiple, DivCeil};
 use crate::profiling::*;
 use crate::rendering::*;
@@ -120,83 +122,6 @@ impl_enum_map! {
 
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
-pub struct MainResources {
-    pub dims: Vector2<i32>,
-    // Main frame resources.
-    pub framebuffer_name: gl::NonDefaultFramebufferName,
-    pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
-    pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
-    pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
-    // Profiling
-    pub depth_pass_profiler: Profiler,
-    pub basic_pass_profiler: Profiler,
-}
-
-impl MainResources {
-    pub fn new(gl: &gl::Gl, dims: Vector2<i32>) -> Self {
-        unsafe {
-            // Textures.
-            let texture_update = TextureUpdate::new()
-                .data(dims.x, dims.y, None)
-                .min_filter(gl::NEAREST.into())
-                .mag_filter(gl::NEAREST.into())
-                .max_level(0)
-                .wrap_s(gl::CLAMP_TO_EDGE.into())
-                .wrap_t(gl::CLAMP_TO_EDGE.into());
-
-            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
-            color_texture.update(gl, texture_update);
-
-            let nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F);
-            nor_in_cam_texture.update(gl, texture_update);
-
-            let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
-            depth_texture.update(gl, texture_update);
-
-            // Framebuffers.
-
-            let framebuffer_name = create_framebuffer!(
-                gl,
-                (gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name()),
-                (gl::COLOR_ATTACHMENT0, color_texture.name()),
-                (gl::COLOR_ATTACHMENT1, nor_in_cam_texture.name()),
-            );
-
-            // Uniform block buffers,
-
-            MainResources {
-                dims,
-                framebuffer_name,
-                color_texture,
-                depth_texture,
-                nor_in_cam_texture,
-                depth_pass_profiler: Profiler::new(&gl),
-                basic_pass_profiler: Profiler::new(&gl),
-            }
-        }
-    }
-
-    pub fn resize(&mut self, gl: &gl::Gl, dims: Vector2<i32>) {
-        if self.dims != dims {
-            self.dims = dims;
-
-            let texture_update = TextureUpdate::new().data(dims.x, dims.y, None);
-            self.color_texture.update(gl, texture_update);
-            self.depth_texture.update(gl, texture_update);
-            self.nor_in_cam_texture.update(gl, texture_update);
-        }
-    }
-
-    pub fn drop(self, gl: &gl::Gl) {
-        unsafe {
-            gl.delete_framebuffer(self.framebuffer_name);
-            self.color_texture.drop(gl);
-            self.depth_texture.drop(gl);
-            self.nor_in_cam_texture.drop(gl);
-        }
-    }
-}
-
 pub struct MainParameters {
     pub wld_to_cam: Matrix4<f64>,
     pub cam_to_wld: Matrix4<f64>,
@@ -210,41 +135,6 @@ pub struct MainParameters {
 
     pub dimensions: Vector2<i32>,
     pub display_viewport: Viewport<i32>,
-}
-
-#[derive(Debug, Default)]
-pub struct MainData {}
-
-pub struct MainPool {
-    pub resources: Vec<MainResources>,
-    pub data: Vec<MainData>,
-}
-
-impl MainPool {
-    pub fn new() -> Self {
-        Self {
-            resources: Vec::new(),
-            data: Vec::new(),
-        }
-    }
-
-    pub fn reserve(&mut self, gl: &gl::Gl, dims: Vector2<i32>) -> usize {
-        let index = self.data.len();
-        self.data.push(MainData::default());
-
-        if self.resources.len() < index + 1 {
-            self.resources.push(MainResources::new(&gl, dims));
-        }
-
-        let resources = &mut self.resources[index];
-        resources.resize(&gl, dims);
-
-        index
-    }
-
-    pub fn clear(&mut self) {
-        self.data.clear();
-    }
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
@@ -327,7 +217,7 @@ pub struct Context {
     pub light_params_vec: Vec<light::LightParameters>,
     pub cluster_resources_vec: Vec<ClusterResources>,
     pub cluster_data_vec: Vec<ClusterData>,
-    pub main_pool: MainPool,
+    pub main_resources_pool: MainResourcesPool,
     pub point_lights: Vec<light::PointLight>,
 }
 
@@ -555,7 +445,7 @@ impl Context {
             light_params_vec: Vec::new(),
             cluster_resources_vec: Vec::new(),
             cluster_data_vec: Vec::new(),
-            main_pool: MainPool::new(),
+            main_resources_pool: MainResourcesPool::new(),
             point_lights: Vec::new(),
         }
     }
@@ -924,7 +814,7 @@ impl Context {
 
         self.light_params_vec.clear();
         self.cluster_data_vec.clear();
-        self.main_pool.clear();
+        self.main_resources_pool.reset();
 
         {
             self.point_lights.clear();
@@ -1112,9 +1002,9 @@ impl Context {
                     gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                 }
 
-                let main_index = self.main_pool.reserve(gl, camera.frame_dims);
+                let main_resources_index = self.main_resources_pool.next_unused(gl, camera.frame_dims);
 
-                self.clear_and_render_depth(main_index);
+                self.clear_and_render_depth(main_resources_index);
 
                 // Reborrow.
                 let gl = &self.gl;
@@ -1122,7 +1012,7 @@ impl Context {
                 let camera_resources = &mut cluster_resources.camera_res[camera_index];
                 let camera = &cluster_resources.camera_data[camera_index];
                 let profiler = &mut camera_resources.profilers.render_depth;
-                let main_resources = &mut self.main_pool.resources[main_index];
+                let main_resources = &mut self.main_resources_pool[main_resources_index];
 
                 profiler.stop(gl, self.frame, self.epoch);
 
@@ -1643,7 +1533,7 @@ impl Context {
                 gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
             }
 
-            let main_index = self.main_pool.reserve(gl, dimensions);
+            let main_resources_index = self.main_resources_pool.next_unused(gl, dimensions);
 
             let cluster_index = if self.shader_compiler.variables.render_technique == RenderTechnique::Clustered {
                 Some(0)
@@ -1651,7 +1541,7 @@ impl Context {
                 None
             };
 
-            self.clear_and_render_main(main_index, cluster_index);
+            self.clear_and_render_main(main_resources_index, cluster_index);
 
             if self.target_camera_key == CameraKey::Debug {
                 let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
@@ -1686,7 +1576,7 @@ impl Context {
             }
 
             // Reborrow.
-            let main_resources = &mut self.main_pool.resources[main_index];
+            let main_resources = &mut self.main_resources_pool[main_resources_index];
 
             unsafe {
                 self.gl.blit_named_framebuffer(
@@ -1794,7 +1684,7 @@ impl Context {
             }
         }
 
-        for (main_index, main_resources) in self.main_pool.resources.iter().enumerate() {
+        for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
             for (name, profiler) in [
                 ("depth", &main_resources.depth_pass_profiler),
                 ("basic", &main_resources.basic_pass_profiler),
@@ -1807,7 +1697,7 @@ impl Context {
                         &monospace,
                         &format!(
                             "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            main_index,
+                            main_resources_index,
                             name,
                             stats.cpu_elapsed_min as f64 / 1000.0,
                             stats.cpu_elapsed_avg as f64 / 1000.0,
@@ -1861,15 +1751,15 @@ impl Context {
         }
     }
 
-    fn clear_and_render_depth(&mut self, main_index: usize) {
+    fn clear_and_render_depth(&mut self, main_resources_index: MainResourcesIndex) {
         let Self {
             ref gl,
             ref clear_color,
-            ref mut main_pool,
+            ref mut main_resources_pool,
             ..
         } = *self;
 
-        let main_resources = &mut main_pool.resources[main_index];
+        let main_resources = &mut main_resources_pool[main_resources_index];
 
         unsafe {
             gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
@@ -1886,14 +1776,14 @@ impl Context {
         self.render_depth();
     }
 
-    fn clear_and_render_main(&mut self, main_index: usize, cluster_index: Option<usize>) {
+    fn clear_and_render_main(&mut self, main_resources_index: MainResourcesIndex, cluster_index: Option<usize>) {
         let Self {
             ref gl,
             ref clear_color,
             ..
         } = *self;
 
-        let main_resources = &mut self.main_pool.resources[main_index];
+        let main_resources = &mut self.main_resources_pool[main_resources_index];
 
         unsafe {
             gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
@@ -1908,7 +1798,7 @@ impl Context {
         }
 
         if self.depth_prepass {
-            let main_resources = &mut self.main_pool.resources[main_index];
+            let main_resources = &mut self.main_resources_pool[main_resources_index];
             let profiler = &mut main_resources.depth_pass_profiler;
             profiler.start(gl, self.frame, self.epoch);
 
@@ -1922,7 +1812,7 @@ impl Context {
             }
 
             // Reborrow.
-            let main_resources = &mut self.main_pool.resources[main_index];
+            let main_resources = &mut self.main_resources_pool[main_resources_index];
             let profiler = &mut main_resources.depth_pass_profiler;
 
             profiler.stop(gl, self.frame, self.epoch);
@@ -1931,7 +1821,7 @@ impl Context {
         {
             // Reborrow
             let gl = &self.gl;
-            let main_resources = &mut self.main_pool.resources[main_index];
+            let main_resources = &mut self.main_resources_pool[main_resources_index];
             let profiler = &mut main_resources.basic_pass_profiler;
 
             profiler.start(gl, self.frame, self.epoch);
@@ -1946,7 +1836,7 @@ impl Context {
 
             // Reborrow.
             let gl = &self.gl;
-            let main_resources = &mut self.main_pool.resources[main_index];
+            let main_resources = &mut self.main_resources_pool[main_resources_index];
             let profiler = &mut main_resources.basic_pass_profiler;
 
             if self.depth_prepass {
