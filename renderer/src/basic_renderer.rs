@@ -20,7 +20,7 @@ pub struct Renderer {
 
 pub struct Parameters {
     pub mode: u32,
-    pub cluster_index: Option<usize>,
+    pub cluster_resources_index: Option<ClusterResourcesIndex>,
 }
 
 pub const MAYBE_ACTIVE_CLUSTER_INDICES_BINDING: u32 = 10;
@@ -40,9 +40,9 @@ impl Context {
             if let ProgramName::Linked(ref program_name) = basic_renderer.program.name {
                 gl.use_program(*program_name);
 
-                if let Some(cluster_index) = params.cluster_index {
-                    let cluster_resources = &self.cluster_resources_vec[cluster_index];
-                    let cluster_data = &self.cluster_data_vec[cluster_index];
+                if let Some(cluster_resources_index) = params.cluster_resources_index {
+                    let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
+                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.0];
 
                     debug_assert_eq!(
                         RenderTechnique::Clustered,
