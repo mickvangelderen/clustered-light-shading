@@ -42,7 +42,7 @@ impl Context {
 
                 if let Some(cluster_resources_index) = params.cluster_resources_index {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
-                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.0];
+                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.to_usize()];
 
                     debug_assert_eq!(
                         RenderTechnique::Clustered,

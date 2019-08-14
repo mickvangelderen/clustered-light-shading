@@ -138,63 +138,15 @@ impl ClusterResources {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self, _gl: &gl::Gl, _cfg: &configuration::ClusteredLightShading) {
         self.camera_resources_pool.reset();
     }
 }
 
-pub struct ClusterResourcesPool {
-    resources: Vec<ClusterResources>,
-    used: usize,
-}
-
-impl ClusterResourcesPool {
-    pub fn new() -> Self {
-        Self {
-            resources: Vec::new(),
-            used: 0,
-        }
-    }
-
-    pub fn next_unused(&mut self,gl: &gl::Gl, cfg: &configuration::ClusteredLightShading) -> ClusterResourcesIndex {
-        let index = self.used;
-        self.used += 1;
-
-        if self.resources.len() < index + 1 {
-            self.resources.push(ClusterResources::new(&gl, cfg));
-        } else {
-            self.resources[index].reset();
-        }
-
-        ClusterResourcesIndex(index)
-    }
-
-    pub fn used_slice(&self) -> &[ClusterResources] {
-        &self.resources[0..self.used]
-    }
-
-    pub fn used_count(&self) -> usize {
-        self.used
-    }
-
-    pub fn reset(&mut self) {
-        self.used = 0;
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ClusterResourcesIndex(pub usize);
-
-impl std::ops::Index<ClusterResourcesIndex> for ClusterResourcesPool {
-    type Output = ClusterResources;
-
-    fn index(&self, index: ClusterResourcesIndex) -> &Self::Output {
-        &self.resources[index.0]
-    }
-}
-
-impl std::ops::IndexMut<ClusterResourcesIndex> for ClusterResourcesPool {
-    fn index_mut(&mut self, index: ClusterResourcesIndex) -> &mut Self::Output {
-        &mut self.resources[index.0]
-    }
+impl_frame_pool! {
+    ClusterResourcesPool,
+    ClusterResources,
+    ClusterResourcesIndex,
+    ClusterResourcesIndexIter,
+    (gl: &gl::Gl, cfg: &configuration::ClusteredLightShading),
 }

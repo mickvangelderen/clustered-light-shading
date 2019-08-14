@@ -973,9 +973,7 @@ impl Context {
             }
 
             // NOTE: Work around borrow checker.
-            for camera_resources_index in 0..cluster_resources.camera_resources_pool.used_count() {
-                // Because we can't have the pool borrowed during the entire iteration.
-                let camera_resources_index = ClusterCameraResourcesIndex(camera_resources_index);
+            for camera_resources_index in cluster_resources.camera_resources_pool.used_index_iter() {
                 // Reborrow.
                 let gl = &self.gl;
                 let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
@@ -1537,13 +1535,8 @@ impl Context {
 
             let main_resources_index = self.main_resources_pool.next_unused(gl, dimensions);
 
-            let cluster_resources_index =
-                if self.shader_compiler.variables.render_technique == RenderTechnique::Clustered {
-                    // TODO: Save this somewhere earlier when we do per-camera clustering.
-                    Some(ClusterResourcesIndex(0))
-                } else {
-                    None
-                };
+            // TODO: Save this somewhere earlier when we do per-camera clustering.
+            let cluster_resources_index = self.cluster_resources_pool.used_index_iter().next();
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
@@ -1554,10 +1547,9 @@ impl Context {
                     .map(|point| point.cast().unwrap().into())
                     .collect();
 
-                for cluster_resources_index in 0..self.cluster_resources_pool.used_count() {
-                    let cluster_resources_index = ClusterResourcesIndex(cluster_resources_index);
+                for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
-                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.0];
+                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.to_usize()];
 
                     for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
                         self.line_renderer.render(
@@ -1634,22 +1626,20 @@ impl Context {
             ..
         } = *self;
 
-        for cluster_resources_index in 0..self.cluster_resources_pool.used_count() {
-            let cluster_resources_index = ClusterResourcesIndex(cluster_resources_index);
+        for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
             let res = &mut self.cluster_resources_pool[cluster_resources_index];
-            let data = &self.cluster_data_vec[cluster_resources_index.0]; // FIXME: Merge parameters with resources?
+            let data = &self.cluster_data_vec[cluster_resources_index.to_usize()]; // FIXME: Merge parameters with resources?
             let dimensions_u32 = data.dimensions;
 
             overlay_textbox.write(
                 &monospace,
                 &format!(
                     "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
-                    cluster_resources_index.0, dimensions_u32.x, dimensions_u32.y, dimensions_u32.z,
+                    cluster_resources_index.to_usize(), dimensions_u32.x, dimensions_u32.y, dimensions_u32.z,
                 ),
             );
 
-            for camera_resources_index in 0..res.camera_resources_pool.used_count() {
-                let camera_resources_index = ClusterCameraResourcesIndex(camera_resources_index);
+            for camera_resources_index in res.camera_resources_pool.used_index_iter() {
                 let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
                 for &stage in &CameraStage::VALUES {
                     let stats = &mut camera_resources.profilers[stage].stats(self.frame);
@@ -1658,8 +1648,8 @@ impl Context {
                             &monospace,
                             &format!(
                                 "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                cluster_resources_index.0,
-                                camera_resources_index.0,
+                                cluster_resources_index.to_usize(),
+                                camera_resources_index.to_usize(),
                                 stage.title(),
                                 stats.cpu_elapsed_min as f64 / 1000.0,
                                 stats.cpu_elapsed_avg as f64 / 1000.0,
@@ -1680,7 +1670,7 @@ impl Context {
                         &monospace,
                         &format!(
                             "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            cluster_resources_index.0,
+                            cluster_resources_index.to_usize(),
                             stage.title(),
                             stats.cpu_elapsed_min as f64 / 1000.0,
                             stats.cpu_elapsed_avg as f64 / 1000.0,

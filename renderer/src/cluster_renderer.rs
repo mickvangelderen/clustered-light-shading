@@ -28,7 +28,7 @@ impl Context {
             cluster_renderer.program.update(&mut rendering_context!(self));
 
             let cluster_resources = &cluster_resources_pool[params.cluster_resources_index];
-            let cluster_data = &cluster_data_vec[params.cluster_resources_index.0];
+            let cluster_data = &cluster_data_vec[params.cluster_resources_index.to_usize()];
 
             if let ProgramName::Linked(program_name) = cluster_renderer.program.name {
                 gl.use_program(program_name);
