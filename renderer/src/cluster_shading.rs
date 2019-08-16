@@ -14,7 +14,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct ClusterData {
+pub struct ClusterParameters {
     pub dimensions: Vector3<u32>,
 
     pub trans_from_cls_to_hmd: Vector3<f64>,
@@ -27,7 +27,24 @@ pub struct ClusterData {
     pub wld_to_cls: Matrix4<f64>,
 }
 
-impl ClusterData {
+impl std::default::Default for ClusterParameters {
+    fn default() -> Self {
+        Self {
+            dimensions: Vector3::zero(),
+
+            trans_from_cls_to_hmd: Vector3::zero(),
+            trans_from_hmd_to_cls: Vector3::zero(),
+
+            scale_from_cls_to_hmd: Vector3::zero(),
+            scale_from_hmd_to_cls: Vector3::zero(),
+
+            cls_to_wld: Matrix4::identity(),
+            wld_to_cls: Matrix4::identity(),
+        }
+    }
+}
+
+impl ClusterParameters {
     pub fn new<I>(
         cfg: &configuration::ClusteredLightShading,
         clp_to_hmd: I,
@@ -117,12 +134,12 @@ impl ClusterData {
 //         &mut self,
 //         gl: &gl::Gl,
 //         cfg: &configuration::ClusteredLightShading,
-//         space: &ClusterData,
+//         space: &ClusterParameters,
 //         point_lights: &[light::PointLight],
 //     ) {
 //         self.cpu_start = Some(Instant::now());
 
-//         let ClusterData {
+//         let ClusterParameters {
 //             dimensions,
 //             scale_from_cls_to_hmd,
 //             scale_from_hmd_to_cls,

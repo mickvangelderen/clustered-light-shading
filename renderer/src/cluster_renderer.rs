@@ -20,7 +20,6 @@ impl Context {
                 ref gl,
                 ref resources,
                 ref cluster_resources_pool,
-                ref cluster_data_vec,
                 ref mut cluster_renderer,
                 ..
             } = *self;
@@ -28,7 +27,6 @@ impl Context {
             cluster_renderer.program.update(&mut rendering_context!(self));
 
             let cluster_resources = &cluster_resources_pool[params.cluster_resources_index];
-            let cluster_data = &cluster_data_vec[params.cluster_resources_index.to_usize()];
 
             if let ProgramName::Linked(program_name) = cluster_renderer.program.name {
                 gl.use_program(program_name);
@@ -73,7 +71,7 @@ impl Context {
                 gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_command_buffer.name());
 
                 gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());
-                gl.uniform_3ui(CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                gl.uniform_3ui(CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
                 gl.uniform_1ui(PASS_LOC, 0);
 
                 gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);

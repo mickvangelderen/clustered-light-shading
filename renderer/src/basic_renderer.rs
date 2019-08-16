@@ -42,7 +42,6 @@ impl Context {
 
                 if let Some(cluster_resources_index) = params.cluster_resources_index {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
-                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.to_usize()];
 
                     debug_assert_eq!(
                         RenderTechnique::Clustered,
@@ -52,12 +51,12 @@ impl Context {
                     gl.uniform_matrix4f(
                         Option::from(basic_renderer.wld_to_cls_loc).unwrap(),
                         gl::MajorAxis::Column,
-                        cluster_data.wld_to_cls.cast().unwrap().as_ref(),
+                        cluster_resources.parameters.wld_to_cls.cast().unwrap().as_ref(),
                     );
 
                     gl.uniform_3ui(
                         Option::from(basic_renderer.cluster_dims_loc).unwrap(),
-                        cluster_data.dimensions.cast().unwrap().into(),
+                        cluster_resources.parameters.dimensions.cast().unwrap().into(),
                     );
 
                     gl.bind_buffer_base(
