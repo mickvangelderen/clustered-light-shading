@@ -43,14 +43,15 @@ pub struct ClusterResources {
     pub draw_command_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
+    pub profilers: ClusterStages<Profiler>,
     // CPU
     pub active_clusters: Vec<u32>,
     pub active_cluster_lengths: Vec<u32>,
     pub active_cluster_offsets: Vec<u32>,
     pub light_indices: Vec<u32>,
-    // Misc
+    // Other
     pub camera_resources_pool: ClusterCameraResourcesPool,
-    pub profilers: ClusterStages<Profiler>,
+    pub parameters: ClusterParameters,
 }
 
 impl ClusterResources {
@@ -104,7 +105,6 @@ impl ClusterResources {
                 buffer.write(gl, data.value_as_bytes());
                 buffer
             },
-            profilers: ClusterStages::new(|_| Profiler::new(gl)),
             compute_commands_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "compute_commands");
@@ -130,16 +130,23 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
                 buffer
             },
-            camera_resources_pool: ClusterCameraResourcesPool::new(),
+            profilers: ClusterStages::new(|_| Profiler::new(gl)),
+
             active_clusters: Vec::new(),
             active_cluster_lengths: Vec::new(),
             active_cluster_offsets: Vec::new(),
             light_indices: Vec::new(),
+
+            camera_resources_pool: ClusterCameraResourcesPool::new(),
+            parameters: Default::default(),
         }
     }
 
     pub fn reset(&mut self, _gl: &gl::Gl, _cfg: &configuration::ClusteredLightShading) {
         self.camera_resources_pool.reset();
+        if cfg!(debug_assertions) {
+            self.parameters = Default::default();
+        }
     }
 }
 

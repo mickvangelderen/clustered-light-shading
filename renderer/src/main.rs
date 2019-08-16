@@ -220,7 +220,6 @@ pub struct Context {
     pub light_resources_vec: Vec<light::LightResources>,
     pub light_params_vec: Vec<light::LightParameters>,
     pub cluster_resources_pool: ClusterResourcesPool,
-    pub cluster_data_vec: Vec<ClusterData>,
     pub main_resources_pool: MainResourcesPool,
     pub point_lights: Vec<light::PointLight>,
 }
@@ -448,7 +447,6 @@ impl Context {
             light_resources_vec: Vec::new(),
             light_params_vec: Vec::new(),
             cluster_resources_pool: ClusterResourcesPool::new(),
-            cluster_data_vec: Vec::new(),
             main_resources_pool: MainResourcesPool::new(),
             point_lights: Vec::new(),
         }
@@ -818,7 +816,6 @@ impl Context {
 
         self.light_params_vec.clear();
         self.cluster_resources_pool.reset();
-        self.cluster_data_vec.clear();
         self.main_resources_pool.reset();
 
         {
@@ -947,7 +944,7 @@ impl Context {
                 }
             }
 
-            let cluster_data = ClusterData::new(
+            cluster_resources.parameters = ClusterParameters::new(
                 &self.configuration.clustered_light_shading,
                 cluster_resources
                     .camera_resources_pool
@@ -958,7 +955,7 @@ impl Context {
                 hmd_to_wld,
             );
 
-            let cluster_count = cluster_data.cluster_count();
+            let cluster_count = cluster_resources.parameters.cluster_count();
             let blocks_per_dispatch = cluster_count
                 .div_ceil(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
@@ -966,7 +963,7 @@ impl Context {
 
             unsafe {
                 let buffer = &mut cluster_resources.cluster_fragment_counts_buffer;
-                let byte_count = std::mem::size_of::<u32>() * cluster_data.cluster_count() as usize;
+                let byte_count = std::mem::size_of::<u32>() * cluster_resources.parameters.cluster_count() as usize;
                 buffer.invalidate(gl);
                 // buffer.ensure_capacity(gl, byte_count);
                 buffer.clear_0u32(gl, byte_count);
@@ -1041,7 +1038,7 @@ impl Context {
                                 main_resources.dims.cast::<f32>().unwrap().into(),
                             );
 
-                            let clp_to_cls = (cluster_data.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
+                            let clp_to_cls = (cluster_resources.parameters.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
                                 .cast::<f32>()
                                 .unwrap();
 
@@ -1051,7 +1048,7 @@ impl Context {
                                 clp_to_cls.as_ref(),
                             );
 
-                            gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                            gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
 
                             gl.memory_barrier(
                                 gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
@@ -1121,7 +1118,7 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.parameters.cluster_count());
                         gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1132,7 +1129,7 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.parameters.cluster_count());
                         gl.dispatch_compute(1, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1143,7 +1140,7 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_data.cluster_count());
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.parameters.cluster_count());
                         gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1205,14 +1202,14 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                        gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
                         gl.uniform_3f(
                             cls::count_lights::SCALE_LOC,
-                            cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.parameters.scale_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_3f(
                             cls::count_lights::TRANSLATION_LOC,
-                            cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.parameters.trans_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
@@ -1310,14 +1307,14 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_3ui(cls::assign_lights::CLUSTER_DIMS_LOC, cluster_data.dimensions.into());
+                        gl.uniform_3ui(cls::assign_lights::CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
                         gl.uniform_3f(
                             cls::assign_lights::SCALE_LOC,
-                            cluster_data.scale_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.parameters.scale_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_3f(
                             cls::assign_lights::TRANSLATION_LOC,
-                            cluster_data.trans_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.parameters.trans_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
@@ -1331,8 +1328,6 @@ impl Context {
                 }
                 profiler.stop(gl, self.frame, self.epoch);
             }
-
-            self.cluster_data_vec.push(cluster_data);
         }
 
         let mut main_parameters = Vec::new();
@@ -1549,7 +1544,6 @@ impl Context {
 
                 for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
-                    let cluster_data = &self.cluster_data_vec[cluster_resources_index.to_usize()];
 
                     for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
                         self.line_renderer.render(
@@ -1566,7 +1560,7 @@ impl Context {
                     }
 
                     {
-                        let cls_to_clp = (cam_to_clp * wld_to_cam * cluster_data.cls_to_wld).cast().unwrap();
+                        let cls_to_clp = (cam_to_clp * wld_to_cam * cluster_resources.parameters.cls_to_wld).cast().unwrap();
                         self.render_debug_clusters(&cluster_renderer::Parameters {
                             cluster_resources_index,
                             cls_to_clp,
@@ -1628,8 +1622,7 @@ impl Context {
 
         for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
             let res = &mut self.cluster_resources_pool[cluster_resources_index];
-            let data = &self.cluster_data_vec[cluster_resources_index.to_usize()]; // FIXME: Merge parameters with resources?
-            let dimensions_u32 = data.dimensions;
+            let dimensions_u32 = res.parameters.dimensions;
 
             overlay_textbox.write(
                 &monospace,
