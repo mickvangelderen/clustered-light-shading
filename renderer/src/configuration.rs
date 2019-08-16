@@ -38,8 +38,22 @@ pub struct VirtualStereo {
     pub yaw_deg: f32,
 }
 
+#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusteringShape {
+    PreProjective,
+    PostProjective,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusteringGrouping {
+    Individual,
+    Enclosed,
+}
+
 #[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShading {
+    pub shape: ClusteringShape,
+    pub grouping: ClusteringGrouping,
     pub cluster_side: f32,
     pub max_clusters: u32,
     pub max_active_clusters: u32,
