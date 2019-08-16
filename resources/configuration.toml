@@ -12,6 +12,10 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
+shape = "PreProjective"
+# shape = "PostProjective"
+grouping = "Individual"
+# grouping = "Enclosed"
 cluster_side = 2.0
 max_clusters = 16777216 # 2^24 u32 64MB (fragments_per_cluster turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
