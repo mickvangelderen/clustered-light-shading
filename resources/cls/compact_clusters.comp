@@ -169,6 +169,10 @@ void main() {
 
       // Add the total sum of the current segment to the accumulator.
       acc += values[LOCAL_X - 1];
+
+      // Ensure shared memory was read in all threads before the next iteration starts writing.
+      memoryBarrierShared();
+      barrier();
     }
   }
 }
