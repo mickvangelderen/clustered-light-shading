@@ -126,6 +126,11 @@ impl_enum_map! {
 
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
+pub struct CameraParameters {
+    pub wld_to_cam: Matrix4<f64>,
+    pub cam_to_clp: Matrix4<f64>,
+}
+
 pub struct MainParameters {
     pub wld_to_cam: Matrix4<f64>,
     pub cam_to_wld: Matrix4<f64>,
@@ -136,6 +141,7 @@ pub struct MainParameters {
     pub cam_pos_in_wld: Point3<f64>,
 
     pub light_index: usize,
+    pub cluster_resources_index: Option<ClusterResourcesIndex>,
 
     pub dimensions: Vector2<i32>,
     pub display_viewport: Viewport<i32>,
@@ -216,6 +222,7 @@ pub struct Context {
     pub last_frame_start: time::Instant,
 
     // Per-frame resources
+    pub main_parameters_vec: Vec<MainParameters>,
     pub camera_buffer_pool: BufferPool,
     pub light_resources_vec: Vec<light::LightResources>,
     pub light_params_vec: Vec<light::LightParameters>,
@@ -446,6 +453,7 @@ impl Context {
             camera_buffer_pool: BufferPool::new(),
             light_resources_vec: Vec::new(),
             light_params_vec: Vec::new(),
+            main_parameters_vec: Vec::new(),
             cluster_resources_pool: ClusterResourcesPool::new(),
             main_resources_pool: MainResourcesPool::new(),
             point_lights: Vec::new(),
@@ -814,6 +822,7 @@ impl Context {
         //  - hmd --[clustered light shading dimensions]--> cls
         //  - cam --[projection]--> clp
 
+        self.main_parameters_vec.clear();
         self.light_params_vec.clear();
         self.cluster_resources_pool.reset();
         self.main_resources_pool.reset();
@@ -841,7 +850,15 @@ impl Context {
             }
         }
 
+        for res in &mut self.light_resources_vec {
+            res.dirty = true;
+        }
+
+        let mut light_index = None;
+        let mut cluster_resources_index = None;
+
         if self.shader_compiler.light_space() == LightSpace::Wld {
+            light_index = Some(self.light_params_vec.len());
             self.light_params_vec.push(light::LightParameters {
                 wld_to_lgt: Matrix4::identity(),
                 lgt_to_wld: Matrix4::identity(),
@@ -850,46 +867,132 @@ impl Context {
 
         let gl = &self.gl;
 
-        if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
-            let cluster_camera = &self.cameras.main;
-            let bdy_to_wld = cluster_camera.current_transform.pos_to_parent().cast::<f64>().unwrap();
-            let wld_to_bdy = cluster_camera
-                .current_transform
-                .pos_from_parent()
-                .cast::<f64>()
-                .unwrap();
+        struct C1 {
+            camera: camera::Camera,
+            hmd_to_wld: Matrix4<f64>,
+            wld_to_hmd: Matrix4<f64>,
+            cam_pos_in_wld: Point3<f64>,
+        }
 
-            let cluster_resources_index = self
-                .cluster_resources_pool
-                .next_unused(gl, &self.configuration.clustered_light_shading);
-            let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
+        impl C1 {
+            #[inline]
+            pub fn new(camera: camera::Camera, hmd_to_bdy: Matrix4<f64>) -> Self {
+                let bdy_to_wld = camera.transform.pos_to_parent().cast::<f64>().unwrap();
+                let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
+                Self {
+                    camera,
+                    hmd_to_wld,
+                    wld_to_hmd: hmd_to_wld.invert().unwrap(),
+                    cam_pos_in_wld: camera.transform.position.cast::<f64>().unwrap(),
+                }
+            }
+        }
 
-            let hmd_to_wld;
-            let wld_to_hmd;
+        struct C2 {
+            cam_to_wld: Matrix4<f64>,
+            wld_to_cam: Matrix4<f64>,
 
-            match stereo_data.as_ref() {
-                Some(&StereoData {
-                    hmd_to_bdy,
-                    eyes,
-                    win_size,
-                }) => {
-                    hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                    wld_to_hmd = hmd_to_wld.invert().unwrap();
+            cam_to_clp: Matrix4<f64>,
+            clp_to_cam: Matrix4<f64>,
+        }
 
-                    for &eye in EYE_KEYS.iter() {
-                        let EyeData { tangents, cam_to_hmd } = eyes[eye];
+        impl C2 {
+            #[inline]
+            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustrum: Frustrum<f64>) -> Self {
+                let C1 { hmd_to_wld, .. } = *c1;
+                let cam_to_wld = hmd_to_wld * cam_to_hmd;
+                let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
+                Self {
+                    cam_to_wld,
+                    wld_to_cam: cam_to_wld.invert().unwrap(),
 
-                        let cam_to_wld = cam_to_hmd * hmd_to_wld;
-                        let wld_to_cam = cam_to_wld.invert().unwrap();
+                    cam_to_clp,
+                    clp_to_cam: cam_to_clp.invert().unwrap(),
+                }
+            }
+        }
 
-                        let frustrum = stereo_frustrum(&cluster_camera.properties, tangents);
-                        let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                        let clp_to_cam = cam_to_clp.invert().unwrap();
+        match stereo_data {
+            Some(StereoData {
+                win_size,
+                hmd_to_bdy,
+                eyes,
+            }) => {
+                let render_c1 = C1::new(self.transition_camera.current_camera, hmd_to_bdy);
+                let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), hmd_to_bdy);
 
-                        let clp_to_hmd = cam_to_hmd * clp_to_cam;
-                        let hmd_to_clp = clp_to_hmd.invert().unwrap();
+                if self.shader_compiler.light_space() == LightSpace::Hmd {
+                    light_index = Some(self.light_params_vec.len());
+                    self.light_params_vec.push(light::LightParameters {
+                        wld_to_lgt: render_c1.wld_to_hmd,
+                        lgt_to_wld: render_c1.hmd_to_wld,
+                    });
+                }
 
-                        let _ = cluster_resources.camera_resources_pool.next_unused(
+                if self.shader_compiler.render_technique() == RenderTechnique::Clustered
+                    && self.configuration.clustered_light_shading.grouping
+                        == configuration::ClusteringGrouping::Enclosed
+                {
+                    cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
+                        gl,
+                        ClusterParameters {
+                            configuration: self.configuration.clustered_light_shading,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                        },
+                    ));
+                }
+
+                for &eye_key in EYE_KEYS.iter() {
+                    let EyeData { tangents, cam_to_hmd } = eyes[eye_key];
+
+                    let render_c2 = C2::new(
+                        &render_c1,
+                        cam_to_hmd,
+                        stereo_frustrum(&render_c1.camera.properties, tangents),
+                    );
+                    let cluster_c2 = C2::new(
+                        &cluster_c1,
+                        cam_to_hmd,
+                        stereo_frustrum(&cluster_c1.camera.properties, tangents),
+                    );
+
+                    if self.shader_compiler.light_space() == LightSpace::Cam {
+                        light_index = Some(self.light_params_vec.len());
+                        self.light_params_vec.push(light::LightParameters {
+                            wld_to_lgt: render_c2.wld_to_cam,
+                            lgt_to_wld: render_c2.cam_to_wld,
+                        });
+                    }
+
+                    if self.shader_compiler.render_technique() == RenderTechnique::Clustered
+                        && self.configuration.clustered_light_shading.grouping
+                            == configuration::ClusteringGrouping::Individual
+                    {
+                        cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
+                            gl,
+                            ClusterParameters {
+                                configuration: self.configuration.clustered_light_shading,
+                                wld_to_hmd: cluster_c1.wld_to_hmd,
+                                hmd_to_wld: cluster_c1.hmd_to_wld,
+                            },
+                        ));
+                    }
+
+                    {
+                        let camera_resources_pool =
+                            &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
+                        let C1 {
+                            wld_to_hmd, hmd_to_wld, ..
+                        } = cluster_c1;
+                        let C2 {
+                            wld_to_cam,
+                            cam_to_wld,
+                            cam_to_clp,
+                            clp_to_cam,
+                            ..
+                        } = cluster_c2;
+                        let _ = camera_resources_pool.next_unused(
                             gl,
                             ClusterCameraParameters {
                                 frame_dims: win_size,
@@ -900,62 +1003,186 @@ impl Context {
                                 cam_to_clp,
                                 clp_to_cam,
 
-                                hmd_to_clp,
-                                clp_to_hmd,
-
-                                wld_to_hmd,
-                                hmd_to_wld,
+                                hmd_to_clp: cam_to_clp * wld_to_cam * hmd_to_wld,
+                                clp_to_hmd: wld_to_hmd * cam_to_wld * clp_to_cam,
                             },
                         );
                     }
-                }
-                None => {
-                    // hmd_to_bdy = bdy_to_hmd = I
-                    hmd_to_wld = bdy_to_wld;
-                    wld_to_hmd = wld_to_bdy;
 
-                    let frame_dims = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
-                    let frustrum = mono_frustrum(&cluster_camera.current_to_camera(), frame_dims);
-                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                    let clp_to_cam = cam_to_clp.invert().unwrap();
+                    {
+                        let C1 { cam_pos_in_wld, .. } = cluster_c1;
+                        let C2 {
+                            wld_to_cam,
+                            cam_to_wld,
+                            cam_to_clp,
+                            clp_to_cam,
+                            ..
+                        } = cluster_c2;
 
-                    // cam_to_hmd = hmd_to_cam = I
-                    let clp_to_hmd = clp_to_cam;
-                    let hmd_to_clp = cam_to_clp;
-
-                    let _ = cluster_resources.camera_resources_pool.next_unused(
-                        gl,
-                        ClusterCameraParameters {
-                            frame_dims,
-
-                            wld_to_cam: wld_to_bdy,
-                            cam_to_wld: bdy_to_wld,
+                        self.main_parameters_vec.push(MainParameters {
+                            wld_to_cam,
+                            cam_to_wld,
 
                             cam_to_clp,
                             clp_to_cam,
 
-                            hmd_to_clp,
-                            clp_to_hmd,
+                            cam_pos_in_wld,
 
-                            wld_to_hmd,
-                            hmd_to_wld,
+                            light_index: light_index.expect("Programming error: light_index was never set."),
+                            cluster_resources_index,
+
+                            dimensions: win_size,
+                            display_viewport: {
+                                let w = self.win_size.width as i32;
+                                let h = self.win_size.height as i32;
+
+                                match eye_key {
+                                    vr::Eye::Left => {
+                                        Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h))
+                                    }
+                                    vr::Eye::Right => {
+                                        Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h))
+                                    }
+                                }
+                            },
+                        });
+                    }
+                }
+            }
+            None => {
+                let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
+                let render_c1 = C1::new(self.transition_camera.current_camera, Matrix4::identity());
+                let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), Matrix4::identity());
+
+                if self.shader_compiler.light_space() == LightSpace::Hmd {
+                    light_index = Some(self.light_params_vec.len());
+                    self.light_params_vec.push(light::LightParameters {
+                        wld_to_lgt: render_c1.wld_to_hmd,
+                        lgt_to_wld: render_c1.hmd_to_wld,
+                    });
+                }
+
+                if self.shader_compiler.render_technique() == RenderTechnique::Clustered
+                    && self.configuration.clustered_light_shading.grouping
+                        == configuration::ClusteringGrouping::Enclosed
+                {
+                    cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
+                        gl,
+                        ClusterParameters {
+                            configuration: self.configuration.clustered_light_shading,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                        },
+                    ));
+                }
+
+                let render_c2 = C2::new(
+                    &render_c1,
+                    Matrix4::identity(),
+                    mono_frustrum(&render_c1.camera, dimensions),
+                );
+                let cluster_c2 = C2::new(
+                    &cluster_c1,
+                    Matrix4::identity(),
+                    mono_frustrum(&cluster_c1.camera, dimensions),
+                );
+
+                if self.shader_compiler.light_space() == LightSpace::Cam {
+                    light_index = Some(self.light_params_vec.len());
+                    self.light_params_vec.push(light::LightParameters {
+                        wld_to_lgt: render_c2.wld_to_cam,
+                        lgt_to_wld: render_c2.cam_to_wld,
+                    });
+                }
+
+                if self.shader_compiler.render_technique() == RenderTechnique::Clustered
+                    && self.configuration.clustered_light_shading.grouping
+                        == configuration::ClusteringGrouping::Individual
+                {
+                    cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
+                        gl,
+                        ClusterParameters {
+                            configuration: self.configuration.clustered_light_shading,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                        },
+                    ));
+                }
+
+                {
+                    let camera_resources_pool =
+                        &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
+                    let C1 {
+                        wld_to_hmd, hmd_to_wld, ..
+                    } = cluster_c1;
+                    let C2 {
+                        wld_to_cam,
+                        cam_to_wld,
+                        cam_to_clp,
+                        clp_to_cam,
+                        ..
+                    } = cluster_c2;
+                    let _ = camera_resources_pool.next_unused(
+                        gl,
+                        ClusterCameraParameters {
+                            frame_dims: dimensions,
+
+                            wld_to_cam,
+                            cam_to_wld,
+
+                            cam_to_clp,
+                            clp_to_cam,
+
+                            hmd_to_clp: cam_to_clp * wld_to_cam * hmd_to_wld,
+                            clp_to_hmd: wld_to_hmd * cam_to_wld * clp_to_cam,
                         },
                     );
                 }
-            }
 
-            cluster_resources.parameters = ClusterParameters::new(
-                &self.configuration.clustered_light_shading,
+                {
+                    let C1 { cam_pos_in_wld, .. } = cluster_c1;
+                    let C2 {
+                        wld_to_cam,
+                        cam_to_wld,
+                        cam_to_clp,
+                        clp_to_cam,
+                        ..
+                    } = cluster_c2;
+
+                    self.main_parameters_vec.push(MainParameters {
+                        wld_to_cam,
+                        cam_to_wld,
+
+                        cam_to_clp,
+                        clp_to_cam,
+
+                        cam_pos_in_wld,
+
+                        light_index: light_index.expect("Programming error: light_index was never set."),
+                        cluster_resources_index,
+
+                        dimensions,
+                        display_viewport: Viewport::from_dimensions(dimensions),
+                    });
+                }
+            }
+        }
+
+        for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
+            // Reborrow
+            let gl = &self.gl;
+            let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
+
+            cluster_resources.computed = ClusterComputed::new(
+                &cluster_resources.parameters,
                 cluster_resources
                     .camera_resources_pool
                     .used_slice()
                     .iter()
                     .map(|&ClusterCameraResources { ref parameters, .. }| parameters.clp_to_hmd),
-                wld_to_hmd,
-                hmd_to_wld,
             );
 
-            let cluster_count = cluster_resources.parameters.cluster_count();
+            let cluster_count = cluster_resources.computed.cluster_count();
             let blocks_per_dispatch = cluster_count
                 .div_ceil(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
@@ -963,7 +1190,7 @@ impl Context {
 
             unsafe {
                 let buffer = &mut cluster_resources.cluster_fragment_counts_buffer;
-                let byte_count = std::mem::size_of::<u32>() * cluster_resources.parameters.cluster_count() as usize;
+                let byte_count = std::mem::size_of::<u32>() * cluster_resources.computed.cluster_count() as usize;
                 buffer.invalidate(gl);
                 // buffer.ensure_capacity(gl, byte_count);
                 buffer.clear_0u32(gl, byte_count);
@@ -975,18 +1202,18 @@ impl Context {
                 let gl = &self.gl;
                 let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
                 let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
-                let camera = &camera_resources.parameters;
+                let camera_parameters = &camera_resources.parameters;
                 let profiler = &mut camera_resources.profilers.render_depth;
 
                 profiler.start(gl, self.frame, self.epoch);
 
                 unsafe {
                     let camera_buffer = CameraBuffer {
-                        wld_to_cam: camera.wld_to_cam.cast().unwrap(),
-                        cam_to_wld: camera.cam_to_wld.cast().unwrap(),
+                        wld_to_cam: camera_parameters.wld_to_cam.cast().unwrap(),
+                        cam_to_wld: camera_parameters.cam_to_wld.cast().unwrap(),
 
-                        cam_to_clp: camera.cam_to_clp.cast().unwrap(),
-                        clp_to_cam: camera.clp_to_cam.cast().unwrap(),
+                        cam_to_clp: camera_parameters.cam_to_clp.cast().unwrap(),
+                        clp_to_cam: camera_parameters.clp_to_cam.cast().unwrap(),
 
                         // NOTE: Doesn't matter for depth pass!
                         cam_pos_in_lgt: Vector4::zero(),
@@ -999,7 +1226,7 @@ impl Context {
                     gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                 }
 
-                let main_resources_index = self.main_resources_pool.next_unused(gl, camera.frame_dims);
+                let main_resources_index = self.main_resources_pool.next_unused(gl, camera_parameters.frame_dims);
 
                 self.clear_and_render_depth(main_resources_index);
 
@@ -1007,7 +1234,7 @@ impl Context {
                 let gl = &self.gl;
                 let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
                 let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
-                let camera = &camera_resources.parameters;
+                let camera_parameters = &camera_resources.parameters;
                 let profiler = &mut camera_resources.profilers.render_depth;
                 let main_resources = &mut self.main_resources_pool[main_resources_index];
 
@@ -1038,7 +1265,9 @@ impl Context {
                                 main_resources.dims.cast::<f32>().unwrap().into(),
                             );
 
-                            let clp_to_cls = (cluster_resources.parameters.wld_to_cls * camera.cam_to_wld * camera.clp_to_cam)
+                            let clp_to_cls = (cluster_resources.computed.wld_to_cls
+                                * camera_parameters.cam_to_wld
+                                * camera_parameters.clp_to_cam)
                                 .cast::<f32>()
                                 .unwrap();
 
@@ -1048,7 +1277,10 @@ impl Context {
                                 clp_to_cls.as_ref(),
                             );
 
-                            gl.uniform_3ui(cls_renderer::CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
+                            gl.uniform_3ui(
+                                cls_renderer::CLUSTER_DIMS_LOC,
+                                cluster_resources.computed.dimensions.into(),
+                            );
 
                             gl.memory_barrier(
                                 gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
@@ -1118,7 +1350,7 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.parameters.cluster_count());
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.computed.cluster_count());
                         gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1129,7 +1361,7 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.parameters.cluster_count());
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.computed.cluster_count());
                         gl.dispatch_compute(1, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1140,7 +1372,7 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.parameters.cluster_count());
+                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.computed.cluster_count());
                         gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1159,7 +1391,10 @@ impl Context {
                         .point_lights
                         .iter()
                         .map(|&light| {
-                            let pos_in_hmd = wld_to_hmd.transform_point(light.pos_in_wld.cast().unwrap());
+                            let pos_in_hmd = cluster_resources
+                                .parameters
+                                .wld_to_hmd
+                                .transform_point(light.pos_in_wld.cast().unwrap());
                             let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
                             [x, y, z, light.attenuation.clip_far]
                         })
@@ -1178,6 +1413,7 @@ impl Context {
                     );
                 }
 
+                let profiler = &mut cluster_resources.profilers.upload_lights;
                 profiler.stop(gl, self.frame, self.epoch);
             }
 
@@ -1202,14 +1438,17 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_3ui(cls::count_lights::CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
+                        gl.uniform_3ui(
+                            cls::count_lights::CLUSTER_DIMS_LOC,
+                            cluster_resources.computed.dimensions.into(),
+                        );
                         gl.uniform_3f(
                             cls::count_lights::SCALE_LOC,
-                            cluster_resources.parameters.scale_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_3f(
                             cls::count_lights::TRANSLATION_LOC,
-                            cluster_resources.parameters.trans_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
@@ -1307,14 +1546,17 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_3ui(cls::assign_lights::CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
+                        gl.uniform_3ui(
+                            cls::assign_lights::CLUSTER_DIMS_LOC,
+                            cluster_resources.computed.dimensions.into(),
+                        );
                         gl.uniform_3f(
                             cls::assign_lights::SCALE_LOC,
-                            cluster_resources.parameters.scale_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_3f(
                             cls::assign_lights::TRANSLATION_LOC,
-                            cluster_resources.parameters.trans_from_cls_to_hmd.cast().unwrap().into(),
+                            cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
                         );
                         gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
@@ -1330,116 +1572,11 @@ impl Context {
             }
         }
 
-        let mut main_parameters = Vec::new();
-
-        match stereo_data {
-            Some(StereoData {
-                win_size,
-                hmd_to_bdy,
-                eyes,
-            }) => {
-                let render_camera = self.transition_camera.current_camera;
-                let bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
-
-                let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                let wld_to_hmd = hmd_to_wld.invert().unwrap();
-
-                let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap();
-
-                if self.shader_compiler.light_space() == LightSpace::Hmd {
-                    self.light_params_vec.push(light::LightParameters {
-                        wld_to_lgt: wld_to_hmd,
-                        lgt_to_wld: hmd_to_wld,
-                    });
-                }
-
-                for &eye_key in EYE_KEYS.iter() {
-                    let EyeData { tangents, cam_to_hmd } = eyes[eye_key];
-
-                    let cam_to_wld = hmd_to_wld * cam_to_hmd;
-                    let wld_to_cam = cam_to_wld.invert().unwrap();
-
-                    let frustrum = stereo_frustrum(&render_camera.properties, tangents);
-                    let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                    let clp_to_cam = cam_to_clp.invert().unwrap();
-
-                    if self.shader_compiler.light_space() == LightSpace::Cam {
-                        self.light_params_vec.push(light::LightParameters {
-                            wld_to_lgt: wld_to_cam,
-                            lgt_to_wld: cam_to_wld,
-                        });
-                    }
-
-                    main_parameters.push(MainParameters {
-                        wld_to_cam,
-                        cam_to_wld,
-
-                        cam_to_clp,
-                        clp_to_cam,
-
-                        cam_pos_in_wld,
-
-                        light_index: self.light_params_vec.len() - 1,
-
-                        dimensions: win_size,
-                        display_viewport: {
-                            let w = self.win_size.width as i32;
-                            let h = self.win_size.height as i32;
-
-                            match eye_key {
-                                vr::Eye::Left => Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h)),
-                                vr::Eye::Right => Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h)),
-                            }
-                        },
-                    });
-                }
-            }
-            None => {
-                let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
-
-                let render_camera = &self.transition_camera.current_camera;
-                let cam_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
-                let wld_to_cam = render_camera.transform.pos_from_parent().cast::<f64>().unwrap();
-
-                let frustrum = mono_frustrum(render_camera, dimensions);
-                let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
-                let clp_to_cam = cam_to_clp.invert().unwrap();
-
-                if self.shader_compiler.light_space() == LightSpace::Hmd
-                    || self.shader_compiler.light_space() == LightSpace::Cam
-                {
-                    self.light_params_vec.push(light::LightParameters {
-                        wld_to_lgt: wld_to_cam,
-                        lgt_to_wld: cam_to_wld,
-                    });
-                }
-
-                let cam_pos_in_wld = render_camera.transform.position.cast::<f64>().unwrap();
-
-                main_parameters.push(MainParameters {
-                    wld_to_cam,
-                    cam_to_wld,
-
-                    cam_to_clp,
-                    clp_to_cam,
-
-                    cam_pos_in_wld,
-
-                    light_index: self.light_params_vec.len() - 1,
-
-                    dimensions,
-                    display_viewport: Viewport::from_dimensions(dimensions),
-                });
-            }
-        }
-
-        for res in self.light_resources_vec.iter_mut() {
-            res.dirty = true;
-        }
-
         let mut bound_light_index = None;
 
-        for main_params in main_parameters.iter() {
+        for main_parameters_index in 0..self.main_parameters_vec.len() {
+            let main_params = &self.main_parameters_vec[main_parameters_index];
+
             // Reborrow.
             let gl = &self.gl;
 
@@ -1453,6 +1590,7 @@ impl Context {
                 cam_pos_in_wld,
 
                 light_index,
+                cluster_resources_index,
 
                 dimensions,
                 display_viewport,
@@ -1530,9 +1668,6 @@ impl Context {
 
             let main_resources_index = self.main_resources_pool.next_unused(gl, dimensions);
 
-            // TODO: Save this somewhere earlier when we do per-camera clustering.
-            let cluster_resources_index = self.cluster_resources_pool.used_index_iter().next();
-
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
             if self.target_camera_key == CameraKey::Debug {
@@ -1544,14 +1679,13 @@ impl Context {
 
                 for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
-
                     for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
                         self.line_renderer.render(
                             &mut rendering_context!(self),
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &FRUSTRUM_LINE_MESH_INDICES[..],
-                                obj_to_wld: &(camera_resources.parameters.hmd_to_wld
+                                obj_to_wld: &(cluster_resources.parameters.hmd_to_wld
                                     * camera_resources.parameters.clp_to_hmd)
                                     .cast()
                                     .unwrap(),
@@ -1560,7 +1694,13 @@ impl Context {
                     }
 
                     {
-                        let cls_to_clp = (cam_to_clp * wld_to_cam * cluster_resources.parameters.cls_to_wld).cast().unwrap();
+                        // Reborrow.
+                        let main_params = &self.main_parameters_vec[main_parameters_index];
+
+                        let cls_to_clp =
+                            (main_params.cam_to_clp * main_params.wld_to_cam * cluster_resources.computed.cls_to_wld)
+                                .cast()
+                                .unwrap();
                         self.render_debug_clusters(&cluster_renderer::Parameters {
                             cluster_resources_index,
                             cls_to_clp,
@@ -1622,13 +1762,16 @@ impl Context {
 
         for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
             let res = &mut self.cluster_resources_pool[cluster_resources_index];
-            let dimensions_u32 = res.parameters.dimensions;
+            let dimensions_u32 = res.computed.dimensions;
 
             overlay_textbox.write(
                 &monospace,
                 &format!(
                     "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
-                    cluster_resources_index.to_usize(), dimensions_u32.x, dimensions_u32.y, dimensions_u32.z,
+                    cluster_resources_index.to_usize(),
+                    dimensions_u32.x,
+                    dimensions_u32.y,
+                    dimensions_u32.z,
                 ),
             );
 

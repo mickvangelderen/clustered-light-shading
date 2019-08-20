@@ -30,9 +30,6 @@ pub struct ClusterCameraParameters {
     pub clp_to_cam: Matrix4<f64>,
 
     // Cluster orientation and dimensions.
-    pub wld_to_hmd: Matrix4<f64>,
-    pub hmd_to_wld: Matrix4<f64>,
-
     pub hmd_to_clp: Matrix4<f64>,
     pub clp_to_hmd: Matrix4<f64>,
 }

@@ -71,7 +71,7 @@ impl Context {
                 gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_command_buffer.name());
 
                 gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());
-                gl.uniform_3ui(CLUSTER_DIMS_LOC, cluster_resources.parameters.dimensions.into());
+                gl.uniform_3ui(CLUSTER_DIMS_LOC, cluster_resources.computed.dimensions.into());
                 gl.uniform_1ui(PASS_LOC, 0);
 
                 gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);

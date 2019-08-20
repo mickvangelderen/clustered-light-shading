@@ -51,12 +51,12 @@ impl Context {
                     gl.uniform_matrix4f(
                         Option::from(basic_renderer.wld_to_cls_loc).unwrap(),
                         gl::MajorAxis::Column,
-                        cluster_resources.parameters.wld_to_cls.cast().unwrap().as_ref(),
+                        cluster_resources.computed.wld_to_cls.cast().unwrap().as_ref(),
                     );
 
                     gl.uniform_3ui(
                         Option::from(basic_renderer.cluster_dims_loc).unwrap(),
-                        cluster_resources.parameters.dimensions.cast().unwrap().into(),
+                        cluster_resources.computed.dimensions.cast().unwrap().into(),
                     );
 
                     gl.bind_buffer_base(

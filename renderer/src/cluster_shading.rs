@@ -14,7 +14,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct ClusterParameters {
+pub struct ClusterComputed {
     pub dimensions: Vector3<u32>,
 
     pub trans_from_cls_to_hmd: Vector3<f64>,
@@ -27,7 +27,7 @@ pub struct ClusterParameters {
     pub wld_to_cls: Matrix4<f64>,
 }
 
-impl std::default::Default for ClusterParameters {
+impl std::default::Default for ClusterComputed {
     fn default() -> Self {
         Self {
             dimensions: Vector3::zero(),
@@ -44,16 +44,12 @@ impl std::default::Default for ClusterParameters {
     }
 }
 
-impl ClusterParameters {
-    pub fn new<I>(
-        cfg: &configuration::ClusteredLightShading,
-        clp_to_hmd: I,
-        wld_to_hmd: Matrix4<f64>,
-        hmd_to_wld: Matrix4<f64>,
-    ) -> Self
+impl ClusterComputed {
+    pub fn new<I>(parameters: &ClusterParameters, clp_to_hmd: I) -> Self
     where
         I: IntoIterator<Item = Matrix4<f64>>,
     {
+        let cfg = &parameters.configuration;
         let bb = compute_bounding_box(clp_to_hmd);
 
         let bb_delta = bb.delta();
@@ -87,8 +83,8 @@ impl ClusterParameters {
             scale_from_cls_to_hmd,
             scale_from_hmd_to_cls,
 
-            cls_to_wld: hmd_to_wld * cls_to_hmd,
-            wld_to_cls: hmd_to_cls * wld_to_hmd,
+            cls_to_wld: parameters.hmd_to_wld * cls_to_hmd,
+            wld_to_cls: hmd_to_cls * parameters.wld_to_hmd,
         }
     }
 
@@ -134,12 +130,12 @@ impl ClusterParameters {
 //         &mut self,
 //         gl: &gl::Gl,
 //         cfg: &configuration::ClusteredLightShading,
-//         space: &ClusterParameters,
+//         space: &ClusterComputed,
 //         point_lights: &[light::PointLight],
 //     ) {
 //         self.cpu_start = Some(Instant::now());
 
-//         let ClusterParameters {
+//         let ClusterComputed {
 //             dimensions,
 //             scale_from_cls_to_hmd,
 //             scale_from_hmd_to_cls,
