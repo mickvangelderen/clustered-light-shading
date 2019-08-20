@@ -300,4 +300,3 @@ impl std::ops::Index<BufferPoolIndex> for BufferPool {
         &self.buffers[index.0]
     }
 }
-

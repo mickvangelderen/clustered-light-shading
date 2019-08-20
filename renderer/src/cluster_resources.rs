@@ -31,7 +31,6 @@ impl ClusterStage {
     }
 }
 
-
 pub struct ClusterResources {
     // GPU
     pub cluster_fragment_counts_buffer: DynamicBuffer,
@@ -52,10 +51,18 @@ pub struct ClusterResources {
     // Other
     pub camera_resources_pool: ClusterCameraResourcesPool,
     pub parameters: ClusterParameters,
+    pub computed: ClusterComputed,
+}
+
+pub struct ClusterParameters {
+    pub configuration: configuration::ClusteredLightShading,
+    pub wld_to_hmd: Matrix4<f64>,
+    pub hmd_to_wld: Matrix4<f64>,
 }
 
 impl ClusterResources {
-    pub fn new(gl: &gl::Gl, cfg: &configuration::ClusteredLightShading) -> Self {
+    pub fn new(gl: &gl::Gl, parameters: ClusterParameters) -> Self {
+        let cfg = &parameters.configuration;
         Self {
             cluster_fragment_counts_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
@@ -138,14 +145,17 @@ impl ClusterResources {
             light_indices: Vec::new(),
 
             camera_resources_pool: ClusterCameraResourcesPool::new(),
-            parameters: Default::default(),
+            parameters,
+            computed: Default::default(),
         }
     }
 
-    pub fn reset(&mut self, _gl: &gl::Gl, _cfg: &configuration::ClusteredLightShading) {
+    pub fn reset(&mut self, _gl: &gl::Gl, parameters: ClusterParameters) {
+        // TODO: Resize buffers?
         self.camera_resources_pool.reset();
+        self.parameters = parameters;
         if cfg!(debug_assertions) {
-            self.parameters = Default::default();
+            self.computed = Default::default();
         }
     }
 }
@@ -155,5 +165,5 @@ impl_frame_pool! {
     ClusterResources,
     ClusterResourcesIndex,
     ClusterResourcesIndexIter,
-    (gl: &gl::Gl, cfg: &configuration::ClusteredLightShading),
+    (gl: &gl::Gl, parameters: ClusterParameters),
 }
