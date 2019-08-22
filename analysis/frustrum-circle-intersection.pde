@@ -33,7 +33,7 @@ var new_point = function(points) {
 
 var poly_4 = function(points) {
     pushStyle();
-    stroke(57, 0, 214);
+    fill(98, 96, 232);
     noFill();
     var p = new_point(points);
     if (points.length === 1) {
@@ -48,13 +48,13 @@ var poly_4 = function(points) {
     if (points.length === 3) {
         line_vec(points[0], points[1]);
         line_vec(points[1], points[2]);
-        stroke(220, 95, 227);   
+        stroke(220, 95, 227);
         line_vec(points[2], p);
         line_vec(p, points[0]);
     }
     if (points.length === 4) {
         noStroke();
-        fill(7, 0, 214);
+        fill(98, 96, 232);
         quad_vecs(points);
     }
     popStyle();
@@ -65,19 +65,20 @@ var frustrum = [];
 var draw_sections = function(points, r) {
     pushStyle();
     noStroke();
-    fill(255, 221, 0);
+    fill(255, 232, 84);
     for (var i = 0; i < points.length; i++) {
         var p0 = points[i];
         ellipse(p0.x, p0.y, 2*r, 2*r);
     }
     
-    fill(255, 43, 114);
+    fill(250, 130, 172);
     for (var i = 0; i < (points.length === 4 ? 4 : points.length - 1); i++) {
         var j = (i + 1) % 4;
         var p0 = points[i];
         var p1 = points[j];
-        var b = PVector.sub(p1, p0);
-        var n = PVector.mult(new PVector(-b.y, b.x), r / b.mag());
+        var e = PVector.sub(p1, p0);
+        var n = PVector.mult(new PVector(-e.y, e.x), r / e.mag());
+
         quad_vecs([
             p0,
             PVector.add(p0, n),
@@ -86,6 +87,94 @@ var draw_sections = function(points, r) {
         ]);
     }
     popStyle();
+};
+
+var test_intersect = function(frustrum, c, r) {
+    var inside_count = 0;
+    
+    var p = frustrum;
+    
+    var e = [
+        PVector.sub(p[1], p[0]),
+        PVector.sub(p[2], p[1]),
+        PVector.sub(p[3], p[2]),
+        PVector.sub(p[0], p[3]),
+    ];
+    
+    var n = [
+        PVector.normalize(new PVector(-e[0].y, e[0].x)),
+        PVector.normalize(new PVector(-e[1].y, e[1].x)),
+        PVector.normalize(new PVector(-e[2].y, e[2].x)),
+        PVector.normalize(new PVector(-e[3].y, e[3].x)),
+    ];
+    
+    var q = [
+        PVector.sub(c, p[0]),
+        PVector.sub(c, p[1]),
+        PVector.sub(c, p[2]),
+        PVector.sub(c, p[3]),
+    ];
+    
+    // Component of q along n.
+    var n_t = [
+        PVector.dot(q[0], n[0]),
+        PVector.dot(q[1], n[1]),
+        PVector.dot(q[2], n[2]),
+        PVector.dot(q[3], n[3]),
+    ];
+
+    // Component of q along e.
+    var e_t = [
+        PVector.dot(q[0], e[0]) / PVector.dot(e[0], e[0]),
+        PVector.dot(q[1], e[1]) / PVector.dot(e[1], e[1]),
+        PVector.dot(q[2], e[2]) / PVector.dot(e[2], e[2]),
+        PVector.dot(q[3], e[3]) / PVector.dot(e[3], e[3]),
+    ];
+
+    // Outside quadliteral with edges displaced by r*n.
+    for (var i = 0; i < 4; i++) {
+        if (n_t[i] > r) {
+            return null;
+        }
+    }
+    
+    // Center inside quadliteral.
+    var inside_count = 0;
+    for (var i = 0; i < 4; i++) {
+        if (n_t[i] <= 0.0) {
+            inside_count += 1;
+        }
+    }
+    if (inside_count === 4) {
+        return {
+            point: c,
+        };
+    }
+    
+    // Inside one of the edge-extended boxes.
+    for (var i = 0; i < 4; i++) {
+        if (n_t[i] >= 0.0 && n_t[i] <= r && e_t[i] >= 0.0 && e_t[i] <= 1.0) {
+            return {
+                edge: i,
+                point: PVector.add(p[i], PVector.mult(e[i], e_t[i])),
+            };
+        }
+    }
+    
+    // Inside one of the corners.
+    for (var i = 0; i < 4; i++) {
+        var v = PVector.sub(c, p[i]);
+        var d_sq = PVector.dot(v, v);
+        if (d_sq < r*r) {
+            return {
+                corner: i,
+                point: p[i],
+            };
+        }
+    }
+    
+    // In one of the corner areas but too far from the corner.
+    return null;
 };
 
 draw = function() {
@@ -101,104 +190,48 @@ draw = function() {
     var c = new PVector(mouseX, mouseY);
     var r = 69;
     
-    var hit_corner = -1;
-    var hit_corner_d_sq = r*r;
-    var hit_edge = -1;
-    var hit = false;
-    
-    var hit_point = null;
+    var hit = null;
     
     if (frustrum.length === 4) {
-        var inside_count = 0;
-        for (var i = 0; i < 4; i++) {
-            var j = (i + 1) % 4;
-            var p0 = frustrum[i];
-            var p1 = frustrum[j];
-            var b = PVector.sub(p1, p0);
-            var n = PVector.div(new PVector(-b.y, b.x), b.mag());
-            var a = PVector.sub(c, p0);
-            var side_d = PVector.dot(a, n);
-            
-            if (side_d > r) {
-                // outside frustrum enlarged by d.
-                hit = false;
-                break;
-            } else if (side_d > 0.0) {
-                var t = PVector.dot(a, b) / PVector.dot(b, b);
-                var ci;
-                if (t < 0.0) {
-                    ci = i;
-                } else if (t > 1.0) {
-                    ci = (i + 1) % 4;
-                } else {
-                    hit = true;
-                    hit_edge = i;
-                    hit_point = PVector.add(p0, PVector.mult(b, t));
-                    break;
-                }
-
-                var corner = frustrum[ci];
-                var dv = PVector.sub(corner, c);
-                var d_sq = PVector.dot(dv, dv);
-                
-                if (d_sq < hit_corner_d_sq) {
-                    hit = true;
-                    hit_corner = ci;
-                    hit_point = corner;
-                    hit_corner_d_sq = d_sq;
-                }
-            } else {
-                // inside frustrum.
-                inside_count += 1;
-            }
-        }
-        
-        if (inside_count === 4) {
-            // On the inside of all edges.
-            hit = true;
-            hit_point = c;
-        }
+        hit = test_intersect(frustrum, c, r);
     }
 
     draw_sections(frustrum, r);
     poly_4(frustrum);
     
     pushStyle();
-    noStroke();
-    if (hit) {
-        fill(89, 237, 52);
+    noFill();
+    if (hit !== null) {
+        stroke(106, 224, 76);
     } else {
-        fill(7, 0, 214);
+        stroke(98, 96, 232);  
     }
     ellipse(c.x, c.y, r*2.0, r*2.0);
     popStyle();
     
-    if (hit_point !== null) {
+    if (hit !== null && hit.point !== undefined) {
         pushStyle();
-        stroke(240, 160, 0);
-        line_vec(hit_point, c);
+        stroke(255, 0, 0);
+        line_vec(hit.point, c);
         popStyle();
     }
     
-    if (hit_corner !== -1) {
+    if (hit !== null && hit.edge !== undefined) {
+        pushStyle();
+        stroke(255, 0, 0);
+        var p0 = frustrum[hit.edge];
+        var p1 = frustrum[(hit.edge + 1) % 4];
+        line_vec(p0, p1);
+        popStyle();
+    } else if (hit !== null && hit.corner !== undefined) {
         pushStyle();
         strokeWeight(7);
         stroke(255, 0, 0);
-        var p = frustrum[hit_corner];
+        var p = frustrum[hit.corner];
         point(p.x, p.y);
         strokeWeight(3);
         popStyle();
     }
-    
-    if (hit_edge !== -1) {
-        pushStyle();
-        stroke(255, 0, 0);
-        var p0 = frustrum[hit_edge];
-        var p1 = frustrum[(hit_edge + 1) % 4];
-        line_vec(p0, p1);
-        popStyle();
-    }
-    
 };
 
 mousePressed = function() {
