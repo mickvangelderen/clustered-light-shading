@@ -110,3 +110,15 @@ cheap depth pre pass forward shader architecture
 learnopengl PBR
 
 
+## Some more ideas
+
+### Tile based with adaptive depth
+
+Use previous frame's cluster depth range to increase or decrease the number of z
+dimensions or use some smarter way of binning depths within a tile.
+
+### Fragments/cluster light assignment
+
+Use the fragments/cluster to determine how much time to spend on light
+assignment for each cluster. Can use more expensive cluster/light instersection
+detection methods if there's many fragments benefitting from it.
