@@ -1010,14 +1010,14 @@ impl Context {
                     }
 
                     {
-                        let C1 { cam_pos_in_wld, .. } = cluster_c1;
+                        let C1 { cam_pos_in_wld, .. } = render_c1;
                         let C2 {
                             wld_to_cam,
                             cam_to_wld,
                             cam_to_clp,
                             clp_to_cam,
                             ..
-                        } = cluster_c2;
+                        } = render_c2;
 
                         self.main_parameters_vec.push(MainParameters {
                             wld_to_cam,
@@ -1140,14 +1140,14 @@ impl Context {
                 }
 
                 {
-                    let C1 { cam_pos_in_wld, .. } = cluster_c1;
+                    let C1 { cam_pos_in_wld, .. } = render_c1;
                     let C2 {
                         wld_to_cam,
                         cam_to_wld,
                         cam_to_clp,
                         clp_to_cam,
                         ..
-                    } = cluster_c2;
+                    } = render_c2;
 
                     self.main_parameters_vec.push(MainParameters {
                         wld_to_cam,
