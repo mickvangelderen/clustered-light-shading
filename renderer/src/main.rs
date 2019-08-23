@@ -979,7 +979,7 @@ impl Context {
                         ));
                     }
 
-                    {
+                    if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                         let C1 {
@@ -1109,7 +1109,7 @@ impl Context {
                     ));
                 }
 
-                {
+                if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                     let C1 {
