@@ -39,6 +39,7 @@ layout(binding = 12) buffer ActiveClusterLightOffsetsBuffer {
 
 layout(binding = 13) buffer LightIndicesBuffer { uint light_indices[]; };
 
+in vec4 fs_pos_in_clp;
 in vec3 fs_pos_in_cls;
 #endif
 
@@ -226,7 +227,15 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    uvec3 fs_idx_in_cls = uvec3(fs_pos_in_cls);
+    vec3 pos_in_ndc = fs_pos_in_clp.xyz/fs_pos_in_clp.w;
+    vec3 pos_in_cls = (pos_in_ndc + vec3(1.0, 1.0, 0.0)) / vec3(2.0, 2.0, 1.0) * vec3(cluster_dims.xyz);
+    uvec3 idx_in_cls = uvec3(pos_in_cls);
+    // frag_color = vec4(pos_in_cls, 1.0);
+    // frag_color = vec4(vec3(fs_pos_in_cls.z), 1.0);
+
+    uvec3 fs_idx_in_cls = idx_in_cls;
+
+    frag_color = vec4(vec3(float(idx_in_cls.z) / float(cluster_dims.z)), 1.0);
 
     // CLUSTER INDICES X, Y, Z
     // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
@@ -248,7 +257,7 @@ void main() {
 
     if (maybe_active_cluster_index == 0) {
       // We generally shouldn't see clusters that don't have any fragments.
-      frag_color = vec4(1.0, 0.0, 1.0, 1.0);
+      // frag_color = vec4(1.0, 0.0, 1.0, 1.0);
     } else {
       uint active_cluster_index = maybe_active_cluster_index - 1;
       uint cluster_light_count = active_cluster_light_counts[active_cluster_index];
@@ -289,7 +298,7 @@ void main() {
             cam_dir_in_lgt_norm);
         // atomicCounterIncrement(shading_ops);
       }
-      frag_color = vec4(color_accumulator, 1.0);
+      // frag_color = vec4(color_accumulator, 1.0);
     }
 #else
 #error Unimplemented render technique!
