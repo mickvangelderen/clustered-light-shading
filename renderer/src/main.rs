@@ -2021,7 +2021,7 @@ fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
     // NOTE(mickvangelderen): The handle is not actually a pointer in
     // OpenGL's case, it's just the texture name.
     vr::sys::Texture_t {
-        handle: name.into_u32() as usize as *const c_void as *mut c_void,
+        handle: name.to_u32() as usize as *const c_void as *mut c_void,
         eType: vr::sys::ETextureType_TextureType_OpenGL,
         eColorSpace: vr::sys::EColorSpace_ColorSpace_Gamma, // TODO(mickvangelderen): IDK
     }

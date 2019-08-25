@@ -11,13 +11,13 @@ pub struct Renderer {
 }
 
 // fragments per cluster program
-pub const DEPTH_SAMPLER_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
-pub const FB_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(1) };
-pub const CLP_TO_CLS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(2) };
-pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(3) };
+pub const DEPTH_SAMPLER_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
+pub const FB_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
+pub const CLP_TO_CLS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
+pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(3) };
 
 // compact clusters
-pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
+pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
 
 pub const CLUSTER_FRAGMENT_COUNTS_BINDING: u32 = 0;
 pub const ACTIVE_CLUSTER_INDICES_BINDING: u32 = 1;

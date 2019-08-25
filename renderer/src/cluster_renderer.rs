@@ -4,9 +4,9 @@ pub struct Renderer {
     pub program: rendering::Program,
 }
 
-pub const CLS_TO_CLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
-pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(1) };
-pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(2) };
+pub const CLS_TO_CLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
+pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
+pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
 
 pub struct Parameters {
     pub cluster_resources_index: ClusterResourcesIndex,
