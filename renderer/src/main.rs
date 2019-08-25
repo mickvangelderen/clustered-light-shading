@@ -138,6 +138,9 @@ pub struct MainParameters {
     pub cam_to_clp: Matrix4<f64>,
     pub clp_to_cam: Matrix4<f64>,
 
+    pub z0: f64,
+    pub z1: f64,
+
     pub cam_pos_in_wld: Point3<f64>,
 
     pub light_index: usize,
@@ -983,7 +986,10 @@ impl Context {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                         let C1 {
-                            wld_to_hmd, hmd_to_wld, ..
+                            ref camera,
+                            wld_to_hmd,
+                            hmd_to_wld,
+                            ..
                         } = cluster_c1;
                         let C2 {
                             wld_to_cam,
@@ -1005,12 +1011,19 @@ impl Context {
 
                                 hmd_to_clp: cam_to_clp * wld_to_cam * hmd_to_wld,
                                 clp_to_hmd: wld_to_hmd * cam_to_wld * clp_to_cam,
+
+                                z0: camera.properties.z0 as f64,
+                                z1: camera.properties.z1 as f64,
                             },
                         );
                     }
 
                     {
-                        let C1 { cam_pos_in_wld, .. } = render_c1;
+                        let C1 {
+                            ref camera,
+                            cam_pos_in_wld,
+                            ..
+                        } = render_c1;
                         let C2 {
                             wld_to_cam,
                             cam_to_wld,
@@ -1027,6 +1040,9 @@ impl Context {
                             clp_to_cam,
 
                             cam_pos_in_wld,
+
+                            z0: camera.properties.z0 as f64,
+                            z1: camera.properties.z1 as f64,
 
                             light_index: light_index.expect("Programming error: light_index was never set."),
                             cluster_resources_index,
@@ -1113,7 +1129,10 @@ impl Context {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                     let C1 {
-                        wld_to_hmd, hmd_to_wld, ..
+                        ref camera,
+                        wld_to_hmd,
+                        hmd_to_wld,
+                        ..
                     } = cluster_c1;
                     let C2 {
                         wld_to_cam,
@@ -1135,12 +1154,19 @@ impl Context {
 
                             hmd_to_clp: cam_to_clp * wld_to_cam * hmd_to_wld,
                             clp_to_hmd: wld_to_hmd * cam_to_wld * clp_to_cam,
+
+                            z0: camera.properties.z0 as f64,
+                            z1: camera.properties.z1 as f64,
                         },
                     );
                 }
 
                 {
-                    let C1 { cam_pos_in_wld, .. } = render_c1;
+                    let C1 {
+                        ref camera,
+                        cam_pos_in_wld,
+                        ..
+                    } = render_c1;
                     let C2 {
                         wld_to_cam,
                         cam_to_wld,
@@ -1157,6 +1183,9 @@ impl Context {
                         clp_to_cam,
 
                         cam_pos_in_wld,
+
+                        z0: camera.properties.z0 as f64,
+                        z1: camera.properties.z1 as f64,
 
                         light_index: light_index.expect("Programming error: light_index was never set."),
                         cluster_resources_index,
@@ -1214,6 +1243,11 @@ impl Context {
 
                         cam_to_clp: camera_parameters.cam_to_clp.cast().unwrap(),
                         clp_to_cam: camera_parameters.clp_to_cam.cast().unwrap(),
+
+                        z0: camera_parameters.z0 as f32,
+                        z1: camera_parameters.z1 as f32,
+                        _pad0: 0.0,
+                        _pad1: 0.0,
 
                         // NOTE: Doesn't matter for depth pass!
                         cam_pos_in_lgt: Vector4::zero(),
@@ -1587,6 +1621,9 @@ impl Context {
                 ref cam_to_clp,
                 ref clp_to_cam,
 
+                z0,
+                z1,
+
                 cam_pos_in_wld,
 
                 light_index,
@@ -1655,6 +1692,11 @@ impl Context {
 
                     cam_to_clp: cam_to_clp.cast().unwrap(),
                     clp_to_cam: clp_to_cam.cast().unwrap(),
+
+                    z0: z0 as f32,
+                    z1: z1 as f32,
+                    _pad0: 0.0,
+                    _pad1: 0.0,
 
                     cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
                 };
