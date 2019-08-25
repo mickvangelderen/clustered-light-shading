@@ -228,17 +228,16 @@ void main() {
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
     vec3 pos_in_ndc = fs_pos_in_clp.xyz/fs_pos_in_clp.w;
-    vec3 pos_in_cls = (pos_in_ndc + vec3(1.0, 1.0, 0.0)) / vec3(2.0, 2.0, 1.0) * vec3(cluster_dims.xyz);
+    float z_cam = -cam_to_clp[3][2] / (pos_in_ndc.z + cam_to_clp[2][2]);
+    // frag_color = vec4(vec3(z_cam), 1.0);
+    vec3 pos_in_cls = vec3((pos_in_ndc.xy + vec2(1.0) * vec2(0.5) * vec2(cluster_dims.xy)), lerp(z_cam, z1, z0, 0.0, float(cluster_dims.z)));
     uvec3 idx_in_cls = uvec3(pos_in_cls);
-    // frag_color = vec4(pos_in_cls, 1.0);
-    // frag_color = vec4(vec3(fs_pos_in_cls.z), 1.0);
+    // frag_color = vec4(pos_in_cls / vec3(cluster_dims.xyz), 1.0);
 
     uvec3 fs_idx_in_cls = idx_in_cls;
 
-    frag_color = vec4(vec3(float(idx_in_cls.z) / float(cluster_dims.z)), 1.0);
-
     // CLUSTER INDICES X, Y, Z
-    // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
+    frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
 
     // CLUSTER INDICES X, Y, Z mod 3
     // vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
