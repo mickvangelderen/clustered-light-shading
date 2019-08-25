@@ -230,3 +230,84 @@ impl<S: ToPrimitive> Frustrum<S> {
         })
     }
 }
+
+pub type Frustum = FrustumF64;
+
+pub struct FrustumF64 {
+    /// -l/n
+    pub x0: f64,
+    /// r/n
+    pub x1: f64,
+    /// -b/n
+    pub y0: f64,
+    /// t/n
+    pub y1: f64,
+    /// -f
+    pub z0: f64,
+    /// -n
+    pub z1: f64,
+}
+
+pub type FrustumRange = FrustumRangeF64;
+
+pub struct FrustumRangeF64 {
+    pub x0: f64,
+    pub x1: f64,
+    pub y0: f64,
+    pub y1: f64,
+    pub z0: f64,
+    pub z1: f64,
+}
+
+impl FrustrumRange {
+    #[inline]
+    pub fn dx(&self) -> f64 {
+        self.x1 - self.x0
+    }
+
+    #[inline]
+    pub fn dy(&self) -> f64 {
+        self.y1 - self.y0
+    }
+
+    #[inline]
+    pub fn dz(&self) -> f64 {
+        self.z1 - self.z0
+    }
+}
+
+impl Frustum {
+    /// Returns a matrix that takes [x_cam, y_cam, z_cam, 1] and turns it into [-z*x_cls, -z*y_cls, z_cls, -z].
+    pub fn cluster_perspective(&self, range: &FrustumRange) -> Matrix4<f64> {
+        let a_x = range.dx() / self.dx();
+        let b_x = (range.x0 * self.x1 - range.x1 * self.x0) / self.dx();
+
+        let a_y = range.dy() / self.dy();
+        let b_y = (range.y0 * self.y1 - range.y1 * self.y0) / self.dy();
+
+        let a_z = range.dz() / self.dz();
+        let b_z = (range.z0 * self.z1 - range.z1 * self.z0) / self.dz();
+
+        Matrix4::from_cols(
+            Vector4::new(a_x, 0.0, 0.0, 0.0),
+            Vector4::new(0.0, a_y, 0.0, 0.0),
+            Vector4::new(b_x, b_y, a_z, -1.0),
+            Vector4::new(0.0, 0.0, b_z, 0.0),
+        )
+    }
+
+    #[inline]
+    pub fn dx(&self) -> f64 {
+        self.x1 - self.x0
+    }
+
+    #[inline]
+    pub fn dy(&self) -> f64 {
+        self.y1 - self.y0
+    }
+
+    #[inline]
+    pub fn dz(&self) -> f64 {
+        self.z1 - self.z0
+    }
+}
