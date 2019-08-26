@@ -160,15 +160,25 @@ impl SourceReader {
                 )));
             }
             SourceReader::ClusteredLightShading => {
+                let clustering_shape = match vars.clustered_light_shading.shape {
+                    configuration::ClusteringShape::PreProjective => "CLUSTERING_SHAPE_PRE_PROJECTIVE",
+                    configuration::ClusteringShape::PostProjective => "CLUSTERING_SHAPE_POST_PROJECTIVE",
+                };
+
                 tokens.push(Token::Literal(format!(
                     "\
                      #line {} {}\n\
+                     #define CLUSTERING_SHAPE_PRE_PROJECTIVE 1\n\
+                     #define CLUSTERING_SHAPE_POST_PROJECTIVE 2\n\
+                     #define CLUSTERING_SHAPE {}\n\
+                     \n\
                      #define CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS {}\n\
                      #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
                      #define CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES {}\n\
                      ",
                     line!() - 4,
                     source_index,
+                    clustering_shape,
                     vars.clustered_light_shading.max_clusters,
                     vars.clustered_light_shading.max_active_clusters,
                     vars.clustered_light_shading.max_light_indices,

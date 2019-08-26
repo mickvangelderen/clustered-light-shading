@@ -233,6 +233,7 @@ impl<S: ToPrimitive> Frustrum<S> {
 
 pub type Frustum = FrustumF64;
 
+#[derive(Debug)]
 pub struct FrustumF64 {
     /// -l/n
     pub x0: f64,
@@ -250,6 +251,7 @@ pub struct FrustumF64 {
 
 pub type FrustumRange = FrustumRangeF64;
 
+#[derive(Debug)]
 pub struct FrustumRangeF64 {
     pub x0: f64,
     pub x1: f64,
@@ -259,7 +261,18 @@ pub struct FrustumRangeF64 {
     pub z1: f64,
 }
 
-impl FrustrumRange {
+impl FrustumRange {
+    pub fn from_dimensions(dims: Vector3<f64>) -> Self {
+        Self {
+            x0: 0.0,
+            x1: dims.x,
+            y0: 0.0,
+            y1: dims.y,
+            z0: 0.0,
+            z1: dims.z,
+        }
+    }
+
     #[inline]
     pub fn dx(&self) -> f64 {
         self.x1 - self.x0
@@ -291,7 +304,7 @@ impl Frustum {
         Matrix4::from_cols(
             Vector4::new(a_x, 0.0, 0.0, 0.0),
             Vector4::new(0.0, a_y, 0.0, 0.0),
-            Vector4::new(b_x, b_y, a_z, -1.0),
+            Vector4::new(-b_x, -b_y, a_z, -1.0),
             Vector4::new(0.0, 0.0, b_z, 0.0),
         )
     }

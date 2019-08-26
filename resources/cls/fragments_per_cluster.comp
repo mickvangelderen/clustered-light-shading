@@ -2,8 +2,9 @@
 
 layout(binding = 0) uniform sampler2D depth_sampler;
 layout(location = 1) uniform vec2 fb_dims;
-layout(location = 2) uniform mat4 clp_to_cls;
-layout(location = 3) uniform uvec3 cluster_dims;
+layout(location = 2) uniform mat4 clp_to_wld;
+layout(location = 3) uniform mat4 wld_to_cls;
+layout(location = 4) uniform uvec3 cluster_dims;
 
 layout(binding = 0) buffer OutputBuffer { uint fragments_per_cluster[]; };
 
@@ -26,7 +27,9 @@ void main() {
   }
 
   vec4 pos_in_ndc = to_homogeneous(vec3(xy_ndc, z_ndc));
-  vec3 pos_in_cls = from_homogeneous(clp_to_cls * pos_in_ndc);
+  vec3 pos_in_wld = from_homogeneous(clp_to_wld * pos_in_ndc);
+  vec4 pos_in_cls_post = wld_to_cls * to_homogeneous(pos_in_wld);
+  vec3 pos_in_cls = vec3(pos_in_cls_post.xy / vec2(pos_in_cls_post.w), pos_in_cls_post.z);
 
   uvec3 idx_in_cls = uvec3(pos_in_cls);
   if (all(lessThan(idx_in_cls, cluster_dims))) {

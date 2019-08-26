@@ -59,11 +59,6 @@ pub struct CameraBuffer {
     pub cam_to_clp: Matrix4<f32>,
     pub clp_to_cam: Matrix4<f32>,
 
-    pub z0: f32,
-    pub z1: f32,
-    pub _pad0: f32,
-    pub _pad1: f32,
-
     pub cam_pos_in_lgt: Vector4<f32>,
 }
 
@@ -74,11 +69,6 @@ layout(std140, binding = CAMERA_BUFFER_BINDING) uniform CameraBuffer {
 
     mat4 cam_to_clp;
     mat4 clp_to_cam;
-
-    float z0;
-    float z1;
-    float _CameraBuffer_pad_0;
-    float _CameraBuffer_pad_1;
 
     vec4 cam_pos_in_lgt;
 };
