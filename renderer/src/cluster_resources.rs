@@ -150,6 +150,58 @@ impl ClusterResources {
         }
     }
 
+    pub fn recompute(&mut self) {
+        let parameters = &self.parameters;
+
+        let cfg = &parameters.configuration;
+        let bb = crate::cluster_shading::compute_bounding_box(
+            self.camera_resources_pool
+                .used_slice()
+                .iter()
+                .map(|&ClusterCameraResources { ref parameters, .. }| parameters.clp_to_hmd),
+        );
+
+        let bb_delta = bb.delta();
+        let dimensions = (bb_delta / cfg.cluster_side as f64).map(f64::ceil);
+        let dimensions_u32 = dimensions.cast::<u32>().unwrap();
+
+        if dimensions_u32.product() > cfg.max_clusters {
+            panic!(
+                "Cluster dimensions are too large: {} x {} x {} exceeds the maximum {}.",
+                dimensions_u32.x, dimensions_u32.y, dimensions_u32.z, cfg.max_clusters,
+            );
+        }
+
+        let trans_from_hmd_to_cls = Point3::origin() - bb.min;
+        let trans_from_cls_to_hmd = bb.min - Point3::origin();
+
+        let scale_from_cls_to_hmd = bb_delta.div_element_wise(dimensions);
+        let scale_from_hmd_to_cls = dimensions.div_element_wise(bb_delta);
+
+        let cls_to_hmd: Matrix4<f64> =
+            Matrix4::from_translation(trans_from_cls_to_hmd) * Matrix4::from_scale_vector(scale_from_cls_to_hmd);
+        let hmd_to_cls: Matrix4<f64> =
+            Matrix4::from_scale_vector(scale_from_hmd_to_cls) * Matrix4::from_translation(trans_from_hmd_to_cls);
+
+        self.computed = ClusterComputed {
+            dimensions: dimensions.cast().unwrap(),
+
+            trans_from_cls_to_hmd,
+            trans_from_hmd_to_cls,
+
+            scale_from_cls_to_hmd,
+            scale_from_hmd_to_cls,
+
+            cls_to_wld: parameters.hmd_to_wld * cls_to_hmd,
+            wld_to_cls: hmd_to_cls * parameters.wld_to_hmd,
+
+            cam_to_cls: self.camera_resources_pool.used_slice()[0]
+                .parameters
+                .cls_frustum
+                .cluster_perspective(&FrustumRange::from_dimensions(dimensions.cast().unwrap())),
+        }
+    }
+
     pub fn reset(&mut self, _gl: &gl::Gl, parameters: ClusterParameters) {
         // TODO: Resize buffers?
         self.camera_resources_pool.reset();

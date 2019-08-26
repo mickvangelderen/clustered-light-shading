@@ -33,8 +33,8 @@ pub struct ClusterCameraParameters {
     pub hmd_to_clp: Matrix4<f64>,
     pub clp_to_hmd: Matrix4<f64>,
 
-    pub z0: f64,
-    pub z1: f64,
+    // Camera frustum.
+    pub cls_frustum: Frustum,
 }
 
 pub struct ClusterCameraResources {

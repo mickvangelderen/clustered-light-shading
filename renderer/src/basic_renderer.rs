@@ -4,7 +4,7 @@ pub struct Renderer {
     pub program: rendering::Program,
     //
     pub obj_to_wld_loc: gl::OptionUniformLocation,
-    pub wld_to_cls_loc: gl::OptionUniformLocation,
+    pub cam_to_cls_loc: gl::OptionUniformLocation,
     pub cluster_dims_loc: gl::OptionUniformLocation,
 
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
@@ -48,11 +48,11 @@ impl Context {
                         self.shader_compiler.variables.render_technique
                     );
 
-                    if let Some(loc) = basic_renderer.wld_to_cls_loc.into() {
+                    if let Some(loc) = basic_renderer.cam_to_cls_loc.into() {
                         gl.uniform_matrix4f(
                             loc,
                             gl::MajorAxis::Column,
-                            cluster_resources.computed.wld_to_cls.cast().unwrap().as_ref(),
+                            cluster_resources.computed.cam_to_cls.cast().unwrap().as_ref(),
                         );
                     }
 
@@ -169,7 +169,7 @@ impl Renderer {
             if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
                     self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
-                    self.wld_to_cls_loc = get_uniform_location!(gl, name, "wld_to_cls");
+                    self.cam_to_cls_loc = get_uniform_location!(gl, name, "cam_to_cls");
                     self.cluster_dims_loc = get_uniform_location!(gl, name, "cluster_dims");
 
                     self.diffuse_sampler_loc = get_uniform_location!(gl, name, "diffuse_sampler");
@@ -191,7 +191,7 @@ impl Renderer {
             program: vs_fs_program(context, "basic_renderer.vert", "basic_renderer.frag"),
 
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-            wld_to_cls_loc: gl::OptionUniformLocation::NONE,
+            cam_to_cls_loc: gl::OptionUniformLocation::NONE,
             cluster_dims_loc: gl::OptionUniformLocation::NONE,
 
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,

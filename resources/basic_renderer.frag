@@ -38,9 +38,7 @@ layout(binding = 12) buffer ActiveClusterLightOffsetsBuffer {
 };
 
 layout(binding = 13) buffer LightIndicesBuffer { uint light_indices[]; };
-
-in vec4 fs_pos_in_clp;
-in vec3 fs_pos_in_cls;
+in vec4 fs_pos_in_cls;
 #endif
 
 layout(location = 0) out vec4 frag_color;
@@ -227,10 +225,7 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_ndc = fs_pos_in_clp.xyz/fs_pos_in_clp.w;
-    float z_cam = -cam_to_clp[3][2] / (pos_in_ndc.z + cam_to_clp[2][2]);
-    // frag_color = vec4(vec3(z_cam), 1.0);
-    vec3 pos_in_cls = vec3((pos_in_ndc.xy + vec2(1.0) * vec2(0.5) * vec2(cluster_dims.xy)), lerp(z_cam, z1, z0, 0.0, float(cluster_dims.z)));
+    vec3 pos_in_cls = vec3(fs_pos_in_cls.xy / vec2(fs_pos_in_cls.w), fs_pos_in_cls.z);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
     // frag_color = vec4(pos_in_cls / vec3(cluster_dims.xyz), 1.0);
 
