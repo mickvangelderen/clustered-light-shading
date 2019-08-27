@@ -1,59 +1,5 @@
 use crate::*;
 
-pub fn compute_bounding_box<I>(clp_to_hmd: I) -> BoundingBox<f64>
-where
-    I: IntoIterator<Item = Matrix4<f64>>,
-{
-    let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-    let mut corners_in_hmd = clp_to_hmd
-        .into_iter()
-        .flat_map(|clp_to_hmd| corners_in_clp.into_iter().map(move |&p| clp_to_hmd.transform_point(p)))
-        .map(|p| p.cast::<f64>().unwrap());
-    let first = BoundingBox::from_point(corners_in_hmd.next().unwrap());
-    corners_in_hmd.fold(first, |b, p| b.enclose(p))
-}
-
-#[derive(Debug)]
-pub struct ClusterComputed {
-    pub dimensions: Vector3<u32>,
-
-    pub trans_from_cls_to_hmd: Vector3<f64>,
-    pub trans_from_hmd_to_cls: Vector3<f64>,
-
-    pub scale_from_cls_to_hmd: Vector3<f64>,
-    pub scale_from_hmd_to_cls: Vector3<f64>,
-
-    pub cls_to_wld: Matrix4<f64>,
-    pub wld_to_cls: Matrix4<f64>,
-
-    pub cam_to_cls: Matrix4<f64>,
-}
-
-impl std::default::Default for ClusterComputed {
-    fn default() -> Self {
-        Self {
-            dimensions: Vector3::zero(),
-
-            trans_from_cls_to_hmd: Vector3::zero(),
-            trans_from_hmd_to_cls: Vector3::zero(),
-
-            scale_from_cls_to_hmd: Vector3::zero(),
-            scale_from_hmd_to_cls: Vector3::zero(),
-
-            cls_to_wld: Matrix4::identity(),
-            wld_to_cls: Matrix4::identity(),
-
-            cam_to_cls: Matrix4::identity(),
-        }
-    }
-}
-
-impl ClusterComputed {
-    pub fn cluster_count(&self) -> u32 {
-        self.dimensions.product()
-    }
-}
-
 // Ballpark numbers
 //
 // light count

@@ -15,7 +15,6 @@ pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
 mod basic_renderer;
-pub mod bounding_box;
 pub mod camera;
 pub mod cgmath_ext;
 pub mod clamp;
@@ -48,7 +47,6 @@ mod text_rendering;
 mod viewport;
 mod window_mode;
 
-use crate::bounding_box::*;
 use crate::cgmath_ext::*;
 use crate::cluster_camera_resources::*;
 use crate::cluster_resources::*;
@@ -937,8 +935,8 @@ impl Context {
                         gl,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_hmd: cluster_c1.wld_to_hmd,
-                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_ccam: cluster_c1.wld_to_hmd,
+                            ccam_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -973,8 +971,8 @@ impl Context {
                             gl,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
-                                wld_to_hmd: cluster_c1.wld_to_hmd,
-                                hmd_to_wld: cluster_c1.hmd_to_wld,
+                                wld_to_ccam: cluster_c1.wld_to_hmd,
+                                ccam_to_wld: cluster_c1.hmd_to_wld,
                             },
                         ));
                     }
@@ -984,8 +982,6 @@ impl Context {
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                         let C1 {
                             ref camera,
-                            wld_to_hmd,
-                            hmd_to_wld,
                             ..
                         } = cluster_c1;
                         let C2 {
@@ -995,20 +991,6 @@ impl Context {
                             clp_to_cam,
                             ..
                         } = cluster_c2;
-
-                        let cls_frustum = {
-                            // NOTE: Reversed!
-                            let z0 = camera.properties.z1 as f64;
-                            let z1 = camera.properties.z0 as f64;
-                            Frustum {
-                                x0: tangents.l as f64,
-                                x1: tangents.r as f64,
-                                y0: tangents.b as f64,
-                                y1: tangents.t as f64,
-                                z0,
-                                z1,
-                            }
-                        };
 
                         let _ = camera_resources_pool.next_unused(
                             gl,
@@ -1021,10 +1003,19 @@ impl Context {
                                 cam_to_clp,
                                 clp_to_cam,
 
-                                hmd_to_clp: cam_to_clp * wld_to_cam * hmd_to_wld,
-                                clp_to_hmd: wld_to_hmd * cam_to_wld * clp_to_cam,
-
-                                cls_frustum,
+                                frustum: {
+                                    // NOTE: Reversed!
+                                    let z0 = camera.properties.z1 as f64;
+                                    let z1 = camera.properties.z0 as f64;
+                                    Frustum {
+                                        x0: tangents.l as f64,
+                                        x1: tangents.r as f64,
+                                        y0: tangents.b as f64,
+                                        y1: tangents.t as f64,
+                                        z0,
+                                        z1,
+                                    }
+                                },
                             },
                         );
                     }
@@ -1090,8 +1081,8 @@ impl Context {
                         gl,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_hmd: cluster_c1.wld_to_hmd,
-                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_ccam: cluster_c1.wld_to_hmd,
+                            ccam_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1124,8 +1115,8 @@ impl Context {
                         gl,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_hmd: cluster_c1.wld_to_hmd,
-                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_ccam: cluster_c1.wld_to_hmd,
+                            ccam_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1135,8 +1126,6 @@ impl Context {
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                     let C1 {
                         ref camera,
-                        wld_to_hmd,
-                        hmd_to_wld,
                         ..
                     } = cluster_c1;
                     let C2 {
@@ -1146,23 +1135,6 @@ impl Context {
                         clp_to_cam,
                         ..
                     } = cluster_c2;
-
-                    let cls_frustum = {
-                        // NOTE: Reversed!
-                        let z0 = camera.properties.z1 as f64;
-                        let z1 = camera.properties.z0 as f64;
-                        let dy = Rad::tan(Rad(Rad::from(cluster_c1.camera.transform.fovy).0 as f64) / 2.0);
-                        let dx = dy * dimensions.x as f64 / dimensions.y as f64;
-
-                        Frustum {
-                            x0: -dx,
-                            x1: dx,
-                            y0: -dy,
-                            y1: dy,
-                            z0,
-                            z1,
-                        }
-                    };
 
                     let _ = camera_resources_pool.next_unused(
                         gl,
@@ -1175,10 +1147,22 @@ impl Context {
                             cam_to_clp,
                             clp_to_cam,
 
-                            hmd_to_clp: cam_to_clp * wld_to_cam * hmd_to_wld,
-                            clp_to_hmd: wld_to_hmd * cam_to_wld * clp_to_cam,
+                            frustum: {
+                                // NOTE: Reversed!
+                                let z0 = camera.properties.z1 as f64;
+                                let z1 = camera.properties.z0 as f64;
+                                let dy = Rad::tan(Rad(Rad::from(cluster_c1.camera.transform.fovy).0 as f64) / 2.0);
+                                let dx = dy * dimensions.x as f64 / dimensions.y as f64;
 
-                            cls_frustum,
+                                Frustum {
+                                    x0: -dx,
+                                    x1: dx,
+                                    y0: -dy,
+                                    y1: dy,
+                                    z0,
+                                    z1,
+                                }
+                            },
                         },
                     );
                 }
@@ -1302,24 +1286,25 @@ impl Context {
                                 main_resources.dims.cast::<f32>().unwrap().into(),
                             );
 
-                            let clp_to_cls = (cluster_resources.computed.wld_to_cls
-                                * camera_parameters.cam_to_wld
-                                * camera_parameters.clp_to_cam)
+                            let clp_to_wld = (camera_parameters.cam_to_wld * camera_parameters.clp_to_cam)
                                 .cast::<f32>()
                                 .unwrap();
 
                             gl.uniform_matrix4f(
                                 cls_renderer::CLP_TO_WLD_LOC,
                                 gl::MajorAxis::Column,
-                                // FIXME: wld space
-                                camera_resources.parameters.clp_to_cam.cast().unwrap().as_ref(),
+                                clp_to_wld.as_ref(),
                             );
+
+                            let wld_to_cclp = (cluster_resources.parameters.wld_to_ccam
+                                * cluster_resources.computed.ccam_to_cclp)
+                                .cast::<f32>()
+                                .unwrap();
 
                             gl.uniform_matrix4f(
                                 cls_renderer::WLD_TO_CLS_LOC,
                                 gl::MajorAxis::Column,
-                                // FIXME: wld space
-                                cluster_resources.computed.cam_to_cls.cast().unwrap().as_ref(),
+                                wld_to_cclp.as_ref(),
                             );
 
                             gl.uniform_3ui(
@@ -1436,11 +1421,11 @@ impl Context {
                         .point_lights
                         .iter()
                         .map(|&light| {
-                            let pos_in_hmd = cluster_resources
+                            let pos_in_ccam = cluster_resources
                                 .parameters
-                                .wld_to_hmd
+                                .wld_to_ccam
                                 .transform_point(light.pos_in_wld.cast().unwrap());
-                            let [x, y, z]: [f32; 3] = pos_in_hmd.cast::<f32>().unwrap().into();
+                            let [x, y, z]: [f32; 3] = pos_in_ccam.cast::<f32>().unwrap().into();
                             [x, y, z, light.attenuation.clip_far]
                         })
                         .collect();
@@ -1487,14 +1472,14 @@ impl Context {
                             cls::count_lights::CLUSTER_DIMS_LOC,
                             cluster_resources.computed.dimensions.into(),
                         );
-                        gl.uniform_3f(
-                            cls::count_lights::SCALE_LOC,
-                            cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
-                        );
-                        gl.uniform_3f(
-                            cls::count_lights::TRANSLATION_LOC,
-                            cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
-                        );
+                        // gl.uniform_3f(
+                        //     cls::count_lights::SCALE_LOC,
+                        //     cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
+                        // );
+                        // gl.uniform_3f(
+                        //     cls::count_lights::TRANSLATION_LOC,
+                        //     cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
+                        // );
                         gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
                             gl::DISPATCH_INDIRECT_BUFFER,
@@ -1595,14 +1580,14 @@ impl Context {
                             cls::assign_lights::CLUSTER_DIMS_LOC,
                             cluster_resources.computed.dimensions.into(),
                         );
-                        gl.uniform_3f(
-                            cls::assign_lights::SCALE_LOC,
-                            cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
-                        );
-                        gl.uniform_3f(
-                            cls::assign_lights::TRANSLATION_LOC,
-                            cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
-                        );
+                        // gl.uniform_3f(
+                        //     cls::assign_lights::SCALE_LOC,
+                        //     cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
+                        // );
+                        // gl.uniform_3f(
+                        //     cls::assign_lights::TRANSLATION_LOC,
+                        //     cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
+                        // );
                         gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
                             gl::DISPATCH_INDIRECT_BUFFER,
@@ -1730,8 +1715,8 @@ impl Context {
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &FRUSTRUM_LINE_MESH_INDICES[..],
-                                obj_to_wld: &(cluster_resources.parameters.hmd_to_wld
-                                    * camera_resources.parameters.clp_to_hmd)
+                                obj_to_wld: &(camera_resources.parameters.cam_to_wld
+                                    * camera_resources.parameters.clp_to_cam)
                                     .cast()
                                     .unwrap(),
                             },
@@ -1741,14 +1726,10 @@ impl Context {
                     {
                         // Reborrow.
                         let main_params = &self.main_parameters_vec[main_parameters_index];
-
-                        let cls_to_clp =
-                            (main_params.cam_to_clp * main_params.wld_to_cam * cluster_resources.computed.cls_to_wld)
-                                .cast()
-                                .unwrap();
+                        let wld_to_clp = main_params.cam_to_clp * main_params.wld_to_cam;
                         self.render_debug_clusters(&cluster_renderer::Parameters {
                             cluster_resources_index,
-                            cls_to_clp,
+                            wld_to_clp,
                         });
                     }
                 }

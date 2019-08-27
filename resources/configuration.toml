@@ -12,8 +12,8 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-shape = "PreProjective"
-# shape = "PostProjective"
+# projection = "Orthogonal"
+projection = "Perspective"
 grouping = "Individual"
 # grouping = "Enclosed"
 cluster_side = 20.0

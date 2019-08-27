@@ -4,13 +4,14 @@ pub struct Renderer {
     pub program: rendering::Program,
 }
 
-pub const CLS_TO_CLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
-pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
-pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
+pub const CCLP_TO_CCAM_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
+pub const CCAM_TO_CLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
+pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
+pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(3) };
 
 pub struct Parameters {
     pub cluster_resources_index: ClusterResourcesIndex,
-    pub cls_to_clp: Matrix4<f32>,
+    pub wld_to_clp: Matrix4<f64>,
 }
 
 impl Context {
@@ -70,7 +71,12 @@ impl Context {
 
                 gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_command_buffer.name());
 
-                gl.uniform_matrix4f(CLS_TO_CLP_LOC, gl::MajorAxis::Column, params.cls_to_clp.as_ref());
+                let cclp_to_ccam = cluster_resources.computed.cclp_to_ccam.cast::<f32>().unwrap();
+                gl.uniform_matrix4f(CCLP_TO_CCAM_LOC, gl::MajorAxis::Column, cclp_to_ccam.as_ref());
+                let ccam_to_clp = (params.wld_to_clp * cluster_resources.parameters.ccam_to_wld)
+                    .cast::<f32>()
+                    .unwrap();
+                gl.uniform_matrix4f(CCAM_TO_CLP_LOC, gl::MajorAxis::Column, ccam_to_clp.as_ref());
                 gl.uniform_3ui(CLUSTER_DIMS_LOC, cluster_resources.computed.dimensions.into());
                 gl.uniform_1ui(PASS_LOC, 0);
 
