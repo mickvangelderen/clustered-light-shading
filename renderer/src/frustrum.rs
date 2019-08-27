@@ -231,47 +231,59 @@ impl<S: ToPrimitive> Frustrum<S> {
     }
 }
 
-pub type ClassicFrustum = ClassicFrustumF64;
-
-pub struct ClassicFrustumF64 {
-    pub l: f64,
-    pub r: f64,
-    pub b: f64,
-    pub t: f64,
-    pub n: f64,
-    pub f: f64,
+#[derive(Debug, Copy, Clone)]
+pub struct ClassicFrustum<T> {
+    pub l: T,
+    pub r: T,
+    pub b: T,
+    pub t: T,
+    pub n: T,
+    pub f: T,
 }
 
-pub type Frustum = FrustumF64;
-
-#[derive(Debug)]
-pub struct FrustumF64 {
+#[derive(Debug, Copy, Clone)]
+pub struct Frustum<T> {
     /// -l/n
-    pub x0: f64,
+    pub x0: T,
     /// r/n
-    pub x1: f64,
+    pub x1: T,
     /// -b/n
-    pub y0: f64,
+    pub y0: T,
     /// t/n
-    pub y1: f64,
+    pub y1: T,
     /// -f
-    pub z0: f64,
+    pub z0: T,
     /// -n
-    pub z1: f64,
+    pub z1: T,
 }
 
-struct Coefficients {
-    pub a_x: f64,
-    pub a_y: f64,
-    pub a_z: f64,
-    pub b_x: f64,
-    pub b_y: f64,
-    pub b_z: f64,
+struct Coefficients<T> {
+    pub a_x: T,
+    pub a_y: T,
+    pub a_z: T,
+    pub b_x: T,
+    pub b_y: T,
+    pub b_z: T,
 }
 
-impl Frustum {
+impl<T> Frustum<T>
+where
+    T: Float,
+{
     #[inline]
-    pub fn from_classic(classic: &ClassicFrustum) -> Self {
+    pub fn zero() -> Self {
+        Self {
+            x0: T::zero(),
+            x1: T::zero(),
+            y0: T::zero(),
+            y1: T::zero(),
+            z0: T::zero(),
+            z1: T::zero(),
+        }
+    }
+
+    #[inline]
+    pub fn from_classic(classic: &ClassicFrustum<T>) -> Self {
         Self {
             x0: classic.l / classic.n,
             x1: classic.r / classic.n,
@@ -282,9 +294,15 @@ impl Frustum {
         }
     }
 
+    #[inline]
+    pub fn from_range(range: &Range3<T>) -> Self {
+        let Range3 { x0, x1, y0, y1, z0, z1 } = *range;
+        Self { x0, x1, y0, y1, z0, z1 }
+    }
+
     /// Returns a matrix that takes [x_cam, y_cam, z_cam, 1] and turns it into [-z*x_cls, -z*y_cls, z_cls, -z].
     #[inline]
-    pub fn cluster_perspective(&self, range: &Range3) -> Matrix4<f64> {
+    pub fn cluster_perspective(&self, range: &Range3<T>) -> Matrix4<T> {
         let Coefficients {
             a_x,
             a_y,
@@ -294,16 +312,18 @@ impl Frustum {
             b_z,
         } = self.coefficients(range);
 
+        let o_o = T::zero();
+
         Matrix4::from_cols(
-            Vector4::new(a_x, 0.0, 0.0, 0.0),
-            Vector4::new(0.0, a_y, 0.0, 0.0),
-            Vector4::new(-b_x, -b_y, a_z, -1.0),
-            Vector4::new(0.0, 0.0, b_z, 0.0),
+            Vector4::new(a_x, o_o, o_o, o_o),
+            Vector4::new(o_o, a_y, o_o, o_o),
+            Vector4::new(-b_x, -b_y, a_z, -T::one()),
+            Vector4::new(o_o, o_o, b_z, o_o),
         )
     }
 
     #[inline]
-    pub fn cluster_orthogonal(&self, range: &Range3) -> Matrix4<f64> {
+    pub fn cluster_orthogonal(&self, range: &Range3<T>) -> Matrix4<T> {
         let Coefficients {
             a_x,
             a_y,
@@ -313,16 +333,18 @@ impl Frustum {
             b_z,
         } = self.coefficients(range);
 
+        let o_o = T::zero();
+
         Matrix4::from_cols(
-            Vector4::new(a_x, 0.0, 0.0, 0.0),
-            Vector4::new(0.0, a_y, 0.0, 0.0),
-            Vector4::new(0.0, 0.0, a_z, 0.0),
-            Vector4::new(b_x, b_y, b_z, 1.0),
+            Vector4::new(a_x, o_o, o_o, o_o),
+            Vector4::new(o_o, a_y, o_o, o_o),
+            Vector4::new(o_o, o_o, a_z, o_o),
+            Vector4::new(b_x, b_y, b_z, T::one()),
         )
     }
 
     #[inline]
-    fn coefficients(&self, range: &Range3) -> Coefficients {
+    fn coefficients(&self, range: &Range3<T>) -> Coefficients<T> {
         Coefficients {
             a_x: range.dx() / self.dx(),
             a_y: range.dy() / self.dy(),
@@ -334,73 +356,118 @@ impl Frustum {
     }
 
     #[inline]
-    fn dx(&self) -> f64 {
+    fn dx(&self) -> T {
         self.x1 - self.x0
     }
 
     #[inline]
-    fn dy(&self) -> f64 {
+    fn dy(&self) -> T {
         self.y1 - self.y0
     }
 
     #[inline]
-    fn dz(&self) -> f64 {
+    fn dz(&self) -> T {
         self.z1 - self.z0
     }
 }
 
-pub type Range3 = Range3F64;
-
-#[derive(Debug)]
-pub struct Range3F64 {
-    pub x0: f64,
-    pub x1: f64,
-    pub y0: f64,
-    pub y1: f64,
-    pub z0: f64,
-    pub z1: f64,
+#[derive(Debug, Copy, Clone)]
+pub struct Range3<T> {
+    pub x0: T,
+    pub x1: T,
+    pub y0: T,
+    pub y1: T,
+    pub z0: T,
+    pub z1: T,
 }
 
-impl Range3 {
+impl<T> Range3<T>
+where
+    T: Float,
+{
     #[inline]
-    pub fn from_vector(v: Vector3<f64>) -> Self {
+    pub fn from_vector(v: Vector3<T>) -> Self {
         Self {
-            x0: 0.0,
+            x0: T::zero(),
             x1: v.x,
-            y0: 0.0,
+            y0: T::zero(),
             y1: v.y,
-            z0: 0.0,
+            z0: T::zero(),
             z1: v.z,
         }
     }
 
     #[inline]
-    pub fn dx(&self) -> f64 {
+    pub fn from_point(p: Point3<T>) -> Self {
+        Self {
+            x0: p.x,
+            x1: p.x,
+            y0: p.y,
+            y1: p.y,
+            z0: p.z,
+            z1: p.z,
+        }
+    }
+
+    #[inline]
+    pub fn from_points<I>(points: I) -> Option<Self>
+    where
+        I: IntoIterator<Item = Point3<T>>,
+    {
+        let mut points = points.into_iter();
+        if let Some(first) = points.next() {
+            let mut range = Self::from_point(first);
+            for point in points {
+                range = range.include_point(point);
+            }
+            Some(range)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn include_point(self, p: Point3<T>) -> Self {
+        Range3 {
+            x0: self.x0.min(p.x),
+            x1: self.x1.max(p.x),
+            y0: self.y0.min(p.y),
+            y1: self.y1.max(p.y),
+            z0: self.z0.min(p.z),
+            z1: self.z1.max(p.z),
+        }
+    }
+
+    #[inline]
+    pub fn dx(&self) -> T {
         self.x1 - self.x0
     }
 
     #[inline]
-    pub fn dy(&self) -> f64 {
+    pub fn dy(&self) -> T {
         self.y1 - self.y0
     }
 
     #[inline]
-    pub fn dz(&self) -> f64 {
+    pub fn dz(&self) -> T {
         self.z1 - self.z0
     }
 
     #[inline]
-    pub fn min(&self) -> Point3<f64> {
+    pub fn min(&self) -> Point3<T> {
         Point3::new(self.x0, self.y0, self.z0)
     }
 
     #[inline]
-    pub fn max(&self) -> Point3<f64> {
+    pub fn max(&self) -> Point3<T> {
         Point3::new(self.x1, self.y1, self.z1)
     }
 
     #[inline]
-    pub fn delta(&self) -> Vector3<f64> {
-        self.max() - self.min()
+    pub fn delta(&self) -> Vector3<T> {
+        // NOTE: Would use `self.max() - self.min()` but cgmath uses BaseNum
+        // and it will affect everything depending on it so we just write
+        // the code ourselves.
+        Vector3::new(self.x1 - self.x0, self.y1 - self.y0, self.z1 - self.z0)
     }
 }
