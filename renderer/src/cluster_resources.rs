@@ -198,7 +198,7 @@ impl ClusterResources {
             cam_to_cls: self.camera_resources_pool.used_slice()[0]
                 .parameters
                 .cls_frustum
-                .cluster_perspective(&FrustumRange::from_dimensions(dimensions.cast().unwrap())),
+                .cluster_perspective(&Range3::from_vector(dimensions.cast().unwrap())),
         }
     }
 

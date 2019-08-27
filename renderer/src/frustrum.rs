@@ -231,6 +231,17 @@ impl<S: ToPrimitive> Frustrum<S> {
     }
 }
 
+pub type ClassicFrustum = ClassicFrustumF64;
+
+pub struct ClassicFrustumF64 {
+    pub l: f64,
+    pub r: f64,
+    pub b: f64,
+    pub t: f64,
+    pub n: f64,
+    pub f: f64,
+}
+
 pub type Frustum = FrustumF64;
 
 #[derive(Debug)]
@@ -249,10 +260,99 @@ pub struct FrustumF64 {
     pub z1: f64,
 }
 
-pub type FrustumRange = FrustumRangeF64;
+struct Coefficients {
+    pub a_x: f64,
+    pub a_y: f64,
+    pub a_z: f64,
+    pub b_x: f64,
+    pub b_y: f64,
+    pub b_z: f64,
+}
+
+impl Frustum {
+    #[inline]
+    pub fn from_classic(classic: &ClassicFrustum) -> Self {
+        Self {
+            x0: classic.l / classic.n,
+            x1: classic.r / classic.n,
+            y0: classic.b / classic.n,
+            y1: classic.t / classic.n,
+            z0: -classic.f,
+            z1: -classic.n,
+        }
+    }
+
+    /// Returns a matrix that takes [x_cam, y_cam, z_cam, 1] and turns it into [-z*x_cls, -z*y_cls, z_cls, -z].
+    #[inline]
+    pub fn cluster_perspective(&self, range: &Range3) -> Matrix4<f64> {
+        let Coefficients {
+            a_x,
+            a_y,
+            a_z,
+            b_x,
+            b_y,
+            b_z,
+        } = self.coefficients(range);
+
+        Matrix4::from_cols(
+            Vector4::new(a_x, 0.0, 0.0, 0.0),
+            Vector4::new(0.0, a_y, 0.0, 0.0),
+            Vector4::new(-b_x, -b_y, a_z, -1.0),
+            Vector4::new(0.0, 0.0, b_z, 0.0),
+        )
+    }
+
+    #[inline]
+    pub fn cluster_orthogonal(&self, range: &Range3) -> Matrix4<f64> {
+        let Coefficients {
+            a_x,
+            a_y,
+            a_z,
+            b_x,
+            b_y,
+            b_z,
+        } = self.coefficients(range);
+
+        Matrix4::from_cols(
+            Vector4::new(a_x, 0.0, 0.0, 0.0),
+            Vector4::new(0.0, a_y, 0.0, 0.0),
+            Vector4::new(0.0, 0.0, a_z, 0.0),
+            Vector4::new(b_x, b_y, b_z, 1.0),
+        )
+    }
+
+    #[inline]
+    fn coefficients(&self, range: &Range3) -> Coefficients {
+        Coefficients {
+            a_x: range.dx() / self.dx(),
+            a_y: range.dy() / self.dy(),
+            a_z: range.dz() / self.dz(),
+            b_x: (range.x0 * self.x1 - range.x1 * self.x0) / self.dx(),
+            b_y: (range.y0 * self.y1 - range.y1 * self.y0) / self.dy(),
+            b_z: (range.z0 * self.z1 - range.z1 * self.z0) / self.dz(),
+        }
+    }
+
+    #[inline]
+    fn dx(&self) -> f64 {
+        self.x1 - self.x0
+    }
+
+    #[inline]
+    fn dy(&self) -> f64 {
+        self.y1 - self.y0
+    }
+
+    #[inline]
+    fn dz(&self) -> f64 {
+        self.z1 - self.z0
+    }
+}
+
+pub type Range3 = Range3F64;
 
 #[derive(Debug)]
-pub struct FrustumRangeF64 {
+pub struct Range3F64 {
     pub x0: f64,
     pub x1: f64,
     pub y0: f64,
@@ -261,15 +361,16 @@ pub struct FrustumRangeF64 {
     pub z1: f64,
 }
 
-impl FrustumRange {
-    pub fn from_dimensions(dims: Vector3<f64>) -> Self {
+impl Range3 {
+    #[inline]
+    pub fn from_vector(v: Vector3<f64>) -> Self {
         Self {
             x0: 0.0,
-            x1: dims.x,
+            x1: v.x,
             y0: 0.0,
-            y1: dims.y,
+            y1: v.y,
             z0: 0.0,
-            z1: dims.z,
+            z1: v.z,
         }
     }
 
@@ -287,40 +388,19 @@ impl FrustumRange {
     pub fn dz(&self) -> f64 {
         self.z1 - self.z0
     }
-}
 
-impl Frustum {
-    /// Returns a matrix that takes [x_cam, y_cam, z_cam, 1] and turns it into [-z*x_cls, -z*y_cls, z_cls, -z].
-    pub fn cluster_perspective(&self, range: &FrustumRange) -> Matrix4<f64> {
-        let a_x = range.dx() / self.dx();
-        let b_x = (range.x0 * self.x1 - range.x1 * self.x0) / self.dx();
-
-        let a_y = range.dy() / self.dy();
-        let b_y = (range.y0 * self.y1 - range.y1 * self.y0) / self.dy();
-
-        let a_z = range.dz() / self.dz();
-        let b_z = (range.z0 * self.z1 - range.z1 * self.z0) / self.dz();
-
-        Matrix4::from_cols(
-            Vector4::new(a_x, 0.0, 0.0, 0.0),
-            Vector4::new(0.0, a_y, 0.0, 0.0),
-            Vector4::new(-b_x, -b_y, a_z, -1.0),
-            Vector4::new(0.0, 0.0, b_z, 0.0),
-        )
+    #[inline]
+    pub fn min(&self) -> Point3<f64> {
+        Point3::new(self.x0, self.y0, self.z0)
     }
 
     #[inline]
-    pub fn dx(&self) -> f64 {
-        self.x1 - self.x0
+    pub fn max(&self) -> Point3<f64> {
+        Point3::new(self.x1, self.y1, self.z1)
     }
 
     #[inline]
-    pub fn dy(&self) -> f64 {
-        self.y1 - self.y0
-    }
-
-    #[inline]
-    pub fn dz(&self) -> f64 {
-        self.z1 - self.z0
+    pub fn delta(&self) -> Vector3<f64> {
+        self.max() - self.min()
     }
 }
