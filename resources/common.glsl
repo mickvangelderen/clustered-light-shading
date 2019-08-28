@@ -20,6 +20,10 @@ uint uint_div_ceil(uint n, uint d) {
   return ((n % d) == 0) ? r : r + 1;
 }
 
-float lerp(float x, float x0, float x1, float y0, float y1) {
+float lerp_f32_f32(float x, float x0, float x1, float y0, float y1) {
   return (y1*(x - x0) + y0*(x1 - x))/(x1 - x0);
+}
+
+float lerp_u32_f32(uint x, uint x0, uint x1, float y0, float y1) {
+  return (y1*float(x - x0) + y0*float(x1 - x))/float(x1 - x0);
 }
