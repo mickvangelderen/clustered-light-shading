@@ -471,3 +471,65 @@ where
         Vector3::new(self.x1 - self.x0, self.y1 - self.y0, self.z1 - self.z0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_invert_cluster_projection() {
+        let dimensions = Vector3::new(5, 4, 3);
+
+        let frustum = {
+            let w_over_h = 4.0 / 3.0;
+            let l = -1.0;
+            let b = l / w_over_h;
+
+            Frustum {
+                x0: l,
+                x1: -l,
+                y0: b,
+                y1: -b,
+                z0: -20.0,
+                z1: -1.0,
+            }
+        };
+
+        let cam_to_clp = frustum.cluster_perspective(&Range3::from_vector(dimensions.cast().unwrap()));
+
+        println!("{:#?}", &cam_to_clp);
+
+        let pairs = [
+            (Point3::new(0.0, 0.0, -1.0), Point3::new(2.5, 2.0, 3.0)),
+            (Point3::new(0.0, 0.0, -10.5), Point3::new(2.5, 2.0, 1.5)),
+            (Point3::new(0.0, 0.0, -20.0), Point3::new(2.5, 2.0, 0.0)),
+        ];
+
+        for &(pos_in_cam, expected_pos_in_cls) in &pairs {
+            let p = cam_to_clp * pos_in_cam.to_homogeneous();
+            let pos_in_cls = Point3::new(p.x / p.w, p.y / p.w, p.z);
+
+            assert_relative_eq!(expected_pos_in_cls, pos_in_cls);
+        }
+
+        let clp_to_cam = cam_to_clp.invert().unwrap();
+
+        println!("{:#?}", &clp_to_cam);
+
+        for &(expected_pos_in_cam, pos_in_cls) in &pairs {
+            let a_z = cam_to_clp[2][2];
+            let b_z = cam_to_clp[3][2];
+            let neg_z_cam = (b_z - pos_in_cls.z) / a_z;
+            let p = clp_to_cam
+                * Vector4::new(
+                    neg_z_cam * pos_in_cls.x,
+                    neg_z_cam * pos_in_cls.y,
+                    pos_in_cls.z,
+                    neg_z_cam,
+                );
+            let pos_in_cam = Point3::new(p.x / p.w, p.y / p.w, p.z);
+
+            assert_relative_eq!(expected_pos_in_cam, pos_in_cam, epsilon = 20.0 * std::f64::EPSILON);
+        }
+    }
+}
