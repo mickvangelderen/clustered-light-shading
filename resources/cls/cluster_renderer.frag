@@ -1,4 +1,4 @@
-#include "common.glsl"
+#include "../common.glsl"
 #include "cluster_renderer.glsl"
 
 in vec2 fs_pos_in_tex;

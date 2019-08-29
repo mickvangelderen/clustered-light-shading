@@ -106,7 +106,7 @@ impl Context {
 impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "cluster_renderer.vert", "cluster_renderer.frag"),
+            program: vs_fs_program(context, "cls/cluster_renderer.vert", "cls/cluster_renderer.frag"),
         }
     }
 }
