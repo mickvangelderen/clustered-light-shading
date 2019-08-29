@@ -62,14 +62,88 @@ void scan() {
 }
 
 void main() {
+  uvec3 dimensions = cluster_space.dimensions;
   uint cluster_index = active_cluster_indices[wid];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_dims);
-  vec3 p0 = vec3(idx_in_cls) * scale_from_cls_to_hmd + trans_from_cls_to_hmd;
-  vec3 p1 = vec3(idx_in_cls + uvec3(1)) * scale_from_cls_to_hmd +
-            trans_from_cls_to_hmd;
 
   // NOTE: Offset is already corrected to have first value 0.
   uint acc = active_cluster_light_offsets[wid];
+
+#if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
+  // TODO: VERIFY THAT THIS WORKS :')
+  Frustum frustum = cluster_space.frustum;
+  // Tangents.
+  float x0 = lerp_u32_f32(idx_in_cls.x, 0, dimensions.x, frustum.x0, frustum.x1);
+  float x1 = lerp_u32_f32(idx_in_cls.x + 1, 0, dimensions.x, frustum.x1, frustum.x1);
+  float y0 = lerp_u32_f32(idx_in_cls.y, 0, dimensions.y, frustum.y0, frustum.y1);
+  float y1 = lerp_u32_f32(idx_in_cls.y + 1, 0, dimensions.y, frustum.y1, frustum.y1);
+
+  // Depths. z0 < z1 < 0
+  float z0 = lerp_u32_f32(idx_in_cls.z, 0, dimensions.z, frustum.z0, frustum.z1);
+  float z1 = lerp_u32_f32(idx_in_cls.z + 1, 0, dimensions.z, frustum.z1, frustum.z1);
+
+  // Tangent plane normals.
+  vec2 nx = normalize(vec2(-1.0, x0));
+  vec2 px = normalize(vec2(1.0, x1));
+  vec2 ny = normalize(vec2(-1.0, y0));
+  vec2 py = normalize(vec2(1.0, y1));
+
+  for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
+    uint light_index = light_base + tid;
+    bool within_buffer_bounds = light_index < light_count;
+
+    bool did_intersect = false;
+    if (within_buffer_bounds) {
+      // NOTE: We want did_intersect to imply within_buffer_bounds.
+      did_intersect = true;
+      vec4 light = light_xyzr[light_index];
+      if (dot(nx, light.xz) > light.w) {
+        did_intersect = false;
+      }
+      if (dot(px, light.xz) > light.w) {
+        did_intersect = false;
+      }
+      if (dot(ny, light.yz) > light.w) {
+        did_intersect = false;
+      }
+      if (dot(py, light.yz) > light.w) {
+        did_intersect = false;
+      }
+      if ((z0 - light.z) > light.w) {
+        did_intersect = false;
+      }
+      if ((light.z - z1) > light.w) {
+        did_intersect = false;
+      }
+    }
+
+    // NOTE: I could do its only if we're within buffer bounds but I'd rather
+    // ensure that all values are written to. This would only save a few writes
+    // on the last work group.
+    values[tid] = did_intersect ? 1 : 0;
+
+    memoryBarrierShared();
+    barrier();
+    scan();
+
+    // NOTE: did_intersect implies within_buffer_bounds!
+    if (did_intersect) {
+      uint light_index_index = acc + (tid > 0 ? values[tid - 1] : 0);
+      if (light_index_index < CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES) {
+        light_indices[light_index_index] = light_index;
+      }
+    }
+
+    // NOTE: Ensure the total number of intersections in this iteration is read
+    // before the next iteration starts writing to shared memory.
+    acc += values[LOCAL_X - 1];
+    memoryBarrierShared();
+    barrier();
+  }
+#elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
+  vec3 p0 = cluster_cls_to_cam(vec3(idx_in_cls));
+  vec3 p1 = cluster_cls_to_cam(vec3(idx_in_cls + uvec3(1)));
+
   for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;
     bool within_buffer_bounds = light_index < light_count;
@@ -118,4 +192,7 @@ void main() {
     memoryBarrierShared();
     barrier();
   }
+#else
+  #error Unknown CLUSTERING_PROJECTION.
+#endif
 }
