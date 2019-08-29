@@ -78,7 +78,7 @@ impl Renderer {
 
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "text_renderer.vert", "text_renderer.frag"),
+            program: vs_fs_program(context, "text_renderer.vert", "text_renderer.frag", String::new()),
             dimensions_loc: gl::OptionUniformLocation::NONE,
             text_sampler_loc: gl::OptionUniformLocation::NONE,
             text_dimensions_loc: gl::OptionUniformLocation::NONE,

@@ -4,11 +4,22 @@ pub struct Renderer {
     pub program: rendering::Program,
 }
 
-pub const CCAM_TO_CCLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
-pub const CCLP_TO_CCAM_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
-pub const CCAM_TO_CLP_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
-pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(3) };
-pub const PASS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(4) };
+glsl_defines! {
+    fixed_header {
+        bindings: {
+            CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING = 0;
+            ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
+            ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 2;
+            ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 3;
+            LIGHT_INDICES_BUFFER_BINDING = 4;
+            CLUSTER_SPACE_BUFFER_BINDING = 5;
+        },
+        uniforms: {
+            WLD_TO_CLP_LOC = 0;
+            PASS_LOC = 1;
+        },
+    }
+}
 
 pub struct Parameters {
     pub cluster_resources_index: ClusterResourcesIndex,
@@ -36,51 +47,44 @@ impl Context {
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
+                    CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
                     cluster_resources.cluster_fragment_counts_buffer.name(),
                 );
 
-                // gl.bind_buffer_base(
-                //     gl::SHADER_STORAGE_BUFFER,
-                //     cls_renderer::CLUSTER_METAS_BINDING,
-                //     cluster_resources.cluster_metas_buffer.name(),
-                // );
-
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
+                    ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
                     cluster_resources.active_cluster_indices_buffer.name(),
                 );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                    ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING,
                     cluster_resources.active_cluster_light_counts_buffer.name(),
                 );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                    ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING,
                     cluster_resources.active_cluster_light_offsets_buffer.name(),
                 );
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::LIGHT_INDICES_BINDING,
+                    LIGHT_INDICES_BUFFER_BINDING,
                     cluster_resources.light_indices_buffer.name(),
                 );
 
-                gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_command_buffer.name());
+                gl.bind_buffer_base(
+                    gl::UNIFORM_BUFFER,
+                    CLUSTER_SPACE_BUFFER_BINDING,
+                    cluster_resources.cluster_space_buffer.name(),
+                );
 
-                let ccam_to_cclp = cluster_resources.computed.ccam_to_cclp.cast::<f32>().unwrap();
-                gl.uniform_matrix4f(CCAM_TO_CCLP_LOC, gl::MajorAxis::Column, ccam_to_cclp.as_ref());
-                let cclp_to_ccam = cluster_resources.computed.cclp_to_ccam.cast::<f32>().unwrap();
-                gl.uniform_matrix4f(CCLP_TO_CCAM_LOC, gl::MajorAxis::Column, cclp_to_ccam.as_ref());
-                let ccam_to_clp = (params.wld_to_clp * cluster_resources.parameters.ccam_to_wld)
-                    .cast::<f32>()
-                    .unwrap();
-                gl.uniform_matrix4f(CCAM_TO_CLP_LOC, gl::MajorAxis::Column, ccam_to_clp.as_ref());
-                gl.uniform_3ui(CLUSTER_DIMS_LOC, cluster_resources.computed.dimensions.into());
+                gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_commands_buffer.name());
+
+                let wld_to_clp = params.wld_to_clp.cast::<f32>().unwrap();
+                gl.uniform_matrix4f(WLD_TO_CLP_LOC, gl::MajorAxis::Column, wld_to_clp.as_ref());
                 gl.uniform_1ui(PASS_LOC, 0);
 
                 gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
@@ -106,7 +110,7 @@ impl Context {
 impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "cls/cluster_renderer.vert", "cls/cluster_renderer.frag"),
+            program: vs_fs_program(context, "cls/cluster_renderer.vert", "cls/cluster_renderer.frag", fixed_header()),
         }
     }
 }

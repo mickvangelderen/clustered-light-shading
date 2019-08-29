@@ -1,11 +1,21 @@
+#include "native/PREFIX_SUM"
+#include "native/CLUSTERED_LIGHT_SHADING"
+
 #include "../common.glsl"
-#include "cls.glsl"
+#include "cluster_space_buffer.glsl"
+// in
+#include "active_cluster_indices_buffer.glsl"
+#include "light_xyzr_buffer.glsl"
+// use
+#include "offsets_buffer.glsl"
+// out
+#include "active_cluster_light_counts_buffer.glsl"
 
 #define tid gl_LocalInvocationID.x
 #define wid gl_WorkGroupID.x
 #define LOCAL_X 128
 
-layout(location = 3) uniform uint light_count;
+layout(location = LIGHT_COUNT_LOC) uniform uint light_count;
 
 shared uint values[LOCAL_X];
 

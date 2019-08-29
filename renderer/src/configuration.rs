@@ -40,7 +40,7 @@ pub struct VirtualStereo {
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ClusteringProjection {
-    Orthogonal,
+    Orthographic,
     Perspective,
 }
 

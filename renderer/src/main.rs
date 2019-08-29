@@ -201,8 +201,6 @@ pub struct Context {
     pub cluster_renderer: cluster_renderer::Renderer,
     pub text_renderer: text_renderer::Renderer,
     pub cls_renderer: cls_renderer::Renderer,
-    pub count_lights_program: cls::count_lights::CountLightsProgram,
-    pub assign_lights_program: cls::assign_lights::AssignLightsProgram,
 
     // More opengl resources...
     pub resources: Resources,
@@ -355,8 +353,6 @@ impl Context {
         let cluster_renderer = cluster_renderer::Renderer::new(&mut rendering_context);
         let text_renderer = text_renderer::Renderer::new(&mut rendering_context);
         let cls_renderer = cls_renderer::Renderer::new(&mut rendering_context);
-        let count_lights_program = cls::count_lights::CountLightsProgram::new(&mut rendering_context);
-        let assign_lights_program = cls::assign_lights::AssignLightsProgram::new(&mut rendering_context);
 
         drop(rendering_context);
 
@@ -429,8 +425,6 @@ impl Context {
             cluster_renderer,
             text_renderer,
             cls_renderer,
-            count_lights_program,
-            assign_lights_program,
 
             // More opengl resources...
             resources,
@@ -1277,7 +1271,7 @@ impl Context {
 
                             gl.bind_buffer_base(
                                 gl::SHADER_STORAGE_BUFFER,
-                                cls_renderer::CLUSTER_FRAGMENT_COUNTS_BINDING,
+                                cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
                                 cluster_resources.cluster_fragment_counts_buffer.name(),
                             );
 
@@ -1331,7 +1325,11 @@ impl Context {
                     buffer.invalidate(gl);
                     buffer.ensure_capacity(gl, byte_count);
                     buffer.clear_0u32(gl, byte_count);
-                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::OFFSETS_BUFFER_BINDING,
+                        buffer.name(),
+                    );
                 }
 
                 unsafe {
@@ -1341,7 +1339,7 @@ impl Context {
                     buffer.clear_0u32(gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::ACTIVE_CLUSTER_INDICES_BINDING,
+                        cls_renderer::ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
                         buffer.name(),
                     );
                 }
@@ -1349,15 +1347,15 @@ impl Context {
                 unsafe {
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::DRAW_COMMAND_BINDING,
-                        cluster_resources.draw_command_buffer.name(),
+                        cls_renderer::DRAW_COMMANDS_BUFFER_BINDING,
+                        cluster_resources.draw_commands_buffer.name(),
                     );
                 }
 
                 unsafe {
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::COMPUTE_COMMAND_BINDING,
+                        cls_renderer::COMPUTE_COMMANDS_BUFFER_BINDING,
                         cluster_resources.compute_commands_buffer.name(),
                     );
                 }
@@ -1425,7 +1423,7 @@ impl Context {
                     buffer.write(gl, bytes);
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::LIGHT_XYZR_BINDING,
+                        cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
                         buffer.name(),
                     );
                 }
@@ -1445,17 +1443,17 @@ impl Context {
                     buffer.clear_0u32(gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                        cls_renderer::ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING,
                         buffer.name(),
                     );
                 }
 
                 unsafe {
-                    let program = &mut self.count_lights_program.program;
+                    let program = &mut self.cls_renderer.count_lights_program;
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
+                        gl.uniform_1ui(cls_renderer::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
                             gl::DISPATCH_INDIRECT_BUFFER,
                             cluster_resources.compute_commands_buffer.name(),
@@ -1480,7 +1478,11 @@ impl Context {
                     buffer.invalidate(gl);
                     buffer.ensure_capacity(gl, byte_count);
                     buffer.clear_0u32(gl, byte_count);
-                    gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::OFFSET_BINDING, buffer.name());
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::OFFSETS_BUFFER_BINDING,
+                        buffer.name(),
+                    );
                 }
 
                 unsafe {
@@ -1490,7 +1492,7 @@ impl Context {
                     buffer.clear_0u32(gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                        cls_renderer::ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING,
                         buffer.name(),
                     );
                     gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
@@ -1541,17 +1543,17 @@ impl Context {
                     buffer.clear_0u32(gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::LIGHT_INDICES_BINDING,
+                        cls_renderer::LIGHT_INDICES_BUFFER_BINDING,
                         buffer.name(),
                     );
                 }
 
                 unsafe {
-                    let program = &mut self.assign_lights_program.program;
+                    let program = &mut self.cls_renderer.count_lights_program;
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
+                        gl.uniform_1ui(cls_renderer::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
                             gl::DISPATCH_INDIRECT_BUFFER,
                             cluster_resources.compute_commands_buffer.name(),

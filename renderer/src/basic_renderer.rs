@@ -5,10 +5,6 @@ pub struct Renderer {
     //
     pub obj_to_wld_loc: gl::OptionUniformLocation,
 
-    pub wld_to_ccam_loc: gl::OptionUniformLocation,
-    pub ccam_to_cclp_loc: gl::OptionUniformLocation,
-    pub cluster_dims_loc: gl::OptionUniformLocation,
-
     pub diffuse_sampler_loc: gl::OptionUniformLocation,
     pub normal_sampler_loc: gl::OptionUniformLocation,
     pub specular_sampler_loc: gl::OptionUniformLocation,
@@ -25,10 +21,17 @@ pub struct Parameters {
     pub cluster_resources_index: Option<ClusterResourcesIndex>,
 }
 
-pub const MAYBE_ACTIVE_CLUSTER_INDICES_BINDING: u32 = 10;
-pub const ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING: u32 = 11;
-pub const ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING: u32 = 12;
-pub const LIGHT_INDICES_BUFFER: u32 = 13;
+glsl_defines!(fixed_header {
+    bindings: {
+        MAYBE_ACTIVE_CLUSTER_INDICES_BINDING = 10;
+        ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING = 11;
+        ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING = 12;
+        LIGHT_INDICES_BUFFER = 13;
+        CLUSTER_SPACE_BUFFER_BINDING = 14;
+    },
+    uniforms: {
+    },
+});
 
 impl Context {
     pub fn render_main(&mut self, params: &Parameters) {
@@ -49,26 +52,6 @@ impl Context {
                         RenderTechnique::Clustered,
                         self.shader_compiler.variables.render_technique
                     );
-
-                    if let Some(loc) = basic_renderer.wld_to_ccam_loc.into() {
-                        gl.uniform_matrix4f(
-                            loc,
-                            gl::MajorAxis::Column,
-                            cluster_resources.parameters.wld_to_ccam.cast().unwrap().as_ref(),
-                        );
-                    }
-
-                    if let Some(loc) = basic_renderer.ccam_to_cclp_loc.into() {
-                        gl.uniform_matrix4f(
-                            loc,
-                            gl::MajorAxis::Column,
-                            cluster_resources.computed.ccam_to_cclp.cast().unwrap().as_ref(),
-                        );
-                    }
-
-                    if let Some(loc) = basic_renderer.cluster_dims_loc.into() {
-                        gl.uniform_3ui(loc, cluster_resources.computed.dimensions.cast().unwrap().into());
-                    }
 
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
@@ -92,6 +75,12 @@ impl Context {
                         gl::SHADER_STORAGE_BUFFER,
                         LIGHT_INDICES_BUFFER,
                         cluster_resources.light_indices_buffer.name(),
+                    );
+
+                    gl.bind_buffer_base(
+                        gl::UNIFORM_BUFFER,
+                        CLUSTER_SPACE_BUFFER_BINDING,
+                        cluster_resources.cluster_space_buffer.name(),
                     );
                 }
 
@@ -180,10 +169,6 @@ impl Renderer {
                 unsafe {
                     self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
 
-                    self.wld_to_ccam_loc = get_uniform_location!(gl, name, "wld_to_ccam");
-                    self.ccam_to_cclp_loc = get_uniform_location!(gl, name, "ccam_to_cclp");
-                    self.cluster_dims_loc = get_uniform_location!(gl, name, "cluster_dims");
-
                     self.diffuse_sampler_loc = get_uniform_location!(gl, name, "diffuse_sampler");
                     self.normal_sampler_loc = get_uniform_location!(gl, name, "normal_sampler");
                     self.specular_sampler_loc = get_uniform_location!(gl, name, "specular_sampler");
@@ -200,14 +185,9 @@ impl Renderer {
 
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "basic_renderer.vert", "basic_renderer.frag"),
+            program: vs_fs_program(context, "basic_renderer.vert", "basic_renderer.frag", fixed_header()),
 
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
-
-            // Clustered shading.
-            wld_to_ccam_loc: gl::OptionUniformLocation::NONE,
-            ccam_to_cclp_loc: gl::OptionUniformLocation::NONE,
-            cluster_dims_loc: gl::OptionUniformLocation::NONE,
 
             diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
             normal_sampler_loc: gl::OptionUniformLocation::NONE,

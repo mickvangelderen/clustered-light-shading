@@ -1,11 +1,13 @@
+#include "native/PREFIX_SUM"
+#include "native/CLUSTERED_LIGHT_SHADING"
+
 #include "../common.glsl"
-#include "cls.glsl"
+#include "cluster_space_buffer.glsl"
+#include "cluster_fragment_counts_buffer.glsl"
 
-layout(binding = 0) uniform sampler2D depth_sampler;
-layout(location = 1) uniform vec2 fb_dims;
-layout(location = 2) uniform mat4 clp_to_wld;
-
-layout(binding = 0) buffer OutputBuffer { uint fragments_per_cluster[]; };
+layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2D depth_sampler;
+layout(location = FB_DIMS_LOC) uniform vec2 fb_dims;
+layout(location = CLP_TO_WLD_LOC) uniform mat4 clp_to_wld;
 
 layout(local_size_x = 16, local_size_y = 16) in;
 void main() {
@@ -33,6 +35,6 @@ void main() {
   uvec3 idx_in_cls = uvec3(pos_in_cls);
   if (all(lessThan(idx_in_cls, cluster_space.dimensions))) {
     uint cluster_index = index_3_to_1(idx_in_cls, cluster_space.dimensions);
-    atomicAdd(fragments_per_cluster[cluster_index], 1);
+    atomicAdd(cluster_fragment_counts[cluster_index], 1);
   }
 }

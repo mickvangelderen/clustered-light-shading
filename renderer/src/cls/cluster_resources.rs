@@ -41,8 +41,6 @@ pub struct ClusterParameters {
 pub struct ClusterComputed {
     pub dimensions: Vector3<u32>,
     pub frustum: Frustum<f64>, // useful for finding perspective transform frustum planes for intersection tests in shaders.
-    pub ccam_to_cclp: Matrix4<f64>,
-    pub cclp_to_ccam: Matrix4<f64>,
 }
 
 impl std::default::Default for ClusterComputed {
@@ -50,8 +48,6 @@ impl std::default::Default for ClusterComputed {
         Self {
             dimensions: Vector3::zero(),
             frustum: Frustum::<f64>::zero(),
-            ccam_to_cclp: Matrix4::identity(),
-            cclp_to_ccam: Matrix4::identity(),
         }
     }
 }
@@ -71,7 +67,7 @@ pub struct ClusterResources {
     pub active_cluster_light_offsets_buffer: DynamicBuffer,
     pub light_xyzr_buffer: DynamicBuffer,
     pub offset_buffer: DynamicBuffer,
-    pub draw_command_buffer: DynamicBuffer,
+    pub draw_commands_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
     pub profilers: ClusterStages<Profiler>,
@@ -130,7 +126,7 @@ impl ClusterResources {
                 gl.buffer_label(&buffer, "offsets");
                 buffer
             },
-            draw_command_buffer: unsafe {
+            draw_commands_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "draw_comands");
                 let data = DrawCommand {
@@ -186,6 +182,9 @@ impl ClusterResources {
         let parameters = &self.parameters;
         let cfg = &parameters.configuration;
 
+        // TODO: Refactor, this is for multiple orthographic cameras but turns
+        // out to work for a single perspective camera.
+
         // Compute bounding box of all camera frustum corners.
         let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
         let range = Range3::<f64>::from_points({
@@ -214,27 +213,19 @@ impl ClusterResources {
             );
         }
 
-        let (frustum, ccam_to_cclp) = match cfg.projection {
-            configuration::ClusteringProjection::Orthogonal => {
-                let frustum = Frustum::<f64>::from_range(&range);
-                let ccam_to_cclp = frustum.cluster_orthogonal(&Range3::from_vector(dimensions));
-                (frustum, ccam_to_cclp)
+        let frustum = match cfg.projection {
+            configuration::ClusteringProjection::Orthographic => {
+                Frustum::<f64>::from_range(&range)
             }
             configuration::ClusteringProjection::Perspective => {
                 let cameras = self.camera_resources_pool.used_slice();
                 assert_eq!(1, cameras.len());
-                let frustum = cameras[0].parameters.frustum;
-                let ccam_to_cclp = frustum.cluster_perspective(&Range3::from_vector(dimensions));
-                (frustum, ccam_to_cclp)
+                cameras[0].parameters.frustum
             }
         };
 
-        let cclp_to_ccam = ccam_to_cclp.invert().unwrap();
-
         self.computed = ClusterComputed {
             dimensions: dimensions.cast().unwrap(),
-            ccam_to_cclp,
-            cclp_to_ccam,
             frustum,
         };
     }

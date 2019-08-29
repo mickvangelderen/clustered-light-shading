@@ -1,9 +1,15 @@
 #include "native/PREFIX_SUM"
+#include "native/CLUSTERED_LIGHT_SHADING"
 
 #include "../common.glsl"
-#include "../compute_indirect.glsl"
-#include "../draw_indirect.glsl"
-#include "cls.glsl"
+#include "cluster_space_buffer.glsl"
+// in
+#include "active_cluster_light_counts_buffer.glsl"
+// use
+#include "offsets_buffer.glsl"
+// out
+#include "active_cluster_light_offsets_buffer.glsl"
+#include "compute_commands_buffer.glsl"
 
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS

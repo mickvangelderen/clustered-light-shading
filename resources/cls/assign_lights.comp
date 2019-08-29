@@ -1,14 +1,23 @@
+#include "native/PREFIX_SUM"
+#include "native/CLUSTERED_LIGHT_SHADING"
+
 #include "../common.glsl"
-#include "cls.glsl"
+#include "cluster_space_buffer.glsl"
+// in
+#include "active_cluster_indices_buffer.glsl"
+#include "active_cluster_light_counts_buffer.glsl"
+#include "active_cluster_light_offsets_buffer.glsl"
+#include "light_xyzr_buffer.glsl"
+// use
+#include "offsets_buffer.glsl"
+// out
+#include "light_indices_buffer.glsl"
 
 #define tid gl_LocalInvocationID.x
 #define wid gl_WorkGroupID.x
 #define LOCAL_X 128
 
-layout(location = 0) uniform uvec3 cluster_dims;
-layout(location = 1) uniform vec3 scale_from_cls_to_hmd;
-layout(location = 2) uniform vec3 trans_from_cls_to_hmd;
-layout(location = 3) uniform uint light_count;
+layout(location = LIGHT_COUNT_LOC) uniform uint light_count;
 
 shared uint values[LOCAL_X];
 
@@ -64,7 +73,7 @@ void scan() {
 void main() {
   uvec3 dimensions = cluster_space.dimensions;
   uint cluster_index = active_cluster_indices[wid];
-  uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_dims);
+  uvec3 idx_in_cls = index_1_to_3(cluster_index, dimensions);
 
   // NOTE: Offset is already corrected to have first value 0.
   uint acc = active_cluster_light_offsets[wid];

@@ -323,7 +323,7 @@ where
     }
 
     #[inline]
-    pub fn cluster_orthogonal(&self, range: &Range3<T>) -> Matrix4<T> {
+    pub fn cluster_orthographic(&self, range: &Range3<T>) -> Matrix4<T> {
         let Coefficients {
             a_x,
             a_y,

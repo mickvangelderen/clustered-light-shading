@@ -89,7 +89,14 @@ impl SourceReader {
     pub fn read(&self, source_index: SourceIndex, vars: &Variables, parser: &Parser, tokens: &mut Tokens) {
         match *self {
             SourceReader::File(ref path) => {
-                let source = std::fs::read_to_string(path).unwrap();
+                let source = match std::fs::read_to_string(path) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        error!("Failed to read {:?}: {}", path, error);
+                        String::new()
+                    }
+                };
+
                 parser.parse(&source, source_index, tokens);
             }
             SourceReader::LightSpace => {
@@ -161,14 +168,14 @@ impl SourceReader {
             }
             SourceReader::ClusteredLightShading => {
                 let clustering_projection = match vars.clustered_light_shading.projection {
-                    configuration::ClusteringProjection::Orthogonal => "CLUSTERING_PROJECTION_ORTHOGONAL",
+                    configuration::ClusteringProjection::Orthographic => "CLUSTERING_PROJECTION_ORTHOGRAPHIC",
                     configuration::ClusteringProjection::Perspective => "CLUSTERING_PROJECTION_PERSPECTIVE",
                 };
 
                 tokens.push(Token::Literal(format!(
                     "\
                      #line {} {}\n\
-                     #define CLUSTERING_PROJECTION_ORTHOGONAL 1\n\
+                     #define CLUSTERING_PROJECTION_ORTHOGRAPHIC 1\n\
                      #define CLUSTERING_PROJECTION_PERSPECTIVE 2\n\
                      #define CLUSTERING_PROJECTION {}\n\
                      \n\
@@ -260,6 +267,7 @@ fn vec_set_add<T: Copy + PartialEq>(vec: &mut Vec<T>, val: T) -> Presence {
 #[derive(Debug)]
 pub struct EntryPoint {
     pub source_index: SourceIndex,
+    pub fixed_header: String,
     pub last_verified: LastVerified,
     pub last_computed: LastComputed,
     pub contents: String,
@@ -267,7 +275,11 @@ pub struct EntryPoint {
 }
 
 impl EntryPoint {
-    pub fn new(context: &mut ShaderCompilationContext, relative_path: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        context: &mut ShaderCompilationContext,
+        relative_path: impl Into<PathBuf>,
+        fixed_header: String,
+    ) -> Self {
         let relative_path = relative_path.into();
         let absolute_path: PathBuf = [context.resource_dir, relative_path.as_path()].iter().collect();
         let source_index = context.shader_compiler.memory.add_source(
@@ -281,6 +293,7 @@ impl EntryPoint {
 
         EntryPoint {
             source_index,
+            fixed_header,
             last_verified: incremental::LastVerified::dirty(),
             last_computed: incremental::LastComputed::dirty(),
             contents: String::new(),
@@ -342,35 +355,50 @@ impl EntryPoint {
                         ep.contents.push_str(lit);
                     }
                     Token::Include(ref relative_path) => {
-                        let source_index = if relative_path.starts_with("native/") {
-                            context
-                                .shader_compiler
-                                .memory
-                                .source_index(relative_path)
-                                .expect("Unknown native path.")
+                        let maybe_source_index = if relative_path.starts_with("native/") {
+                            Some(
+                                context
+                                    .shader_compiler
+                                    .memory
+                                    .source_index(relative_path)
+                                    .expect("Unknown native path."),
+                            )
                         } else {
                             let parent_path = match source.reader {
                                 SourceReader::File(ref path) => path.parent().unwrap(),
                                 _ => panic!("Can't include files from native sources."),
                             };
-                            let absolute_path = std::fs::canonicalize(parent_path.join(relative_path)).unwrap();
-
-                            context
-                                .shader_compiler
-                                .memory
-                                .source_index(&absolute_path)
-                                .unwrap_or_else(|| {
-                                    let resource_path = absolute_path.strip_prefix(&context.resource_dir).unwrap();
-                                    let source = Source::new(
-                                        &context.current,
-                                        SourceReader::File(absolute_path.clone()),
-                                        resource_path.to_owned(),
+                            match std::fs::canonicalize(parent_path.join(relative_path)) {
+                                Ok(absolute_path) => Some(
+                                    context
+                                        .shader_compiler
+                                        .memory
+                                        .source_index(&absolute_path)
+                                        .unwrap_or_else(|| {
+                                            let resource_path =
+                                                absolute_path.strip_prefix(&context.resource_dir).unwrap();
+                                            let source = Source::new(
+                                                &context.current,
+                                                SourceReader::File(absolute_path.clone()),
+                                                resource_path.to_owned(),
+                                            );
+                                            context.shader_compiler.memory.add_source(absolute_path, source)
+                                        }),
+                                ),
+                                Err(error) => {
+                                    error!(
+                                        "Failed to get canonical path of {:?}: {}",
+                                        parent_path.join(relative_path),
+                                        error
                                     );
-                                    context.shader_compiler.memory.add_source(absolute_path, source)
-                                })
+                                    None
+                                }
+                            }
                         };
 
-                        process(ep, context, source_index);
+                        if let Some(source_index) = maybe_source_index {
+                            process(ep, context, source_index);
+                        }
                     }
                 }
             }

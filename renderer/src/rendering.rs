@@ -136,6 +136,7 @@ impl Shader {
                     COMMON_DECLARATION,
                     CAMERA_BUFFER_DECLARATION,
                     crate::light::LIGHT_BUFFER_DECLARATION,
+                    &self.entry_point.fixed_header,
                     &self.entry_point.contents,
                 ]
                 .iter(),
@@ -219,7 +220,12 @@ impl Program {
 }
 
 /// Utility function to create a very common single file vertex and single file fragment shader.
-pub fn vs_fs_program(context: &mut RenderingContext, vs: &'static str, fs: &'static str) -> Program {
+pub fn vs_fs_program(
+    context: &mut RenderingContext,
+    vs: &'static str,
+    fs: &'static str,
+    fixed_header: String,
+) -> Program {
     let gl = &context.gl;
     Program::new(
         &gl,
@@ -227,12 +233,12 @@ pub fn vs_fs_program(context: &mut RenderingContext, vs: &'static str, fs: &'sta
             Shader::new(
                 &gl,
                 gl::VERTEX_SHADER,
-                EntryPoint::new(&mut shader_compilation_context!(context), vs),
+                EntryPoint::new(&mut shader_compilation_context!(context), vs, fixed_header.clone()),
             ),
             Shader::new(
                 gl,
                 gl::FRAGMENT_SHADER,
-                EntryPoint::new(&mut shader_compilation_context!(context), fs),
+                EntryPoint::new(&mut shader_compilation_context!(context), fs, fixed_header),
             ),
         ],
     )
