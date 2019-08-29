@@ -62,7 +62,6 @@ use crate::shader_compiler::{EntryPoint, ShaderCompiler};
 use crate::text_rendering::{FontContext, TextBox};
 use crate::viewport::*;
 use crate::window_mode::*;
-// use arrayvec::ArrayVec;
 use cgmath::*;
 use convert::*;
 use derive::EnumNext;

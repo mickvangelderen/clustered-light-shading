@@ -6,7 +6,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-arrayvec = "0.4.10"
 cgmath = "0.17.0"
 derive = { path = "../derive" }
 env_logger = "0.6.1"
