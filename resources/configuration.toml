@@ -12,7 +12,7 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-# projection = "Orthogonal"
+# projection = "Orthographic"
 projection = "Perspective"
 grouping = "Individual"
 # grouping = "Enclosed"

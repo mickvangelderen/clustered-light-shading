@@ -10,14 +10,6 @@ impl AssignLightsProgram {
     pub fn new(context: &mut RenderingContext) -> Self {
         let gl = &context.gl;
         Self {
-            program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(&mut shader_compilation_context!(context), "cls/assign_lights.comp"),
-                )],
-            ),
         }
     }
 }

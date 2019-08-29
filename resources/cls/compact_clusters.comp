@@ -1,11 +1,18 @@
 #include "native/PREFIX_SUM"
+#include "native/CLUSTERED_LIGHT_SHADING"
 
 #include "../common.glsl"
-#include "../compute_indirect.glsl"
-#include "../draw_indirect.glsl"
-#include "cls.glsl"
+#include "cluster_space_buffer.glsl"
+// in
+#include "cluster_fragment_counts_buffer.glsl"
+// use
+#include "offsets_buffer.glsl"
+// out
+#include "active_cluster_indices_buffer.glsl"
+#include "draw_commands_buffer.glsl"
+#include "compute_commands_buffer.glsl"
 
-layout(location = 0) uniform uint ITEM_COUNT;
+layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
 
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS
@@ -120,7 +127,7 @@ void main() {
   if (tid == PASS_1_THREADS - 1) {
     uint active_cluster_count = values[tid];
 
-    draw_command.prim_count = active_cluster_count;
+    draw_commands.prim_count = active_cluster_count;
 
     compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x = active_cluster_count;
 

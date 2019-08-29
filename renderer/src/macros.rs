@@ -23,6 +23,37 @@ macro_rules! get_attribute_location {
     }};
 }
 
+macro_rules! glsl_defines {
+    ($fn: ident {
+        bindings: {
+            $($bname: ident = $bval: expr;)*
+        },
+        uniforms: {
+            $($uname: ident = $uval: expr;)*
+        },
+    }) => {
+        $(
+            pub const $bname: u32 = $bval;
+        )*
+
+            $(
+                pub const $uname: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked($uval) };
+            )*
+
+        fn $fn() -> String {
+            let mut s = String::new();
+            $(
+                s.push_str(&format!("#define {} {}\n", stringify!($bname), $bname));
+            )*
+                $(
+                    s.push_str(&format!("#define {} {}\n", stringify!($uname), $uname.to_i32()));
+                )*
+                s
+        }
+    };
+}
+
+
 macro_rules! field_offset {
     ($Struct:ty, $field:ident) => {
         &(*(std::ptr::null::<$Struct>())).$field as *const _ as usize

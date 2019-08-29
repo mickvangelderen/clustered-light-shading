@@ -78,7 +78,7 @@ impl Renderer {
 
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "overlay_renderer.vert", "overlay_renderer.frag"),
+            program: vs_fs_program(context, "overlay_renderer.vert", "overlay_renderer.frag", String::new()),
             color_sampler_loc: gl::OptionUniformLocation::NONE,
             default_colors_loc: gl::OptionUniformLocation::NONE,
             color_matrix_loc: gl::OptionUniformLocation::NONE,
