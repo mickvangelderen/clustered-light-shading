@@ -42,8 +42,8 @@ mod text_rendering;
 mod viewport;
 mod window_mode;
 
-use self::cls::*;
 use self::cgmath_ext::*;
+use self::cls::*;
 use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
@@ -972,10 +972,7 @@ impl Context {
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                        let C1 {
-                            ref camera,
-                            ..
-                        } = cluster_c1;
+                        let C1 { ref camera, .. } = cluster_c1;
                         let C2 {
                             wld_to_cam,
                             cam_to_wld,
@@ -1116,10 +1113,7 @@ impl Context {
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                    let C1 {
-                        ref camera,
-                        ..
-                    } = cluster_c1;
+                    let C1 { ref camera, .. } = cluster_c1;
                     let C2 {
                         wld_to_cam,
                         cam_to_wld,
@@ -1200,6 +1194,23 @@ impl Context {
                 .div_ceil(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
             let cluster_dispatch_count = cluster_count.div_ceil(clusters_per_dispatch);
+
+            unsafe {
+                let buffer = &mut cluster_resources.cluster_space_buffer;
+                let data = ClusterSpaceBuffer::new(
+                    cluster_resources.computed.dimensions,
+                    cluster_resources.computed.frustum,
+                    cluster_resources.parameters.wld_to_ccam,
+                );
+
+                buffer.invalidate(gl);
+                buffer.write(gl, data.value_as_bytes());
+                gl.bind_buffer_base(
+                    gl::UNIFORM_BUFFER,
+                    cls_renderer::CLUSTER_SPACE_BUFFER_BINDING,
+                    buffer.name(),
+                );
+            }
 
             unsafe {
                 let buffer = &mut cluster_resources.cluster_fragment_counts_buffer;
@@ -1286,22 +1297,6 @@ impl Context {
                                 cls_renderer::CLP_TO_WLD_LOC,
                                 gl::MajorAxis::Column,
                                 clp_to_wld.as_ref(),
-                            );
-
-                            let wld_to_cclp = (cluster_resources.parameters.wld_to_ccam
-                                * cluster_resources.computed.ccam_to_cclp)
-                                .cast::<f32>()
-                                .unwrap();
-
-                            gl.uniform_matrix4f(
-                                cls_renderer::WLD_TO_CLS_LOC,
-                                gl::MajorAxis::Column,
-                                wld_to_cclp.as_ref(),
-                            );
-
-                            gl.uniform_3ui(
-                                cls_renderer::CLUSTER_DIMS_LOC,
-                                cluster_resources.computed.dimensions.into(),
                             );
 
                             gl.memory_barrier(
@@ -1460,18 +1455,6 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_3ui(
-                            cls::count_lights::CLUSTER_DIMS_LOC,
-                            cluster_resources.computed.dimensions.into(),
-                        );
-                        // gl.uniform_3f(
-                        //     cls::count_lights::SCALE_LOC,
-                        //     cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
-                        // );
-                        // gl.uniform_3f(
-                        //     cls::count_lights::TRANSLATION_LOC,
-                        //     cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
-                        // );
                         gl.uniform_1ui(cls::count_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
                             gl::DISPATCH_INDIRECT_BUFFER,
@@ -1568,18 +1551,6 @@ impl Context {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_3ui(
-                            cls::assign_lights::CLUSTER_DIMS_LOC,
-                            cluster_resources.computed.dimensions.into(),
-                        );
-                        // gl.uniform_3f(
-                        //     cls::assign_lights::SCALE_LOC,
-                        //     cluster_resources.computed.scale_from_cls_to_hmd.cast().unwrap().into(),
-                        // );
-                        // gl.uniform_3f(
-                        //     cls::assign_lights::TRANSLATION_LOC,
-                        //     cluster_resources.computed.trans_from_cls_to_hmd.cast().unwrap().into(),
-                        // );
                         gl.uniform_1ui(cls::assign_lights::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                         gl.bind_buffer(
                             gl::DISPATCH_INDIRECT_BUFFER,

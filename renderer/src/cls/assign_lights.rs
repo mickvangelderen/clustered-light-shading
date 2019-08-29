@@ -1,8 +1,5 @@
 pub use crate::*;
 
-pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
-pub const SCALE_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
-pub const TRANSLATION_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
 pub const LIGHT_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(3) };
 
 pub struct AssignLightsProgram {

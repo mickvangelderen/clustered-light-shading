@@ -14,8 +14,6 @@ pub struct Renderer {
 pub const DEPTH_SAMPLER_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
 pub const FB_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(1) };
 pub const CLP_TO_WLD_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(2) };
-pub const WLD_TO_CLS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(3) };
-pub const CLUSTER_DIMS_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(4) };
 
 // compact clusters
 pub const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
@@ -29,6 +27,7 @@ pub const OFFSET_BINDING: u32 = 5;
 pub const DRAW_COMMAND_BINDING: u32 = 6;
 pub const COMPUTE_COMMAND_BINDING: u32 = 7;
 pub const LIGHT_INDICES_BINDING: u32 = 8;
+pub const CLUSTER_SPACE_BUFFER_BINDING: u32 = 9;
 
 impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {

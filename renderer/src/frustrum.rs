@@ -1,5 +1,5 @@
 use cgmath::*;
-use num_traits::{Float, NumCast, ToPrimitive};
+use num_traits::{Float, NumCast, ToPrimitive, cast};
 
 unsafe fn reinterpret<A, B>(a: &A) -> &B {
     assert_eq!(std::mem::size_of::<A>(), std::mem::size_of::<B>());
@@ -369,6 +369,18 @@ where
     fn dz(&self) -> T {
         self.z1 - self.z0
     }
+
+    #[inline]
+    pub fn cast<U>(self) -> Option<Frustum<U>> where U: Float {
+        Some(Frustum {
+            x0: cast(self.x0)?,
+            x1: cast(self.x1)?,
+            y0: cast(self.y0)?,
+            y1: cast(self.y1)?,
+            z0: cast(self.z0)?,
+            z1: cast(self.z1)?,
+        })
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -469,6 +481,18 @@ where
         // and it will affect everything depending on it so we just write
         // the code ourselves.
         Vector3::new(self.x1 - self.x0, self.y1 - self.y0, self.z1 - self.z0)
+    }
+
+    #[inline]
+    pub fn cast<U>(self) -> Option<Range3<U>> where U: Float {
+        Some(Range3 {
+            x0: cast(self.x0)?,
+            x1: cast(self.x1)?,
+            y0: cast(self.y0)?,
+            y1: cast(self.y1)?,
+            z0: cast(self.z0)?,
+            z1: cast(self.z1)?,
+        })
     }
 }
 

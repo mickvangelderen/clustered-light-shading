@@ -40,3 +40,83 @@ layout(std430, binding = 7) buffer ComputeCommandBuffer {
 layout(std430, binding = 8) buffer LightIndicesBuffer {
   uint light_indices[];
 };
+
+struct Frustum {
+  float x0;
+  float x1;
+  float y0;
+  float y1;
+  float z0;
+  float z1;
+  float _pad0;
+  float _pad1;
+};
+
+struct LerpCoeffs {
+  float xa;
+  float xb;
+  float ya;
+  float yb;
+  float za;
+  float zb;
+  float _pad0;
+  float _pad1;
+};
+
+layout(std140, binding = 9) uniform ClusterSpaceBuffer {
+  uvec3 dimensions;
+  uint _pad0;
+  Frustum frustum;
+  LerpCoeffs cam_to_clp_coeffs;
+  LerpCoeffs clp_to_cam_coeffs;
+  mat4 wld_to_cam;
+  mat4 cam_to_wld;
+} cluster_space;
+
+vec4 cluster_cam_to_clp(vec3 pos_in_cam) {
+  LerpCoeffs c = cluster_space.cam_to_clp_coeffs;
+#if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
+  return vec4(
+    c.xa * pos_in_cam.x - c.xb * pos_in_cam.z, //
+    c.ya * pos_in_cam.y - c.yb * pos_in_cam.z, //
+    c.za * pos_in_cam.z + c.zb, //
+    -pos_in_cam.z //
+  );
+#elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
+  return vec4(
+    c.xa * pos_in_cam.x + c.xb, //
+    c.ya * pos_in_cam.y + c.yb, //
+    c.za * pos_in_cam.z + c.zb, //
+    1.0 //
+  );
+#else
+  #error Unknown CLUSTERING_PROJECTION.
+#endif
+}
+
+vec3 cluster_cls_to_cam(vec3 pos_in_cls) {
+  LerpCoeffs c = cluster_space.cam_to_clp_coeffs;
+#if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
+  float z_cam = pos_in_cls.z * c.za + c.zb;
+  return vec3(
+    z_cam*(c.xa * pos_in_cls.x + c.xb), //
+    z_cam*(c.ya * pos_in_cls.y + c.yb), //
+    z_cam //
+  );
+#elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
+  return vec3(
+    c.xa * pos_in_cls.x + c.xb, //
+    c.ya * pos_in_cls.y + c.yb, //
+    c.za * pos_in_cls.z + c.zb //
+  );
+#else
+#error Unknown CLUSTERING_PROJECTION.
+#endif
+}
+
+// NOTE: Template
+// #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
+// #elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
+// #else
+// #error Unknown CLUSTERING_PROJECTION.
+// #endif

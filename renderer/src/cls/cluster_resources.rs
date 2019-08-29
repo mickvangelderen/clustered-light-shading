@@ -64,6 +64,7 @@ impl ClusterComputed {
 
 pub struct ClusterResources {
     // GPU
+    pub cluster_space_buffer: DynamicBuffer,
     pub cluster_fragment_counts_buffer: DynamicBuffer,
     pub active_cluster_indices_buffer: DynamicBuffer,
     pub active_cluster_light_counts_buffer: DynamicBuffer,
@@ -89,6 +90,12 @@ impl ClusterResources {
     pub fn new(gl: &gl::Gl, parameters: ClusterParameters) -> Self {
         let cfg = &parameters.configuration;
         Self {
+            cluster_space_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "cluster_space");
+                buffer.ensure_capacity(gl, std::mem::size_of::<ClusterSpaceBuffer>());
+                buffer
+            },
             cluster_fragment_counts_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "cluster_fragment_counts");

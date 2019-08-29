@@ -1,9 +1,9 @@
 #include "native/PREFIX_SUM"
 
+#include "../common.glsl"
 #include "../compute_indirect.glsl"
 #include "../draw_indirect.glsl"
 #include "cls.glsl"
-#include "../common.glsl"
 
 layout(location = 0) uniform uint ITEM_COUNT;
 
