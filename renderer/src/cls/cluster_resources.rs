@@ -31,6 +31,7 @@ impl ClusterStage {
     }
 }
 
+#[derive(Debug)]
 pub struct ClusterParameters {
     pub configuration: configuration::ClusteredLightShading,
     pub wld_to_ccam: Matrix4<f64>,
