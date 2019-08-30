@@ -8,8 +8,6 @@
 #include "active_cluster_light_counts_buffer.glsl"
 #include "active_cluster_light_offsets_buffer.glsl"
 #include "light_xyzr_buffer.glsl"
-// use
-#include "offsets_buffer.glsl"
 // out
 #include "light_indices_buffer.glsl"
 
@@ -78,6 +76,9 @@ void main() {
   // NOTE: Offset is already corrected to have first value 0.
   uint acc = active_cluster_light_offsets[wid];
 
+#if !defined(CLUSTERING_PROJECTION)
+#error CLUSTERING_PROJECTION is not defined.
+#endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
   // TODO: VERIFY THAT THIS WORKS :')
   Frustum frustum = cluster_space.frustum;

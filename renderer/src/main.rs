@@ -1632,9 +1632,10 @@ impl Context {
 
                 // Ensure light resources are bound.
                 unsafe {
+                    // TODO: Make this less global. Should be in basic renderer.
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        rendering::LIGHT_BUFFER_BINDING,
+                        basic_renderer::LIGHT_BUFFER_BINDING,
                         light_resources.buffer_name,
                     );
                     bound_light_index = Some(light_index);

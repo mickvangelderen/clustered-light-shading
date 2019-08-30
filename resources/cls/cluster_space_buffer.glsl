@@ -1,3 +1,4 @@
+#include "native/CLUSTERED_LIGHT_SHADING"
 #include "../frustum.glsl"
 #include "../lerp_coeffs.glsl"
 
@@ -13,6 +14,9 @@ layout(std140, binding = CLUSTER_SPACE_BUFFER_BINDING) uniform ClusterSpaceBuffe
 
 vec4 cluster_cam_to_clp(vec3 pos_in_cam) {
   LerpCoeffs c = cluster_space.cam_to_clp_coeffs;
+#if !defined(CLUSTERING_PROJECTION)
+  #error CLUSTERING_PROJECTION is not defined.
+#endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
   return vec4(
     c.xa * pos_in_cam.x - c.xb * pos_in_cam.z, //
@@ -34,6 +38,9 @@ vec4 cluster_cam_to_clp(vec3 pos_in_cam) {
 
 vec3 cluster_cls_to_cam(vec3 pos_in_cls) {
   LerpCoeffs c = cluster_space.clp_to_cam_coeffs;
+#if !defined(CLUSTERING_PROJECTION)
+#error CLUSTERING_PROJECTION is not defined.
+#endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
   float z_cam = c.za * pos_in_cls.z + c.zb;
   return vec3(

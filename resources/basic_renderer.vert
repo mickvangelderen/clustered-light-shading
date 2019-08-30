@@ -1,4 +1,5 @@
 #include "native/RENDER_TECHNIQUE"
+#include "light_buffer.glsl"
 
 uniform mat4 obj_to_wld;
 
@@ -11,8 +12,8 @@ invariant gl_Position;
 out vec2 fs_pos_in_tex;
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-uniform mat4 cam_to_cls;
-out vec4 fs_pos_in_cls;
+#include "cls/cluster_space_buffer.glsl"
+out vec4 fs_pos_in_cclp;
 #endif
 
 out vec3 fs_pos_in_lgt;
@@ -21,13 +22,13 @@ out vec3 fs_tan_in_lgt;
 
 void main() {
   vec4 pos_in_obj = vec4(vs_pos_in_obj, 1.0);
-  vec4 pos_in_cam = wld_to_cam * obj_to_wld * pos_in_obj;
-  vec4 pos_in_clp = cam_to_clp * pos_in_cam;
-  gl_Position = pos_in_clp;
+  vec4 pos_in_wld = obj_to_wld * pos_in_obj;
+  gl_Position = cam_to_clp * wld_to_cam * pos_in_wld;
   fs_pos_in_tex = vs_pos_in_tex;
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-  fs_pos_in_cls = cam_to_cls * pos_in_cam;
+  vec3 pos_in_ccam = mat4x3(cluster_space.wld_to_cam) * pos_in_wld;
+  fs_pos_in_cclp = cluster_cam_to_clp(pos_in_ccam);
 #endif
   mat4 obj_to_lgt = light_buffer.wld_to_lgt * obj_to_wld;
   fs_pos_in_lgt = mat4x3(obj_to_lgt) * pos_in_obj;

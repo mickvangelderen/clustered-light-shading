@@ -14,6 +14,9 @@
 
 layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
 
+#if !defined(PASS)
+  #error PASS is not defined.
+#endif
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS
 #elif PASS == 1

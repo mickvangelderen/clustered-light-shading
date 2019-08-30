@@ -15,13 +15,11 @@ macro_rules! capability_declaration {
 // Storage buffer bindings.
 
 pub const CAMERA_BUFFER_BINDING: u32 = 1;
-pub const LIGHT_BUFFER_BINDING: u32 = 3;
 
 macro_rules! buffer_binding_declaration {
     () => {
         r"
 #define CAMERA_BUFFER_BINDING 1
-#define LIGHT_BUFFER_BINDING 3
 "
     };
 }

@@ -23,11 +23,12 @@ pub struct Parameters {
 
 glsl_defines!(fixed_header {
     bindings: {
-        MAYBE_ACTIVE_CLUSTER_INDICES_BINDING = 10;
-        ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING = 11;
-        ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING = 12;
-        LIGHT_INDICES_BUFFER = 13;
-        CLUSTER_SPACE_BUFFER_BINDING = 14;
+        MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
+        ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 2;
+        ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 3;
+        LIGHT_BUFFER_BINDING = 4;
+        LIGHT_INDICES_BUFFER_BINDING = 8;
+        CLUSTER_SPACE_BUFFER_BINDING = 9;
     },
     uniforms: {
     },
@@ -53,27 +54,29 @@ impl Context {
                         self.shader_compiler.variables.render_technique
                     );
 
+                    // NOTE: The cluster_fragment_counts buffer is re-used as
+                    // the maybe_active_cluster_indices_buffer.
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        MAYBE_ACTIVE_CLUSTER_INDICES_BINDING,
+                        MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
                         cluster_resources.cluster_fragment_counts_buffer.name(),
                     );
 
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        ACTIVE_CLUSTER_LIGHT_COUNTS_BINDING,
+                        ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING,
                         cluster_resources.active_cluster_light_counts_buffer.name(),
                     );
 
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        ACTIVE_CLUSTER_LIGHT_OFFSETS_BINDING,
+                        ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING,
                         cluster_resources.active_cluster_light_offsets_buffer.name(),
                     );
 
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        LIGHT_INDICES_BUFFER,
+                        LIGHT_INDICES_BUFFER_BINDING,
                         cluster_resources.light_indices_buffer.name(),
                     );
 
