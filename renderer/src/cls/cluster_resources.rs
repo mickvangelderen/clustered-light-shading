@@ -194,7 +194,7 @@ impl ClusterResources {
                      parameters: ref cam_par,
                      ..
                  }| {
-                    let clp_to_ccam = cam_par.clp_to_cam * cam_par.cam_to_wld * parameters.wld_to_ccam;
+                    let clp_to_ccam = parameters.wld_to_ccam * cam_par.cam_to_wld * cam_par.clp_to_cam;
                     corners_in_clp
                         .into_iter()
                         .map(move |&p| clp_to_ccam.transform_point(p).cast::<f64>().unwrap())
