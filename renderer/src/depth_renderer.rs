@@ -56,7 +56,7 @@ impl Renderer {
 
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "depth_renderer.vert", "depth_renderer.frag", String::new()),
+            program: vs_fs_program(context, "depth_renderer.vert", "depth_renderer.frag", String::from("// TODO: Pass locations and bindings")),
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
         }
     }

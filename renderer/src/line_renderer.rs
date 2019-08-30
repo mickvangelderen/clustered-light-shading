@@ -110,7 +110,7 @@ impl Renderer {
             gl.vertex_array_element_buffer(vertex_array_name, element_buffer_name);
 
             Renderer {
-                program: vs_fs_program(context, "line_renderer.vert", "line_renderer.frag", String::new()),
+                program: vs_fs_program(context, "line_renderer.vert", "line_renderer.frag", String::from("// TODO: Pass locations and bindings")),
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,
