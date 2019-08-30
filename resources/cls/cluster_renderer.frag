@@ -22,30 +22,30 @@ void main() {
   // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
 
 
-  if (pass == 0) {
-    frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
-  } else {
-    discard;
-  }
-
-  // float border_width = 0.02;
-  // if (
-  //     fs_pos_in_tex.x > border_width && fs_pos_in_tex.x < (1.0 - border_width) &&
-  //     fs_pos_in_tex.y > border_width && fs_pos_in_tex.y < (1.0 - border_width)
-  //     ) {
-  //   if (pass == 1) {
-  //     frag_color = vec4(vec3(
-  //     // frag_color = vec4(vec3(float(frag_count) / 150.0), 1.0);
-  //     frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/1500.0);
-  //     // frag_color = vec4(1.0, 1.0, 1.0, float(light_offset)/1500.0);
-  //   } else {
-  //     discard;
-  //   }
+  // CLUSTER INDEX
+  // if (pass == 0) {
+  //   frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
   // } else {
-  //   if (pass == 0) {
-  //     frag_color = vec4(vec3(0.3), 1.0);
-  //   } else {
-  //     discard;
-  //   }
+  //   discard;
   // }
+
+  float border_width = 0.02;
+  if (
+      fs_pos_in_tex.x > border_width && fs_pos_in_tex.x < (1.0 - border_width) &&
+      fs_pos_in_tex.y > border_width && fs_pos_in_tex.y < (1.0 - border_width)
+      ) {
+    if (pass == 1) {
+      // frag_color = vec4(vec3(float(frag_count) / 150.0), 1.0);
+      frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/1500.0);
+      // frag_color = vec4(1.0, 1.0, 1.0, float(light_offset)/1500.0);
+    } else {
+      discard;
+    }
+  } else {
+    if (pass == 0) {
+      frag_color = vec4(vec3(0.3), 1.0);
+    } else {
+      discard;
+    }
+  }
 }

@@ -2,6 +2,8 @@
 #include "cotangent_frame.glsl"
 #include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
+#include "heatmap.glsl"
+#include "light_buffer.glsl"
 
 // uniform sampler2D shadow_sampler;
 uniform sampler2D diffuse_sampler;
@@ -16,6 +18,7 @@ uniform vec2 normal_dimensions;
 uniform uint display_mode;
 
 // layout(binding = 0) uniform atomic_uint shading_ops;
+// layout(early_fragment_tests) in;
 
 in vec2 fs_pos_in_tex;
 in vec3 fs_pos_in_lgt;
@@ -23,82 +26,17 @@ in vec3 fs_nor_in_lgt;
 in vec3 fs_tan_in_lgt;
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-uniform uvec3 cluster_dims;
+#include "cls/cluster_space_buffer.glsl"
+#include "cls/maybe_active_cluster_indices_buffer.glsl"
+#include "cls/active_cluster_light_counts_buffer.glsl"
+#include "cls/active_cluster_light_offsets_buffer.glsl"
+#include "cls/light_indices_buffer.glsl"
 
-layout(binding = 10) buffer MaybeActiveClusterIndicesBuffer {
-  uint maybe_active_cluster_indices[];
-};
-
-layout(binding = 11) buffer ActiveClusterLightCountsBuffer {
-  uint active_cluster_light_counts[];
-};
-
-layout(binding = 12) buffer ActiveClusterLightOffsetsBuffer {
-  uint active_cluster_light_offsets[];
-};
-
-layout(binding = 13) buffer LightIndicesBuffer { uint light_indices[]; };
-in vec4 fs_pos_in_cls;
+in vec4 fs_pos_in_cclp;
 #endif
 
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec3 frag_nor_in_lgt;
-
-vec3 heatmap(float value, float minVal, float maxVal) {
-  vec3 color = vec3(0.0, 0.0, 0.0);
-  float range = maxVal - minVal;
-  float adjustedVal = clamp(value - minVal, 0.0, range);
-  float step = range / 6.0;
-  if (value < step) {
-    color.z = value / step;
-  } else if (value < 2.0 * step) {
-    color.y = (value - step) / step;
-    color.z = 1.0;
-  } else if (value < 3.0 * step) {
-    color.y = 1.0;
-    color.z = 1.0 - (value - 2.0 * step) / step;
-  } else if (value < 4.0 * step) {
-    color.x = (value - 3.0 * step) / step;
-    color.y = 1.0;
-  } else if (value < 5.0 * step) {
-    color.x = 1.0;
-    color.y = 1.0 - (value - 4.0 * step) / step;
-  } else {
-    color.x = 1.0;
-    color.y = (value - 5.0 * step) / step;
-    color.z = (value - 5.0 * step) / step;
-  }
-  return color;
-}
-
-uvec3 separate_bits_by_2(uvec3 x) {
-  // x       = 0b??????????????????????jihgfedcba
-  // mask    = 0b00000000000000000000001111111111
-  x &= 0x000003ff;
-  // x       = 0b0000000000000000000000jihgfedcba
-  // x << 10 = 0b000000000000jihgfedcba0000000000
-  // mask    = 0b00000000000011111000000000011111
-  x = (x | (x << 10)) & 0x00f8001f;
-  // x       = 0b000000000000jihgf0000000000edcba
-  // x << 04 = 0b00000000jihgf0000000000edcba0000
-  // mask    = 0b00000000111000011000000111000011
-  x = (x | (x << 04)) & 0x001e81c3;
-  // x       = 0b00000000jih0000gf000000edc0000ba
-  // x << 02 = 0b000000jih0000gf000000edc0000ba00
-  // mask    = 0b00000011001001001000011001001001
-  x = (x | (x << 02)) & 0x03248649;
-  // x       = 0b000000ji00h00g00f0000ed00c00b00a
-  // x << 02 = 0b0000ji00h00g00f0000ed00c00b00a00
-  // mask    = 0b00001001001001001001001001001001
-  x = (x | (x << 02)) & 0x09249249;
-  // x       = 0b0000j00i00h00g00f00e00d00c00b00a
-  return x;
-}
-
-uint to_morton_3(uvec3 p) {
-  uvec3 q = separate_bits_by_2(p);
-  return (q.z << 2) | (q.y << 1) | q.x;
-}
 
 // FIXME
 vec3 sample_nor_in_tan(vec2 pos_in_tex) {
@@ -225,14 +163,14 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_cls = vec3(fs_pos_in_cls.xy / vec2(fs_pos_in_cls.w), fs_pos_in_cls.z);
+    vec3 pos_in_cls = vec3(fs_pos_in_cclp.xy / vec2(fs_pos_in_cclp.w), fs_pos_in_cclp.z);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
-    // frag_color = vec4(pos_in_cls / vec3(cluster_dims.xyz), 1.0);
+    // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 
     uvec3 fs_idx_in_cls = idx_in_cls;
 
     // CLUSTER INDICES X, Y, Z
-    frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_dims), 1.0);
+    // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
 
     // CLUSTER INDICES X, Y, Z mod 3
     // vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
@@ -245,21 +183,24 @@ void main() {
     //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
     //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
 
-    uint cluster_index = index_3_to_1(fs_idx_in_cls, cluster_dims);
+    uint cluster_index = index_3_to_1(fs_idx_in_cls, cluster_space.dimensions);
     uint maybe_active_cluster_index =
         maybe_active_cluster_indices[cluster_index];
 
     if (maybe_active_cluster_index == 0) {
       // We generally shouldn't see clusters that don't have any fragments.
-      // frag_color = vec4(1.0, 0.0, 1.0, 1.0);
+      frag_color = vec4(1.0, 0.0, 1.0, 1.0);
     } else {
       uint active_cluster_index = maybe_active_cluster_index - 1;
       uint cluster_light_count = active_cluster_light_counts[active_cluster_index];
       uint cluster_light_offset = active_cluster_light_offsets[active_cluster_index];
 
+      // ACTIVE CLUSTERINDEX
+      // frag_color = vec4(vec3(float(active_cluster_index) / 100.0), 1.0);
+
       // CLUSTER LENGHTS
-      // frag_color = vec4(vec3(float(cluster_light_count) / 132.0), 1.0);
-      // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 32.0), 1.0);
+      // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
+      frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
 
       // COLORED CLUSTER LENGTHS
       // if (cluster_light_count == 0) {
@@ -267,9 +208,6 @@ void main() {
       // }
       // frag_color = vec4(vec3(float(cluster_light_count)/2.0) *
       // cluster_index_colors, 1.0);
-
-      // CLUSTERED SHADING
-      // frag_color = vec4(vec3(float(cluster_light_count) / 32.0), 1.0);
 
       // HASH LIGHT INDICES
       // uint hash = 0;
@@ -283,15 +221,15 @@ void main() {
       // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
       // ACTUAL SHADING
-      vec3 color_accumulator = vec3(0.0);
-      for (uint i = 0; i < cluster_light_count; i++) {
-        uint light_index = light_indices[cluster_light_offset + i];
+      // vec3 color_accumulator = vec3(0.0);
+      // for (uint i = 0; i < cluster_light_count; i++) {
+      //   uint light_index = light_indices[cluster_light_offset + i];
 
-        color_accumulator += point_light_contribution(
-            light_buffer.point_lights[light_index], nor_in_lgt, fs_pos_in_lgt,
-            cam_dir_in_lgt_norm);
-        // atomicCounterIncrement(shading_ops);
-      }
+      //   color_accumulator += point_light_contribution(
+      //       light_buffer.point_lights[light_index], nor_in_lgt, fs_pos_in_lgt,
+      //       cam_dir_in_lgt_norm);
+      //   // atomicCounterIncrement(shading_ops);
+      // }
       // frag_color = vec4(color_accumulator, 1.0);
     }
 #else

@@ -11,6 +11,9 @@
 #include "active_cluster_light_offsets_buffer.glsl"
 #include "compute_commands_buffer.glsl"
 
+#if !defined(PASS)
+#error PASS is not defined.
+#endif
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS
 #elif PASS == 1

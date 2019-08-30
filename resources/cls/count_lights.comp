@@ -7,7 +7,6 @@
 #include "active_cluster_indices_buffer.glsl"
 #include "light_xyzr_buffer.glsl"
 // use
-#include "offsets_buffer.glsl"
 // out
 #include "active_cluster_light_counts_buffer.glsl"
 
@@ -74,6 +73,9 @@ void main() {
   uvec3 idx_in_cls = index_1_to_3(cluster_index, dimensions);
 
   uint intersection_count = 0;
+#if !defined(CLUSTERING_PROJECTION)
+  #error CLUSTERING_PROJECTION is not defined.
+#endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
   // TODO: VERIFY THAT THIS WORKS :')
   Frustum frustum = cluster_space.frustum;

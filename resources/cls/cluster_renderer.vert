@@ -17,10 +17,10 @@ void main() {
   uint cluster_index = active_cluster_indices[active_cluster_index];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_space.dimensions);
   vec3 pos_in_cls = vec3(idx_in_cls) + vs_pos_in_obj;
-
   vec3 pos_in_ccam = cluster_cls_to_cam(pos_in_cls);
 
   gl_Position = wld_to_clp * cluster_space.cam_to_wld * to_homogeneous(pos_in_ccam);
+
   fs_pos_in_tex = vs_pos_in_tex;
   fs_idx_in_cls = idx_in_cls;
   fs_cluster_index = cluster_index;
