@@ -19,6 +19,7 @@ impl CameraStage {
     }
 }
 
+#[derive(Debug)]
 pub struct ClusterCameraParameters {
     // Depth pass.
     pub frame_dims: Vector2<i32>,
