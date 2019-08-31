@@ -163,7 +163,7 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_cls = vec3(fs_pos_in_cclp.xy / vec2(fs_pos_in_cclp.w), fs_pos_in_cclp.z);
+    vec3 pos_in_cls = cluster_clp_to_cls(fs_pos_in_cclp);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
     // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 
