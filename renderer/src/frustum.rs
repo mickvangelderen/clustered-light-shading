@@ -8,7 +8,7 @@ unsafe fn reinterpret<A, B>(a: &A) -> &B {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct Frustrum<S> {
+pub struct Frustum<S> {
     pub x0: S,
     pub x1: S,
     pub y0: S,
@@ -17,14 +17,14 @@ pub struct Frustrum<S> {
     pub z1: S,
 }
 
-impl AsRef<[f32; 6]> for Frustrum<f32> {
+impl AsRef<[f32; 6]> for Frustum<f32> {
     #[inline]
     fn as_ref(&self) -> &[f32; 6] {
         unsafe { reinterpret(self) }
     }
 }
 
-impl<S: Float> Frustrum<S> {
+impl<S: Float> Frustum<S> {
     #[inline]
     pub fn perspective(self, depth_range: (S, S)) -> Matrix4<S> {
         // Constants.
@@ -33,7 +33,7 @@ impl<S: Float> Frustrum<S> {
         let two = one + one;
 
         // Parameters.
-        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
+        let Frustum { x0, x1, y0, y1, z0, z1 } = self;
         let (r0, r1) = depth_range;
 
         // Intermediates.
@@ -86,7 +86,7 @@ impl<S: Float> Frustrum<S> {
         let two = one + one;
 
         // Parameters.
-        let Frustrum { x0, x1, y0, y1, z0, .. } = self;
+        let Frustum { x0, x1, y0, y1, z0, .. } = self;
         let (r0, r1) = depth_range;
 
         // Intermediates.
@@ -137,7 +137,7 @@ impl<S: Float> Frustrum<S> {
         let two = one + one;
 
         // Parameters.
-        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
+        let Frustum { x0, x1, y0, y1, z0, z1 } = self;
         let (r0, r1) = depth_range;
 
         // Intermediates.
@@ -182,7 +182,7 @@ impl<S: Float> Frustrum<S> {
     }
 
     pub fn line_mesh(self) -> ([[S; 3]; 8], [[u32; 2]; 12]) {
-        let Frustrum { x0, x1, y0, y1, z0, z1 } = self;
+        let Frustum { x0, x1, y0, y1, z0, z1 } = self;
         let vertices = [
             [x0, y0, z0],
             [x1, y0, z0],
@@ -214,11 +214,11 @@ impl<S: Float> Frustrum<S> {
     }
 }
 
-impl<S: ToPrimitive> Frustrum<S> {
+impl<S: ToPrimitive> Frustum<S> {
     /// Component-wise casting to another type
     #[inline]
-    pub fn cast<T: NumCast>(self) -> Option<Frustrum<T>> {
-        Some(Frustrum {
+    pub fn cast<T: NumCast>(self) -> Option<Frustum<T>> {
+        Some(Frustum {
             x0: T::from(self.x0)?,
             x1: T::from(self.x1)?,
             y0: T::from(self.y0)?,

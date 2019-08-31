@@ -11,7 +11,7 @@ mod camera;
 mod cgmath_ext;
 mod convert;
 mod filters;
-mod frustrum;
+mod frustum;
 mod gl_ext;
 mod keyboard_model;
 mod line_renderer;
@@ -989,7 +989,7 @@ fn main() {
 
         // draw everything here
 
-        let sun_frustrum = frustrum::Frustrum {
+        let sun_frustum = frustum::Frustum {
             x0: -25.0,
             x1: 25.0,
             y0: -25.0,
@@ -998,10 +998,10 @@ fn main() {
             z1: -30.0,
         };
 
-        let (sun_frustrum_vertices, sun_frustrum_indices) = sun_frustrum.cast().unwrap().line_mesh();
+        let (sun_frustum_vertices, sun_frustum_indices) = sun_frustum.cast().unwrap().line_mesh();
 
         let view_ind_params = {
-            let pos_from_cam_to_clp = sun_frustrum.orthographic(DEPTH_RANGE).cast().unwrap();
+            let pos_from_cam_to_clp = sun_frustum.orthographic(DEPTH_RANGE).cast().unwrap();
 
             let rot_from_wld_to_cam = Quaternion::from_angle_x(world.sun_rot) * Quaternion::from_angle_y(Deg(40.0));
 
@@ -1072,12 +1072,12 @@ fn main() {
 
                     let pos_from_bdy_to_hmd: Matrix4<f64> = world.pos_from_bdy_to_hmd.cast().unwrap();
 
-                    let frustrum = {
+                    let frustum = {
                         // These are the tangents.
                         let [l, r, b, t] = vr_resources.context.system().get_projection_raw(eye);
                         let z0 = -0.1;
                         let z1 = -100.0;
-                        frustrum::Frustrum::<f64> {
+                        frustum::Frustum::<f64> {
                             x0: -z0 * l as f64,
                             x1: -z0 * r as f64,
                             y0: -z0 * b as f64,
@@ -1086,7 +1086,7 @@ fn main() {
                             z1,
                         }
                     };
-                    let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                    let pos_from_cam_to_clp = frustum.perspective(DEPTH_RANGE);
 
                     let pos_from_cam_to_hmd: Matrix4<f64> =
                         Matrix4::<f32>::from_hmd(vr_resources.context.system().get_eye_to_head_transform(eye))
@@ -1210,11 +1210,11 @@ fn main() {
 
                 let pos_from_cam_to_wld: Matrix4<f64> = world.get_camera().pos_from_cam_to_wld().cast().unwrap();
 
-                let frustrum = {
+                let frustum = {
                     let z0 = -0.1;
                     let dy = -z0 * Rad::tan(Rad(Rad::from(world.get_camera().fovy).0 as f64) / 2.0);
                     let dx = dy * physical_size.width as f64 / physical_size.height as f64;
-                    frustrum::Frustrum::<f64> {
+                    frustum::Frustum::<f64> {
                         x0: -dx,
                         x1: dx,
                         y0: -dy,
@@ -1224,7 +1224,7 @@ fn main() {
                     }
                 };
 
-                let pos_from_cam_to_clp = frustrum.perspective(DEPTH_RANGE);
+                let pos_from_cam_to_clp = frustum.perspective(DEPTH_RANGE);
 
                 let pos_from_wld_to_clp = pos_from_cam_to_clp * pos_from_wld_to_cam;
 
@@ -1263,8 +1263,8 @@ fn main() {
                     height: physical_size.height as i32,
                     view_ind_params,
                     view_dep_params,
-                    vertices: &sun_frustrum_vertices[..],
-                    indices: &sun_frustrum_indices[..],
+                    vertices: &sun_frustum_vertices[..],
+                    indices: &sun_frustum_indices[..],
                 },
             );
 
