@@ -94,7 +94,7 @@ void main() {
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     uint cluster_index = offset + tid;
-    if (cluster_index < CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS) {
+    if (cluster_index < ITEM_COUNT) {
       uint fragment_count = cluster_fragment_counts[offset + tid];
       if (fragment_count > 0) {
         acc += 1;
@@ -153,7 +153,7 @@ void main() {
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     uint cluster_index = offset + tid;
-    if (cluster_index < CLUSTERED_LIGHT_SHADING_MAX_CLUSTERS) {
+    if (cluster_index < ITEM_COUNT) {
       // Initialize shared memory
       uint fragment_count = cluster_fragment_counts[cluster_index];
       bool cluster_active = fragment_count > 0;
