@@ -203,8 +203,11 @@ impl ClusterResources {
         })
         .unwrap();
 
-        let delta = range.delta();
-        let dimensions = (delta / cfg.cluster_side as f64).map(f64::ceil);
+        let dimensions = range
+            .delta()
+            .div_element_wise(Vector3::from(cfg.cluster_sides.to_array()))
+            .map(f64::ceil);
+
         let dimensions_u32 = dimensions.cast::<u32>().unwrap();
 
         if dimensions_u32.product() > cfg.max_clusters {
@@ -215,9 +218,7 @@ impl ClusterResources {
         }
 
         let frustum = match cfg.projection {
-            configuration::ClusteringProjection::Orthographic => {
-                Frustum::<f64>::from_range(&range)
-            }
+            configuration::ClusteringProjection::Orthographic => Frustum::<f64>::from_range(&range),
             configuration::ClusteringProjection::Perspective => {
                 let cameras = self.camera_resources_pool.used_slice();
                 assert_eq!(1, cameras.len());

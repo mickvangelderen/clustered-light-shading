@@ -51,10 +51,23 @@ pub enum ClusteringGrouping {
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+pub struct Vector3<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
+}
+
+impl<T> Vector3<T> {
+    pub fn to_array(self) -> [T; 3] {
+        [self.x, self.y, self.z]
+    }
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShading {
     pub projection: ClusteringProjection,
     pub grouping: ClusteringGrouping,
-    pub cluster_side: f32,
+    pub cluster_sides: Vector3<f64>,
     pub max_clusters: u32,
     pub max_active_clusters: u32,
     pub max_light_indices: u32,
