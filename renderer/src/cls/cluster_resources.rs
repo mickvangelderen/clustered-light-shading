@@ -205,7 +205,7 @@ impl ClusterResources {
 
         let dimensions = range
             .delta()
-            .div_element_wise(Vector3::from(cfg.cluster_sides.to_array()))
+            .div_element_wise(cfg.cluster_sides())
             .map(f64::ceil);
 
         let dimensions_u32 = dimensions.cast::<u32>().unwrap();

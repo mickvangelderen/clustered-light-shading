@@ -67,10 +67,21 @@ impl<T> Vector3<T> {
 pub struct ClusteredLightShading {
     pub projection: ClusteringProjection,
     pub grouping: ClusteringGrouping,
-    pub cluster_sides: Vector3<f64>,
+    pub perspective_sides: Vector3<f64>,
+    pub orthographic_sides: Vector3<f64>,
     pub max_clusters: u32,
     pub max_active_clusters: u32,
     pub max_light_indices: u32,
+}
+
+impl ClusteredLightShading {
+    pub fn cluster_sides(&self) -> cgmath::Vector3<f64> {
+        let sides: [f64; 3] = match self.projection {
+            ClusteringProjection::Perspective => self.perspective_sides.to_array(),
+            ClusteringProjection::Orthographic => self.orthographic_sides.to_array(),
+        };
+        sides.into()
+    }
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
