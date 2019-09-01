@@ -1567,8 +1567,6 @@ impl Context {
             }
         }
 
-        let mut bound_light_index = None;
-
         for main_parameters_index in 0..self.main_parameters_vec.len() {
             let main_params = &self.main_parameters_vec[main_parameters_index];
 
@@ -1593,53 +1591,50 @@ impl Context {
 
             let light_params = &self.light_params_vec[light_index];
 
-            if bound_light_index != Some(light_index) {
-                // Ensure light resources are available.
-                while self.light_resources_vec.len() < light_index + 1 {
-                    self.light_resources_vec.push(light::LightResources::new(gl));
-                }
-                let light_resources = &mut self.light_resources_vec[light_index];
+            // Ensure light resources are available.
+            while self.light_resources_vec.len() < light_index + 1 {
+                self.light_resources_vec.push(light::LightResources::new(gl));
+            }
+            let light_resources = &mut self.light_resources_vec[light_index];
 
-                // Ensure light resources are uploaded.
-                if light_resources.dirty {
-                    light_resources.lights.clear();
-                    light_resources
-                        .lights
-                        .extend(self.point_lights.iter().map(|&point_light| {
-                            light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)
-                        }));
+            // Ensure light resources are uploaded.
+            if light_resources.dirty {
+                light_resources.lights.clear();
+                light_resources
+                    .lights
+                    .extend(self.point_lights.iter().map(|&point_light| {
+                        light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)
+                    }));
 
-                    let header = light::LightBufferHeader {
-                        wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
-                        lgt_to_wld: light_params.lgt_to_wld.cast().unwrap(),
+                let header = light::LightBufferHeader {
+                    wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
+                    lgt_to_wld: light_params.lgt_to_wld.cast().unwrap(),
 
-                        light_count: Vector4::new(light_resources.lights.len() as u32, 0, 0, 0),
-                    };
+                    light_count: Vector4::new(light_resources.lights.len() as u32, 0, 0, 0),
+                };
 
-                    unsafe {
-                        let header_bytes = header.value_as_bytes();
-                        let body_bytes = light_resources.lights.vec_as_bytes();
-
-                        gl.named_buffer_reserve(
-                            light_resources.buffer_name,
-                            header_bytes.len() + body_bytes.len(),
-                            gl::STREAM_DRAW,
-                        );
-                        gl.named_buffer_sub_data(light_resources.buffer_name, 0, header_bytes);
-                        gl.named_buffer_sub_data(light_resources.buffer_name, header_bytes.len(), body_bytes);
-                    }
-                }
-
-                // Ensure light resources are bound.
                 unsafe {
-                    // TODO: Make this less global. Should be in basic renderer.
-                    gl.bind_buffer_base(
-                        gl::SHADER_STORAGE_BUFFER,
-                        basic_renderer::LIGHT_BUFFER_BINDING,
+                    let header_bytes = header.value_as_bytes();
+                    let body_bytes = light_resources.lights.vec_as_bytes();
+
+                    gl.named_buffer_reserve(
                         light_resources.buffer_name,
+                        header_bytes.len() + body_bytes.len(),
+                        gl::STREAM_DRAW,
                     );
-                    bound_light_index = Some(light_index);
+                    gl.named_buffer_sub_data(light_resources.buffer_name, 0, header_bytes);
+                    gl.named_buffer_sub_data(light_resources.buffer_name, header_bytes.len(), body_bytes);
                 }
+            }
+
+            // Ensure light resources are bound.
+            unsafe {
+                // TODO: Make this less global. Should be in basic renderer.
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    basic_renderer::LIGHT_BUFFER_BINDING,
+                    light_resources.buffer_name,
+                );
             }
 
             let cam_pos_in_lgt = light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
