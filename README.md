@@ -50,6 +50,11 @@ Also OpenGL development headers are always nice to have.
 
 Reducing render-to-photons latency: http://media.steampowered.com/apps/valve/2015/Alex_Vlachos_Advanced_VR_Rendering_GDC2015.pdf
 
+### Demo as of orthogonal-and-perspective-clustering
+
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=d0YlHdBU79g
+" target="_blank"><img src="http://img.youtube.com/vi/d0YlHdBU79g/0.jpg" 
+alt="Demo" max-width="100%" height="auto" border="10" /></a>
 
 ### Scheduling simlution and rendering
 
