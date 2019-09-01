@@ -112,7 +112,8 @@ pub fn proc_macro_derive_enum_prev(input: proc_macro::TokenStream) -> proc_macro
 
     let prev_match = enum_data
         .variants
-        .iter().skip(1)
+        .iter()
+        .skip(1)
         .zip(enum_data.variants.iter())
         .map(|(a, b)| {
             let ai = &a.ident;

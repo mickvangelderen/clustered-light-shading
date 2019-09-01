@@ -38,16 +38,50 @@ pub struct VirtualStereo {
     pub yaw_deg: f32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusteringProjection {
+    Orthographic,
+    Perspective,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusteringGrouping {
+    Individual,
+    Enclosed,
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+pub struct Vector3<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
+}
+
+impl<T> Vector3<T> {
+    pub fn to_array(self) -> [T; 3] {
+        [self.x, self.y, self.z]
+    }
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShading {
-    pub cluster_side: f32,
-    pub light_index: Option<u32>,
-    pub min_light_count: u32,
-    pub animate_z: Option<f32>,
-    pub animate_light_count: Option<f32>,
-    pub max_cluster_count: u32,
-    pub max_active_cluster_count: u32,
-    pub max_light_index_count: u32,
+    pub projection: ClusteringProjection,
+    pub grouping: ClusteringGrouping,
+    pub perspective_sides: Vector3<f64>,
+    pub orthographic_sides: Vector3<f64>,
+    pub max_clusters: u32,
+    pub max_active_clusters: u32,
+    pub max_light_indices: u32,
+}
+
+impl ClusteredLightShading {
+    pub fn cluster_sides(&self) -> cgmath::Vector3<f64> {
+        let sides: [f64; 3] = match self.projection {
+            ClusteringProjection::Perspective => self.perspective_sides.to_array(),
+            ClusteringProjection::Orthographic => self.orthographic_sides.to_array(),
+        };
+        sides.into()
+    }
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]

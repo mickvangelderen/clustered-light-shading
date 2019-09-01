@@ -35,7 +35,8 @@ impl<'a> BMFont<'a> {
                     }
                     let block = input.read_raw::<InfoBlock>().unwrap();
                     let font_name_len = block_byte_size - std::mem::size_of::<InfoBlock>();
-                    let font_name = std::ffi::CStr::from_bytes_with_nul(input.read_bytes(font_name_len).unwrap()).unwrap();
+                    let font_name =
+                        std::ffi::CStr::from_bytes_with_nul(input.read_bytes(font_name_len).unwrap()).unwrap();
                     info_font_name = Some((block, font_name));
                 }
                 Ok(BlockKind::Common) => {
@@ -76,7 +77,9 @@ impl<'a> BMFont<'a> {
                     }
                     assert_eq!(0, block_byte_size % std::mem::size_of::<KerningPairBlock>());
                     let kerning_pair_block_count = block_byte_size / std::mem::size_of::<KerningPairBlock>();
-                    let kerning_pair_blocks = input.read_raw_array::<KerningPairBlock>(kerning_pair_block_count).unwrap();
+                    let kerning_pair_blocks = input
+                        .read_raw_array::<KerningPairBlock>(kerning_pair_block_count)
+                        .unwrap();
                     kerning_pairs = Some(kerning_pair_blocks);
                 }
                 Err(err) => {

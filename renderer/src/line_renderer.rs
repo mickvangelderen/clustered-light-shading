@@ -30,9 +30,10 @@ const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
     gl::VertexArrayBufferBindingIndex::from_u32(0);
 
 impl Renderer {
-    pub fn render(&mut self, gl: &gl::Gl, params: &Parameters, world: &mut World) {
+    pub fn render(&mut self, context: &mut RenderingContext, params: &Parameters) {
         unsafe {
-            self.update(gl, world);
+            self.update(context);
+            let gl = &context.gl;
             if let ProgramName::Linked(program_name) = self.program.name {
                 gl.use_program(program_name);
 
@@ -65,8 +66,10 @@ impl Renderer {
         }
     }
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        if self.program.update(gl, world) {
+    pub fn update(&mut self, context: &mut RenderingContext) {
+        let gl = &context.gl;
+
+        if self.program.update(&mut rendering_context!(context)) {
             if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
                     self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
@@ -75,7 +78,8 @@ impl Renderer {
         }
     }
 
-    pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
+    pub fn new(context: &mut RenderingContext) -> Self {
+        let gl = context.gl;
         unsafe {
             let vertex_array_name = gl.create_vertex_array();
             let vertex_buffer_name = gl.create_buffer();
@@ -106,7 +110,7 @@ impl Renderer {
             gl.vertex_array_element_buffer(vertex_array_name, element_buffer_name);
 
             Renderer {
-                program: vs_fs_program(gl, world, "line_renderer.vert", "line_renderer.frag"),
+                program: vs_fs_program(context, "line_renderer.vert", "line_renderer.frag", String::from("// TODO: Pass locations and bindings")),
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,

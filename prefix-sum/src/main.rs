@@ -18,7 +18,7 @@ fn u32_div_ceil(a: u32, b: u32) -> u32 {
         }
 }
 
-const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::new_unchecked(0) };
+const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
 
 fn main() {
     let cfg = configuration::read("prefix-sum/configuration.toml");
@@ -360,7 +360,6 @@ impl PrefixSumResources {
         }
     }
 }
-
 
 fn prefix_sum_program(
     gl: &gl::Gl,

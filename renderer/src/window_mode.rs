@@ -6,10 +6,3 @@ pub enum WindowMode {
     Debug,
     Split,
 }
-
-#[derive(Debug)]
-pub enum WindowModeBox<M, D, S> {
-    Main(M),
-    Debug(D),
-    Split(S),
-}
