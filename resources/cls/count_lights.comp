@@ -77,22 +77,21 @@ void main() {
   #error CLUSTERING_PROJECTION is not defined.
 #endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
-  // TODO: VERIFY THAT THIS WORKS :')
   Frustum frustum = cluster_space.frustum;
   // Tangents.
   float x0 = lerp_u32_f32(idx_in_cls.x, 0, dimensions.x, frustum.x0, frustum.x1);
-  float x1 = lerp_u32_f32(idx_in_cls.x + 1, 0, dimensions.x, frustum.x1, frustum.x1);
+  float x1 = lerp_u32_f32(idx_in_cls.x + 1, 0, dimensions.x, frustum.x0, frustum.x1);
   float y0 = lerp_u32_f32(idx_in_cls.y, 0, dimensions.y, frustum.y0, frustum.y1);
-  float y1 = lerp_u32_f32(idx_in_cls.y + 1, 0, dimensions.y, frustum.y1, frustum.y1);
+  float y1 = lerp_u32_f32(idx_in_cls.y + 1, 0, dimensions.y, frustum.y0, frustum.y1);
 
   // Depths. z0 < z1 < 0
   float z0 = lerp_u32_f32(idx_in_cls.z, 0, dimensions.z, frustum.z0, frustum.z1);
-  float z1 = lerp_u32_f32(idx_in_cls.z + 1, 0, dimensions.z, frustum.z1, frustum.z1);
+  float z1 = lerp_u32_f32(idx_in_cls.z + 1, 0, dimensions.z, frustum.z0, frustum.z1);
 
   // Tangent plane normals.
-  vec2 nx = normalize(vec2(-1.0, x0));
+  vec2 nx = normalize(vec2(-1.0, -x0));
   vec2 px = normalize(vec2(1.0, x1));
-  vec2 ny = normalize(vec2(-1.0, y0));
+  vec2 ny = normalize(vec2(-1.0, -y0));
   vec2 py = normalize(vec2(1.0, y1));
 
   for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
