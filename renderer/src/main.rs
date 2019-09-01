@@ -1729,14 +1729,14 @@ impl Context {
             &self.monospace,
             &format!(
                 "\
-                 Attenuation Mode: {:?}\n\
-                 Render Technique: {:?}\n\
-                 Lighting Space:   {:?}\n\
-                 Light Count:      {}\n\
+                 Render Technique: {:<14} | CLS Grouping:     {:<14} | CLS Projection:   {:<14}\n\
+                 Attenuation Mode: {:<14} | Lighting Space:   {:<14} | Light Count:      {:<14}\n\
                  ",
-                self.shader_compiler.attenuation_mode(),
-                self.shader_compiler.render_technique(),
-                self.shader_compiler.light_space(),
+                format!("{:?}", self.shader_compiler.render_technique()),
+                format!("{:?}", self.configuration.clustered_light_shading.grouping),
+                format!("{:?}", self.configuration.clustered_light_shading.projection),
+                format!("{:?}", self.shader_compiler.attenuation_mode()),
+                format!("{:?}", self.shader_compiler.light_space()),
                 self.point_lights.len(),
             ),
         );
