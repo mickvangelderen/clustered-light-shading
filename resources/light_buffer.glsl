@@ -1,6 +1,6 @@
 #include "point_light.glsl"
 
-layout(std140, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
+layout(std430, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
   mat4 wld_to_lgt;
   mat4 lgt_to_wld;
 
