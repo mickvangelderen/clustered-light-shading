@@ -5,16 +5,22 @@ pub struct Renderer {
     pub obj_to_wld_loc: gl::OptionUniformLocation,
 }
 
-impl Renderer {
-    pub fn render(&mut self, gl: &gl::Gl, world: &mut World, resources: &Resources) {
+impl Context {
+    pub fn render_depth(&mut self) {
+        let Context {
+            ref gl,
+            ref resources,
+            ref mut depth_renderer,
+            ..
+        } = *self;
         unsafe {
-            self.update(gl, world);
-            if let ProgramName::Linked(name) = self.program.name {
+            depth_renderer.update(&mut rendering_context!(self));
+            if let ProgramName::Linked(name) = depth_renderer.program.name {
                 gl.use_program(name);
                 gl.bind_vertex_array(resources.scene_pos_vao);
 
                 for (i, mesh_meta) in resources.mesh_metas.iter().enumerate() {
-                    if let Some(loc) = self.obj_to_wld_loc.into() {
+                    if let Some(loc) = depth_renderer.obj_to_wld_loc.into() {
                         let obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
 
                         gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
@@ -34,9 +40,12 @@ impl Renderer {
             }
         }
     }
+}
 
-    pub fn update(&mut self, gl: &gl::Gl, world: &mut World) {
-        if self.program.update(gl, world) {
+impl Renderer {
+    pub fn update(&mut self, context: &mut RenderingContext) {
+        if self.program.update(context) {
+            let gl = &context.gl;
             if let ProgramName::Linked(name) = self.program.name {
                 unsafe {
                     self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
@@ -45,9 +54,9 @@ impl Renderer {
         }
     }
 
-    pub fn new(gl: &gl::Gl, world: &mut World) -> Self {
+    pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(gl, world, "depth_renderer.vert", "depth_renderer.frag"),
+            program: vs_fs_program(context, "depth_renderer.vert", "depth_renderer.frag", String::from("// TODO: Pass locations and bindings")),
             obj_to_wld_loc: gl::OptionUniformLocation::NONE,
         }
     }

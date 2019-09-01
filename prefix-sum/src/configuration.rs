@@ -23,12 +23,8 @@ pub fn read(configuration_path: impl AsRef<std::path::Path>) -> Root {
     match std::fs::read_to_string(configuration_path) {
         Ok(contents) => match toml::from_str(&contents) {
             Ok(configuration) => configuration,
-            Err(err) => {
-                panic!("Failed to parse configuration file {:?}: {}.", configuration_path, err)
-            }
+            Err(err) => panic!("Failed to parse configuration file {:?}: {}.", configuration_path, err),
         },
-        Err(err) => {
-            panic!("Failed to read configuration file {:?}: {}.", configuration_path, err)
-        }
+        Err(err) => panic!("Failed to read configuration file {:?}: {}.", configuration_path, err),
     }
 }

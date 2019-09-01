@@ -1,12 +1,22 @@
 #include "native/PREFIX_SUM"
+#include "native/CLUSTERED_LIGHT_SHADING"
 
-#include "../compute_indirect.glsl"
-#include "../draw_indirect.glsl"
-#include "cls.glsl"
 #include "../common.glsl"
+#include "cluster_space_buffer.glsl"
+// in
+#include "cluster_fragment_counts_buffer.glsl"
+// use
+#include "offsets_buffer.glsl"
+// out
+#include "active_cluster_indices_buffer.glsl"
+#include "draw_commands_buffer.glsl"
+#include "compute_commands_buffer.glsl"
 
-layout(location = 0) uniform uint ITEM_COUNT;
+layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
 
+#if !defined(PASS)
+  #error PASS is not defined.
+#endif
 #if PASS == 0
 #define LOCAL_X PASS_0_THREADS
 #elif PASS == 1
@@ -83,9 +93,12 @@ void main() {
   uint acc = 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
-    uint value = cluster_fragment_counts[offset + tid];
-    if (value > 0) {
-      acc += 1;
+    uint cluster_index = offset + tid;
+    if (cluster_index < ITEM_COUNT) {
+      uint fragment_count = cluster_fragment_counts[offset + tid];
+      if (fragment_count > 0) {
+        acc += 1;
+      }
     }
   }
 
@@ -117,7 +130,7 @@ void main() {
   if (tid == PASS_1_THREADS - 1) {
     uint active_cluster_count = values[tid];
 
-    draw_command.prim_count = active_cluster_count;
+    draw_commands.prim_count = active_cluster_count;
 
     compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x = active_cluster_count;
 
@@ -139,29 +152,38 @@ void main() {
   uint acc = (wid > 0) ? offsets[wid - 1] : 0;
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
-    // Initialize shared memory
-    uint cluster_active = ((cluster_fragment_counts[offset + tid]) == 0 ? 0 : 1);
-    values[tid] = cluster_active;
-    memoryBarrierShared();
-    barrier();
+    uint cluster_index = offset + tid;
+    if (cluster_index < ITEM_COUNT) {
+      // Initialize shared memory
+      uint fragment_count = cluster_fragment_counts[cluster_index];
+      bool cluster_active = fragment_count > 0;
 
-    scan();
+      values[tid] = cluster_active ? 1 : 0;
 
-    if (cluster_active > 0) {
-      // Instead of writing out the offsets, we use them immediately to emit
-      // active cluster indices.
-      uint active_cluster_index_index = acc + values[tid] - 1;
-      uint cluster_index = offset + tid;
-      active_cluster_indices[active_cluster_index_index] = cluster_index;
-      // We also write the active cluster index back into the fragment count
-      // buffer, except we use 0 as a sentinel value to denote the cluster is
-      // inactive. Therefore we store the active cluster index incremented by
-      // one.
-      cluster_fragment_counts[cluster_index] = active_cluster_index_index + 1;
+      memoryBarrierShared();
+      barrier();
+
+      scan();
+
+      if (cluster_active) {
+        // Instead of writing out the offsets, we use them immediately to emit
+        // active cluster indices.
+        uint active_cluster_index_index = acc + values[tid] - 1;
+        active_cluster_indices[active_cluster_index_index] = cluster_index;
+        // We also write the active cluster index back into the fragment count
+        // buffer, except we use 0 as a sentinel value to denote the cluster is
+        // inactive. Therefore we store the active cluster index incremented by
+        // one.
+        cluster_fragment_counts[cluster_index] = active_cluster_index_index + 1;
+      }
+
+      // Add the total sum of the current segment to the accumulator.
+      acc += values[LOCAL_X - 1];
+
+      // Ensure shared memory was read in all threads before the next iteration starts writing.
+      memoryBarrierShared();
+      barrier();
     }
-
-    // Add the total sum of the current segment to the accumulator.
-    acc += values[LOCAL_X - 1];
   }
 }
 #else

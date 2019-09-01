@@ -1,5 +1,8 @@
 #![allow(unused_macros)]
 
+#[macro_use]
+mod frame_pool;
+
 macro_rules! get_uniform_location {
     ($gl: ident, $program: expr, $s: expr) => {{
         let loc = $gl.get_uniform_location($program, gl::static_cstr!($s));
@@ -19,6 +22,37 @@ macro_rules! get_attribute_location {
         loc
     }};
 }
+
+macro_rules! glsl_defines {
+    ($fn: ident {
+        bindings: {
+            $($bname: ident = $bval: expr;)*
+        },
+        uniforms: {
+            $($uname: ident = $uval: expr;)*
+        },
+    }) => {
+        $(
+            pub const $bname: u32 = $bval;
+        )*
+
+            $(
+                pub const $uname: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked($uval) };
+            )*
+
+        fn $fn() -> String {
+            let mut s = String::new();
+            $(
+                s.push_str(&format!("#define {} {}\n", stringify!($bname), $bname));
+            )*
+                $(
+                    s.push_str(&format!("#define {} {}\n", stringify!($uname), $uname.to_i32()));
+                )*
+                s
+        }
+    };
+}
+
 
 macro_rules! field_offset {
     ($Struct:ty, $field:ident) => {
@@ -156,4 +190,25 @@ macro_rules! create_framebuffer {
 
         framebuffer_name
     }}
+}
+
+macro_rules! rendering_context {
+    ($object: ident) => {
+        crate::rendering::RenderingContext {
+            gl: &$object.gl,
+            resource_dir: &$object.resource_dir,
+            current: &mut $object.current,
+            shader_compiler: &mut $object.shader_compiler,
+        }
+    };
+}
+
+macro_rules! shader_compilation_context {
+    ($object: ident) => {
+        crate::shader_compiler::ShaderCompilationContext {
+            resource_dir: &$object.resource_dir,
+            current: &mut $object.current,
+            shader_compiler: &mut $object.shader_compiler,
+        }
+    };
 }

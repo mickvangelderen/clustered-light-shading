@@ -1,12 +1,11 @@
+use cgmath::*;
 use kernel_generator::*;
 use rand::distributions::*;
 use rand::prelude::*;
-use cgmath::*;
 
 fn slice_to_bytes<T>(s: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(s.as_ptr() as *const u8, std::mem::size_of_val(s)) }
 }
-
 
 fn main() {
     let out_dir = std::path::PathBuf::from(".");
@@ -24,14 +23,21 @@ fn main() {
 
         std::fs::write(out_dir.join("unit_sphere_volume.bin"), slice_to_bytes(&values[..])).unwrap();
 
-        let values_reflected: Vec<[f32; 3]> = values.into_iter().map(|v| {
-            let v = Vector3::from(v);
-            let n = Vector3::new(0.0, 1.0, 0.0);
+        let values_reflected: Vec<[f32; 3]> = values
+            .into_iter()
+            .map(|v| {
+                let v = Vector3::from(v);
+                let n = Vector3::new(0.0, 1.0, 0.0);
 
-            (v - 2.0 * Vector3::dot(n, v)*n).into()
-        }).collect();
+                (v - 2.0 * Vector3::dot(n, v) * n).into()
+            })
+            .collect();
 
-        std::fs::write(out_dir.join("unit_sphere_volume_reflected.bin"), slice_to_bytes(&values_reflected[..])).unwrap();
+        std::fs::write(
+            out_dir.join("unit_sphere_volume_reflected.bin"),
+            slice_to_bytes(&values_reflected[..]),
+        )
+        .unwrap();
     }
     {
         let dist = UnitSphereDense::new();
@@ -55,13 +61,20 @@ fn main() {
             .collect();
         std::fs::write(out_dir.join("unit_sphere_surface.bin"), slice_to_bytes(&values[..])).unwrap();
 
-        let values_reflected: Vec<[f32; 3]> = values.into_iter().map(|n| {
-            let n = Vector3::from(n);
-            let v = Vector3::new(0.0, 1.0, 0.0);
+        let values_reflected: Vec<[f32; 3]> = values
+            .into_iter()
+            .map(|n| {
+                let n = Vector3::from(n);
+                let v = Vector3::new(0.0, 1.0, 0.0);
 
-            (v - 2.0 * Vector3::dot(n, v)*n).into()
-        }).collect();
+                (v - 2.0 * Vector3::dot(n, v) * n).into()
+            })
+            .collect();
 
-        std::fs::write(out_dir.join("unit_sphere_surface_reflected.bin"), slice_to_bytes(&values_reflected[..])).unwrap();
+        std::fs::write(
+            out_dir.join("unit_sphere_surface_reflected.bin"),
+            slice_to_bytes(&values_reflected[..]),
+        )
+        .unwrap();
     }
 }

@@ -100,22 +100,6 @@ pub struct LightBufferHeader {
 }
 
 pub const LIGHT_BUFFER_DECLARATION: &'static str = r"
-struct PointLight {
-    vec4 ambient;
-    vec4 diffuse;
-    vec4 specular;
-    vec4 pos_in_lgt;
-    vec4 att;
-};
-
-layout(std140, binding = LIGHT_BUFFER_BINDING) buffer LightBuffer {
-    mat4 wld_to_lgt;
-    mat4 lgt_to_wld;
-
-    uvec4 light_count;
-
-    PointLight point_lights[];
-} light_buffer;
 ";
 
 pub struct LightResources {

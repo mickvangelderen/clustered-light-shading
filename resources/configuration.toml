@@ -12,14 +12,15 @@ width = 1280
 height = 720
 
 [clustered_light_shading]
-cluster_side = 2.0
-# light_index = 2
-min_light_count = 1
-# animate_z = 2.0
-# animate_light_count = 2.0
-max_cluster_count = 16777216 # 2^24 u32 64MB * (fragments, light counts, light offsets)
-max_active_cluster_count = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
-max_light_index_count = 1048576 # 2^20 u32 4MB * (light index)
+# projection = "Orthographic"
+projection = "Perspective"
+grouping = "Individual"
+# grouping = "Enclosed"
+orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
+perspective_sides = { x = 8.0, y = 8.0, z = 2.0 }
+max_clusters = 16777216 # 2^24 u32 64MB (fragments_per_cluster turns active_cluster_ids)
+max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
+max_light_indices = 1048576 # 2^20 u32 4MB * (light index)
 
 [virtual_stereo]
 enabled = false
