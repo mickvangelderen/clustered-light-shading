@@ -200,7 +200,7 @@ void main() {
 
       // CLUSTER LENGHTS
       // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
-      frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
+      // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
 
       // COLORED CLUSTER LENGTHS
       // if (cluster_light_count == 0) {
@@ -221,16 +221,16 @@ void main() {
       // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
       // ACTUAL SHADING
-      // vec3 color_accumulator = vec3(0.0);
-      // for (uint i = 0; i < cluster_light_count; i++) {
-      //   uint light_index = light_indices[cluster_light_offset + i];
+      vec3 color_accumulator = vec3(0.0);
+      for (uint i = 0; i < cluster_light_count; i++) {
+        uint light_index = light_indices[cluster_light_offset + i];
 
-      //   color_accumulator += point_light_contribution(
-      //       light_buffer.point_lights[light_index], nor_in_lgt, fs_pos_in_lgt,
-      //       cam_dir_in_lgt_norm);
-      //   // atomicCounterIncrement(shading_ops);
-      // }
-      // frag_color = vec4(color_accumulator, 1.0);
+        color_accumulator += point_light_contribution(
+            light_buffer.point_lights[light_index], nor_in_lgt, fs_pos_in_lgt,
+            cam_dir_in_lgt_norm);
+        // atomicCounterIncrement(shading_ops);
+      }
+      frag_color = vec4(color_accumulator, 1.0);
     }
 #else
 #error Unimplemented render technique!

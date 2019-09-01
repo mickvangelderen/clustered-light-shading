@@ -1549,7 +1549,7 @@ impl Context {
                 }
 
                 unsafe {
-                    let program = &mut self.cls_renderer.count_lights_program;
+                    let program = &mut self.cls_renderer.assign_lights_program;
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
