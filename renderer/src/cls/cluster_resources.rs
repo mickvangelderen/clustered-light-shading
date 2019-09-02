@@ -226,14 +226,16 @@ impl ClusterResources {
         }
 
         let things: Things = match cfg.projection {
-            ClusteringProjection::Orthographic => {
-                Things {
-                    frustum: Frustum::<f64>::from_range(&range),
-                    wld_to_ccam: parameters.wld_to_hmd,
-                    ccam_to_wld: parameters.hmd_to_wld,
-                }
+            ClusteringProjection::Orthographic => Things {
+                frustum: Frustum::<f64>::from_range(&range),
+                wld_to_ccam: parameters.wld_to_hmd,
+                ccam_to_wld: parameters.hmd_to_wld,
             },
             ClusteringProjection::Perspective => {
+                if self.camera_resources_pool.used_slice().len() > 2 {
+                    warn!("Too many cameras, code wasn't written to support this though it might somehow work.");
+                }
+
                 let far_pos_in_clp = [
                     Point3::new(-1.0, -1.0, DEPTH_RANGE.1),
                     Point3::new(-1.0, 1.0, DEPTH_RANGE.1),
@@ -396,16 +398,9 @@ impl ClusterResources {
                 let ny_max = ny_max.unwrap();
                 let py_max = py_max.unwrap();
 
-                let planes = [
-                    nx_max,
-                    px_max,
-                    ny_max,
-                    py_max,
-                ];
+                let planes = [nx_max, px_max, ny_max, py_max];
 
-                let p_max = planes
-                    .iter()
-                    .max_by(|a, b| a.z.partial_cmp(&b.z).unwrap()).unwrap();
+                let p_max = planes.iter().max_by(|a, b| a.z.partial_cmp(&b.z).unwrap()).unwrap();
 
                 let mut x0 = None;
                 let mut x1 = None;
@@ -418,14 +413,14 @@ impl ClusterResources {
                 for &p in far_pos_in_hmd.iter().chain(near_pos_in_hmd.iter()) {
                     if match z0 {
                         Some(z0) => p.z < z0,
-                        None => true
+                        None => true,
                     } {
                         z0 = Some(p.z);
                     }
 
                     if match z1 {
                         Some(z1) => p.z > z1,
-                        None => true
+                        None => true,
                     } {
                         z1 = Some(p.z)
                     }
@@ -453,28 +448,34 @@ impl ClusterResources {
                         }
                     }
                     if all_nx {
-                        x0 = Some( o_to_p.x / o_to_p.z);
+                        x0 = Some(o_to_p.x / o_to_p.z);
                     }
                     if all_px {
-                        x1 = Some( o_to_p.x / o_to_p.z);
+                        x1 = Some(o_to_p.x / o_to_p.z);
                     }
                     if all_ny {
-                        y0 = Some( o_to_p.y / o_to_p.z);
+                        y0 = Some(o_to_p.y / o_to_p.z);
                     }
                     if all_py {
-                        y1 = Some( o_to_p.y / o_to_p.z);
+                        y1 = Some(o_to_p.y / o_to_p.z);
                     }
                 }
                 dbg!(origin, x0, x1, y0, y1);
 
                 let cameras = self.camera_resources_pool.used_slice();
-                dbg!(cameras[0].parameters.frustum);
-                // assert_eq!(1, cameras.len());
-                cameras[0].parameters.frustum;
+                let hmd_to_ccam = Matrix4::from_translation(Point3::origin() - origin);
+                let ccam_to_hmd = Matrix4::from_translation(origin - Point3::origin());
                 Things {
-                    frustum: cameras[0].parameters.frustum,
-                    wld_to_ccam: cameras[0].parameters.wld_to_cam,
-                    ccam_to_wld: cameras[0].parameters.cam_to_wld,
+                    frustum: Frustum {
+                        x0: x0.unwrap(),
+                        x1: x1.unwrap(),
+                        y0: y0.unwrap(),
+                        y1: y1.unwrap(),
+                        z0: z0.unwrap() - origin.z,
+                        z1: z1.unwrap() - origin.z,
+                    },
+                    wld_to_ccam: hmd_to_ccam * parameters.wld_to_hmd,
+                    ccam_to_wld: parameters.hmd_to_wld * ccam_to_hmd,
                 }
             }
         };

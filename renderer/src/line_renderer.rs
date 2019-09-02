@@ -10,14 +10,22 @@ pub struct Renderer {
     pub vertex_array_name: gl::VertexArrayName,
     pub vertex_buffer_name: gl::BufferName,
     pub element_buffer_name: gl::BufferName,
-    pub obj_to_wld_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters<'a> {
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
     pub obj_to_wld: &'a Matrix4<f32>,
+    pub color: [f32; 3],
 }
+
+glsl_defines!(fixed_header {
+    bindings: {},
+    uniforms: {
+        OBJ_TO_WLD_LOC = 0;
+        COLOR_LOC = 1;
+    },
+});
 
 // TODO: Actually use this?
 #[repr(C)]
@@ -32,14 +40,13 @@ const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
 impl Renderer {
     pub fn render(&mut self, context: &mut RenderingContext, params: &Parameters) {
         unsafe {
-            self.update(context);
+            self.program.update(context);
             let gl = &context.gl;
             if let ProgramName::Linked(program_name) = self.program.name {
                 gl.use_program(program_name);
 
-                if let Some(loc) = self.obj_to_wld_loc.into() {
-                    gl.uniform_matrix4f(loc, gl::MajorAxis::Column, params.obj_to_wld.as_ref());
-                }
+                gl.uniform_matrix4f(OBJ_TO_WLD_LOC, gl::MajorAxis::Column, params.obj_to_wld.as_ref());
+                gl.uniform_3f(COLOR_LOC, params.color);
 
                 gl.named_buffer_data(
                     self.vertex_buffer_name,
@@ -62,18 +69,6 @@ impl Renderer {
                 gl.unbind_vertex_array();
 
                 gl.unuse_program();
-            }
-        }
-    }
-
-    pub fn update(&mut self, context: &mut RenderingContext) {
-        let gl = &context.gl;
-
-        if self.program.update(&mut rendering_context!(context)) {
-            if let ProgramName::Linked(name) = self.program.name {
-                unsafe {
-                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
-                }
             }
         }
     }
@@ -110,11 +105,10 @@ impl Renderer {
             gl.vertex_array_element_buffer(vertex_array_name, element_buffer_name);
 
             Renderer {
-                program: vs_fs_program(context, "line_renderer.vert", "line_renderer.frag", String::from("// TODO: Pass locations and bindings")),
+                program: vs_fs_program(context, "line_renderer.vert", "line_renderer.frag", fixed_header()),
                 vertex_array_name,
                 vertex_buffer_name,
                 element_buffer_name,
-                obj_to_wld_loc: gl::OptionUniformLocation::NONE,
             }
         }
     }

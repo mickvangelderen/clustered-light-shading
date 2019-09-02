@@ -15,6 +15,7 @@ pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
 mod basic_renderer;
+pub mod color;
 pub mod camera;
 pub mod cgmath_ext;
 pub mod clamp;
@@ -1680,9 +1681,28 @@ impl Context {
                                     * camera_resources.parameters.clp_to_cam)
                                     .cast()
                                     .unwrap(),
+                                color: color::MAGENTA,
                             },
                         );
                     }
+
+                    let vertices: Vec<[f32; 3]> = cluster_resources
+                        .computed
+                        .frustum
+                        .corners_in_cam()
+                        .iter()
+                        .map(|&p| p.cast().unwrap().into())
+                        .collect();
+
+                    self.line_renderer.render(
+                        &mut rendering_context!(self),
+                        &line_renderer::Parameters {
+                            vertices: &vertices,
+                            indices: FRUSTRUM_LINE_MESH_INDICES,
+                            obj_to_wld: &(cluster_resources.computed.ccam_to_wld.cast().unwrap()),
+                            color: color::RED,
+                        },
+                    );
 
                     {
                         // Reborrow.
