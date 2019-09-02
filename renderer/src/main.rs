@@ -921,8 +921,8 @@ impl Context {
                         gl,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_ccam: cluster_c1.wld_to_hmd,
-                            ccam_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -957,8 +957,8 @@ impl Context {
                             gl,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
-                                wld_to_ccam: cluster_c1.wld_to_hmd,
-                                ccam_to_wld: cluster_c1.hmd_to_wld,
+                                wld_to_hmd: cluster_c1.wld_to_hmd,
+                                hmd_to_wld: cluster_c1.hmd_to_wld,
                             },
                         ));
                     }
@@ -1064,8 +1064,8 @@ impl Context {
                         gl,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_ccam: cluster_c1.wld_to_hmd,
-                            ccam_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1098,8 +1098,8 @@ impl Context {
                         gl,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_ccam: cluster_c1.wld_to_hmd,
-                            ccam_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1194,7 +1194,7 @@ impl Context {
                 let data = ClusterSpaceBuffer::new(
                     cluster_resources.computed.dimensions,
                     cluster_resources.computed.frustum,
-                    cluster_resources.parameters.wld_to_ccam,
+                    cluster_resources.computed.wld_to_ccam,
                 );
 
                 buffer.invalidate(gl);
@@ -1407,7 +1407,7 @@ impl Context {
                         .iter()
                         .map(|&light| {
                             let pos_in_ccam = cluster_resources
-                                .parameters
+                                .computed
                                 .wld_to_ccam
                                 .transform_point(light.pos_in_wld.cast().unwrap());
                             let [x, y, z]: [f32; 3] = pos_in_ccam.cast::<f32>().unwrap().into();
