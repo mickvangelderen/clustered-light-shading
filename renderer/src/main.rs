@@ -15,11 +15,11 @@ pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
 mod basic_renderer;
-pub mod color;
 pub mod camera;
 pub mod cgmath_ext;
 pub mod clamp;
 mod cls;
+pub mod color;
 mod configuration;
 mod convert;
 mod depth_renderer;
@@ -1686,13 +1686,17 @@ impl Context {
                         );
                     }
 
-                    let vertices: Vec<[f32; 3]> = cluster_resources
-                        .computed
-                        .frustum
-                        .corners_in_cam()
-                        .iter()
-                        .map(|&p| p.cast().unwrap().into())
-                        .collect();
+                    let vertices: Vec<[f32; 3]> = match self.configuration.clustered_light_shading.projection {
+                        configuration::ClusteringProjection::Perspective => {
+                            cluster_resources.computed.frustum.corners_in_cam_perspective()
+                        }
+                        configuration::ClusteringProjection::Orthographic => {
+                            cluster_resources.computed.frustum.corners_in_cam_orthographic()
+                        }
+                    }
+                    .iter()
+                    .map(|&p| p.cast().unwrap().into())
+                    .collect();
 
                     self.line_renderer.render(
                         &mut rendering_context!(self),
