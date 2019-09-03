@@ -1,33 +1,5 @@
 use crate::*;
 
-// pub struct QueryPool {
-//     names: [gl::QueryName; 2],
-// }
-
-// impl QueryPool {
-//     pub fn new(gl: &gl::Gl) -> Self {
-//         unsafe {
-//             Self {
-//                 names: [
-//                     gl.create_query(gl::TIMESTAMP),
-//                     gl.create_query(gl::TIMESTAMP),
-//                     // gl.create_query(gl::TIMESTAMP),
-//                     // gl.create_query(gl::TIMESTAMP),
-//                 ],
-//             }
-//         }
-//     }
-
-//     pub fn now(&self, gl: &gl::Gl, tick: u64) -> Option<NonZeroU64> {
-//         unsafe {
-//             let name = &self.names[tick as usize % self.names.len()];
-//             let result = gl.try_query_result_u64(name);
-//             gl.query_counter(name);
-//             result
-//         }
-//     }
-// }
-
 #[derive(Debug, Copy, Clone, Default)]
 pub struct TimeSpan {
     pub begin: u64,
