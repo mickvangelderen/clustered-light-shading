@@ -344,38 +344,32 @@ where
     }
 
     #[inline]
-    pub fn corners_in_cam(&self) -> [Point3<T>; 8] {
+    pub fn corners_in_cam_perspective(&self) -> [Point3<T>; 8] {
         let Self { x0, x1, y0, y1, z0, z1 } = *self;
         [
-            Point3::new(z0*x0, z0*y0, z0),
-            Point3::new(z0*x1, z0*y0, z0),
-            Point3::new(z0*x0, z0*y1, z0),
-            Point3::new(z0*x1, z0*y1, z0),
-            Point3::new(z1*x0, z1*y0, z1),
-            Point3::new(z1*x1, z1*y0, z1),
-            Point3::new(z1*x0, z1*y1, z1),
-            Point3::new(z1*x1, z1*y1, z1),
+            Point3::new(-z0*x0, -z0*y0, z0),
+            Point3::new(-z0*x1, -z0*y0, z0),
+            Point3::new(-z0*x0, -z0*y1, z0),
+            Point3::new(-z0*x1, -z0*y1, z0),
+            Point3::new(-z1*x0, -z1*y0, z1),
+            Point3::new(-z1*x1, -z1*y0, z1),
+            Point3::new(-z1*x0, -z1*y1, z1),
+            Point3::new(-z1*x1, -z1*y1, z1),
         ]
     }
 
     #[inline]
-    pub fn line_mesh_indices() -> [[u32; 2]; 12] {
+    pub fn corners_in_cam_orthographic(&self) -> [Point3<T>; 8] {
+        let Self { x0, x1, y0, y1, z0, z1 } = *self;
         [
-            // Back
-            [0, 1],
-            [1, 3],
-            [3, 2],
-            [2, 0],
-            // Front
-            [4, 5],
-            [5, 7],
-            [7, 6],
-            [6, 4],
-            // Side
-            [0, 4],
-            [1, 5],
-            [2, 6],
-            [3, 7],
+            Point3::new(x0, y0, z0),
+            Point3::new(x1, y0, z0),
+            Point3::new(x0, y1, z0),
+            Point3::new(x1, y1, z0),
+            Point3::new(x0, y0, z1),
+            Point3::new(x1, y0, z1),
+            Point3::new(x0, y1, z1),
+            Point3::new(x1, y1, z1),
         ]
     }
 
