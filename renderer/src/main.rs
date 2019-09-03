@@ -14,6 +14,7 @@ pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
+mod toggle;
 mod basic_renderer;
 pub mod camera;
 pub mod cgmath_ext;
