@@ -1,8 +1,9 @@
 use crate::camera;
+use std::path::PathBuf;
 
 pub const FILE_PATH: &'static str = "configuration.toml";
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Clone)]
 pub struct Root {
     pub global: Global,
     pub window: Window,
@@ -14,7 +15,7 @@ pub struct Root {
     pub prefix_sum: PrefixSum,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Clone)]
 pub struct Window {
     pub vsync: bool,
     pub rgb_bits: u8,
@@ -24,14 +25,16 @@ pub struct Window {
     pub height: u32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Clone)]
 pub struct Global {
     pub diffuse_srgb: bool,
     pub framebuffer_srgb: bool,
     pub rain_drop_max: u32,
+    pub record: Option<PathBuf>,
+    pub replay: Option<PathBuf>,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Deserialize, Debug, Clone)]
 pub struct VirtualStereo {
     pub enabled: bool,
     pub pitch_deg: f32,

@@ -1,4 +1,4 @@
-use crate::configuration::{ClusteringGrouping, ClusteringProjection};
+use crate::configuration::ClusteringProjection;
 use crate::*;
 
 impl_enum_and_enum_map! {

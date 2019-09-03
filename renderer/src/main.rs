@@ -14,7 +14,6 @@ pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
-mod toggle;
 mod basic_renderer;
 pub mod camera;
 pub mod cgmath_ext;
@@ -41,10 +40,10 @@ mod resources;
 mod shader_compiler;
 mod text_renderer;
 mod text_rendering;
+mod toggle;
 mod viewport;
 mod window_mode;
 
-use self::cgmath_ext::*;
 use self::cls::*;
 use self::frustrum::*;
 use self::gl_ext::*;
@@ -64,6 +63,10 @@ use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
+use std::fs;
+use std::io;
+use std::io::Read;
+use std::io::Write;
 use std::mem;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -156,10 +159,18 @@ impl std::default::Default for WindowEventAccumulator {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+enum FrameEvent {
+    DeviceKey(glutin::KeyboardInput),
+    DeviceMotion { axis: glutin::AxisId, value: f64 },
+}
+
 pub struct Context {
     pub resource_dir: PathBuf,
     pub configuration_path: PathBuf,
     pub configuration: configuration::Root,
+    pub record_file: Option<io::BufWriter<fs::File>>,
+    pub replay_file: Option<io::BufReader<fs::File>>,
     pub gl: gl::Gl,
     pub vr: Option<vr::Context>,
     pub current: ::incremental::Current,
@@ -282,9 +293,6 @@ impl Context {
 
         // Load state.
         {
-            use std::fs;
-            use std::io;
-            use std::io::Read;
             match fs::File::open("state.bin") {
                 Ok(file) => {
                     let mut file = io::BufReader::new(file);
@@ -372,7 +380,6 @@ impl Context {
         Context {
             resource_dir,
             configuration_path,
-            configuration,
             gl,
             vr,
             current,
@@ -403,6 +410,17 @@ impl Context {
                 current_smoothness: configuration.camera.maximum_smoothness,
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             }),
+            record_file: configuration
+                .global
+                .record
+                .as_ref()
+                .map(|path| io::BufWriter::new(fs::File::create(path).unwrap())),
+            replay_file: configuration
+                .global
+                .replay
+                .as_ref()
+                .map(|path| io::BufReader::new(std::fs::File::open(path).unwrap())),
+            configuration,
             rain_drops: Vec::new(),
             shader_compiler,
 
@@ -523,6 +541,8 @@ impl Context {
         let mut new_render_technique = self.shader_compiler.render_technique();
         let mut reset_debug_camera = false;
 
+        let mut frame_events: Vec<FrameEvent> = Vec::new();
+
         events_loop.poll_events(|event| {
             use glutin::Event;
             match event {
@@ -546,67 +566,11 @@ impl Context {
                     use glutin::DeviceEvent;
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
+                            frame_events.push(FrameEvent::DeviceKey(keyboard_input));
                             self.keyboard_state.update(keyboard_input);
-
-                            if let Some(vk) = keyboard_input.virtual_keycode {
-                                if keyboard_input.state.is_pressed() && self.focus {
-                                    use glutin::VirtualKeyCode;
-                                    match vk {
-                                        VirtualKeyCode::Tab => {
-                                            // Don't trigger when we ALT TAB.
-                                            if self.keyboard_state.lalt.is_released() {
-                                                new_target_camera_key.wrapping_next_assign();
-                                            }
-                                        }
-                                        VirtualKeyCode::Key1 => {
-                                            new_attenuation_mode.wrapping_next_assign();
-                                        }
-                                        VirtualKeyCode::Key2 => {
-                                            // new_window_mode.wrapping_next_assign();
-                                            self.display_mode += 1;
-                                            if self.display_mode >= 4 {
-                                                self.display_mode = 1;
-                                            }
-                                        }
-                                        VirtualKeyCode::Key3 => {
-                                            new_render_technique.wrapping_next_assign();
-                                        }
-                                        VirtualKeyCode::Key4 => {
-                                            new_light_space.wrapping_next_assign();
-                                        }
-                                        VirtualKeyCode::Key5 => {
-                                            self.depth_prepass = !self.depth_prepass;
-                                        }
-                                        VirtualKeyCode::R => {
-                                            reset_debug_camera = true;
-                                        }
-                                        VirtualKeyCode::Backslash => {
-                                            self.configuration.virtual_stereo.enabled =
-                                                !self.configuration.virtual_stereo.enabled;
-                                        }
-                                        VirtualKeyCode::C => {
-                                            self.target_camera_mut().toggle_smoothness();
-                                        }
-                                        VirtualKeyCode::Escape => {
-                                            self.running = false;
-                                        }
-                                        VirtualKeyCode::Space => {
-                                            self.paused = !self.paused;
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                            }
                         }
                         DeviceEvent::Motion { axis, value } => {
-                            if self.focus {
-                                match axis {
-                                    0 => self.window_event_accumulator.mouse_delta.x += value,
-                                    1 => self.window_event_accumulator.mouse_delta.y += value,
-                                    3 => self.window_event_accumulator.scroll_delta += value,
-                                    _ => (),
-                                }
-                            }
+                            frame_events.push(FrameEvent::DeviceMotion { axis, value });
                         }
                         _ => (),
                     }
@@ -614,6 +578,81 @@ impl Context {
                 _ => (),
             }
         });
+
+        if let Some(file) = self.record_file.as_mut() {
+            bincode::serialize_into(file, &frame_events).unwrap();
+        }
+
+        if let Some(file) = self.replay_file.as_mut() {
+            let mut fe: Vec<FrameEvent> = bincode::deserialize_from(file).unwrap();
+            std::mem::swap(&mut frame_events, &mut fe);
+        }
+
+        for event in &frame_events {
+            match event {
+                FrameEvent::DeviceKey(keyboard_input) => {
+                    if let Some(vk) = keyboard_input.virtual_keycode {
+                        if keyboard_input.state.is_pressed() && self.focus {
+                            use glutin::VirtualKeyCode;
+                            match vk {
+                                VirtualKeyCode::Tab => {
+                                    // Don't trigger when we ALT TAB.
+                                    if self.keyboard_state.lalt.is_released() {
+                                        new_target_camera_key.wrapping_next_assign();
+                                    }
+                                }
+                                VirtualKeyCode::Key1 => {
+                                    new_attenuation_mode.wrapping_next_assign();
+                                }
+                                VirtualKeyCode::Key2 => {
+                                    // new_window_mode.wrapping_next_assign();
+                                    self.display_mode += 1;
+                                    if self.display_mode >= 4 {
+                                        self.display_mode = 1;
+                                    }
+                                }
+                                VirtualKeyCode::Key3 => {
+                                    new_render_technique.wrapping_next_assign();
+                                }
+                                VirtualKeyCode::Key4 => {
+                                    new_light_space.wrapping_next_assign();
+                                }
+                                VirtualKeyCode::Key5 => {
+                                    self.depth_prepass = !self.depth_prepass;
+                                }
+                                VirtualKeyCode::R => {
+                                    reset_debug_camera = true;
+                                }
+                                VirtualKeyCode::Backslash => {
+                                    self.configuration.virtual_stereo.enabled =
+                                        !self.configuration.virtual_stereo.enabled;
+                                }
+                                VirtualKeyCode::C => {
+                                    self.target_camera_mut().toggle_smoothness();
+                                }
+                                VirtualKeyCode::Escape => {
+                                    self.running = false;
+                                }
+                                VirtualKeyCode::Space => {
+                                    self.paused = !self.paused;
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+                }
+                FrameEvent::DeviceMotion { axis, value } => {
+                    if self.focus {
+                        match axis {
+                            0 => self.window_event_accumulator.mouse_delta.x += value,
+                            1 => self.window_event_accumulator.mouse_delta.y += value,
+                            3 => self.window_event_accumulator.scroll_delta += value,
+                            _ => (),
+                        }
+                    }
+                }
+            }
+        }
 
         self.window_mode = new_window_mode;
 
@@ -2018,9 +2057,6 @@ fn main() {
 
     // Save state.
     {
-        use std::fs;
-        use std::io;
-        use std::io::Write;
         let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
         for key in CameraKey::iter() {
             let camera = context.cameras[key].current_to_camera();
