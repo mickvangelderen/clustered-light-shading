@@ -36,7 +36,7 @@ void main() {
       ) {
     if (pass == 1) {
       // frag_color = vec4(vec3(float(frag_count) / 150.0), 1.0);
-      frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/1500.0);
+      frag_color = vec4(1.0, 0.6, 0.2, float(light_count)/400.0);
       // frag_color = vec4(1.0, 1.0, 1.0, float(light_offset)/1500.0);
     } else {
       discard;
