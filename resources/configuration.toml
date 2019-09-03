@@ -2,6 +2,8 @@
 diffuse_srgb = true
 framebuffer_srgb = true
 rain_drop_max = 10000
+# replay = "recording.bin"
+# record = "recording.bin"
 
 [window]
 vsync = false
