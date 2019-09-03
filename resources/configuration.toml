@@ -39,7 +39,7 @@ zoom_velocity = 0.5
 
 [debug_camera]
 z0 = -0.2
-z1 = -200.0
+z1 = -1000.0
 positional_velocity = 16.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
