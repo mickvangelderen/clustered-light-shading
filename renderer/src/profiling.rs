@@ -65,77 +65,101 @@ pub struct GpuCpuTimeSpan {
 
 #[derive(Debug)]
 pub struct ProfilerTimer {
-    frame: Frame,
     begin_query_name: gl::QueryName,
     end_query_name: gl::QueryName,
-    cpu_begin: Option<NonZeroU64>,
-    cpu_end: Option<NonZeroU64>,
+    state: State,
+}
+
+#[derive(Debug)]
+enum State {
+    Empty,
+    Started { frame: Frame, cpu_begin: u64 },
+    Stopped { frame: Frame, cpu_begin: u64, cpu_end: u64 },
 }
 
 impl ProfilerTimer {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
-            frame: Frame(0),
             begin_query_name: unsafe { gl.create_query(gl::TIMESTAMP) },
             end_query_name: unsafe { gl.create_query(gl::TIMESTAMP) },
-            cpu_begin: None,
-            cpu_end: None,
+            state: State::Empty,
         }
-    }
-
-    #[inline]
-    pub fn clear(&mut self) {
-        self.cpu_begin = None;
-        self.cpu_end = None;
     }
 
     #[inline]
     pub fn start(&mut self, gl: &gl::Gl, epoch: Epoch, frame: Frame) {
-        self.frame = frame;
-        unsafe {
-            gl.query_counter(self.begin_query_name);
-        }
-        debug_assert!(self.cpu_begin.is_none(), "Profiler was started more than once!");
-        self.cpu_begin = Some(NonZeroU64::new(epoch.elapsed().as_nanos() as u64).unwrap());
+        self.state = match self.state {
+            State::Empty | State::Stopped { .. } => {
+                unsafe {
+                    gl.query_counter(self.begin_query_name);
+                }
+                State::Started {
+                    frame: frame,
+                    cpu_begin: epoch.elapsed().as_nanos() as u64,
+                }
+            }
+            State::Started { .. } => {
+                panic!("Tried to start a profiler that had already been started!");
+            }
+        };
     }
 
     #[inline]
     pub fn stop(&mut self, gl: &gl::Gl, epoch: Epoch) {
-        unsafe {
-            gl.query_counter(self.end_query_name);
+        self.state = match self.state {
+            State::Empty => {
+                panic!("Tried to stop a profiler that was never started!");
+            }
+            State::Started { frame, cpu_begin } => {
+                unsafe {
+                    gl.query_counter(self.end_query_name);
+                }
+                State::Stopped {
+                    frame,
+                    cpu_begin,
+                    cpu_end: epoch.elapsed().as_nanos() as u64,
+                }
+            }
+            State::Stopped { .. } => {
+                panic!("Tried to stop a profiler that had already been stopped!");
+            }
         }
-        debug_assert!(self.cpu_begin.is_some(), "Profiler was stopped before it was started!");
-        debug_assert!(self.cpu_end.is_none(), "Profiler was stopped more than once!");
-        self.cpu_end = Some(NonZeroU64::new(epoch.elapsed().as_nanos() as u64).unwrap());
     }
 
     #[inline]
     pub fn read(&mut self, gl: &gl::Gl) -> Option<GpuCpuTimeSpan> {
-        unsafe {
-            self.cpu_begin.take().map(|cpu_begin| {
-                let gpu_begin = gl
-                    .try_query_result_u64(self.begin_query_name)
-                    .expect("Query result was not ready!");
-                let gpu_end = gl
-                    .try_query_result_u64(self.end_query_name)
-                    .expect("Query result was not ready!");
-                GpuCpuTimeSpan {
-                    frame: self.frame,
+        match self.state {
+            State::Empty => None,
+            State::Started { .. } => {
+                panic!("Tried to read a profiler that was started but never stopped!");
+            }
+            State::Stopped {
+                frame,
+                cpu_begin,
+                cpu_end,
+            } => {
+                let (gpu_begin, gpu_end) = unsafe {
+                    (
+                        gl.try_query_result_u64(self.begin_query_name)
+                            .expect("Query result was not ready!"),
+                        gl.try_query_result_u64(self.end_query_name)
+                            .expect("Query result was not ready!"),
+                    )
+                };
+
+                Some(GpuCpuTimeSpan {
+                    frame,
                     gpu: TimeSpan {
                         begin: gpu_begin.get(),
                         end: gpu_end.get(),
                     },
                     cpu: TimeSpan {
-                        begin: cpu_begin.get(),
-                        end: self
-                            .cpu_end
-                            .take()
-                            .expect("Profiler was started but never stopped!")
-                            .get(),
+                        begin: cpu_begin,
+                        end: cpu_end,
                     },
-                }
-            })
+                })
+            }
         }
     }
 }
