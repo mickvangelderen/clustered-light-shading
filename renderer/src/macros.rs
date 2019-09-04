@@ -75,7 +75,7 @@ macro_rules! impl_enum_map {
 
         impl<T> $Map<T> {
             #[inline]
-            pub fn new<F>(f: F) -> Self where F: Fn($Key) -> T {
+            pub fn new<F>(mut f: F) -> Self where F: FnMut($Key) -> T {
                 $Map {
                     $(
                         $field: f($Key::$variant),
@@ -84,7 +84,7 @@ macro_rules! impl_enum_map {
             }
 
             #[inline]
-            pub fn map<U, F>(self, f: F) -> $Map<U> where F: Fn(T) -> U {
+            pub fn map<U, F>(self, mut f: F) -> $Map<U> where F: FnMut(T) -> U {
                 $Map {
                     $(
                         $field: f(self.$field),
@@ -93,7 +93,7 @@ macro_rules! impl_enum_map {
             }
 
             #[inline]
-            pub fn zip<U, V, F>(self, other: $Map<U>, f: F) -> $Map<V> where F: Fn(T, U) -> V {
+            pub fn zip<U, V, F>(self, other: $Map<U>, mut f: F) -> $Map<V> where F: FnMut(T, U) -> V {
                 $Map {
                     $(
                         $field: f(self.$field, other.$field),

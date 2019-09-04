@@ -1,6 +1,6 @@
-use crate::*;
+use gl_typed as gl;
 
-#[derive(Default, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(serde::Deserialize, serde::Serialize, Default, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Frame(pub u64);
 
 impl Frame {
@@ -41,9 +41,29 @@ impl std::ops::Sub<u64> for Frame {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct ProfilerCounter(usize);
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ProfilerId(usize);
+
+impl ProfilerId {
+    #[inline]
+    pub fn new(counter: &mut ProfilerCounter) -> Self {
+        let id = Self(counter.0);
+        counter.0 += 1;
+        id
+    }
+
+    #[inline]
+    pub fn to_usize(&self) -> usize {
+        self.0
+    }
+}
+
 pub type Epoch = std::time::Instant;
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Default)]
 pub struct TimeSpan {
     pub begin: u64,
     pub end: u64,
@@ -56,7 +76,7 @@ impl TimeSpan {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Default)]
 pub struct GpuCpuTimeSpan {
     pub frame: Frame,
     pub gpu: TimeSpan,
@@ -139,6 +159,9 @@ impl ProfilerTimer {
                 cpu_begin,
                 cpu_end,
             } => {
+                // Not really necessary but I wan't to catch double reads.
+                self.state = State::Empty;
+
                 let (gpu_begin, gpu_end) = unsafe {
                     (
                         gl.try_query_result_u64(self.begin_query_name)
@@ -222,7 +245,7 @@ impl ProfilerSampleBuffer {
             self.origin_frame = sample.frame;
             self.count = 1;
         }
-        self.samples[(sample.frame - self.origin_frame).0 as usize % Self::CAPACITY] = sample;
+        self.samples[(self.count - 1) % Self::CAPACITY] = sample;
     }
 
     fn len(&self) -> usize {
@@ -244,6 +267,14 @@ impl ProfilerSampleBuffer {
     fn last_frame(&self) -> Option<Frame> {
         if self.count > 0 {
             Some(self.origin_frame + self.count as u64 - 1)
+        } else {
+            None
+        }
+    }
+
+    fn latest_sample(&self) -> Option<GpuCpuTimeSpan> {
+        if self.count > 0 {
+            Some(self.samples[(self.count - 1) % Self::CAPACITY])
         } else {
             None
         }
@@ -311,16 +342,22 @@ pub struct GpuCpuStats {
 }
 
 pub struct Profiler {
+    id: ProfilerId,
     timers: ProfilerTimerPool,
     samples: ProfilerSampleBuffer,
 }
 
 impl Profiler {
-    pub fn new(gl: &gl::Gl) -> Self {
+    pub fn new(gl: &gl::Gl, counter: &mut ProfilerCounter) -> Self {
         Self {
+            id: ProfilerId::new(counter),
             timers: ProfilerTimerPool::new(gl),
             samples: ProfilerSampleBuffer::new(),
         }
+    }
+
+    pub fn id(&self) -> ProfilerId {
+        self.id
     }
 
     pub fn start(&mut self, gl: &gl::Gl, frame: Frame, epoch: Epoch) {
@@ -336,6 +373,16 @@ impl Profiler {
         timer.stop(&gl, epoch);
     }
 
+    pub fn current_sample(&self, frame: Frame) -> Option<FileEntry> {
+        if self.samples.origin_frame + self.samples.count as u64 + ProfilerTimerPool::CAPACITY as u64 == frame + 1 {
+            self.samples
+                .latest_sample()
+                .map(|sample| FileEntry::Sample { id: self.id, sample })
+        } else {
+            None
+        }
+    }
+
     /// Returns Self::stats if the stats are available the latest possible frame, None otherwise.
     pub fn current_stats(&self, frame: Frame) -> Option<GpuCpuStats> {
         if self.samples.origin_frame + self.samples.count as u64 + ProfilerTimerPool::CAPACITY as u64 == frame + 1 {
@@ -348,4 +395,10 @@ impl Profiler {
     pub fn stats(&self) -> Option<GpuCpuStats> {
         self.samples.stats()
     }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub enum FileEntry {
+    Profiler { id: ProfilerId, name: String },
+    Sample { id: ProfilerId, sample: GpuCpuTimeSpan },
 }

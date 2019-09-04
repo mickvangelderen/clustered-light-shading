@@ -4,7 +4,8 @@ framebuffer_srgb = true
 rain_drop_max = 10000
 # replay = "recording.bin"
 # record = "recording.bin"
-profiling = true
+display_profiling = true
+profiling_path = "profiling.bin"
 
 [window]
 vsync = false
@@ -17,8 +18,8 @@ height = 720
 [clustered_light_shading]
 # projection = "Orthographic"
 projection = "Perspective"
-# grouping = "Individual"
-grouping = "Enclosed"
+grouping = "Individual"
+# grouping = "Enclosed"
 orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
 perspective_sides = { x = 8.0, y = 8.0, z = 2.0 }
 max_clusters = 16777216 # 2^24 u32 64MB (fragments_per_cluster turns active_cluster_ids)

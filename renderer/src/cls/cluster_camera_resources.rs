@@ -39,14 +39,14 @@ pub struct ClusterCameraResources {
 }
 
 impl ClusterCameraResources {
-    pub fn new(gl: &gl::Gl, parameters: ClusterCameraParameters) -> Self {
+    pub fn new(gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterCameraParameters) -> Self {
         Self {
-            profilers: CameraStages::new(|_| Profiler::new(gl)),
+            profilers: CameraStages::new(|_| Profiler::new(gl, profiler_counter)),
             parameters,
         }
     }
 
-    pub fn reset(&mut self, _gl: &gl::Gl, parameters: ClusterCameraParameters) {
+    pub fn reset(&mut self, _gl: &gl::Gl, _profiler_counter: &mut ProfilerCounter, parameters: ClusterCameraParameters) {
         self.parameters = parameters;
     }
 }
@@ -56,5 +56,5 @@ impl_frame_pool! {
     ClusterCameraResources,
     ClusterCameraResourcesIndex,
     ClusterCameraResourcesIndexIter,
-    (gl: &gl::Gl, parameters: ClusterCameraParameters),
+    (gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterCameraParameters),
 }

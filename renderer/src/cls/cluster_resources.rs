@@ -89,7 +89,7 @@ pub struct ClusterResources {
 }
 
 impl ClusterResources {
-    pub fn new(gl: &gl::Gl, parameters: ClusterParameters) -> Self {
+    pub fn new(gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterParameters) -> Self {
         let cfg = &parameters.configuration;
         Self {
             cluster_space_buffer: unsafe {
@@ -171,7 +171,7 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
                 buffer
             },
-            profilers: ClusterStages::new(|_| Profiler::new(gl)),
+            profilers: ClusterStages::new(|_| Profiler::new(gl, profiler_counter)),
 
             active_clusters: Vec::new(),
             active_cluster_lengths: Vec::new(),
@@ -497,7 +497,7 @@ impl ClusterResources {
         };
     }
 
-    pub fn reset(&mut self, _gl: &gl::Gl, parameters: ClusterParameters) {
+    pub fn reset(&mut self, _gl: &gl::Gl, _profiler_counter: &mut ProfilerCounter, parameters: ClusterParameters) {
         // TODO: Resize buffers?
         self.camera_resources_pool.reset();
         self.parameters = parameters;
@@ -512,5 +512,5 @@ impl_frame_pool! {
     ClusterResources,
     ClusterResourcesIndex,
     ClusterResourcesIndexIter,
-    (gl: &gl::Gl, parameters: ClusterParameters),
+    (gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterParameters),
 }
