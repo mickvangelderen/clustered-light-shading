@@ -670,7 +670,9 @@ impl Context {
 
         if reset_debug_camera {
             self.cameras.debug.target_transform = self.cameras.main.target_transform;
-            self.transition_camera.start_transition();
+            if self.target_camera_key == CameraKey::Debug {
+                self.transition_camera.start_transition();
+            }
         }
     }
 
