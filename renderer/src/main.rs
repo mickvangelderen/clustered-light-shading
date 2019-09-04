@@ -179,7 +179,7 @@ pub struct Context {
     pub paused: bool,
     pub focus: bool,
     pub tick: u64,
-    pub frame: u64,
+    pub frame: Frame,
     pub keyboard_state: KeyboardState,
     pub win_dpi: f64,
     pub win_size: glutin::dpi::PhysicalSize,
@@ -388,7 +388,7 @@ impl Context {
             paused: false,
             focus: false,
             tick: 0,
-            frame: 0,
+            frame: Frame(0),
             keyboard_state: Default::default(),
             win_dpi,
             win_size,
@@ -1829,7 +1829,7 @@ impl Context {
             for camera_resources_index in res.camera_resources_pool.used_index_iter() {
                 let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
                 for &stage in &CameraStage::VALUES {
-                    let stats = &mut camera_resources.profilers[stage].stats(self.frame);
+                    let stats = &mut camera_resources.profilers[stage].current_stats(self.frame);
                     if let Some(stats) = stats {
                         overlay_textbox.write(
                             &monospace,
@@ -1851,7 +1851,7 @@ impl Context {
             }
 
             for &stage in &ClusterStage::VALUES {
-                let stats = &mut res.profilers[stage].stats(self.frame);
+                let stats = &mut res.profilers[stage].current_stats(self.frame);
                 if let Some(stats) = stats {
                     overlay_textbox.write(
                         &monospace,
@@ -1878,7 +1878,7 @@ impl Context {
             ]
             .iter()
             {
-                let stats = profiler.stats(self.frame);
+                let stats = profiler.current_stats(self.frame);
                 if let Some(stats) = stats {
                     overlay_textbox.write(
                         &monospace,
@@ -1913,7 +1913,7 @@ impl Context {
         let gl = &self.gl;
 
         self.gl_window.swap_buffers().unwrap();
-        self.frame += 1;
+        self.frame.increment();
 
         // TODO: Borrow the pool instead.
         self.camera_buffer_pool.reset(gl);
