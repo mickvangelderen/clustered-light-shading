@@ -1805,38 +1805,60 @@ impl Context {
             ),
         );
 
-        let Self {
-            ref mut overlay_textbox,
-            ref monospace,
-            ..
-        } = *self;
+        if self.configuration.global.profiling {
+            let Self {
+                ref mut overlay_textbox,
+                ref monospace,
+                ..
+            } = *self;
 
-        for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
-            let res = &mut self.cluster_resources_pool[cluster_resources_index];
-            let dimensions_u32 = res.computed.dimensions;
+            for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
+                let res = &mut self.cluster_resources_pool[cluster_resources_index];
+                let dimensions_u32 = res.computed.dimensions;
 
-            overlay_textbox.write(
-                &monospace,
-                &format!(
-                    "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
-                    cluster_resources_index.to_usize(),
-                    dimensions_u32.x,
-                    dimensions_u32.y,
-                    dimensions_u32.z,
-                ),
-            );
+                overlay_textbox.write(
+                    &monospace,
+                    &format!(
+                        "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
+                        cluster_resources_index.to_usize(),
+                        dimensions_u32.x,
+                        dimensions_u32.y,
+                        dimensions_u32.z,
+                    ),
+                );
 
-            for camera_resources_index in res.camera_resources_pool.used_index_iter() {
-                let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
-                for &stage in &CameraStage::VALUES {
-                    let stats = &mut camera_resources.profilers[stage].current_stats(self.frame);
+                for camera_resources_index in res.camera_resources_pool.used_index_iter() {
+                    let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
+                    for &stage in &CameraStage::VALUES {
+                        let stats = &mut camera_resources.profilers[stage].current_stats(self.frame);
+                        if let Some(stats) = stats {
+                            overlay_textbox.write(
+                                &monospace,
+                                &format!(
+                                    "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                    cluster_resources_index.to_usize(),
+                                    camera_resources_index.to_usize(),
+                                    stage.title(),
+                                    stats.cpu_elapsed_min as f64 / 1000.0,
+                                    stats.cpu_elapsed_avg as f64 / 1000.0,
+                                    stats.cpu_elapsed_max as f64 / 1000.0,
+                                    stats.gpu_elapsed_min as f64 / 1000.0,
+                                    stats.gpu_elapsed_avg as f64 / 1000.0,
+                                    stats.gpu_elapsed_max as f64 / 1000.0,
+                                ),
+                            );
+                        }
+                    }
+                }
+
+                for &stage in &ClusterStage::VALUES {
+                    let stats = &mut res.profilers[stage].current_stats(self.frame);
                     if let Some(stats) = stats {
                         overlay_textbox.write(
                             &monospace,
                             &format!(
-                                "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
                                 cluster_resources_index.to_usize(),
-                                camera_resources_index.to_usize(),
                                 stage.title(),
                                 stats.cpu_elapsed_min as f64 / 1000.0,
                                 stats.cpu_elapsed_avg as f64 / 1000.0,
@@ -1850,50 +1872,30 @@ impl Context {
                 }
             }
 
-            for &stage in &ClusterStage::VALUES {
-                let stats = &mut res.profilers[stage].current_stats(self.frame);
-                if let Some(stats) = stats {
-                    overlay_textbox.write(
-                        &monospace,
-                        &format!(
-                            "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            cluster_resources_index.to_usize(),
-                            stage.title(),
-                            stats.cpu_elapsed_min as f64 / 1000.0,
-                            stats.cpu_elapsed_avg as f64 / 1000.0,
-                            stats.cpu_elapsed_max as f64 / 1000.0,
-                            stats.gpu_elapsed_min as f64 / 1000.0,
-                            stats.gpu_elapsed_avg as f64 / 1000.0,
-                            stats.gpu_elapsed_max as f64 / 1000.0,
-                        ),
-                    );
-                }
-            }
-        }
-
-        for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
-            for (name, profiler) in [
-                ("depth", &main_resources.depth_pass_profiler),
-                ("basic", &main_resources.basic_pass_profiler),
-            ]
-            .iter()
-            {
-                let stats = profiler.current_stats(self.frame);
-                if let Some(stats) = stats {
-                    overlay_textbox.write(
-                        &monospace,
-                        &format!(
-                            "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            main_resources_index,
-                            name,
-                            stats.cpu_elapsed_min as f64 / 1000.0,
-                            stats.cpu_elapsed_avg as f64 / 1000.0,
-                            stats.cpu_elapsed_max as f64 / 1000.0,
-                            stats.gpu_elapsed_min as f64 / 1000.0,
-                            stats.gpu_elapsed_avg as f64 / 1000.0,
-                            stats.gpu_elapsed_max as f64 / 1000.0,
-                        ),
-                    );
+            for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
+                for (name, profiler) in [
+                    ("depth", &main_resources.depth_pass_profiler),
+                    ("basic", &main_resources.basic_pass_profiler),
+                ]
+                .iter()
+                {
+                    let stats = profiler.current_stats(self.frame);
+                    if let Some(stats) = stats {
+                        overlay_textbox.write(
+                            &monospace,
+                            &format!(
+                                "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                main_resources_index,
+                                name,
+                                stats.cpu_elapsed_min as f64 / 1000.0,
+                                stats.cpu_elapsed_avg as f64 / 1000.0,
+                                stats.cpu_elapsed_max as f64 / 1000.0,
+                                stats.gpu_elapsed_min as f64 / 1000.0,
+                                stats.gpu_elapsed_avg as f64 / 1000.0,
+                                stats.gpu_elapsed_max as f64 / 1000.0,
+                            ),
+                        );
+                    }
                 }
             }
         }

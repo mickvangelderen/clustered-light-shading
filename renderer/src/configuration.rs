@@ -32,6 +32,7 @@ pub struct Global {
     pub rain_drop_max: u32,
     pub record: Option<PathBuf>,
     pub replay: Option<PathBuf>,
+    pub profiling: bool,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
