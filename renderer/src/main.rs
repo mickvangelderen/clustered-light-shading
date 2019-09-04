@@ -15,12 +15,9 @@ pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
 mod basic_renderer;
-pub mod camera;
 pub mod cgmath_ext;
-pub mod clamp;
 mod cls;
 pub mod color;
-mod configuration;
 mod convert;
 mod depth_renderer;
 mod filters;
@@ -33,7 +30,6 @@ mod line_renderer;
 mod main_resources;
 mod math;
 mod overlay_renderer;
-pub mod profiling;
 mod rain;
 mod rendering;
 mod resources;
@@ -49,13 +45,13 @@ use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
 use self::math::{CeilToMultiple, DivCeil};
-use self::profiling::*;
 use self::rendering::*;
 use self::resources::Resources;
 use self::shader_compiler::{EntryPoint, ShaderCompiler};
 use self::text_rendering::{FontContext, TextBox};
 use self::viewport::*;
 use self::window_mode::*;
+
 use cgmath::*;
 use convert::*;
 use derive::EnumNext;
@@ -63,6 +59,10 @@ use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
+use renderer::configuration;
+use renderer::camera;
+use renderer::profiling::*;
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -192,6 +192,11 @@ pub struct Context {
     pub cameras: CameraMap<camera::SmoothCamera>,
     pub rain_drops: Vec<rain::Particle>,
     pub shader_compiler: ShaderCompiler,
+
+    // Profiling
+    pub profiler_id_to_name: HashMap<ProfilerId, String>,
+    pub profiling_file: Option<io::BufWriter<fs::File>>,
+    pub profiler_counter: ProfilerCounter,
 
     // File system events
     pub fs_rx: mpsc::Receiver<notify::DebouncedEvent>,
@@ -419,10 +424,20 @@ impl Context {
                 .global
                 .replay
                 .as_ref()
-                .map(|path| io::BufReader::new(std::fs::File::open(path).unwrap())),
-            configuration,
+                .map(|path| io::BufReader::new(fs::File::open(path).unwrap())),
             rain_drops: Vec::new(),
             shader_compiler,
+
+            // Profiling
+            profiler_id_to_name: HashMap::new(),
+            profiling_file: configuration
+                .global
+                .profiling_path
+                .as_ref()
+                .map(|path| io::BufWriter::new(fs::File::create(path).unwrap())),
+            profiler_counter: ProfilerCounter::default(),
+
+            configuration,
 
             // File system events
             fs_rx,
@@ -962,6 +977,7 @@ impl Context {
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
+                        &mut self.profiler_counter,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
                             wld_to_hmd: cluster_c1.wld_to_hmd,
@@ -998,6 +1014,7 @@ impl Context {
                     {
                         cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                             gl,
+                            &mut self.profiler_counter,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
                                 wld_to_hmd: cluster_c1.wld_to_hmd,
@@ -1020,6 +1037,7 @@ impl Context {
 
                         let _ = camera_resources_pool.next_unused(
                             gl,
+                            &mut self.profiler_counter,
                             ClusterCameraParameters {
                                 frame_dims: win_size,
 
@@ -1105,6 +1123,7 @@ impl Context {
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
+                        &mut self.profiler_counter,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
                             wld_to_hmd: cluster_c1.wld_to_hmd,
@@ -1139,6 +1158,7 @@ impl Context {
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
+                        &mut self.profiler_counter,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
                             wld_to_hmd: cluster_c1.wld_to_hmd,
@@ -1161,6 +1181,7 @@ impl Context {
 
                     let _ = camera_resources_pool.next_unused(
                         gl,
+                        &mut self.profiler_counter,
                         ClusterCameraParameters {
                             frame_dims: dimensions,
 
@@ -1287,7 +1308,9 @@ impl Context {
                     gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                 }
 
-                let main_resources_index = self.main_resources_pool.next_unused(gl, camera_parameters.frame_dims);
+                let main_resources_index =
+                    self.main_resources_pool
+                        .next_unused(gl, &mut self.profiler_counter, camera_parameters.frame_dims);
 
                 self.clear_and_render_depth(main_resources_index);
 
@@ -1700,7 +1723,9 @@ impl Context {
                 gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
             }
 
-            let main_resources_index = self.main_resources_pool.next_unused(gl, dimensions);
+            let main_resources_index = self
+                .main_resources_pool
+                .next_unused(gl, &mut self.profiler_counter, dimensions);
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
@@ -1807,17 +1832,17 @@ impl Context {
             ),
         );
 
-        if self.configuration.global.profiling {
-            let Self {
-                ref mut overlay_textbox,
-                ref monospace,
-                ..
-            } = *self;
+        let Self {
+            ref mut overlay_textbox,
+            ref monospace,
+            ..
+        } = *self;
 
-            for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
-                let res = &mut self.cluster_resources_pool[cluster_resources_index];
-                let dimensions_u32 = res.computed.dimensions;
+        for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
+            let res = &mut self.cluster_resources_pool[cluster_resources_index];
+            let dimensions_u32 = res.computed.dimensions;
 
+            if self.configuration.global.display_profiling {
                 overlay_textbox.write(
                     &monospace,
                     &format!(
@@ -1828,18 +1853,58 @@ impl Context {
                         dimensions_u32.z,
                     ),
                 );
+            }
 
-                for camera_resources_index in res.camera_resources_pool.used_index_iter() {
-                    let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
-                    for &stage in &CameraStage::VALUES {
-                        let stats = &mut camera_resources.profilers[stage].current_stats(self.frame);
+            for camera_resources_index in res.camera_resources_pool.used_index_iter() {
+                let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
+                for &stage in &CameraStage::VALUES {
+                    let profiler = &camera_resources.profilers[stage];
+                    if let Some(file) = self.profiling_file.as_mut() {
+                        self.profiler_id_to_name.entry(
+                        if let Some(sample) = profiler.current_sample(self.frame) {
+                            bincode::serialize_into(file, &sample).unwrap();
+                        }
+                    }
+
+                    if self.configuration.global.display_profiling {
+                        let stats = profiler.current_stats(self.frame);
                         if let Some(stats) = stats {
                             overlay_textbox.write(
+                                    &monospace,
+                                    &format!(
+                                        "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                        cluster_resources_index.to_usize(),
+                                        camera_resources_index.to_usize(),
+                                        stage.title(),
+                                        stats.cpu_elapsed_min as f64 / 1000.0,
+                                        stats.cpu_elapsed_avg as f64 / 1000.0,
+                                        stats.cpu_elapsed_max as f64 / 1000.0,
+                                        stats.gpu_elapsed_min as f64 / 1000.0,
+                                        stats.gpu_elapsed_avg as f64 / 1000.0,
+                                        stats.gpu_elapsed_max as f64 / 1000.0,
+                                    ),
+                                );
+                        }
+                    }
+                }
+            }
+
+            for &stage in &ClusterStage::VALUES {
+                let profiler = &res.profilers[stage];
+                if let Some(file) = self.profiling_file.as_mut() {
+                    if let Some(sample) = profiler.current_sample(self.frame) {
+                        bincode::serialize_into(file, &sample).unwrap();
+                    }
+                }
+
+                let stats = &mut profiler.current_stats(self.frame);
+                if self.configuration.global.display_profiling {
+                    if let Some(stats) = stats {
+                        overlay_textbox.write(
                                 &monospace,
                                 &format!(
-                                    "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                    "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
                                     cluster_resources_index.to_usize(),
-                                    camera_resources_index.to_usize(),
                                     stage.title(),
                                     stats.cpu_elapsed_min as f64 / 1000.0,
                                     stats.cpu_elapsed_avg as f64 / 1000.0,
@@ -1849,54 +1914,41 @@ impl Context {
                                     stats.gpu_elapsed_max as f64 / 1000.0,
                                 ),
                             );
-                        }
-                    }
-                }
-
-                for &stage in &ClusterStage::VALUES {
-                    let stats = &mut res.profilers[stage].current_stats(self.frame);
-                    if let Some(stats) = stats {
-                        overlay_textbox.write(
-                            &monospace,
-                            &format!(
-                                "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                cluster_resources_index.to_usize(),
-                                stage.title(),
-                                stats.cpu_elapsed_min as f64 / 1000.0,
-                                stats.cpu_elapsed_avg as f64 / 1000.0,
-                                stats.cpu_elapsed_max as f64 / 1000.0,
-                                stats.gpu_elapsed_min as f64 / 1000.0,
-                                stats.gpu_elapsed_avg as f64 / 1000.0,
-                                stats.gpu_elapsed_max as f64 / 1000.0,
-                            ),
-                        );
                     }
                 }
             }
+        }
 
-            for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
-                for (name, profiler) in [
-                    ("depth", &main_resources.depth_pass_profiler),
-                    ("basic", &main_resources.basic_pass_profiler),
-                ]
-                .iter()
-                {
+        for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
+            for (name, profiler) in [
+                ("depth", &main_resources.depth_pass_profiler),
+                ("basic", &main_resources.basic_pass_profiler),
+            ]
+            .iter()
+            {
+                if let Some(file) = self.profiling_file.as_mut() {
+                    if let Some(sample) = profiler.current_sample(self.frame) {
+                        bincode::serialize_into(file, &sample).unwrap();
+                    }
+                }
+
+                if self.configuration.global.display_profiling {
                     let stats = profiler.current_stats(self.frame);
                     if let Some(stats) = stats {
                         overlay_textbox.write(
-                            &monospace,
-                            &format!(
-                                "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                main_resources_index,
-                                name,
-                                stats.cpu_elapsed_min as f64 / 1000.0,
-                                stats.cpu_elapsed_avg as f64 / 1000.0,
-                                stats.cpu_elapsed_max as f64 / 1000.0,
-                                stats.gpu_elapsed_min as f64 / 1000.0,
-                                stats.gpu_elapsed_avg as f64 / 1000.0,
-                                stats.gpu_elapsed_max as f64 / 1000.0,
-                            ),
-                        );
+                                &monospace,
+                                &format!(
+                                    "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                    main_resources_index,
+                                    name,
+                                    stats.cpu_elapsed_min as f64 / 1000.0,
+                                    stats.cpu_elapsed_avg as f64 / 1000.0,
+                                    stats.cpu_elapsed_max as f64 / 1000.0,
+                                    stats.gpu_elapsed_min as f64 / 1000.0,
+                                    stats.gpu_elapsed_avg as f64 / 1000.0,
+                                    stats.gpu_elapsed_max as f64 / 1000.0,
+                                ),
+                            );
                     }
                 }
             }

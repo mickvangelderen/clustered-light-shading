@@ -15,7 +15,7 @@ pub struct MainResources {
 }
 
 impl MainResources {
-    pub fn new(gl: &gl::Gl, dims: Vector2<i32>) -> Self {
+    pub fn new(gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, dims: Vector2<i32>) -> Self {
         unsafe {
             // Textures.
             let texture_update = TextureUpdate::new()
@@ -52,13 +52,13 @@ impl MainResources {
                 color_texture,
                 depth_texture,
                 nor_in_cam_texture,
-                depth_pass_profiler: Profiler::new(&gl),
-                basic_pass_profiler: Profiler::new(&gl),
+                depth_pass_profiler: Profiler::new(gl, profiler_counter),
+                basic_pass_profiler: Profiler::new(gl, profiler_counter),
             }
         }
     }
 
-    pub fn reset(&mut self, gl: &gl::Gl, dims: Vector2<i32>) {
+    pub fn reset(&mut self, gl: &gl::Gl, _profiler_counter: &mut ProfilerCounter, dims: Vector2<i32>) {
         if self.dims != dims {
             self.dims = dims;
 
@@ -84,5 +84,5 @@ impl_frame_pool! {
     MainResources,
     MainResourcesIndex,
     MainResourcesIndexIter,
-    (gl: &gl::Gl, dims: Vector2<i32>),
+    (gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, dims: Vector2<i32>),
 }
