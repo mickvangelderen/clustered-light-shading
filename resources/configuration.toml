@@ -4,8 +4,10 @@ framebuffer_srgb = true
 rain_drop_max = 10000
 # replay = "recording.bin"
 # record = "recording.bin"
-display_profiling = true
-profiling_path = "profiling.bin"
+
+[profiling]
+display = true
+path = "profiling.bin"
 
 [window]
 vsync = false

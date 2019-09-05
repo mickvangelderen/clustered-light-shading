@@ -13,8 +13,8 @@ impl CameraStage {
 
     pub fn title(self) -> &'static str {
         match self {
-            CameraStage::RenderDepth => "render depth",
-            CameraStage::CountFrags => "count #frags",
+            CameraStage::RenderDepth => "cluster.camera.depth",
+            CameraStage::CountFrags => "cluster.camera.count_frags",
         }
     }
 }
@@ -34,19 +34,19 @@ pub struct ClusterCameraParameters {
 }
 
 pub struct ClusterCameraResources {
-    pub profilers: CameraStages<Profiler>,
+    pub profilers: CameraStages<SampleIndex>,
     pub parameters: ClusterCameraParameters,
 }
 
 impl ClusterCameraResources {
-    pub fn new(gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterCameraParameters) -> Self {
+    pub fn new(gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterCameraParameters) -> Self {
         Self {
-            profilers: CameraStages::new(|_| Profiler::new(gl, profiler_counter)),
+            profilers: CameraStages::new(|stage| profiling_context.add_sample(stage.title())),
             parameters,
         }
     }
 
-    pub fn reset(&mut self, _gl: &gl::Gl, _profiler_counter: &mut ProfilerCounter, parameters: ClusterCameraParameters) {
+    pub fn reset(&mut self, _gl: &gl::Gl, _profiling_context: &mut ProfilingContext, parameters: ClusterCameraParameters) {
         self.parameters = parameters;
     }
 }
@@ -56,5 +56,5 @@ impl_frame_pool! {
     ClusterCameraResources,
     ClusterCameraResourcesIndex,
     ClusterCameraResourcesIndexIter,
-    (gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterCameraParameters),
+    (gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterCameraParameters),
 }
