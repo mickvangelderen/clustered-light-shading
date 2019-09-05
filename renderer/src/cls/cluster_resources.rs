@@ -23,11 +23,11 @@ impl ClusterStage {
 
     pub fn title(self) -> &'static str {
         match self {
-            ClusterStage::CompactClusters => "compact clusters",
-            ClusterStage::UploadLights => "upload lights",
-            ClusterStage::CountLights => "count lights",
-            ClusterStage::LightOffsets => "comp light offs",
-            ClusterStage::AssignLights => "assign lights",
+            ClusterStage::CompactClusters => "cluster.compact_clusters",
+            ClusterStage::UploadLights => "cluster.upload_lights",
+            ClusterStage::CountLights => "cluster.count_lights",
+            ClusterStage::LightOffsets => "cluster.compact_lights",
+            ClusterStage::AssignLights => "cluster.assign_lights",
         }
     }
 }
@@ -76,7 +76,7 @@ pub struct ClusterResources {
     pub draw_commands_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
-    pub profilers: ClusterStages<Profiler>,
+    pub profilers: ClusterStages<SampleIndex>,
     // CPU
     pub active_clusters: Vec<u32>,
     pub active_cluster_lengths: Vec<u32>,
@@ -89,7 +89,7 @@ pub struct ClusterResources {
 }
 
 impl ClusterResources {
-    pub fn new(gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterParameters) -> Self {
+    pub fn new(gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterParameters) -> Self {
         let cfg = &parameters.configuration;
         Self {
             cluster_space_buffer: unsafe {
@@ -171,7 +171,7 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
                 buffer
             },
-            profilers: ClusterStages::new(|_| Profiler::new(gl, profiler_counter)),
+            profilers: ClusterStages::new(|stage| profiling_context.add_sample(stage.title())),
 
             active_clusters: Vec::new(),
             active_cluster_lengths: Vec::new(),
@@ -497,7 +497,7 @@ impl ClusterResources {
         };
     }
 
-    pub fn reset(&mut self, _gl: &gl::Gl, _profiler_counter: &mut ProfilerCounter, parameters: ClusterParameters) {
+    pub fn reset(&mut self, _gl: &gl::Gl, _profiling_context: &mut ProfilingContext, parameters: ClusterParameters) {
         // TODO: Resize buffers?
         self.camera_resources_pool.reset();
         self.parameters = parameters;
@@ -512,5 +512,5 @@ impl_frame_pool! {
     ClusterResources,
     ClusterResourcesIndex,
     ClusterResourcesIndexIter,
-    (gl: &gl::Gl, profiler_counter: &mut ProfilerCounter, parameters: ClusterParameters),
+    (gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterParameters),
 }

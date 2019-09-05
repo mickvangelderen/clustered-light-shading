@@ -1,5 +1,6 @@
 use crate::camera;
 use std::path::PathBuf;
+use crate::profiling::ProfilingConfiguration;
 
 pub const FILE_PATH: &'static str = "configuration.toml";
 
@@ -13,6 +14,7 @@ pub struct Root {
     pub main_camera: Camera,
     pub debug_camera: Camera,
     pub prefix_sum: PrefixSum,
+    pub profiling: ProfilingConfiguration,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -32,8 +34,6 @@ pub struct Global {
     pub rain_drop_max: u32,
     pub record: Option<PathBuf>,
     pub replay: Option<PathBuf>,
-    pub display_profiling: bool,
-    pub profiling_path: Option<PathBuf>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
