@@ -1422,6 +1422,7 @@ dependencies = [
  "bincode 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "bmfont 0.1.0",
  "cgmath 0.17.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive 0.1.0",
  "env_logger 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "gl-typed 0.6.0 (git+https://github.com/mickvangelderen/gl-typed-rust)",
