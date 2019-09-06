@@ -15,6 +15,13 @@ pub struct Root {
     pub debug_camera: Camera,
     pub prefix_sum: PrefixSum,
     pub profiling: ProfilingConfiguration,
+    pub replay: ReplayConfiguration,
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct ReplayConfiguration {
+    pub run_count: usize,
+    pub path: Option<PathBuf>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -33,7 +40,6 @@ pub struct Global {
     pub framebuffer_srgb: bool,
     pub rain_drop_max: u32,
     pub record: Option<PathBuf>,
-    pub replay: Option<PathBuf>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]

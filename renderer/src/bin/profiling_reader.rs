@@ -6,9 +6,6 @@ use std::path::{Path, PathBuf};
 use renderer::configuration;
 use renderer::profiling::*;
 
-type Frames = Vec<Vec<Option<GpuCpuTimeSpan>>>;
-type SampleNames = Vec<String>;
-
 fn get_config() -> configuration::Root {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
@@ -16,39 +13,33 @@ fn get_config() -> configuration::Root {
     configuration::read(&configuration_path)
 }
 
-fn read(path: impl AsRef<Path>) -> (Frames, SampleNames) {
+fn read(path: impl AsRef<Path>) {
     let mut file = BufReader::new(File::open(path).unwrap());
 
-    let mut frames: Frames = Vec::new();
-    let mut samples = None;
-    while let Ok(entry) = bincode::deserialize_from::<_, FileEntry>(&mut file) {
-        match entry {
-            FileEntry::Frame(frame) => frames.push(frame),
-            FileEntry::Samples(s) => assert!(samples.replace(s).is_none()),
-        }
-    }
-    (frames, samples.unwrap())
-}
-
-fn print_sample_names(sample_names: &[String]) {
-    for (sample_index, sample_name) in sample_names.iter().enumerate() {
-        println!("({:04}) {}", sample_index, sample_name);
+    while let Ok(event) = bincode::deserialize_from::<_, MeasurementEvent>(&mut file) {
+        println!("{:?}", event);
     }
 }
 
-fn print_sample(frames: &Frames, sample_index: usize) {
-    println!("frame, cpu_begin, cpu_end, gpu_begin, gpu_end");
-    for (frame_index, sample) in frames
-        .iter()
-        .enumerate()
-        .filter_map(|(index, samples)| match samples.get(sample_index) {
-            Some(sample) => sample.as_ref().map(|sample| (index, sample)),
-            None => None,
-        })
-    {
-        println!("{:05}, {:08}, {:08}, {:08}, {:08}", frame_index, sample.cpu.begin, sample.cpu.end, sample.gpu.begin, sample.gpu.end);
-    }
-}
+// fn print_sample_names(sample_names: &[String]) {
+//     for (sample_index, sample_name) in sample_names.iter().enumerate() {
+//         println!("({:04}) {}", sample_index, sample_name);
+//     }
+// }
+
+// fn print_sample(frames: &Frames, sample_index: usize) {
+//     println!("{:>6}, {:>12}, {:>12}", "frame", "cpu", "gpu");
+//     for (frame_index, sample) in frames
+//         .iter()
+//         .enumerate()
+//         .filter_map(|(index, samples)| match samples.get(sample_index) {
+//             Some(sample) => sample.as_ref().map(|sample| (index, sample)),
+//             None => None,
+//         })
+//     {
+//         println!("{:>6}, {:>12}, {:>12}", frame_index, sample.cpu.delta(), sample.gpu.delta());
+//     }
+// }
 
 fn main() {
     let matches = App::new("Profiling Reader")
@@ -67,17 +58,18 @@ fn main() {
     // required we could have used an 'if let' to conditionally get the value)
 
     let cfg = get_config();
-    let (frames, sample_names) = read(cfg.profiling.path.as_ref().unwrap());
+    read(cfg.profiling.path.as_ref().unwrap());
+    // let (frames, sample_names) = 
 
-    match matches.value_of("sample") {
-        Some(sample_index_string) => {
-            let sample_index = sample_index_string.parse::<usize>().unwrap();
-            print_sample(&frames, sample_index);
-        }
-        None => {
-            println!("Frames: {}", frames.len());
-            println!("Samples: {}", sample_names.len());
-            print_sample_names(&sample_names);
-        }
-    }
+    // match matches.value_of("sample") {
+    //     Some(sample_index_string) => {
+    //         let sample_index = sample_index_string.parse::<usize>().unwrap();
+    //         print_sample(&frames, sample_index);
+    //     }
+    //     None => {
+    //         println!("Frames: {}", frames.len());
+    //         println!("Samples: {}", sample_names.len());
+    //         print_sample_names(&sample_names);
+    //     }
+    // }
 }

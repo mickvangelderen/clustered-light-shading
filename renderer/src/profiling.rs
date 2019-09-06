@@ -1,9 +1,11 @@
-mod frame;
+mod indices;
 
-pub use frame::Frame;
 use gl_typed as gl;
 use ProfilingConfiguration as Configuration;
 use ProfilingContext as Context;
+
+use indices::ProfilerIndex;
+pub use indices::{FrameIndex, RunIndex, SampleIndex};
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct ProfilingConfiguration {
@@ -11,93 +13,131 @@ pub struct ProfilingConfiguration {
     pub path: Option<std::path::PathBuf>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ProfilerIndex(usize);
-
-impl ProfilerIndex {
-    #[inline]
-    pub fn to_usize(&self) -> usize {
-        self.0
-    }
-}
-
-pub type SampleIndex = usize;
-
-enum Event {
-    Start { sample_index: SampleIndex },
-    Stop,
+enum FrameEvent {
+    BeginTimeSpan(SampleIndex),
+    EndTimeSpan,
+    // QueryValue(SampleIndex),
 }
 
 #[derive(Default)]
 struct FrameContext {
-    frame: Frame,
-    events: Vec<Event>,
+    frame_index: FrameIndex,
+    events: Vec<FrameEvent>,
     profilers_used: usize,
-    profilers: Vec<ProfilerTimer>,
+    profilers: Vec<TimeSpanProfiler>,
 }
 
 const FRAME_CAPACITY: usize = 3;
 
-// struct FrameContextBuffer([FrameContext; 3]);
+#[derive(Default)]
+struct FrameContextRing([FrameContext; 3]);
 
-// impl std::ops::Index<Frame> for FrameContextBuffer {
-//     type Output = FrameContext;
+impl std::ops::Index<FrameIndex> for FrameContextRing {
+    type Output = FrameContext;
 
-//     fn index(&self, index: Frame) -> &Self::Output {
-//         &self.0[(index.0 % 3) as usize]
-//     }
-// }
+    fn index(&self, index: FrameIndex) -> &Self::Output {
+        &self.0[index.to_usize() % 3]
+    }
+}
 
-// impl std::ops::IndexMut<Frame> for FrameContextBuffer {
-//     fn index_mut(&mut self, index: Frame) -> &mut  Self::Output {
-//         &mut self.0[(index.0 % 3) as usize]
-//     }
-// }
+impl std::ops::IndexMut<FrameIndex> for FrameContextRing {
+    fn index_mut(&mut self, index: FrameIndex) -> &mut Self::Output {
+        &mut self.0[index.to_usize() % 3]
+    }
+}
 
 pub struct ProfilingContext {
     epoch: std::time::Instant,
-    frames: [FrameContext; FRAME_CAPACITY],
-    frame: Option<Frame>,
-    sample_names: Vec<String>,
+    frame_context_ring: FrameContextRing,
+    frame_index: Option<FrameIndex>,
+    run_index: Option<RunIndex>,
     sample_data: Vec<Option<GpuCpuTimeSpan>>,
-    // sample_stack: Vec<String>,
-    pub file: Option<std::io::BufWriter<std::fs::File>>,
+    thread: ProfilingThread,
+}
+
+struct ProfilingThreadInner {
+    handle: std::thread::JoinHandle<()>,
+    tx: std::sync::mpsc::Sender<Option<MeasurementEvent>>,
+}
+
+pub struct ProfilingThread(Option<ProfilingThreadInner>);
+
+impl ProfilingThread {
+    fn emit(&mut self, event: MeasurementEvent) {
+        if let Some(thread) = self.0.as_mut() {
+            thread.tx.send(Some(event)).unwrap();
+        }
+    }
+}
+
+impl Drop for ProfilingThread {
+    fn drop(&mut self) {
+        if let Some(thread) = self.0.take() {
+            thread.tx.send(None).unwrap();
+            thread.handle.join().unwrap();
+        }
+    }
 }
 
 impl Context {
     pub fn new(configuration: &Configuration) -> Self {
+        let thread = ProfilingThread(configuration.path.as_ref().map(|path| {
+            let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+            let (tx, rx) = std::sync::mpsc::channel();
+            let handle = std::thread::Builder::new()
+                .name("profiling".to_string())
+                .spawn(move || {
+                    while let Some(event) = rx.recv().unwrap() {
+                        bincode::serialize_into(&mut file, &event).unwrap();
+                    }
+                })
+                .unwrap();
+            ProfilingThreadInner { handle, tx }
+        }));
+
         Self {
             epoch: std::time::Instant::now(),
-            frames: Default::default(),
-            frame: None,
-            sample_names: Vec::new(),
+            frame_context_ring: Default::default(),
+            run_index: None,
+            frame_index: None,
             sample_data: Vec::new(),
-            // sample_stack: Vec::new(),
-            file: configuration
-                .path
-                .as_ref()
-                .map(|path| std::io::BufWriter::new(std::fs::File::create(path).unwrap())),
+            thread,
         }
     }
 
     #[inline]
     pub fn add_sample(&mut self, sample: &'static str) -> SampleIndex {
-        let index = self.sample_names.len();
-        self.sample_names.push(sample.to_string());
-        //     match self.sample_stack.iter().last() {
-        //     Some(sample_index) => format!("{}.{}", &self.sample_names[sample_index], sample),
-        //     None => sample.to_string(),
-        // });
+        let sample_index = SampleIndex::from_usize(self.sample_data.len());
+        self.thread.emit(MeasurementEvent::SampleName(sample_index, sample.to_string()));
         self.sample_data.push(None);
-        index
+        sample_index
     }
 
     #[inline]
-    pub fn begin_frame(&mut self, gl: &gl::Gl, frame: Frame) {
-        assert!(self.frame.is_none(), "Tried to start frame without stopping the frame!");
-        let context = &mut self.frames[(frame.0 % FRAME_CAPACITY as u64) as usize];
+    pub fn begin_run(&mut self, run_index: RunIndex) {
+        assert!(self.run_index.replace(run_index).is_none());
+        self.thread.emit(MeasurementEvent::BeginRun(run_index));
+    }
 
-        if context.frame + FRAME_CAPACITY as u64 == frame {
+    #[inline]
+    pub fn end_run(&mut self, run_index: RunIndex) {
+        assert_eq!(self.run_index.take(), Some(run_index));
+        self.thread.emit(MeasurementEvent::EndRun);
+    }
+
+    #[inline]
+    pub fn begin_frame(&mut self, gl: &gl::Gl, frame_index: FrameIndex) {
+        assert!(self.run_index.is_some());
+        assert!(
+            self.frame_index.is_none(),
+            "Tried to start frame_index without stopping the frame_index!"
+        );
+        self.thread.emit(MeasurementEvent::BeginFrame(frame_index));
+        let context = &mut self.frame_context_ring[frame_index];
+
+        if frame_index.to_usize() >= FRAME_CAPACITY {
+            debug_assert_eq!(context.frame_index.to_usize() + FRAME_CAPACITY, frame_index.to_usize());
+
             // Clear values from all samples.
             for sample in self.sample_data.iter_mut() {
                 *sample = None;
@@ -107,87 +147,70 @@ impl Context {
             let mut profilers_used = 0;
             for event in context.events.drain(..) {
                 match event {
-                    Event::Start { sample_index } => {
+                    FrameEvent::BeginTimeSpan(sample_index) => {
                         let profiler_index = profilers_used;
                         profilers_used += 1;
-                        debug_assert!(self.sample_data[sample_index].is_none());
-                        self.sample_data[sample_index] = context.profilers[profiler_index].read(gl);
+                        debug_assert!(self.sample_data[sample_index.to_usize()].is_none());
+                        let sample = context.profilers[profiler_index].read(gl).unwrap();
+                        self.thread.emit(MeasurementEvent::BeginTimeSpan(sample_index, sample));
+                        self.sample_data[sample_index.to_usize()] = Some(sample);
+
                     }
-                    Event::Stop => {
+                    FrameEvent::EndTimeSpan => {
+                        self.thread.emit(MeasurementEvent::EndTimeSpan)
                     }
+                    // FrameEvent::QueryValue(sample_index) => {
+                    //     unimplemented!();
+                    // }
+
                 }
             }
 
             debug_assert_eq!(profilers_used, context.profilers_used);
             context.profilers_used = 0;
-
-            // Write out all samples.
-            if let Some(file) = self.file.as_mut() {
-                let entry = FileEntry::Frame(std::mem::replace(&mut self.sample_data, Vec::new()));
-                bincode::serialize_into(file, &entry).unwrap();
-                match entry {
-                    FileEntry::Frame(sample_data) => {
-                        std::mem::replace(&mut self.sample_data, sample_data);
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
         }
 
-        context.frame = frame;
+        context.frame_index = frame_index;
 
-        self.frame = Some(frame);
+        self.frame_index = Some(frame_index);
     }
 
     #[inline]
-    pub fn end_frame(&mut self) {
-        let _frame = self.frame.take().expect("Tried to stop a stopped frame!");
+    pub fn end_frame(&mut self, frame_index: FrameIndex) {
+        assert!(self.run_index.is_some());
+        assert_eq!(self.frame_index.take(), Some(frame_index));
     }
 
     #[inline]
     pub fn start(&mut self, gl: &gl::Gl, sample_index: SampleIndex) -> ProfilerIndex {
-        let frame = self.frame.expect("Tried to start a timer before starting the frame!");
-        let context = &mut self.frames[(frame.0 % FRAME_CAPACITY as u64) as usize];
-        context.events.push(Event::Start { sample_index });
+        let frame_index = self
+            .frame_index
+            .expect("Tried to start a timer before starting the frame_index!");
+        let context = &mut self.frame_context_ring[frame_index];
+        context.events.push(FrameEvent::BeginTimeSpan(sample_index));
         let profiler_index = ProfilerIndex(context.profilers_used);
         context.profilers_used += 1;
         while context.profilers.len() < profiler_index.0 + 1 {
-            context.profilers.push(ProfilerTimer::new(gl));
+            context.profilers.push(TimeSpanProfiler::new(gl));
         }
         context.profilers[profiler_index.0].start(gl, self.epoch);
-        // self.sample_stack.push(sample_index);
         profiler_index
     }
 
     #[inline]
     pub fn stop(&mut self, gl: &gl::Gl, profiler_index: ProfilerIndex) {
-        let frame = self.frame.expect("Tried to start a timer before starting the frame!");
-        let context = &mut self.frames[(frame.0 % FRAME_CAPACITY as u64) as usize];
-        context.events.push(Event::Stop);
+        let frame_index = self
+            .frame_index
+            .expect("Tried to start a timer before starting the frame_index!");
+        let context = &mut self.frame_context_ring[frame_index];
+        context.events.push(FrameEvent::EndTimeSpan);
         context.profilers[profiler_index.0].stop(gl, self.epoch);
-        // self.sample_stack.pop();
     }
 
     #[inline]
     pub fn sample(&mut self, sample_index: SampleIndex) -> Option<GpuCpuTimeSpan> {
-        let _frame = self.frame.expect("Tried to start a timer before starting the frame!");
-        self.sample_data[sample_index]
-    }
-}
-
-impl Drop for ProfilingContext {
-    fn drop(&mut self) {
-        if let Some(file) = self.file.as_mut() {
-            let entry = FileEntry::Samples(std::mem::replace(&mut self.sample_names, Vec::new()));
-            bincode::serialize_into(file, &entry).unwrap();
-            match entry {
-                FileEntry::Samples(sample_names) => {
-                    std::mem::replace(&mut self.sample_names, sample_names);
-                }
-                _ => unreachable!(),
-            }
-        }
+        assert!(self.frame_index.is_some());
+        self.sample_data[sample_index.to_usize()]
     }
 }
 
@@ -213,7 +236,7 @@ pub struct GpuCpuTimeSpan {
 }
 
 #[derive(Debug)]
-pub struct ProfilerTimer {
+pub struct TimeSpanProfiler {
     begin_query_name: gl::QueryName,
     end_query_name: gl::QueryName,
     state: State,
@@ -226,7 +249,7 @@ enum State {
     Stopped { cpu_begin: u64, cpu_end: u64 },
 }
 
-impl ProfilerTimer {
+impl TimeSpanProfiler {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
@@ -309,33 +332,33 @@ impl ProfilerTimer {
     }
 }
 
-// pub struct ProfilerTimerPool {
-//     pool: [ProfilerTimer; Self::CAPACITY],
+// pub struct TimeSpanProfilerPool {
+//     pool: [TimeSpanProfiler; Self::CAPACITY],
 // }
 
-// impl ProfilerTimerPool {
+// impl TimeSpanProfilerPool {
 //     pub const CAPACITY: usize = 3;
 
 //     pub fn new(gl: &gl::Gl) -> Self {
 //         Self {
-//             pool: [ProfilerTimer::new(gl), ProfilerTimer::new(gl), ProfilerTimer::new(gl)],
+//             pool: [TimeSpanProfiler::new(gl), TimeSpanProfiler::new(gl), TimeSpanProfiler::new(gl)],
 //         }
 //     }
 // }
 
-// impl std::ops::Index<Frame> for ProfilerTimerPool {
-//     type Output = ProfilerTimer;
+// impl std::ops::Index<FrameIndex> for TimeSpanProfilerPool {
+//     type Output = TimeSpanProfiler;
 
 //     #[inline]
-//     fn index(&self, frame: Frame) -> &Self::Output {
-//         &self.pool[(frame.0 % Self::CAPACITY as u64) as usize]
+//     fn index(&self, frame_index: FrameIndex) -> &Self::Output {
+//         &self.pool[(frame_index.0 % Self::CAPACITY as u64) as usize]
 //     }
 // }
 
-// impl std::ops::IndexMut<Frame> for ProfilerTimerPool {
+// impl std::ops::IndexMut<FrameIndex> for TimeSpanProfilerPool {
 //     #[inline]
-//     fn index_mut(&mut self, frame: Frame) -> &mut Self::Output {
-//         &mut self.pool[(frame.0 % Self::CAPACITY as u64) as usize]
+//     fn index_mut(&mut self, frame_index: FrameIndex) -> &mut Self::Output {
+//         &mut self.pool[(frame_index.0 % Self::CAPACITY as u64) as usize]
 //     }
 // }
 
@@ -343,8 +366,8 @@ impl ProfilerTimer {
 // /// samples aren't inserted consecutively.
 // pub struct ProfilerSampleBuffer {
 //     samples: [GpuCpuTimeSpan; Self::CAPACITY],
-//     /// First frame of the consecutive samples.
-//     origin_frame: Frame,
+//     /// First frame_index of the consecutive samples.
+//     origin_frame: FrameIndex,
 //     /// Total number of consecutive samples stored, can be larger than `Self::CAPACITY`.
 //     count: usize,
 // }
@@ -355,16 +378,16 @@ impl ProfilerTimer {
 //     pub fn new() -> Self {
 //         Self {
 //             samples: [GpuCpuTimeSpan::default(); Self::CAPACITY],
-//             origin_frame: Frame(0),
+//             origin_frame: FrameIndex(0),
 //             count: 0,
 //         }
 //     }
 
 //     pub fn update(&mut self, sample: GpuCpuTimeSpan) {
-//         if self.origin_frame + self.count as u64 == sample.frame {
+//         if self.origin_frame + self.count as u64 == sample.frame_index {
 //             self.count += 1;
 //         } else {
-//             self.origin_frame = sample.frame;
+//             self.origin_frame = sample.frame_index;
 //             self.count = 1;
 //         }
 //         self.samples[(self.count - 1) % Self::CAPACITY] = sample;
@@ -374,7 +397,7 @@ impl ProfilerTimer {
 //         std::cmp::min(self.count, Self::CAPACITY)
 //     }
 
-//     fn first_frame(&self) -> Option<Frame> {
+//     fn first_frame(&self) -> Option<FrameIndex> {
 //         if self.count > 0 {
 //             Some(if self.count <= Self::CAPACITY {
 //                 self.origin_frame
@@ -386,7 +409,7 @@ impl ProfilerTimer {
 //         }
 //     }
 
-//     fn last_frame(&self) -> Option<Frame> {
+//     fn last_frame(&self) -> Option<FrameIndex> {
 //         if self.count > 0 {
 //             Some(self.origin_frame + self.count as u64 - 1)
 //         } else {
@@ -453,8 +476,8 @@ impl ProfilerTimer {
 // }
 
 // pub struct GpuCpuStats {
-//     pub first_frame: Frame,
-//     pub last_frame: Frame,
+//     pub first_frame: FrameIndex,
+//     pub last_frame: FrameIndex,
 //     pub gpu_elapsed_avg: u64,
 //     pub gpu_elapsed_min: u64,
 //     pub gpu_elapsed_max: u64,
@@ -465,7 +488,7 @@ impl ProfilerTimer {
 
 // pub struct Profiler {
 //     pub scope: &'static str,
-//     timers: ProfilerTimerPool,
+//     timers: TimeSpanProfilerPool,
 //     samples: ProfilerSampleBuffer,
 // }
 
@@ -473,35 +496,35 @@ impl ProfilerTimer {
 //     pub fn new(gl: &gl::Gl, scope: &'static str) -> Self {
 //         Self {
 //             scope,
-//             timers: ProfilerTimerPool::new(gl),
+//             timers: TimeSpanProfilerPool::new(gl),
 //             samples: ProfilerSampleBuffer::new(),
 //         }
 //     }
 
-//     pub fn start(&mut self, gl: &gl::Gl, frame: Frame, epoch: Epoch) {
-//         let timer = &mut self.timers[frame];
+//     pub fn start(&mut self, gl: &gl::Gl, frame_index: FrameIndex, epoch: Epoch) {
+//         let timer = &mut self.timers[frame_index];
 //         if let Some(sample) = timer.read(gl) {
 //             self.samples.update(sample);
 //         }
-//         timer.start(&gl, epoch, frame);
+//         timer.start(&gl, epoch, frame_index);
 //     }
 
-//     pub fn stop(&mut self, gl: &gl::Gl, frame: Frame, epoch: Epoch) {
-//         let timer = &mut self.timers[frame];
+//     pub fn stop(&mut self, gl: &gl::Gl, frame_index: FrameIndex, epoch: Epoch) {
+//         let timer = &mut self.timers[frame_index];
 //         timer.stop(&gl, epoch);
 //     }
 
-//     pub fn current_sample(&self, frame: Frame) -> Option<GpuCpuTimeSpan> {
-//         if self.samples.origin_frame + self.samples.count as u64 + ProfilerTimerPool::CAPACITY as u64 == frame + 1 {
+//     pub fn current_sample(&self, frame_index: FrameIndex) -> Option<GpuCpuTimeSpan> {
+//         if self.samples.origin_frame + self.samples.count as u64 + TimeSpanProfilerPool::CAPACITY as u64 == frame_index + 1 {
 //             self.samples.latest_sample()
 //         } else {
 //             None
 //         }
 //     }
 
-//     /// Returns Self::stats if the stats are available the latest possible frame, None otherwise.
-//     pub fn current_stats(&self, frame: Frame) -> Option<GpuCpuStats> {
-//         if self.samples.origin_frame + self.samples.count as u64 + ProfilerTimerPool::CAPACITY as u64 == frame + 1 {
+//     /// Returns Self::stats if the stats are available the latest possible frame_index, None otherwise.
+//     pub fn current_stats(&self, frame_index: FrameIndex) -> Option<GpuCpuStats> {
+//         if self.samples.origin_frame + self.samples.count as u64 + TimeSpanProfilerPool::CAPACITY as u64 == frame_index + 1 {
 //             self.stats()
 //         } else {
 //             None
@@ -514,7 +537,13 @@ impl ProfilerTimer {
 // }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-pub enum FileEntry {
-    Samples(Vec<String>),
-    Frame(Vec<Option<GpuCpuTimeSpan>>),
+pub enum MeasurementEvent {
+    SampleName(SampleIndex, String),
+    BeginRun(RunIndex),
+    EndRun,
+    BeginFrame(FrameIndex),
+    EndFrame,
+    BeginTimeSpan(SampleIndex, GpuCpuTimeSpan),
+    EndTimeSpan,
+    QueryValue(SampleIndex, u64),
 }
