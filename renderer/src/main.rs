@@ -62,7 +62,6 @@ use openvr as vr;
 use renderer::camera;
 use renderer::configuration;
 use renderer::profiling::*;
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::Read;
