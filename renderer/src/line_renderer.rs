@@ -50,12 +50,12 @@ impl Renderer {
 
                 gl.named_buffer_data(
                     self.vertex_buffer_name,
-                    params.vertices.slice_to_bytes(),
+                    params.vertices.slice_as_bytes(),
                     gl::STREAM_DRAW,
                 );
                 gl.named_buffer_data(
                     self.element_buffer_name,
-                    params.indices.slice_to_bytes(),
+                    params.indices.slice_as_bytes(),
                     gl::STREAM_DRAW,
                 );
 

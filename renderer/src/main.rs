@@ -298,9 +298,11 @@ impl Context {
             match fs::File::open("state.bin") {
                 Ok(file) => {
                     let mut file = io::BufReader::new(file);
-                    for key in CameraKey::iter() {
-                        file.read_exact(cameras[key].value_as_bytes_mut())
-                            .unwrap_or_else(|_| eprintln!("Failed to read state file."));
+                    unsafe {
+                        for key in CameraKey::iter() {
+                            file.read_exact(cameras[key].value_as_bytes_mut())
+                                .unwrap_or_else(|_| eprintln!("Failed to read state file."));
+                        }
                     }
                 }
                 Err(_) => {
