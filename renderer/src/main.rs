@@ -166,6 +166,7 @@ enum FrameEvent {
 }
 
 pub struct Context {
+    pub rng: StdRng,
     pub resource_dir: PathBuf,
     pub configuration_path: PathBuf,
     pub configuration: configuration::Root,
@@ -380,6 +381,7 @@ impl Context {
         let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
 
         Context {
+            rng: SeedableRng::from_seed(*b"this is rdm rng seed of 32 bytes"),
             resource_dir,
             configuration_path,
             gl,
@@ -731,17 +733,17 @@ impl Context {
             {
                 // let center = self.transition_camera.current_camera.transform.position;
                 let center = Vector3::zero();
-                let mut rng = rand::thread_rng();
+                let rng = &mut self.rng;
                 let p0 = Point3::from_value(-30.0) + center;
                 let p1 = Point3::from_value(30.0) + center;
 
                 for rain_drop in self.rain_drops.iter_mut() {
-                    rain_drop.update(delta_time, &mut rng, p0, p1);
+                    rain_drop.update(delta_time, rng, p0, p1);
                 }
 
                 for _ in 0..100 {
                     if self.rain_drops.len() < self.configuration.global.rain_drop_max as usize {
-                        self.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
+                        self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
                     if self.rain_drops.len() > self.configuration.global.rain_drop_max as usize {
                         self.rain_drops
