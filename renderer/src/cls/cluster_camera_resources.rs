@@ -39,7 +39,7 @@ pub struct ClusterCameraResources {
 }
 
 impl ClusterCameraResources {
-    pub fn new(gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterCameraParameters) -> Self {
+    pub fn new(_gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterCameraParameters) -> Self {
         Self {
             profilers: CameraStages::new(|stage| profiling_context.add_sample(stage.title())),
             parameters,
