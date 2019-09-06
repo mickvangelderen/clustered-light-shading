@@ -159,10 +159,12 @@ impl std::default::Default for WindowEventAccumulator {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
-enum FrameEvent {
+pub enum FrameEvent {
     DeviceKey(glutin::KeyboardInput),
     DeviceMotion { axis: glutin::AxisId, value: f64 },
 }
+
+type FrameEvents = Vec<FrameEvent>;
 
 pub struct Context {
     pub rng: StdRng,
@@ -170,11 +172,10 @@ pub struct Context {
     pub configuration_path: PathBuf,
     pub configuration: configuration::Root,
     pub record_file: Option<io::BufWriter<fs::File>>,
-    pub replay_file: Option<io::BufReader<fs::File>>,
+    pub replay_frame_events: Option<Vec<FrameEvents>>,
     pub gl: gl::Gl,
     pub vr: Option<vr::Context>,
     pub current: ::incremental::Current,
-    pub epoch: Instant,
     pub running: bool,
     pub paused: bool,
     pub focus: bool,
@@ -234,7 +235,97 @@ pub struct Context {
     pub point_lights: Vec<light::PointLight>,
 }
 
+pub struct Initial {
+    pub configuration: configuration::Root,
+    pub cameras: CameraMap<camera::Camera>,
+}
+
+pub const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
+
 impl Context {
+    //FIXME THIS IS HACKY AND STUPID AND DUPLICATED
+    pub fn reset(&mut self) {
+        let configuration: configuration::Root = configuration::read(&self.configuration_path);
+
+        let mut replay_file = configuration
+            .replay
+            .path
+            .as_ref()
+            .map(|path| io::BufReader::new(fs::File::open(path).unwrap()));
+
+        let default_camera_transform = camera::CameraTransform {
+            position: Point3::new(0.0, 1.0, 1.5),
+            yaw: Rad(0.0),
+            pitch: Rad(0.0),
+            fovy: Deg(90.0).into(),
+        };
+
+        let mut cameras = CameraMap::new(|key| camera::Camera {
+            properties: match key {
+                CameraKey::Main => configuration.main_camera,
+                CameraKey::Debug => configuration.debug_camera,
+            }
+            .into(),
+            transform: default_camera_transform,
+        });
+
+        // Load state.
+        {
+            let read_cameras = |file: &mut std::io::BufReader<std::fs::File>,
+                                cameras: &mut CameraMap<camera::Camera>| unsafe {
+                for key in CameraKey::iter() {
+                    file.read_exact(cameras[key].value_as_bytes_mut())
+                        .unwrap_or_else(|_| eprintln!("Failed to read state file."));
+                }
+            };
+
+            match replay_file.as_mut() {
+                Some(file) => {
+                    read_cameras(file, &mut cameras);
+                }
+                None => {
+                    match fs::File::open("state.bin") {
+                        Ok(file) => {
+                            let mut file = io::BufReader::new(file);
+                            read_cameras(&mut file, &mut cameras);
+                        }
+                        Err(_) => {
+                            // Whatever.
+                        }
+                    }
+                }
+            }
+        }
+
+        self.rng = StdRng::from_seed(SEED);
+        self.running = true;
+        self.paused = false;
+        self.tick = 0;
+        self.frame_index = FrameIndex::from_usize(0);
+        self.keyboard_state = Default::default();
+        self.window_mode = WindowMode::Main;
+        self.display_mode = 1;
+        self.depth_prepass = true;
+        self.target_camera_key = CameraKey::Main;
+        self.transition_camera = camera::TransitionCamera {
+            start_camera: cameras.main,
+            current_camera: cameras.main,
+            progress: 0.0,
+        };
+        self.cameras = cameras.map(|camera| camera::SmoothCamera {
+            properties: camera.properties,
+            current_transform: camera.transform,
+            target_transform: camera.transform,
+            smooth_enabled: true,
+            current_smoothness: configuration.camera.maximum_smoothness,
+            maximum_smoothness: configuration.camera.maximum_smoothness,
+        });
+        self.rain_drops.clear();
+        self.configuration = configuration;
+        self.window_event_accumulator = Default::default();
+        self.profiling_context.reset();
+    }
+
     pub fn new(events_loop: &mut glutin::EventsLoop) -> Self {
         let current_dir = std::env::current_dir().unwrap();
         let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
@@ -307,13 +398,13 @@ impl Context {
 
         // Load state.
         {
-            let read_cameras =
-                |file: &mut std::io::BufReader<std::fs::File>, cameras: &mut CameraMap<camera::Camera>| unsafe {
-                    for key in CameraKey::iter() {
-                        file.read_exact(cameras[key].value_as_bytes_mut())
-                            .unwrap_or_else(|_| eprintln!("Failed to read state file."));
-                    }
-                };
+            let read_cameras = |file: &mut std::io::BufReader<std::fs::File>,
+                                cameras: &mut CameraMap<camera::Camera>| unsafe {
+                for key in CameraKey::iter() {
+                    file.read_exact(cameras[key].value_as_bytes_mut())
+                        .unwrap_or_else(|_| eprintln!("Failed to read state file."));
+                }
+            };
 
             match replay_file.as_mut() {
                 Some(file) => {
@@ -332,6 +423,16 @@ impl Context {
                 }
             }
         }
+
+        let replay_frame_events = replay_file.as_mut().map(|file| {
+            let mut accumulator = Vec::new();
+
+            while let Ok(events) = bincode::deserialize_from(&mut *file) {
+                accumulator.push(events);
+            }
+
+            accumulator
+        });
 
         if let Some(file) = record_file.as_mut() {
             for key in CameraKey::iter() {
@@ -411,13 +512,12 @@ impl Context {
         let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
 
         Context {
-            rng: SeedableRng::from_seed(*b"this is rdm rng seed of 32 bytes"),
+            rng: SeedableRng::from_seed(SEED),
             resource_dir,
             configuration_path,
             gl,
             vr,
             current,
-            epoch: Instant::now(),
             running: true,
             paused: false,
             focus: false,
@@ -445,7 +545,7 @@ impl Context {
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             }),
             record_file,
-            replay_file,
+            replay_frame_events,
             rain_drops: Vec::new(),
             shader_compiler,
 
@@ -496,10 +596,6 @@ impl Context {
 
     fn target_camera(&self) -> &camera::SmoothCamera {
         &self.cameras[self.target_camera_key]
-    }
-
-    fn target_camera_mut(&mut self) -> &mut camera::SmoothCamera {
-        &mut self.cameras[self.target_camera_key]
     }
 
     pub fn process_events(&mut self, events_loop: &mut glutin::EventsLoop) {
@@ -612,11 +708,10 @@ impl Context {
             bincode::serialize_into(file, &frame_events).unwrap();
         }
 
-        if let Some(file) = self.replay_file.as_mut() {
-            std::mem::replace(&mut frame_events, bincode::deserialize_from(file).unwrap());
-        }
-
-        for event in &frame_events {
+        for event in match self.replay_frame_events {
+            Some(ref replay_frame_events) => replay_frame_events[self.frame_index.to_usize()].iter(),
+            None => frame_events.iter(),
+        } {
             match *event {
                 FrameEvent::DeviceKey(keyboard_input) => {
                     self.keyboard_state.update(keyboard_input);
@@ -657,7 +752,7 @@ impl Context {
                                         !self.configuration.virtual_stereo.enabled;
                                 }
                                 VirtualKeyCode::C => {
-                                    self.target_camera_mut().toggle_smoothness();
+                                    self.cameras[self.target_camera_key].toggle_smoothness();
                                 }
                                 VirtualKeyCode::Escape => {
                                     self.running = false;
@@ -2117,15 +2212,17 @@ fn main() {
 
         context.profiling_context.end_run(run_index);
 
-        if context.record_file.is_none() {
+        if context.replay_frame_events.is_none() {
             break;
         }
+
+        context.reset();
 
         run_index.increment();
     }
 
     // Save state.
-    if context.record_file.is_none() && context.replay_file.is_none() {
+    if context.record_file.is_none() && context.replay_frame_events.is_none() {
         let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
         for key in CameraKey::iter() {
             let camera = context.cameras[key].current_to_camera();
