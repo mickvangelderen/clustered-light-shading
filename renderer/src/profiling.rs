@@ -150,7 +150,7 @@ impl Context {
                     FrameEvent::BeginTimeSpan(sample_index) => {
                         let profiler_index = profilers_used;
                         profilers_used += 1;
-                        debug_assert!(self.sample_data[sample_index.to_usize()].is_none());
+                        debug_assert!(self.sample_data[sample_index.to_usize()].is_none(), "{:?} is writen to more than once", sample_index);
                         let sample = context.profilers[profiler_index].read(gl).unwrap();
                         self.thread.emit(MeasurementEvent::BeginTimeSpan(sample_index, sample));
                         self.sample_data[sample_index.to_usize()] = Some(sample);
@@ -211,6 +211,13 @@ impl Context {
     pub fn sample(&mut self, sample_index: SampleIndex) -> Option<GpuCpuTimeSpan> {
         assert!(self.frame_index.is_some());
         self.sample_data[sample_index.to_usize()]
+    }
+
+    pub fn reset(&mut self) {
+        // Clear values from all samples.
+        for sample in self.sample_data.iter_mut() {
+            *sample = None;
+        }
     }
 }
 
