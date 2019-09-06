@@ -1436,6 +1436,7 @@ dependencies = [
  "openvr 0.1.0 (git+https://github.com/mickvangelderen/openvr-rust?branch=0.1.x)",
  "polygen 0.1.0",
  "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.98 (registry+https://github.com/rust-lang/crates.io-index)",
  "tobj 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)",
