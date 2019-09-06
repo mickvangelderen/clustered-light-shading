@@ -277,6 +277,18 @@ impl Context {
 
         unsafe { gl_window.make_current().unwrap() };
 
+        let mut record_file = configuration
+            .global
+            .record
+            .as_ref()
+            .map(|path| io::BufWriter::new(fs::File::create(path).unwrap()));
+
+        let mut replay_file = configuration
+            .global
+            .replay
+            .as_ref()
+            .map(|path| io::BufReader::new(fs::File::open(path).unwrap()));
+
         let default_camera_transform = camera::CameraTransform {
             position: Point3::new(0.0, 1.0, 1.5),
             yaw: Rad(0.0),
@@ -295,19 +307,36 @@ impl Context {
 
         // Load state.
         {
-            match fs::File::open("state.bin") {
-                Ok(file) => {
-                    let mut file = io::BufReader::new(file);
-                    unsafe {
-                        for key in CameraKey::iter() {
-                            file.read_exact(cameras[key].value_as_bytes_mut())
-                                .unwrap_or_else(|_| eprintln!("Failed to read state file."));
+            let read_cameras =
+                |file: &mut std::io::BufReader<std::fs::File>, cameras: &mut CameraMap<camera::Camera>| unsafe {
+                    for key in CameraKey::iter() {
+                        file.read_exact(cameras[key].value_as_bytes_mut())
+                            .unwrap_or_else(|_| eprintln!("Failed to read state file."));
+                    }
+                };
+
+            match replay_file.as_mut() {
+                Some(file) => {
+                    read_cameras(file, &mut cameras);
+                }
+                None => {
+                    match fs::File::open("state.bin") {
+                        Ok(file) => {
+                            let mut file = io::BufReader::new(file);
+                            read_cameras(&mut file, &mut cameras);
+                        }
+                        Err(_) => {
+                            // Whatever.
                         }
                     }
                 }
-                Err(_) => {
-                    // Whatever.
-                }
+            }
+        }
+
+        if let Some(file) = record_file.as_mut() {
+            for key in CameraKey::iter() {
+                let camera = cameras[key];
+                file.write_all(camera.value_as_bytes()).unwrap();
             }
         }
 
@@ -415,16 +444,8 @@ impl Context {
                 current_smoothness: configuration.camera.maximum_smoothness,
                 maximum_smoothness: configuration.camera.maximum_smoothness,
             }),
-            record_file: configuration
-                .global
-                .record
-                .as_ref()
-                .map(|path| io::BufWriter::new(fs::File::create(path).unwrap())),
-            replay_file: configuration
-                .global
-                .replay
-                .as_ref()
-                .map(|path| io::BufReader::new(fs::File::open(path).unwrap())),
+            record_file,
+            replay_file,
             rain_drops: Vec::new(),
             shader_compiler,
 
@@ -2090,7 +2111,7 @@ fn main() {
     }
 
     // Save state.
-    {
+    if context.record_file.is_none() && context.replay_file.is_none() {
         let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
         for key in CameraKey::iter() {
             let camera = context.cameras[key].current_to_camera();
