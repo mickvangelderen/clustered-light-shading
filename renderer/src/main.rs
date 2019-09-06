@@ -179,7 +179,7 @@ pub struct Context {
     pub paused: bool,
     pub focus: bool,
     pub tick: u64,
-    pub frame: Frame,
+    pub frame_index: FrameIndex,
     pub keyboard_state: KeyboardState,
     pub win_dpi: f64,
     pub win_size: glutin::dpi::PhysicalSize,
@@ -284,8 +284,8 @@ impl Context {
             .map(|path| io::BufWriter::new(fs::File::create(path).unwrap()));
 
         let mut replay_file = configuration
-            .global
             .replay
+            .path
             .as_ref()
             .map(|path| io::BufReader::new(fs::File::open(path).unwrap()));
 
@@ -422,7 +422,7 @@ impl Context {
             paused: false,
             focus: false,
             tick: 0,
-            frame: Frame(0),
+            frame_index: FrameIndex::from_usize(0),
             keyboard_state: Default::default(),
             win_dpi,
             win_size,
@@ -597,7 +597,6 @@ impl Context {
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
                             frame_events.push(FrameEvent::DeviceKey(keyboard_input));
-                            self.keyboard_state.update(keyboard_input);
                         }
                         DeviceEvent::Motion { axis, value } => {
                             frame_events.push(FrameEvent::DeviceMotion { axis, value });
@@ -614,13 +613,13 @@ impl Context {
         }
 
         if let Some(file) = self.replay_file.as_mut() {
-            let mut fe: Vec<FrameEvent> = bincode::deserialize_from(file).unwrap();
-            std::mem::swap(&mut frame_events, &mut fe);
+            std::mem::replace(&mut frame_events, bincode::deserialize_from(file).unwrap());
         }
 
         for event in &frame_events {
-            match event {
+            match *event {
                 FrameEvent::DeviceKey(keyboard_input) => {
+                    self.keyboard_state.update(keyboard_input);
                     if let Some(vk) = keyboard_input.virtual_keycode {
                         if keyboard_input.state.is_pressed() && self.focus {
                             use glutin::VirtualKeyCode;
@@ -911,7 +910,7 @@ impl Context {
             res.dirty = true;
         }
 
-        self.profiling_context.begin_frame(&self.gl, self.frame);
+        self.profiling_context.begin_frame(&self.gl, self.frame_index);
 
         let mut light_index = None;
         let mut cluster_resources_index = None;
@@ -1973,8 +1972,11 @@ impl Context {
         // Reborrow.
         let gl = &self.gl;
 
+        self.profiling_context.end_frame(self.frame_index);
+
         self.gl_window.swap_buffers().unwrap();
-        self.frame.increment();
+
+        self.frame_index.increment();
 
         // TODO: Borrow the pool instead.
         self.camera_buffer_pool.reset(gl);
@@ -1997,8 +1999,6 @@ impl Context {
                 self.fps_average.compute()
             ));
         }
-
-        self.profiling_context.end_frame();
     }
 
     fn clear_and_render_depth(&mut self, main_resources_index: MainResourcesIndex) {
@@ -2104,10 +2104,24 @@ fn main() {
 
     let mut context = Context::new(&mut events_loop);
 
-    while context.running {
-        context.render();
-        context.process_events(&mut events_loop);
-        context.simulate();
+    let mut run_index = RunIndex::from_usize(0);
+
+    while run_index < RunIndex::from_usize(context.configuration.replay.run_count) {
+        context.profiling_context.begin_run(run_index);
+
+        while context.running {
+            context.render();
+            context.process_events(&mut events_loop);
+            context.simulate();
+        }
+
+        context.profiling_context.end_run(run_index);
+
+        if context.record_file.is_none() {
+            break;
+        }
+
+        run_index.increment();
     }
 
     // Save state.
