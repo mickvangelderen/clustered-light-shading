@@ -7,8 +7,70 @@ enum ProfilingEvent {
     EndFrame(usize),
 }
 
-struct Profiling {
+trait Profiling {
+    fn emit(&mut self, event: ProfilingEvent);
+}
+
+#[derive(Default)]
+struct ApplicationProfiling {
     events: Vec<ProfilingEvent>,
+}
+
+impl Profiling for ApplicationProfiling {
+    fn emit(&mut self, event: ProfilingEvent) {
+        self.events.push(event);
+    }
+}
+
+struct RunProfiling<'s> {
+    profiling: &'s mut ApplicationProfiling,
+    run_index: &'s usize,
+}
+
+impl<'s> RunProfiling<'s> {
+    fn begin(profiling: &'s mut Profiling, run_index: &'s usize) -> Self {
+        profiling.events.push(ProfilingEvent::BeginRun(*run_index));
+        Self { profiling, run_index }
+    }
+
+    fn end(self) {
+        // Let drop handle this.
+    }
+}
+
+impl Profiling for RunProfiling {
+    fn 
+}
+
+impl Drop for RunProfiling<'_> {
+    fn drop(&mut self) {
+        self.profiling.events.push(ProfilingEvent::EndRun(*self.run_index));
+    }
+}
+
+struct RenderProfiling<'s, 'p> {
+    profiling: &'s mut RunProfiling<'p>,
+    render_index: &'s usize,
+}
+
+impl<'s, 'p> RenderProfiling<'s, 'p> {
+    fn begin(profiling: &'s mut RunProfiling<'p>, render_index: &'s usize) -> Self {
+        profiling.events.push(ProfilingEvent::BeginFrame(*render_index));
+        Self {
+            profiling,
+            render_index,
+        }
+    }
+
+    fn end(self) {
+        // Let drop handle this.
+    }
+}
+
+impl Drop for RenderProfiling<'_, '_> {
+    fn drop(&mut self) {
+        self.profiling.events.push(ProfilingEvent::EndFrame(*self.render_index));
+    }
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -95,22 +157,25 @@ fn main() {
     )
     .unwrap();
     let gl = create_gl(&mut gl_window);
+    let mut profiling = Profiling::default();
 
     for run_index in 0..1 {
         run(RunContext {
             event_loop: &mut event_loop,
             gl_window: &mut gl_window,
             gl: &gl,
+            profiling: RunProfiling::begin(&mut profiling, &run_index),
             run_index: &run_index,
         });
     }
 }
 
-struct RunContext<'a> {
-    pub event_loop: &'a mut glutin::EventsLoop,
-    pub gl_window: &'a mut glutin::GlWindow,
-    pub gl: &'a gl::Gl,
-    pub run_index: &'a usize,
+struct RunContext<'s> {
+    pub event_loop: &'s mut glutin::EventsLoop,
+    pub gl_window: &'s mut glutin::GlWindow,
+    pub gl: &'s gl::Gl,
+    pub profiling: RunProfiling<'s>,
+    pub run_index: &'s usize,
 }
 
 fn run(context: RunContext) {
@@ -118,6 +183,7 @@ fn run(context: RunContext) {
         event_loop,
         gl_window,
         gl,
+        mut profiling,
         run_index,
     } = context;
     let mut running = true;
@@ -136,19 +202,23 @@ fn run(context: RunContext) {
             break;
         }
 
-        render(RenderContext {
-            gl_window,
-            gl,
-            render_index: &render_index,
-        });
-        render_index += 1;
+        {
+            let context = RenderContext {
+                gl_window,
+                gl,
+                profiling: RenderProfiling::begin(&mut profiling, &render_index),
+                render_index: &render_index,
+            };
+            render(context);
+            render_index += 1;
+        }
     }
 }
 
-struct SimulateContext<'a> {
-    pub event_loop: &'a mut glutin::EventsLoop,
-    pub running: &'a mut bool,
-    pub simulate_index: &'a usize,
+struct SimulateContext<'s> {
+    pub event_loop: &'s mut glutin::EventsLoop,
+    pub running: &'s mut bool,
+    pub simulate_index: &'s usize,
 }
 
 fn simulate(context: SimulateContext) {
@@ -195,16 +265,18 @@ fn simulate(context: SimulateContext) {
     });
 }
 
-struct RenderContext<'a> {
-    pub gl_window: &'a mut glutin::GlWindow,
-    pub gl: &'a gl::Gl,
-    pub render_index: &'a usize,
+struct RenderContext<'s, 'p> {
+    pub gl_window: &'s mut glutin::GlWindow,
+    pub gl: &'s gl::Gl,
+    pub profiling: RenderProfiling<'s, 'p>,
+    pub render_index: &'s usize,
 }
 
 fn render(context: RenderContext) {
     let RenderContext {
         gl_window,
         gl,
+        profiling,
         render_index,
     } = context;
 
@@ -220,5 +292,5 @@ fn render(context: RenderContext) {
         gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
     }
 
-    gl_window.swap_buffers();
+    gl_window.swap_buffers().unwrap();
 }
