@@ -106,6 +106,11 @@ impl Context {
     }
 
     #[inline]
+    pub fn run_index(&self) -> RunIndex {
+        self.run_index.unwrap()
+    }
+
+    #[inline]
     pub fn add_sample(&mut self, sample: &'static str) -> SampleIndex {
         let sample_index = SampleIndex::from_usize(self.sample_data.len());
         self.thread
