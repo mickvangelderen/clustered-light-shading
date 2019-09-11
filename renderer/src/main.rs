@@ -18,7 +18,6 @@ mod basic_renderer;
 pub mod cgmath_ext;
 mod cls;
 pub mod color;
-mod convert;
 mod depth_renderer;
 mod filters;
 pub mod frustrum;
@@ -40,6 +39,7 @@ mod toggle;
 mod viewport;
 mod window_mode;
 
+use self::cgmath_ext::*;
 use self::cls::*;
 use self::frustrum::*;
 use self::gl_ext::*;
@@ -53,7 +53,6 @@ use self::viewport::*;
 use self::window_mode::*;
 
 use cgmath::*;
-use convert::*;
 use derive::EnumNext;
 use glutin_ext::*;
 use keyboard::*;

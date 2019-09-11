@@ -1,11 +1,14 @@
+mod as_bytes;
 pub mod camera;
 pub mod clamp;
 mod configuration;
 mod create_gl;
 mod create_window;
+mod flatten;
 pub mod profiling;
 pub mod profiling_by_value;
 
+pub use as_bytes::*;
 pub use configuration::{
     ApplicationMode, CameraConfiguration, ClusteredLightShadingConfiguration, ClusteringGrouping, ClusteringProjection,
     Configuration, GenericCameraConfiguration, GlobalConfiguration, PrefixSumConfiguration, RecordConfiguration,
@@ -13,3 +16,4 @@ pub use configuration::{
 };
 pub use create_gl::*;
 pub use create_window::*;
+pub use flatten::*;
