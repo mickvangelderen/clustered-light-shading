@@ -158,7 +158,28 @@ impl std::default::Default for WindowEventAccumulator {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub enum WindowEvent {
+    CloseRequested,
+    HiDpiFactorChanged(f64),
+    Focused(bool),
+    Resized(glutin::dpi::LogicalSize),
+}
+
+impl WindowEvent {
+    fn from_glutin(event: glutin::WindowEvent) -> Option<Self> {
+        match event {
+            glutin::WindowEvent::CloseRequested => Some(WindowEvent::CloseRequested),
+            glutin::WindowEvent::HiDpiFactorChanged(x) => Some(WindowEvent::HiDpiFactorChanged(x)),
+            glutin::WindowEvent::Focused(x) => Some(WindowEvent::Focused(x)),
+            glutin::WindowEvent::Resized(x) => Some(WindowEvent::Resized(x)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub enum FrameEvent {
+    WindowEvent(WindowEvent),
     DeviceKey(glutin::KeyboardInput),
     DeviceMotion { axis: glutin::AxisId, value: f64 },
 }
@@ -224,6 +245,7 @@ pub struct Context<'s> {
     pub paused: bool,
     pub focus: bool,
     pub tick: u64,
+    pub event_index: usize,
     pub frame_index: FrameIndex,
     pub keyboard_state: KeyboardState,
     pub win_dpi: f64,
@@ -442,6 +464,7 @@ impl<'s> Context<'s> {
             paused: false,
             focus: false,
             tick: 0,
+            event_index: 0,
             frame_index: FrameIndex::from_usize(0),
             keyboard_state: Default::default(),
             win_dpi,
@@ -508,6 +531,7 @@ impl<'s> Context<'s> {
         self.process_file_events();
         self.process_window_events();
         self.process_vr_events();
+        self.event_index += 1;
     }
 
     fn process_file_events(&mut self) {
@@ -575,32 +599,12 @@ impl<'s> Context<'s> {
 
         let mut frame_events: Vec<FrameEvent> = Vec::new();
 
-        let Self {
-            ref mut events_loop,
-            ref mut running,
-            ref mut focus,
-            ref mut win_size,
-            ref mut win_dpi,
-            ..
-        } = *self;
-
-        events_loop.poll_events(|event| {
+        self.events_loop.poll_events(|event| {
             use glutin::Event;
             match event {
                 Event::WindowEvent { event, .. } => {
-                    use glutin::WindowEvent;
-                    match event {
-                        WindowEvent::CloseRequested => *running = false,
-                        WindowEvent::HiDpiFactorChanged(val) => {
-                            let size = win_size.to_logical(*win_dpi);
-                            *win_dpi = val;
-                            *win_size = size.to_physical(val);
-                        }
-                        WindowEvent::Focused(val) => *focus = val,
-                        WindowEvent::Resized(val) => {
-                            *win_size = val.to_physical(*win_dpi);
-                        }
-                        _ => (),
+                    if let Some(event) = WindowEvent::from_glutin(event).map(FrameEvent::WindowEvent) {
+                        frame_events.push(event)
                     }
                 }
                 Event::DeviceEvent { event, .. } => {
@@ -624,10 +628,22 @@ impl<'s> Context<'s> {
         }
 
         for event in match self.replay_frame_events {
-            Some(ref replay_frame_events) => replay_frame_events[self.frame_index.to_usize()].iter(),
+            Some(ref replay_frame_events) => replay_frame_events[self.event_index].iter(),
             None => frame_events.iter(),
         } {
             match *event {
+                FrameEvent::WindowEvent(ref event) => match *event {
+                    WindowEvent::CloseRequested => self.running = false,
+                    WindowEvent::HiDpiFactorChanged(val) => {
+                        let size = self.win_size.to_logical(self.win_dpi);
+                        self.win_dpi = val;
+                        self.win_size = size.to_physical(val);
+                    }
+                    WindowEvent::Focused(val) => self.focus = val,
+                    WindowEvent::Resized(val) => {
+                        self.win_size = val.to_physical(self.win_dpi);
+                    }
+                },
                 FrameEvent::DeviceKey(keyboard_input) => {
                     self.keyboard_state.update(keyboard_input);
                     if let Some(vk) = keyboard_input.virtual_keycode {
