@@ -1949,9 +1949,19 @@ impl<'s> Context<'s> {
             &self.monospace,
             &format!(
                 "\
+                 {}\
                  Render Technique: {:<14} | CLS Grouping:     {:<14} | CLS Projection:   {:<14}\n\
                  Attenuation Mode: {:<14} | Lighting Space:   {:<14} | Light Count:      {:<14}\n\
                  ",
+                match self.configuration.global.mode {
+                    ApplicationMode::Normal => "".to_string(),
+                    ApplicationMode::Record => "Recording...\n".to_string(),
+                    ApplicationMode::Replay => format!(
+                        "Replaying {}/{}\n",
+                        self.profiling_context.run_index().to_usize() + 1,
+                        self.configuration.replay.run_count
+                    ),
+                },
                 format!("{:?}", self.shader_compiler.render_technique()),
                 format!("{:?}", self.configuration.clustered_light_shading.grouping),
                 format!("{:?}", self.configuration.clustered_light_shading.projection),
