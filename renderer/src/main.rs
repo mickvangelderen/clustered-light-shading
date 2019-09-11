@@ -55,7 +55,6 @@ use self::window_mode::*;
 use cgmath::*;
 use convert::*;
 use derive::EnumNext;
-use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
