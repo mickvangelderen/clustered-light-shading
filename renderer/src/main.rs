@@ -166,15 +166,60 @@ pub enum FrameEvent {
 
 type FrameEvents = Vec<FrameEvent>;
 
-pub struct Context {
-    pub rng: StdRng,
+pub struct MainContext {
+    pub current_dir: PathBuf,
     pub resource_dir: PathBuf,
     pub configuration_path: PathBuf,
     pub configuration: Configuration,
-    pub record_file: Option<io::BufWriter<fs::File>>,
-    pub replay_frame_events: Option<Vec<FrameEvents>>,
+    pub events_loop: glutin::EventsLoop,
+    pub gl_window: glutin::GlWindow,
     pub gl: gl::Gl,
     pub vr: Option<vr::Context>,
+}
+
+impl MainContext {
+    fn new() -> Self {
+        let current_dir = std::env::current_dir().unwrap();
+        let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
+        let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
+        let configuration = Configuration::read(&configuration_path);
+
+        let mut events_loop = glutin::EventsLoop::new();
+        let gl_window = create_window(&mut events_loop, &configuration.window).unwrap();
+        let gl = create_gl(&gl_window, &configuration.gl);
+        let vr = vr::Context::new(vr::ApplicationType::Scene)
+            .map_err(|error| {
+                eprintln!("Failed to acquire context: {:?}", error);
+            })
+            .ok();
+
+        Self {
+            current_dir,
+            resource_dir,
+            configuration_path,
+            configuration,
+            events_loop,
+            gl_window,
+            gl,
+            vr,
+        }
+    }
+}
+
+pub struct Context<'s> {
+    // From MainContext
+    pub current_dir: &'s Path,
+    pub resource_dir: &'s Path,
+    pub configuration_path: &'s Path,
+    pub configuration: Configuration,
+    pub events_loop: &'s mut glutin::EventsLoop,
+    pub gl_window: &'s mut glutin::GlWindow,
+    pub gl: &'s gl::Gl,
+    pub vr: &'s mut Option<vr::Context>,
+
+    pub rng: StdRng,
+    pub record_file: Option<io::BufWriter<fs::File>>,
+    pub replay_frame_events: Option<Vec<FrameEvents>>,
     pub current: ::incremental::Current,
     pub running: bool,
     pub paused: bool,
@@ -201,7 +246,6 @@ pub struct Context {
     pub watcher: notify::RecommendedWatcher,
 
     // Window.
-    pub gl_window: glutin::GlWindow,
     pub window_event_accumulator: WindowEventAccumulator,
 
     // Text rendering.
@@ -235,109 +279,27 @@ pub struct Context {
     pub point_lights: Vec<light::PointLight>,
 }
 
-pub struct Initial {
-    pub configuration: Configuration,
-    pub cameras: CameraMap<camera::Camera>,
-}
-
 pub const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
 
-impl Context {
-    //FIXME THIS IS HACKY AND STUPID AND DUPLICATED
-    pub fn reset(&mut self) {
-        let configuration = Configuration::read(&self.configuration_path);
+impl<'s> Context<'s> {
+    pub fn new(context: &'s mut MainContext) -> Self {
+        let MainContext {
+            current_dir,
+            resource_dir,
+            configuration_path,
+            configuration,
+            events_loop,
+            gl_window,
+            gl,
+            vr,
+        } = context;
 
-        let mut replay_file = match configuration.global.mode {
-            ApplicationMode::Replay => Some(io::BufReader::new(fs::File::open(&configuration.replay.path).unwrap())),
-            _ => None,
-        };
-
-        let default_camera_transform = camera::CameraTransform {
-            position: Point3::new(0.0, 1.0, 1.5),
-            yaw: Rad(0.0),
-            pitch: Rad(0.0),
-            fovy: Deg(90.0).into(),
-        };
-
-        let mut cameras = CameraMap::new(|key| camera::Camera {
-            properties: match key {
-                CameraKey::Main => configuration.main_camera,
-                CameraKey::Debug => configuration.debug_camera,
-            }
-            .into(),
-            transform: default_camera_transform,
-        });
-
-        // Load state.
-        {
-            let read_cameras = |file: &mut std::io::BufReader<std::fs::File>,
-                                cameras: &mut CameraMap<camera::Camera>| unsafe {
-                for key in CameraKey::iter() {
-                    file.read_exact(cameras[key].value_as_bytes_mut())
-                        .unwrap_or_else(|_| eprintln!("Failed to read state file."));
-                }
-            };
-
-            match replay_file.as_mut() {
-                Some(file) => {
-                    read_cameras(file, &mut cameras);
-                }
-                None => {
-                    match fs::File::open("state.bin") {
-                        Ok(file) => {
-                            let mut file = io::BufReader::new(file);
-                            read_cameras(&mut file, &mut cameras);
-                        }
-                        Err(_) => {
-                            // Whatever.
-                        }
-                    }
-                }
-            }
-        }
-
-        self.rng = StdRng::from_seed(SEED);
-        self.running = true;
-        self.paused = false;
-        self.tick = 0;
-        self.frame_index = FrameIndex::from_usize(0);
-        self.keyboard_state = Default::default();
-        self.window_mode = WindowMode::Main;
-        self.display_mode = 1;
-        self.depth_prepass = true;
-        self.target_camera_key = CameraKey::Main;
-        self.transition_camera = camera::TransitionCamera {
-            start_camera: cameras.main,
-            current_camera: cameras.main,
-            progress: 0.0,
-        };
-        self.cameras = cameras.map(|camera| camera::SmoothCamera {
-            properties: camera.properties,
-            current_transform: camera.transform,
-            target_transform: camera.transform,
-            smooth_enabled: true,
-            current_smoothness: configuration.camera.maximum_smoothness,
-            maximum_smoothness: configuration.camera.maximum_smoothness,
-        });
-        self.rain_drops.clear();
-        self.configuration = configuration;
-        self.window_event_accumulator = Default::default();
-        self.profiling_context.reset();
-    }
-
-    pub fn new(events_loop: &mut glutin::EventsLoop) -> Self {
-        let current_dir = std::env::current_dir().unwrap();
-        let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
-        let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
-        let configuration = Configuration::read(&configuration_path);
+        // Clone starting configuration.
+        let configuration = configuration.clone();
 
         let (fs_tx, fs_rx) = mpsc::channel();
         let mut watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
         notify::Watcher::watch(&mut watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
-
-        let gl_window = create_window(events_loop, &configuration.window).unwrap();
-
-        unsafe { gl_window.make_current().unwrap() };
 
         let mut record_file = match configuration.global.mode {
             ApplicationMode::Record => Some(io::BufWriter::new(
@@ -412,8 +374,6 @@ impl Context {
             }
         }
 
-        let gl = create_gl(&gl_window, &configuration.gl);
-
         let sans_serif = FontContext::new(&gl, resource_dir.join("fonts/OpenSans-Regular.fnt"));
         let monospace = FontContext::new(&gl, resource_dir.join("fonts/RobotoMono-Regular.fnt"));
 
@@ -449,21 +409,35 @@ impl Context {
 
         let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
 
-        let vr = vr::Context::new(vr::ApplicationType::Scene)
-            .map_err(|error| {
-                eprintln!("Failed to acquire context: {:?}", error);
-            })
-            .ok();
-
         let win_dpi = gl_window.get_hidpi_factor();
         let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
 
+        let transition_camera = camera::TransitionCamera {
+            start_camera: cameras.main,
+            current_camera: cameras.main,
+            progress: 0.0,
+        };
+        let cameras = cameras.map(|camera| camera::SmoothCamera {
+            properties: camera.properties,
+            current_transform: camera.transform,
+            target_transform: camera.transform,
+            smooth_enabled: true,
+            current_smoothness: configuration.camera.maximum_smoothness,
+            maximum_smoothness: configuration.camera.maximum_smoothness,
+        });
+
+        let profiling_context = ProfilingContext::new(&configuration.profiling);
+
         Context {
-            rng: SeedableRng::from_seed(SEED),
+            current_dir,
             resource_dir,
             configuration_path,
+            configuration,
+            events_loop,
+            gl_window,
             gl,
             vr,
+            rng: SeedableRng::from_seed(SEED),
             current,
             running: true,
             paused: false,
@@ -478,35 +452,21 @@ impl Context {
             display_mode: 1,
             depth_prepass: true,
             target_camera_key: CameraKey::Main,
-            transition_camera: camera::TransitionCamera {
-                start_camera: cameras.main,
-                current_camera: cameras.main,
-                progress: 0.0,
-            },
-            cameras: cameras.map(|camera| camera::SmoothCamera {
-                properties: camera.properties,
-                current_transform: camera.transform,
-                target_transform: camera.transform,
-                smooth_enabled: true,
-                current_smoothness: configuration.camera.maximum_smoothness,
-                maximum_smoothness: configuration.camera.maximum_smoothness,
-            }),
+            transition_camera,
+            cameras,
             record_file,
             replay_frame_events,
             rain_drops: Vec::new(),
             shader_compiler,
 
             // Profiling
-            profiling_context: ProfilingContext::new(&configuration.profiling),
-
-            configuration,
+            profiling_context,
 
             // File system events
             fs_rx,
             watcher,
 
             // Window.
-            gl_window,
             window_event_accumulator: Default::default(),
 
             // Text rendering.
@@ -545,9 +505,9 @@ impl Context {
         &self.cameras[self.target_camera_key]
     }
 
-    pub fn process_events(&mut self, events_loop: &mut glutin::EventsLoop) {
+    pub fn process_events(&mut self) {
         self.process_file_events();
-        self.process_window_events(events_loop);
+        self.process_window_events();
         self.process_vr_events();
     }
 
@@ -606,7 +566,7 @@ impl Context {
         }
     }
 
-    fn process_window_events(&mut self, events_loop: &mut glutin::EventsLoop) {
+    fn process_window_events(&mut self) {
         let mut new_target_camera_key = self.target_camera_key;
         let new_window_mode = self.window_mode;
         let mut new_light_space = self.shader_compiler.light_space();
@@ -616,21 +576,30 @@ impl Context {
 
         let mut frame_events: Vec<FrameEvent> = Vec::new();
 
+        let Self {
+            ref mut events_loop,
+            ref mut running,
+            ref mut focus,
+            ref mut win_size,
+            ref mut win_dpi,
+            ..
+        } = *self;
+
         events_loop.poll_events(|event| {
             use glutin::Event;
             match event {
                 Event::WindowEvent { event, .. } => {
                     use glutin::WindowEvent;
                     match event {
-                        WindowEvent::CloseRequested => self.running = false,
+                        WindowEvent::CloseRequested => *running = false,
                         WindowEvent::HiDpiFactorChanged(val) => {
-                            let win_size = self.win_size.to_logical(self.win_dpi);
-                            self.win_dpi = val;
-                            self.win_size = win_size.to_physical(self.win_dpi);
+                            let size = win_size.to_logical(*win_dpi);
+                            *win_dpi = val;
+                            *win_size = size.to_physical(val);
                         }
-                        WindowEvent::Focused(val) => self.focus = val,
+                        WindowEvent::Focused(val) => *focus = val,
                         WindowEvent::Resized(val) => {
-                            self.win_size = val.to_physical(self.win_dpi);
+                            *win_size = val.to_physical(*win_dpi);
                         }
                         _ => (),
                     }
@@ -2138,39 +2107,43 @@ impl Context {
 fn main() {
     env_logger::init();
 
-    let mut events_loop = glutin::EventsLoop::new();
-
-    let mut context = Context::new(&mut events_loop);
+    let mut context = MainContext::new();
 
     let mut run_index = RunIndex::from_usize(0);
+    let run_count = RunIndex::from_usize(match context.configuration.global.mode {
+        ApplicationMode::Normal | ApplicationMode::Record => 1,
+        ApplicationMode::Replay => context.configuration.replay.run_count,
+    });
 
-    while run_index < RunIndex::from_usize(context.configuration.replay.run_count) {
+    while run_index < run_count {
+        let mut context = Context::new(&mut context);
+
         context.profiling_context.begin_run(run_index);
 
         while context.running {
             context.render();
-            context.process_events(&mut events_loop);
+            context.process_events();
             context.simulate();
         }
 
         context.profiling_context.end_run(run_index);
 
-        if context.replay_frame_events.is_none() {
-            break;
+        match context.configuration.global.mode {
+            ApplicationMode::Normal | ApplicationMode::Record => {
+                // Save state.
+                let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
+                for key in CameraKey::iter() {
+                    let camera = context.cameras[key].current_to_camera();
+                    file.write_all(camera.value_as_bytes()).unwrap();
+                }
+                break;
+            }
+            ApplicationMode::Replay => {
+                // Do nothing.
+            }
         }
-
-        context.reset();
 
         run_index.increment();
-    }
-
-    // Save state.
-    if context.record_file.is_none() && context.replay_frame_events.is_none() {
-        let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
-        for key in CameraKey::iter() {
-            let camera = context.cameras[key].current_to_camera();
-            file.write_all(camera.value_as_bytes()).unwrap();
-        }
     }
 }
 

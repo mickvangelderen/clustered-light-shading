@@ -26,7 +26,7 @@ pub struct Parameters {
     pub wld_to_clp: Matrix4<f64>,
 }
 
-impl Context {
+impl Context<'_> {
     pub fn render_debug_clusters(&mut self, params: &Parameters) {
         unsafe {
             let Self {
