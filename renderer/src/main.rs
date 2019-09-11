@@ -141,6 +141,7 @@ pub struct MainParameters {
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
+const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
 
 #[derive(Debug)]
 pub struct WindowEventAccumulator {
@@ -195,6 +196,42 @@ pub struct MainContext {
     pub gl_window: glutin::GlWindow,
     pub gl: gl::Gl,
     pub vr: Option<vr::Context>,
+    pub fs_watcher: notify::RecommendedWatcher,
+    pub fs_rx: mpsc::Receiver<notify::DebouncedEvent>,
+
+    pub record_file: Option<io::BufWriter<fs::File>>,
+    pub current: ::incremental::Current,
+    pub shader_compiler: ShaderCompiler,
+    pub profiling_context: ProfilingContext,
+    pub replay_frame_events: Option<Vec<FrameEvents>>,
+    pub initial_cameras: CameraMap<camera::Camera>,
+    pub initial_win_dpi: f64,
+    pub initial_win_size: glutin::dpi::PhysicalSize,
+
+    // Text rendering.
+    pub sans_serif: FontContext,
+    pub monospace: FontContext,
+
+    // Renderers
+    pub depth_renderer: depth_renderer::Renderer,
+    pub line_renderer: line_renderer::Renderer,
+    pub basic_renderer: basic_renderer::Renderer,
+    pub overlay_renderer: overlay_renderer::Renderer,
+    pub cluster_renderer: cluster_renderer::Renderer,
+    pub text_renderer: text_renderer::Renderer,
+    pub cls_renderer: cls_renderer::Renderer,
+
+    // More opengl resources...
+    pub resources: Resources,
+
+    // Per-frame resources
+    pub main_parameters_vec: Vec<MainParameters>,
+    pub camera_buffer_pool: BufferPool,
+    pub light_resources_vec: Vec<light::LightResources>,
+    pub light_params_vec: Vec<light::LightParameters>,
+    pub cluster_resources_pool: ClusterResourcesPool,
+    pub main_resources_pool: MainResourcesPool,
+    pub point_lights: Vec<light::PointLight>,
 }
 
 impl MainContext {
@@ -213,114 +250,9 @@ impl MainContext {
             })
             .ok();
 
-        Self {
-            current_dir,
-            resource_dir,
-            configuration_path,
-            configuration,
-            events_loop,
-            gl_window,
-            gl,
-            vr,
-        }
-    }
-}
-
-pub struct Context<'s> {
-    // From MainContext
-    pub current_dir: &'s Path,
-    pub resource_dir: &'s Path,
-    pub configuration_path: &'s Path,
-    pub configuration: Configuration,
-    pub events_loop: &'s mut glutin::EventsLoop,
-    pub gl_window: &'s mut glutin::GlWindow,
-    pub gl: &'s gl::Gl,
-    pub vr: &'s mut Option<vr::Context>,
-
-    pub rng: StdRng,
-    pub record_file: Option<io::BufWriter<fs::File>>,
-    pub replay_frame_events: Option<Vec<FrameEvents>>,
-    pub current: ::incremental::Current,
-    pub running: bool,
-    pub paused: bool,
-    pub focus: bool,
-    pub tick: u64,
-    pub event_index: usize,
-    pub frame_index: FrameIndex,
-    pub keyboard_state: KeyboardState,
-    pub win_dpi: f64,
-    pub win_size: glutin::dpi::PhysicalSize,
-    pub clear_color: [f32; 3],
-    pub window_mode: WindowMode,
-    pub display_mode: u32,
-    pub depth_prepass: bool,
-    pub target_camera_key: CameraKey,
-    pub transition_camera: camera::TransitionCamera,
-    pub cameras: CameraMap<camera::SmoothCamera>,
-    pub rain_drops: Vec<rain::Particle>,
-    pub shader_compiler: ShaderCompiler,
-
-    pub profiling_context: ProfilingContext,
-
-    // File system events
-    pub fs_rx: mpsc::Receiver<notify::DebouncedEvent>,
-    pub watcher: notify::RecommendedWatcher,
-
-    // Window.
-    pub window_event_accumulator: WindowEventAccumulator,
-
-    // Text rendering.
-    pub sans_serif: FontContext,
-    pub monospace: FontContext,
-    pub overlay_textbox: TextBox,
-
-    // Renderers
-    pub depth_renderer: depth_renderer::Renderer,
-    pub line_renderer: line_renderer::Renderer,
-    pub basic_renderer: basic_renderer::Renderer,
-    pub overlay_renderer: overlay_renderer::Renderer,
-    pub cluster_renderer: cluster_renderer::Renderer,
-    pub text_renderer: text_renderer::Renderer,
-    pub cls_renderer: cls_renderer::Renderer,
-
-    // More opengl resources...
-    pub resources: Resources,
-
-    // FPS counter
-    pub fps_average: filters::MovingAverageF32,
-    pub last_frame_start: time::Instant,
-
-    // Per-frame resources
-    pub main_parameters_vec: Vec<MainParameters>,
-    pub camera_buffer_pool: BufferPool,
-    pub light_resources_vec: Vec<light::LightResources>,
-    pub light_params_vec: Vec<light::LightParameters>,
-    pub cluster_resources_pool: ClusterResourcesPool,
-    pub main_resources_pool: MainResourcesPool,
-    pub point_lights: Vec<light::PointLight>,
-}
-
-pub const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
-
-impl<'s> Context<'s> {
-    pub fn new(context: &'s mut MainContext) -> Self {
-        let MainContext {
-            current_dir,
-            resource_dir,
-            configuration_path,
-            configuration,
-            events_loop,
-            gl_window,
-            gl,
-            vr,
-        } = context;
-
-        // Clone starting configuration.
-        let configuration = configuration.clone();
-
         let (fs_tx, fs_rx) = mpsc::channel();
-        let mut watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
-        notify::Watcher::watch(&mut watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
+        let mut fs_watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
+        notify::Watcher::watch(&mut fs_watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
 
         let mut record_file = match configuration.global.mode {
             ApplicationMode::Record => Some(io::BufWriter::new(
@@ -341,7 +273,7 @@ impl<'s> Context<'s> {
             fovy: Deg(90.0).into(),
         };
 
-        let mut cameras = CameraMap::new(|key| camera::Camera {
+        let mut initial_cameras = CameraMap::new(|key| camera::Camera {
             properties: match key {
                 CameraKey::Main => configuration.main_camera,
                 CameraKey::Debug => configuration.debug_camera,
@@ -353,22 +285,22 @@ impl<'s> Context<'s> {
         // Load state.
         {
             let read_cameras = |file: &mut std::io::BufReader<std::fs::File>,
-                                cameras: &mut CameraMap<camera::Camera>| unsafe {
+                                initial_cameras: &mut CameraMap<camera::Camera>| unsafe {
                 for key in CameraKey::iter() {
-                    file.read_exact(cameras[key].value_as_bytes_mut())
+                    file.read_exact(initial_cameras[key].value_as_bytes_mut())
                         .unwrap_or_else(|_| eprintln!("Failed to read state file."));
                 }
             };
 
             match replay_file.as_mut() {
                 Some(file) => {
-                    read_cameras(file, &mut cameras);
+                    read_cameras(file, &mut initial_cameras);
                 }
                 None => {
                     match fs::File::open("state.bin") {
                         Ok(file) => {
                             let mut file = io::BufReader::new(file);
-                            read_cameras(&mut file, &mut cameras);
+                            read_cameras(&mut file, &mut initial_cameras);
                         }
                         Err(_) => {
                             // Whatever.
@@ -390,7 +322,7 @@ impl<'s> Context<'s> {
 
         if let Some(file) = record_file.as_mut() {
             for key in CameraKey::iter() {
-                let camera = cameras[key];
+                let camera = initial_cameras[key];
                 file.write_all(camera.value_as_bytes()).unwrap();
             }
         }
@@ -430,15 +362,171 @@ impl<'s> Context<'s> {
 
         let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
 
-        let win_dpi = gl_window.get_hidpi_factor();
-        let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
+        let initial_win_dpi = gl_window.get_hidpi_factor();
+        let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
+
+        let profiling_context = ProfilingContext::new(&configuration.profiling);
+
+        Self {
+            current_dir,
+            resource_dir,
+            configuration_path,
+            configuration,
+            events_loop,
+            gl_window,
+            gl,
+            vr,
+            fs_watcher,
+            fs_rx,
+            record_file,
+            current,
+            shader_compiler,
+            profiling_context,
+            replay_frame_events,
+            initial_cameras,
+            initial_win_dpi,
+            initial_win_size,
+            sans_serif,
+            monospace,
+            depth_renderer,
+            line_renderer,
+            basic_renderer,
+            overlay_renderer,
+            cluster_renderer,
+            text_renderer,
+            cls_renderer,
+            resources,
+            camera_buffer_pool: BufferPool::new(),
+            light_resources_vec: Vec::new(),
+            light_params_vec: Vec::new(),
+            main_parameters_vec: Vec::new(),
+            cluster_resources_pool: ClusterResourcesPool::new(),
+            main_resources_pool: MainResourcesPool::new(),
+            point_lights: Vec::new(),
+        }
+    }
+}
+
+pub struct Context<'s> {
+    // From MainContext
+    pub current_dir: &'s Path,
+    pub resource_dir: &'s Path,
+    pub configuration_path: &'s Path,
+    pub configuration: Configuration,
+    pub events_loop: &'s mut glutin::EventsLoop,
+    pub gl_window: &'s mut glutin::GlWindow,
+    pub gl: &'s gl::Gl,
+    pub vr: &'s mut Option<vr::Context>,
+    pub fs_rx: &'s mut mpsc::Receiver<notify::DebouncedEvent>,
+
+    pub record_file: &'s mut Option<io::BufWriter<fs::File>>,
+    pub current: &'s mut ::incremental::Current,
+    pub shader_compiler: &'s mut ShaderCompiler,
+    pub profiling_context: &'s mut ProfilingContext,
+    pub replay_frame_events: &'s Option<Vec<FrameEvents>>,
+
+    // Text rendering.
+    pub sans_serif: &'s mut FontContext,
+    pub monospace: &'s mut FontContext,
+
+    // Renderers
+    pub depth_renderer: &'s mut depth_renderer::Renderer,
+    pub line_renderer: &'s mut line_renderer::Renderer,
+    pub basic_renderer: &'s mut basic_renderer::Renderer,
+    pub overlay_renderer: &'s mut overlay_renderer::Renderer,
+    pub cluster_renderer: &'s mut cluster_renderer::Renderer,
+    pub text_renderer: &'s mut text_renderer::Renderer,
+    pub cls_renderer: &'s mut cls_renderer::Renderer,
+
+    // More opengl resources...
+    pub resources: &'s mut Resources,
+
+    // Per-frame resources
+    pub main_parameters_vec: &'s mut Vec<MainParameters>,
+    pub camera_buffer_pool: &'s mut BufferPool,
+    pub light_resources_vec: &'s mut Vec<light::LightResources>,
+    pub light_params_vec: &'s mut Vec<light::LightParameters>,
+    pub cluster_resources_pool: &'s mut ClusterResourcesPool,
+    pub main_resources_pool: &'s mut MainResourcesPool,
+    pub point_lights: &'s mut Vec<light::PointLight>,
+
+    pub rng: StdRng,
+    pub overlay_textbox: TextBox,
+    pub running: bool,
+    pub paused: bool,
+    pub focus: bool,
+    pub tick: u64,
+    pub event_index: usize,
+    pub frame_index: FrameIndex,
+    pub keyboard_state: KeyboardState,
+    pub win_dpi: f64,
+    pub win_size: glutin::dpi::PhysicalSize,
+    pub clear_color: [f32; 3],
+    pub window_mode: WindowMode,
+    pub display_mode: u32,
+    pub depth_prepass: bool,
+    pub target_camera_key: CameraKey,
+    pub transition_camera: camera::TransitionCamera,
+    pub cameras: CameraMap<camera::SmoothCamera>,
+    pub rain_drops: Vec<rain::Particle>,
+
+    // Window.
+    pub window_event_accumulator: WindowEventAccumulator,
+
+    // FPS counter
+    pub fps_average: filters::MovingAverageF32,
+    pub last_frame_start: time::Instant,
+}
+
+impl<'s> Context<'s> {
+    pub fn new(context: &'s mut MainContext) -> Self {
+        let MainContext {
+            ref current_dir,
+            ref resource_dir,
+            ref configuration_path,
+            ref configuration,
+            initial_win_dpi,
+            initial_win_size,
+            ref mut events_loop,
+            ref mut gl_window,
+            ref gl,
+            ref mut vr,
+            ref mut fs_rx,
+            ref mut record_file,
+            ref mut current,
+            ref mut shader_compiler,
+            ref mut profiling_context,
+            ref replay_frame_events,
+            ref initial_cameras,
+            ref mut sans_serif,
+            ref mut monospace,
+            ref mut depth_renderer,
+            ref mut line_renderer,
+            ref mut basic_renderer,
+            ref mut overlay_renderer,
+            ref mut cluster_renderer,
+            ref mut text_renderer,
+            ref mut cls_renderer,
+            ref mut resources,
+            ref mut main_parameters_vec,
+            ref mut camera_buffer_pool,
+            ref mut light_resources_vec,
+            ref mut light_params_vec,
+            ref mut cluster_resources_pool,
+            ref mut main_resources_pool,
+            ref mut point_lights,
+            ..
+        } = *context;
+
+        // Clone starting configuration.
+        let configuration = configuration.clone();
 
         let transition_camera = camera::TransitionCamera {
-            start_camera: cameras.main,
-            current_camera: cameras.main,
+            start_camera: initial_cameras.main,
+            current_camera: initial_cameras.main,
             progress: 0.0,
         };
-        let cameras = cameras.map(|camera| camera::SmoothCamera {
+        let cameras = initial_cameras.map(|camera| camera::SmoothCamera {
             properties: camera.properties,
             current_transform: camera.transform,
             target_transform: camera.transform,
@@ -446,8 +534,6 @@ impl<'s> Context<'s> {
             current_smoothness: configuration.camera.maximum_smoothness,
             maximum_smoothness: configuration.camera.maximum_smoothness,
         });
-
-        let profiling_context = ProfilingContext::new(&configuration.profiling);
 
         Context {
             current_dir,
@@ -458,43 +544,17 @@ impl<'s> Context<'s> {
             gl_window,
             gl,
             vr,
-            rng: SeedableRng::from_seed(SEED),
-            current,
-            running: true,
-            paused: false,
-            focus: false,
-            tick: 0,
-            event_index: 0,
-            frame_index: FrameIndex::from_usize(0),
-            keyboard_state: Default::default(),
-            win_dpi,
-            win_size,
-            clear_color: [0.0; 3],
-            window_mode: WindowMode::Main,
-            display_mode: 1,
-            depth_prepass: true,
-            target_camera_key: CameraKey::Main,
-            transition_camera,
-            cameras,
-            record_file,
-            replay_frame_events,
-            rain_drops: Vec::new(),
-            shader_compiler,
-
-            // Profiling
-            profiling_context,
-
-            // File system events
             fs_rx,
-            watcher,
 
-            // Window.
-            window_event_accumulator: Default::default(),
+            record_file,
+            current,
+            shader_compiler,
+            profiling_context,
+            replay_frame_events,
 
             // Text rendering.
             sans_serif,
             monospace,
-            overlay_textbox: TextBox::new(13, 10, win_size.width as i32 - 26, win_size.height as i32 - 20),
 
             // Renderers
             depth_renderer,
@@ -508,18 +568,42 @@ impl<'s> Context<'s> {
             // More opengl resources...
             resources,
 
-            // FPS counter
+            // Per-frame resources
+            main_parameters_vec,
+            camera_buffer_pool,
+            light_resources_vec,
+            light_params_vec,
+            cluster_resources_pool,
+            main_resources_pool,
+            point_lights,
+
+            rng: SeedableRng::from_seed(SEED),
+            running: true,
+            paused: false,
+            focus: false,
+            tick: 0,
+            event_index: 0,
+            frame_index: FrameIndex::from_usize(0),
+            keyboard_state: Default::default(),
+            win_dpi: initial_win_dpi,
+            win_size: initial_win_size,
+            clear_color: [0.0; 3],
+            window_mode: WindowMode::Main,
+            display_mode: 1,
+            depth_prepass: true,
+            target_camera_key: CameraKey::Main,
+            transition_camera,
+            cameras,
+            rain_drops: Vec::new(),
+            window_event_accumulator: Default::default(),
+            overlay_textbox: TextBox::new(
+                13,
+                10,
+                initial_win_size.width as i32 - 26,
+                initial_win_size.height as i32 - 20,
+            ),
             fps_average: filters::MovingAverageF32::new(0.0),
             last_frame_start: Instant::now(),
-
-            // Per-frame resources
-            camera_buffer_pool: BufferPool::new(),
-            light_resources_vec: Vec::new(),
-            light_params_vec: Vec::new(),
-            main_parameters_vec: Vec::new(),
-            cluster_resources_pool: ClusterResourcesPool::new(),
-            main_resources_pool: MainResourcesPool::new(),
-            point_lights: Vec::new(),
         }
     }
 
@@ -932,11 +1016,11 @@ impl<'s> Context<'s> {
             }
         }
 
-        for res in &mut self.light_resources_vec {
+        for res in self.light_resources_vec.iter_mut() {
             res.dirty = true;
         }
 
-        self.profiling_context.begin_frame(&self.gl, self.frame_index);
+        self.profiling_context.begin_frame(self.gl, self.frame_index);
 
         let mut light_index = None;
         let mut cluster_resources_index = None;
