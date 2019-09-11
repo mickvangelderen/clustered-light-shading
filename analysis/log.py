@@ -20,7 +20,7 @@ for sample_index in range(0, sample_count):
     fig, subs = plt.subplots(1, 1, squeeze = False)
     sub = subs[0, 0]
     for run_index in range(0, run_count):
-        sub.plot(deltas[run_index, :, sample_index, 0])
+        sub.plot(deltas[run_index, 1:, sample_index, 1])
     # axe.semilogy();
     # legend = ['sim', 'pos', 'ren'];
     # fig.legend(legend);
