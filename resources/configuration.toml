@@ -1,8 +1,12 @@
 [global]
 diffuse_srgb = true
-framebuffer_srgb = true
 rain_drop_max = 10000
-# record = "recording.bin"
+mode = "Normal"
+# mode = "Record"
+# mode = "Replay"
+
+[record]
+path = "recording.bin"
 
 [replay]
 run_count = 2
@@ -19,6 +23,9 @@ rgb_bits = 24
 alpha_bits = 8
 width = 1280
 height = 720
+
+[gl]
+framebuffer_srgb = true
 
 [clustered_light_shading]
 projection = "Orthographic"
