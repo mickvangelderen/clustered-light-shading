@@ -108,7 +108,8 @@ impl Context {
     #[inline]
     pub fn add_sample(&mut self, sample: &'static str) -> SampleIndex {
         let sample_index = SampleIndex::from_usize(self.sample_data.len());
-        self.thread.emit(MeasurementEvent::SampleName(sample_index, sample.to_string()));
+        self.thread
+            .emit(MeasurementEvent::SampleName(sample_index, sample.to_string()));
         self.sample_data.push(None);
         sample_index
     }
@@ -135,41 +136,41 @@ impl Context {
         self.thread.emit(MeasurementEvent::BeginFrame(frame_index));
         let context = &mut self.frame_context_ring[frame_index];
 
+        // Clear values from all samples.
+        for sample in self.sample_data.iter_mut() {
+            *sample = None;
+        }
+
         if frame_index.to_usize() >= FRAME_CAPACITY {
             debug_assert_eq!(context.frame_index.to_usize() + FRAME_CAPACITY, frame_index.to_usize());
 
-            // Clear values from all samples.
-            for sample in self.sample_data.iter_mut() {
-                *sample = None;
-            }
-
             // Read back data from the GPU.
             let mut profilers_used = 0;
-            for event in context.events.drain(..) {
-                match event {
+            for event in context.events.iter() {
+                match *event {
                     FrameEvent::BeginTimeSpan(sample_index) => {
                         let profiler_index = profilers_used;
                         profilers_used += 1;
-                        debug_assert!(self.sample_data[sample_index.to_usize()].is_none(), "{:?} is writen to more than once", sample_index);
+                        debug_assert!(
+                            self.sample_data[sample_index.to_usize()].is_none(),
+                            "{:?} is writen to more than once",
+                            sample_index
+                        );
                         let sample = context.profilers[profiler_index].read(gl).unwrap();
                         self.thread.emit(MeasurementEvent::BeginTimeSpan(sample_index, sample));
                         self.sample_data[sample_index.to_usize()] = Some(sample);
-
                     }
-                    FrameEvent::EndTimeSpan => {
-                        self.thread.emit(MeasurementEvent::EndTimeSpan)
-                    }
-                    // FrameEvent::QueryValue(sample_index) => {
-                    //     unimplemented!();
-                    // }
-
+                    FrameEvent::EndTimeSpan => self.thread.emit(MeasurementEvent::EndTimeSpan), // FrameEvent::QueryValue(sample_index) => {
+                                                                                                //     unimplemented!();
+                                                                                                // }
                 }
             }
 
             debug_assert_eq!(profilers_used, context.profilers_used);
-            context.profilers_used = 0;
         }
 
+        context.events.clear();
+        context.profilers_used = 0;
         context.frame_index = frame_index;
 
         self.frame_index = Some(frame_index);
