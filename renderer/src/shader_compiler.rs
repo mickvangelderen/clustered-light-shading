@@ -1,6 +1,7 @@
 use crate::*;
 
 use incremental::{Current, LastComputed, LastModified, LastVerified};
+use renderer::*;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -168,8 +169,8 @@ impl SourceReader {
             }
             SourceReader::ClusteredLightShading => {
                 let clustering_projection = match vars.clustered_light_shading.projection {
-                    configuration::ClusteringProjection::Orthographic => "CLUSTERING_PROJECTION_ORTHOGRAPHIC",
-                    configuration::ClusteringProjection::Perspective => "CLUSTERING_PROJECTION_PERSPECTIVE",
+                    ClusteringProjection::Orthographic => "CLUSTERING_PROJECTION_ORTHOGRAPHIC",
+                    ClusteringProjection::Perspective => "CLUSTERING_PROJECTION_PERSPECTIVE",
                 };
 
                 tokens.push(Token::Literal(format!(
@@ -410,8 +411,8 @@ pub struct Variables {
     pub light_space: LightSpace,
     pub attenuation_mode: AttenuationMode,
     pub render_technique: RenderTechnique,
-    pub prefix_sum: configuration::PrefixSum,
-    pub clustered_light_shading: configuration::ClusteredLightShading,
+    pub prefix_sum: PrefixSumConfiguration,
+    pub clustered_light_shading: ClusteredLightShadingConfiguration,
 }
 
 pub struct NativeSourceIndices {
@@ -534,15 +535,15 @@ impl ShaderCompiler {
         old
     }
 
-    pub fn prefix_sum(&self) -> configuration::PrefixSum {
+    pub fn prefix_sum(&self) -> PrefixSumConfiguration {
         self.variables.prefix_sum
     }
 
     pub fn replace_prefix_sum(
         &mut self,
         current: &mut Current,
-        prefix_sum: configuration::PrefixSum,
-    ) -> configuration::PrefixSum {
+        prefix_sum: PrefixSumConfiguration,
+    ) -> PrefixSumConfiguration {
         let old = std::mem::replace(&mut self.variables.prefix_sum, prefix_sum);
         if old != prefix_sum {
             self.source_mut(self.indices.prefix_sum).last_modified.modify(current);
@@ -553,8 +554,8 @@ impl ShaderCompiler {
     pub fn replace_clustered_light_shading(
         &mut self,
         current: &mut Current,
-        clustered_light_shading: configuration::ClusteredLightShading,
-    ) -> configuration::ClusteredLightShading {
+        clustered_light_shading: ClusteredLightShadingConfiguration,
+    ) -> ClusteredLightShadingConfiguration {
         let old = std::mem::replace(&mut self.variables.clustered_light_shading, clustered_light_shading);
         if old != clustered_light_shading {
             self.source_mut(self.indices.clustered_light_shading)

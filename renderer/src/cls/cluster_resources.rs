@@ -1,4 +1,4 @@
-use crate::configuration::ClusteringProjection;
+use renderer::*;
 use crate::*;
 
 impl_enum_and_enum_map! {
@@ -34,7 +34,7 @@ impl ClusterStage {
 
 #[derive(Debug)]
 pub struct ClusterParameters {
-    pub configuration: configuration::ClusteredLightShading,
+    pub configuration: ClusteredLightShadingConfiguration,
     pub wld_to_hmd: Matrix4<f64>,
     pub hmd_to_wld: Matrix4<f64>,
 }

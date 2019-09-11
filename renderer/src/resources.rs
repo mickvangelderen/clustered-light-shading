@@ -1,7 +1,6 @@
-use crate::configuration;
 use crate::convert::*;
 use crate::light::*;
-use crate::rendering;
+use crate::rendering::*;
 use crate::*;
 use cgmath::*;
 use std::collections::HashMap;
@@ -446,7 +445,7 @@ const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
     gl::VertexArrayBufferBindingIndex::from_u32(0);
 
 impl Resources {
-    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &configuration::Root) -> Self {
+    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
         let resource_dir = resource_dir.as_ref();
 
         // ["two_planes.obj", "bunny.obj"]

@@ -60,8 +60,8 @@ use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
 use renderer::camera;
-use renderer::configuration;
 use renderer::profiling::*;
+use renderer::*;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -170,7 +170,7 @@ pub struct Context {
     pub rng: StdRng,
     pub resource_dir: PathBuf,
     pub configuration_path: PathBuf,
-    pub configuration: configuration::Root,
+    pub configuration: Configuration,
     pub record_file: Option<io::BufWriter<fs::File>>,
     pub replay_frame_events: Option<Vec<FrameEvents>>,
     pub gl: gl::Gl,
@@ -236,7 +236,7 @@ pub struct Context {
 }
 
 pub struct Initial {
-    pub configuration: configuration::Root,
+    pub configuration: Configuration,
     pub cameras: CameraMap<camera::Camera>,
 }
 
@@ -245,13 +245,12 @@ pub const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
 impl Context {
     //FIXME THIS IS HACKY AND STUPID AND DUPLICATED
     pub fn reset(&mut self) {
-        let configuration: configuration::Root = configuration::read(&self.configuration_path);
+        let configuration = Configuration::read(&self.configuration_path);
 
-        let mut replay_file = configuration
-            .replay
-            .path
-            .as_ref()
-            .map(|path| io::BufReader::new(fs::File::open(path).unwrap()));
+        let mut replay_file = match configuration.global.mode {
+            ApplicationMode::Replay => Some(io::BufReader::new(fs::File::open(&configuration.replay.path).unwrap())),
+            _ => None,
+        };
 
         let default_camera_transform = camera::CameraTransform {
             position: Point3::new(0.0, 1.0, 1.5),
@@ -329,56 +328,28 @@ impl Context {
     pub fn new(events_loop: &mut glutin::EventsLoop) -> Self {
         let current_dir = std::env::current_dir().unwrap();
         let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
-        let configuration_path = resource_dir.join(configuration::FILE_PATH);
-
-        let configuration: configuration::Root = configuration::read(&configuration_path);
+        let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
+        let configuration = Configuration::read(&configuration_path);
 
         let (fs_tx, fs_rx) = mpsc::channel();
         let mut watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
         notify::Watcher::watch(&mut watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
 
-        let gl_window = glutin::GlWindow::new(
-            glutin::WindowBuilder::new()
-                .with_title("VR Lab - Loading...")
-                .with_dimensions(
-                    // Jump through some hoops to ensure a physical size, which is
-                    // what I want in case I'm recording at a specific resolution.
-                    glutin::dpi::PhysicalSize::new(
-                        f64::from(configuration.window.width),
-                        f64::from(configuration.window.height),
-                    )
-                    .to_logical(events_loop.get_primary_monitor().get_hidpi_factor()),
-                )
-                .with_maximized(false),
-            glutin::ContextBuilder::new()
-                .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
-                .with_gl_profile(glutin::GlProfile::Core)
-                // We do not wan't vsync since it will cause our loop to sync to the
-                // desktop display frequency which is probably lower than the HMD's
-                // 90Hz.
-                .with_gl_debug_flag(cfg!(debug_assertions))
-                .with_vsync(configuration.window.vsync)
-                // .with_multisampling(16)
-                .with_pixel_format(configuration.window.rgb_bits, configuration.window.alpha_bits)
-                .with_srgb(configuration.window.srgb)
-                .with_double_buffer(Some(true)),
-            &events_loop,
-        )
-        .unwrap();
+        let gl_window = create_window(events_loop, &configuration.window).unwrap();
 
         unsafe { gl_window.make_current().unwrap() };
 
-        let mut record_file = configuration
-            .global
-            .record
-            .as_ref()
-            .map(|path| io::BufWriter::new(fs::File::create(path).unwrap()));
+        let mut record_file = match configuration.global.mode {
+            ApplicationMode::Record => Some(io::BufWriter::new(
+                fs::File::create(&configuration.record.path).unwrap(),
+            )),
+            _ => None,
+        };
 
-        let mut replay_file = configuration
-            .replay
-            .path
-            .as_ref()
-            .map(|path| io::BufReader::new(fs::File::open(path).unwrap()));
+        let mut replay_file = match configuration.global.mode {
+            ApplicationMode::Replay => Some(io::BufReader::new(fs::File::open(&configuration.replay.path).unwrap())),
+            _ => None,
+        };
 
         let default_camera_transform = camera::CameraTransform {
             position: Point3::new(0.0, 1.0, 1.5),
@@ -441,31 +412,7 @@ impl Context {
             }
         }
 
-        let gl = unsafe {
-            let gl = gl::Gl::load_with(|s| gl_window.context().get_proc_address(s) as *const _);
-
-            println!("OpenGL version {}.", gl.get_string(gl::VERSION));
-            let flags = gl.get_context_flags();
-            if flags.contains(gl::ContextFlag::DEBUG) {
-                println!("OpenGL debugging enabled.");
-                gl.enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
-            }
-
-            // NOTE: This alignment is hardcoded in rendering.rs.
-            assert_eq!(256, gl.get_uniform_buffer_offset_alignment());
-
-            // Reverse-Z.
-            gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
-            gl.depth_func(gl::GREATER);
-
-            if configuration.global.framebuffer_srgb {
-                gl.enable(gl::FRAMEBUFFER_SRGB);
-            } else {
-                gl.disable(gl::FRAMEBUFFER_SRGB);
-            }
-
-            gl
-        };
+        let gl = create_gl(&gl_window, &configuration.gl);
 
         let sans_serif = FontContext::new(&gl, resource_dir.join("fonts/OpenSans-Regular.fnt"));
         let monospace = FontContext::new(&gl, resource_dir.join("fonts/RobotoMono-Regular.fnt"));
@@ -634,7 +581,7 @@ impl Context {
 
         if configuration_update {
             // Read from file.
-            self.configuration = configuration::read(&self.configuration_path);
+            self.configuration = Configuration::read(&self.configuration_path);
 
             // Apply updates.
             self.cameras.main.properties = self.configuration.main_camera.into();
@@ -650,7 +597,7 @@ impl Context {
 
             unsafe {
                 let gl = &self.gl;
-                if self.configuration.global.framebuffer_srgb {
+                if self.configuration.gl.framebuffer_srgb {
                     gl.enable(gl::FRAMEBUFFER_SRGB);
                 } else {
                     gl.disable(gl::FRAMEBUFFER_SRGB);
@@ -1083,8 +1030,7 @@ impl Context {
                 }
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping
-                        == configuration::ClusteringGrouping::Enclosed
+                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
@@ -1120,8 +1066,7 @@ impl Context {
                     }
 
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                        && self.configuration.clustered_light_shading.grouping
-                            == configuration::ClusteringGrouping::Individual
+                        && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
                     {
                         cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                             gl,
@@ -1229,8 +1174,7 @@ impl Context {
                 }
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping
-                        == configuration::ClusteringGrouping::Enclosed
+                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
@@ -1264,8 +1208,7 @@ impl Context {
                 }
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping
-                        == configuration::ClusteringGrouping::Individual
+                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
@@ -1872,10 +1815,10 @@ impl Context {
                     }
 
                     let vertices: Vec<[f32; 3]> = match self.configuration.clustered_light_shading.projection {
-                        configuration::ClusteringProjection::Perspective => {
+                        ClusteringProjection::Perspective => {
                             cluster_resources.computed.frustum.corners_in_cam_perspective()
                         }
-                        configuration::ClusteringProjection::Orthographic => {
+                        ClusteringProjection::Orthographic => {
                             cluster_resources.computed.frustum.corners_in_cam_orthographic()
                         }
                     }

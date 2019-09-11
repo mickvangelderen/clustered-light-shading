@@ -3,14 +3,14 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-use renderer::configuration;
+use renderer::Configuration;
 use renderer::profiling::*;
 
-fn get_config() -> configuration::Root {
+fn get_config() -> Configuration {
     let current_dir = std::env::current_dir().unwrap();
     let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
-    let configuration_path = resource_dir.join(configuration::FILE_PATH);
-    configuration::read(&configuration_path)
+    let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
+    Configuration::read(&configuration_path)
 }
 
 fn read(path: impl AsRef<Path>) {
