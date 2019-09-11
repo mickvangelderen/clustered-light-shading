@@ -1,10 +1,10 @@
 use clap::{App, Arg, SubCommand};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 
-use renderer::Configuration;
 use renderer::profiling::*;
+use renderer::*;
 
 fn get_config() -> Configuration {
     let current_dir = std::env::current_dir().unwrap();
@@ -13,33 +13,34 @@ fn get_config() -> Configuration {
     Configuration::read(&configuration_path)
 }
 
-fn read(path: impl AsRef<Path>) {
-    let mut file = BufReader::new(File::open(path).unwrap());
+fn read_events(path: impl AsRef<Path>) -> std::io::Result<Vec<MeasurementEvent>> {
+    let mut file = BufReader::new(File::open(path)?);
 
-    while let Ok(event) = bincode::deserialize_from::<_, MeasurementEvent>(&mut file) {
-        println!("{:?}", event);
+    let mut events = Vec::new();
+
+    loop {
+        match bincode::deserialize_from::<_, MeasurementEvent>(&mut file) {
+            Ok(event) => events.push(event),
+            Err(error) => {
+                // Unbox error.
+                match *error {
+                    bincode::ErrorKind::Io(error) => match error.kind() {
+                        std::io::ErrorKind::UnexpectedEof => {
+                            // This is what we expect.
+                            break;
+                        }
+                        other => panic!(other),
+                    },
+                    other => {
+                        panic!(other);
+                    }
+                }
+            }
+        }
     }
+
+    Ok(events)
 }
-
-// fn print_sample_names(sample_names: &[String]) {
-//     for (sample_index, sample_name) in sample_names.iter().enumerate() {
-//         println!("({:04}) {}", sample_index, sample_name);
-//     }
-// }
-
-// fn print_sample(frames: &Frames, sample_index: usize) {
-//     println!("{:>6}, {:>12}, {:>12}", "frame", "cpu", "gpu");
-//     for (frame_index, sample) in frames
-//         .iter()
-//         .enumerate()
-//         .filter_map(|(index, samples)| match samples.get(sample_index) {
-//             Some(sample) => sample.as_ref().map(|sample| (index, sample)),
-//             None => None,
-//         })
-//     {
-//         println!("{:>6}, {:>12}, {:>12}", frame_index, sample.cpu.delta(), sample.gpu.delta());
-//     }
-// }
 
 fn main() {
     let matches = App::new("Profiling Reader")
@@ -54,22 +55,103 @@ fn main() {
         )
         .get_matches();
 
-    // Calling .unwrap() is safe here because "INPUT" is required (if "INPUT" wasn't
-    // required we could have used an 'if let' to conditionally get the value)
-
     let cfg = get_config();
-    read(cfg.profiling.path.as_ref().unwrap());
-    // let (frames, sample_names) = 
 
-    // match matches.value_of("sample") {
-    //     Some(sample_index_string) => {
-    //         let sample_index = sample_index_string.parse::<usize>().unwrap();
-    //         print_sample(&frames, sample_index);
-    //     }
-    //     None => {
-    //         println!("Frames: {}", frames.len());
-    //         println!("Samples: {}", sample_names.len());
-    //         print_sample_names(&sample_names);
-    //     }
-    // }
+    let events = read_events(cfg.profiling.path.as_ref().unwrap()).unwrap();
+
+    let mut sample_names = Vec::new();
+    let mut max_run_index = None;
+    let mut max_frame_index = None;
+
+    fn option_max_assign<T: Copy + std::cmp::Ord>(o: &mut Option<T>, v: T) {
+        *o = match *o {
+            Some(o) => {
+                Some(o.max(v))
+            },
+            None => {
+                Some(v)
+            }
+        }
+    }
+
+    for event in events.iter() {
+        match *event {
+            MeasurementEvent::BeginRun(run_index) => {
+                option_max_assign(&mut max_run_index, run_index.to_usize());
+            }
+            MeasurementEvent::BeginFrame(frame_index) => {
+                option_max_assign(&mut max_frame_index, frame_index.to_usize());
+            }
+            MeasurementEvent::SampleName(index, ref name) => {
+                assert_eq!(index.to_usize(), sample_names.len());
+                sample_names.push(name.clone());
+            }
+            _ => {}
+        }
+    }
+
+    let run_count = max_run_index.unwrap() + 1;
+    let frame_count = max_frame_index.unwrap() + 1;
+    let sample_count = sample_names.len();
+
+    dbg!(sample_names);
+    dbg!(sample_count);
+    dbg!(run_count);
+    dbg!(frame_count);
+
+    let sample_stride = 4;
+    let frame_stride = sample_count * sample_stride;
+    let run_stride = frame_count * frame_stride;
+    let u64_count = run_count * run_stride;
+    let mut flat_samples: Vec<u64> = std::iter::repeat(std::u64::MAX).take(u64_count).collect();
+
+    let mut run_index: Option<usize> = None;
+    let mut frame_index: Option<usize> = None;
+
+    for event in events.iter() {
+        match *event {
+            MeasurementEvent::BeginRun(index) => {
+                run_index = Some(index.to_usize());
+            }
+            MeasurementEvent::EndRun => {
+                run_index = None;
+            }
+            MeasurementEvent::BeginFrame(index) => {
+                frame_index = Some(index.to_usize());
+            }
+            MeasurementEvent::EndFrame => {
+                frame_index = None;
+            }
+            MeasurementEvent::BeginTimeSpan(sample_index, span) => {
+                let base_index = run_index.unwrap() * run_stride
+                    + frame_index.unwrap() * frame_stride
+                    + sample_index.to_usize() * sample_stride;
+                flat_samples[base_index + 0] = span.cpu.begin;
+                flat_samples[base_index + 1] = span.cpu.end;
+                flat_samples[base_index + 2] = span.gpu.begin;
+                flat_samples[base_index + 3] = span.gpu.end;
+            }
+            _ => {}
+        }
+    }
+
+    let mut file = std::io::BufWriter::new(std::fs::File::create("samples.bin").unwrap());
+
+    struct H {
+        run_count: u64,
+        frame_count: u64,
+        sample_count: u64,
+    };
+
+    file.write_all(
+        H {
+            run_count: run_count as u64,
+            frame_count: frame_count as u64,
+            sample_count: sample_count as u64,
+        }
+        .value_as_bytes(),
+    )
+    .unwrap();
+
+    file.write_all(flat_samples.vec_as_bytes()).unwrap();
 }
