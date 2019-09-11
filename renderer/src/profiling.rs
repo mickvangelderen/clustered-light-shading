@@ -138,7 +138,6 @@ impl Context {
             self.frame_index.is_none(),
             "Tried to start frame_index without stopping the frame_index!"
         );
-        self.thread.emit(MeasurementEvent::BeginFrame(frame_index));
         let context = &mut self.frame_context_ring[frame_index];
 
         // Clear values from all samples.
@@ -148,6 +147,8 @@ impl Context {
 
         if frame_index.to_usize() >= FRAME_CAPACITY {
             debug_assert_eq!(context.frame_index.to_usize() + FRAME_CAPACITY, frame_index.to_usize());
+
+            self.thread.emit(MeasurementEvent::BeginFrame(context.frame_index));
 
             // Read back data from the GPU.
             let mut profilers_used = 0;
@@ -170,6 +171,8 @@ impl Context {
                                                                                                 // }
                 }
             }
+
+            self.thread.emit(MeasurementEvent::EndFrame);
 
             debug_assert_eq!(profilers_used, context.profilers_used);
         }
