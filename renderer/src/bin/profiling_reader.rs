@@ -94,7 +94,7 @@ fn main() {
     let frame_count = max_frame_index.unwrap() + 1;
     let sample_count = sample_names.len();
 
-    dbg!(sample_names);
+    dbg!(&sample_names);
     dbg!(sample_count);
     dbg!(run_count);
     dbg!(frame_count);
@@ -152,6 +152,17 @@ fn main() {
         .value_as_bytes(),
     )
     .unwrap();
+
+    for name in sample_names.iter() {
+        let bytes = name.as_bytes();
+        let count = bytes.len() as u64;
+        file.write(&count.to_ne_bytes()).unwrap();
+        file.write(bytes);
+        const ZEROS: [u8; 8] = [0; 8];
+        if (count % 8) != 0 {
+            file.write(&ZEROS[0..(8 - (count % 8)) as usize]);
+        }
+    }
 
     file.write_all(flat_samples.vec_as_bytes()).unwrap();
 }
