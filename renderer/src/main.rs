@@ -224,6 +224,7 @@ pub struct MainContext {
     pub resources: Resources,
 
     // Per-frame resources
+    pub frame_sample_index: SampleIndex,
     pub main_parameters_vec: Vec<MainParameters>,
     pub camera_buffer_pool: BufferPool,
     pub light_resources_vec: Vec<light::LightResources>,
@@ -364,7 +365,7 @@ impl MainContext {
         let initial_win_dpi = gl_window.get_hidpi_factor();
         let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
 
-        let profiling_context = ProfilingContext::new(&configuration.profiling);
+        let mut profiling_context = ProfilingContext::new(&configuration.profiling);
 
         Self {
             current_dir,
@@ -380,7 +381,6 @@ impl MainContext {
             record_file,
             current,
             shader_compiler,
-            profiling_context,
             replay_frame_events,
             initial_cameras,
             initial_win_dpi,
@@ -395,6 +395,7 @@ impl MainContext {
             text_renderer,
             cls_renderer,
             resources,
+            frame_sample_index: profiling_context.add_sample("frame"),
             camera_buffer_pool: BufferPool::new(),
             light_resources_vec: Vec::new(),
             light_params_vec: Vec::new(),
@@ -402,6 +403,7 @@ impl MainContext {
             cluster_resources_pool: ClusterResourcesPool::new(),
             main_resources_pool: MainResourcesPool::new(),
             point_lights: Vec::new(),
+            profiling_context,
         }
     }
 }
@@ -441,6 +443,7 @@ pub struct Context<'s> {
     pub resources: &'s mut Resources,
 
     // Per-frame resources
+    pub frame_sample_index: SampleIndex,
     pub main_parameters_vec: &'s mut Vec<MainParameters>,
     pub camera_buffer_pool: &'s mut BufferPool,
     pub light_resources_vec: &'s mut Vec<light::LightResources>,
@@ -507,6 +510,7 @@ impl<'s> Context<'s> {
             ref mut text_renderer,
             ref mut cls_renderer,
             ref mut resources,
+            frame_sample_index,
             ref mut main_parameters_vec,
             ref mut camera_buffer_pool,
             ref mut light_resources_vec,
@@ -568,6 +572,7 @@ impl<'s> Context<'s> {
             resources,
 
             // Per-frame resources
+            frame_sample_index,
             main_parameters_vec,
             camera_buffer_pool,
             light_resources_vec,
@@ -1020,6 +1025,8 @@ impl<'s> Context<'s> {
         }
 
         self.profiling_context.begin_frame(self.gl, self.frame_index);
+
+        let profiler_index = self.profiling_context.start(self.gl, self.frame_sample_index);
 
         let mut light_index = None;
         let mut cluster_resources_index = None;
