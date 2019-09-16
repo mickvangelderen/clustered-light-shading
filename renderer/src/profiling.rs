@@ -21,37 +21,91 @@ enum FrameEvent {
 
 #[derive(Default)]
 struct FrameContext {
-    frame_index: FrameIndex,
     events: Vec<FrameEvent>,
     profilers_used: usize,
     profilers: Vec<TimeSpanProfiler>,
 }
 
-const FRAME_CAPACITY: usize = 3;
-
 #[derive(Default)]
-struct FrameContextRing([FrameContext; 3]);
+struct FrameContextRing([FrameContext; FrameContextRing::CAPACITY]);
+
+impl FrameContextRing {
+    const CAPACITY: usize = 3;
+
+    pub fn clear(&mut self) {
+        for context in self.0.iter_mut() {
+            context.events.clear();
+            context.profilers_used = 0;
+        }
+    }
+}
 
 impl std::ops::Index<FrameIndex> for FrameContextRing {
     type Output = FrameContext;
 
     fn index(&self, index: FrameIndex) -> &Self::Output {
-        &self.0[index.to_usize() % 3]
+        &self.0[index.to_usize() % Self::CAPACITY]
     }
 }
 
 impl std::ops::IndexMut<FrameIndex> for FrameContextRing {
     fn index_mut(&mut self, index: FrameIndex) -> &mut Self::Output {
-        &mut self.0[index.to_usize() % 3]
+        &mut self.0[index.to_usize() % Self::CAPACITY]
+    }
+}
+
+#[derive(Default)]
+struct SamplesRing {
+    sample_count: usize,
+    ring: [Vec<Option<GpuCpuTimeSpan>>; SamplesRing::CAPACITY],
+}
+
+impl SamplesRing {
+    const CAPACITY: usize = 9;
+
+    pub fn add_sample(&mut self) -> SampleIndex {
+        let index = SampleIndex::from_usize(self.sample_count);
+        self.sample_count += 1;
+
+        for samples in self.ring.iter_mut() {
+            samples.push(None);
+            debug_assert_eq!(samples.len(), self.sample_count);
+        }
+
+        index
+    }
+
+    pub fn clear(&mut self) {
+        for samples in self.ring.iter_mut() {
+            for sample in samples.iter_mut() {
+                *sample = None;
+            }
+        }
+    }
+}
+
+impl std::ops::Index<FrameIndex> for SamplesRing {
+    type Output = Vec<Option<GpuCpuTimeSpan>>;
+
+    fn index(&self, index: FrameIndex) -> &Self::Output {
+        &self.ring[index.to_usize() % Self::CAPACITY]
+    }
+}
+
+impl std::ops::IndexMut<FrameIndex> for SamplesRing {
+    fn index_mut(&mut self, index: FrameIndex) -> &mut Self::Output {
+        &mut self.ring[index.to_usize() % Self::CAPACITY]
     }
 }
 
 pub struct ProfilingContext {
     epoch: std::time::Instant,
+    run_index: RunIndex,
+    run_started: bool,
+    frame_index: FrameIndex,
+    frame_started: bool,
     frame_context_ring: FrameContextRing,
-    frame_index: Option<FrameIndex>,
-    run_index: Option<RunIndex>,
-    sample_data: Vec<Option<GpuCpuTimeSpan>>,
+    samples_ring: SamplesRing,
     thread: ProfilingThread,
 }
 
@@ -98,57 +152,73 @@ impl Context {
         Self {
             epoch: std::time::Instant::now(),
             frame_context_ring: Default::default(),
-            run_index: None,
-            frame_index: None,
-            sample_data: Vec::new(),
+            run_index: RunIndex::from_usize(0),
+            run_started: false,
+            frame_index: FrameIndex::from_usize(0),
+            frame_started: false,
+            samples_ring: Default::default(),
             thread,
         }
     }
 
     #[inline]
     pub fn run_index(&self) -> RunIndex {
-        self.run_index.unwrap()
+        assert_eq!(true, self.run_started);
+        self.run_index
     }
 
     #[inline]
     pub fn add_sample(&mut self, sample: &'static str) -> SampleIndex {
-        let sample_index = SampleIndex::from_usize(self.sample_data.len());
+        let sample_index = self.samples_ring.add_sample();
         self.thread
             .emit(MeasurementEvent::SampleName(sample_index, sample.to_string()));
-        self.sample_data.push(None);
         sample_index
     }
 
     #[inline]
     pub fn begin_run(&mut self, run_index: RunIndex) {
-        assert!(self.run_index.replace(run_index).is_none());
+        assert_eq!(false, self.run_started);
+        assert_eq!(self.run_index, run_index);
+        self.run_started = true;
         self.thread.emit(MeasurementEvent::BeginRun(run_index));
     }
 
     #[inline]
     pub fn end_run(&mut self, run_index: RunIndex) {
-        assert_eq!(self.run_index.take(), Some(run_index));
+        assert_eq!(true, self.run_started);
+        assert_eq!(self.run_index, run_index);
+        self.run_started = false;
+        self.run_index.increment();
+
         self.thread.emit(MeasurementEvent::EndRun);
+
+        // Reset frame-related data.
+        self.frame_index = FrameIndex::from_usize(0);
+        self.frame_context_ring.clear();
+        self.samples_ring.clear();
     }
 
     #[inline]
     pub fn begin_frame(&mut self, gl: &gl::Gl, frame_index: FrameIndex) {
-        assert!(self.run_index.is_some());
-        assert!(
-            self.frame_index.is_none(),
-            "Tried to start frame_index without stopping the frame_index!"
-        );
+        assert_eq!(true, self.run_started);
+        assert_eq!(false, self.frame_started);
+        self.frame_started = true;
+        assert_eq!(self.frame_index, frame_index);
+
         let context = &mut self.frame_context_ring[frame_index];
 
-        // Clear values from all samples.
-        for sample in self.sample_data.iter_mut() {
-            *sample = None;
-        }
+        if frame_index.to_usize() >= FrameContextRing::CAPACITY {
+            // Compute the frame index when these events were recorded.
+            let frame_index = FrameIndex::from_usize(frame_index.to_usize() - FrameContextRing::CAPACITY);
 
-        if frame_index.to_usize() >= FRAME_CAPACITY {
-            debug_assert_eq!(context.frame_index.to_usize() + FRAME_CAPACITY, frame_index.to_usize());
+            self.thread.emit(MeasurementEvent::BeginFrame(frame_index));
 
-            self.thread.emit(MeasurementEvent::BeginFrame(context.frame_index));
+            let samples = &mut self.samples_ring[frame_index];
+
+            // Clear all samples because we're not sure we will write to every one.
+            for sample in samples.iter_mut() {
+                *sample = None;
+            }
 
             // Read back data from the GPU.
             let mut profilers_used = 0;
@@ -158,13 +228,13 @@ impl Context {
                         let profiler_index = profilers_used;
                         profilers_used += 1;
                         debug_assert!(
-                            self.sample_data[sample_index.to_usize()].is_none(),
+                            samples[sample_index.to_usize()].is_none(),
                             "{:?} is writen to more than once",
                             sample_index
                         );
                         let sample = context.profilers[profiler_index].read(gl).unwrap();
                         self.thread.emit(MeasurementEvent::BeginTimeSpan(sample_index, sample));
-                        self.sample_data[sample_index.to_usize()] = Some(sample);
+                        samples[sample_index.to_usize()] = Some(sample);
                     }
                     FrameEvent::EndTimeSpan => self.thread.emit(MeasurementEvent::EndTimeSpan), // FrameEvent::QueryValue(sample_index) => {
                                                                                                 //     unimplemented!();
@@ -175,27 +245,26 @@ impl Context {
             self.thread.emit(MeasurementEvent::EndFrame);
 
             debug_assert_eq!(profilers_used, context.profilers_used);
+
+            context.events.clear();
+            context.profilers_used = 0;
         }
-
-        context.events.clear();
-        context.profilers_used = 0;
-        context.frame_index = frame_index;
-
-        self.frame_index = Some(frame_index);
     }
 
     #[inline]
     pub fn end_frame(&mut self, frame_index: FrameIndex) {
-        assert!(self.run_index.is_some());
-        assert_eq!(self.frame_index.take(), Some(frame_index));
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        assert_eq!(self.frame_index, frame_index);
+        self.frame_started = false;
+        self.frame_index.increment();
     }
 
     #[inline]
     pub fn start(&mut self, gl: &gl::Gl, sample_index: SampleIndex) -> ProfilerIndex {
-        let frame_index = self
-            .frame_index
-            .expect("Tried to start a timer before starting the frame_index!");
-        let context = &mut self.frame_context_ring[frame_index];
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
         context.events.push(FrameEvent::BeginTimeSpan(sample_index));
         let profiler_index = ProfilerIndex(context.profilers_used);
         context.profilers_used += 1;
@@ -208,24 +277,22 @@ impl Context {
 
     #[inline]
     pub fn stop(&mut self, gl: &gl::Gl, profiler_index: ProfilerIndex) {
-        let frame_index = self
-            .frame_index
-            .expect("Tried to start a timer before starting the frame_index!");
-        let context = &mut self.frame_context_ring[frame_index];
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
         context.events.push(FrameEvent::EndTimeSpan);
         context.profilers[profiler_index.0].stop(gl, self.epoch);
     }
 
     #[inline]
     pub fn sample(&mut self, sample_index: SampleIndex) -> Option<GpuCpuTimeSpan> {
-        assert!(self.frame_index.is_some());
-        self.sample_data[sample_index.to_usize()]
-    }
-
-    pub fn reset(&mut self) {
-        // Clear values from all samples.
-        for sample in self.sample_data.iter_mut() {
-            *sample = None;
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        if self.frame_index.to_usize() >= FrameContextRing::CAPACITY {
+            let frame_index = FrameIndex::from_usize(self.frame_index.to_usize() - FrameContextRing::CAPACITY);
+            self.samples_ring[frame_index][sample_index.to_usize()]
+        } else {
+            None
         }
     }
 }
