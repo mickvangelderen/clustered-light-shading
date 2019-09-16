@@ -33,6 +33,7 @@ mod rain;
 mod rendering;
 mod resources;
 mod shader_compiler;
+mod symlink;
 mod text_renderer;
 mod text_rendering;
 mod toggle;
@@ -51,6 +52,7 @@ use self::shader_compiler::{EntryPoint, ShaderCompiler};
 use self::text_rendering::{FontContext, TextBox};
 use self::viewport::*;
 use self::window_mode::*;
+use crate::symlink::symlink_dir;
 
 use cgmath::*;
 use derive::EnumNext;
@@ -254,6 +256,38 @@ impl MainContext {
         let mut fs_watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
         notify::Watcher::watch(&mut fs_watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
 
+        let mut profiling_context = {
+            // Directory containing all profiling directories.
+            let base_profiling_dir: PathBuf = [std::env::current_dir().unwrap().as_path(), Path::new("profiling")]
+                .iter()
+                .collect();
+
+            // Symlink path.
+            let latest_profiling_dir = base_profiling_dir.join("latest");
+
+            // Directory in which to place all profiling output.
+            let current_profiling_dir =
+                base_profiling_dir.join(chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string());
+
+            if configuration.profiling.path.is_some() {
+                std::fs::create_dir_all(&current_profiling_dir).unwrap();
+                std::fs::remove_file(&latest_profiling_dir)
+                    .or_else(|error| match error.kind() {
+                        std::io::ErrorKind::NotFound => Ok(()),
+                        _ => Err(error),
+                    })
+                    .unwrap();
+                symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
+                std::fs::copy(
+                    &configuration_path,
+                    current_profiling_dir.join(Configuration::DEFAULT_PATH),
+                )
+                .unwrap();
+            }
+
+            ProfilingContext::new(current_profiling_dir.as_path(), &configuration.profiling)
+        };
+
         let mut record_file = match configuration.global.mode {
             ApplicationMode::Record => Some(io::BufWriter::new(
                 fs::File::create(&configuration.record.path).unwrap(),
@@ -364,8 +398,6 @@ impl MainContext {
 
         let initial_win_dpi = gl_window.get_hidpi_factor();
         let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
-
-        let mut profiling_context = ProfilingContext::new(&configuration.profiling);
 
         Self {
             current_dir,

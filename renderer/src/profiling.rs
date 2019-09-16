@@ -134,9 +134,9 @@ impl Drop for ProfilingThread {
 }
 
 impl Context {
-    pub fn new(configuration: &Configuration) -> Self {
+    pub fn new(profiling_dir: &std::path::Path, configuration: &Configuration) -> Self {
         let thread = ProfilingThread(configuration.path.as_ref().map(|path| {
-            let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+            let mut file = std::io::BufWriter::new(std::fs::File::create(profiling_dir.join(path)).unwrap());
             let (tx, rx) = std::sync::mpsc::channel();
             let handle = std::thread::Builder::new()
                 .name("profiling".to_string())
@@ -305,16 +305,14 @@ impl Context {
             cpu_elapsed[index] = span.cpu.delta();
             gpu_elapsed[index] = span.gpu.delta();
         }
-        Some (
-            GpuCpuStats {
-                cpu_elapsed_avg: cpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
-                cpu_elapsed_min: cpu_elapsed.iter().copied().min().unwrap(),
-                cpu_elapsed_max: cpu_elapsed.iter().copied().max().unwrap(),
-                gpu_elapsed_avg: gpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
-                gpu_elapsed_min: gpu_elapsed.iter().copied().min().unwrap(),
-                gpu_elapsed_max: gpu_elapsed.iter().copied().max().unwrap(),
-            }
-        )
+        Some(GpuCpuStats {
+            cpu_elapsed_avg: cpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
+            cpu_elapsed_min: cpu_elapsed.iter().copied().min().unwrap(),
+            cpu_elapsed_max: cpu_elapsed.iter().copied().max().unwrap(),
+            gpu_elapsed_avg: gpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
+            gpu_elapsed_min: gpu_elapsed.iter().copied().min().unwrap(),
+            gpu_elapsed_max: gpu_elapsed.iter().copied().max().unwrap(),
+        })
     }
 }
 
