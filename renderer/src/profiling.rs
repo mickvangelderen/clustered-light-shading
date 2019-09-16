@@ -285,7 +285,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn sample(&mut self, sample_index: SampleIndex) -> Option<GpuCpuTimeSpan> {
+    pub fn sample(&self, sample_index: SampleIndex) -> Option<GpuCpuTimeSpan> {
         assert!(true, self.run_started);
         assert!(true, self.frame_started);
         if self.frame_index.to_usize() >= FrameContextRing::CAPACITY {
@@ -294,6 +294,27 @@ impl Context {
         } else {
             None
         }
+    }
+
+    #[inline]
+    pub fn stats(&self, sample_index: SampleIndex) -> Option<GpuCpuStats> {
+        let mut cpu_elapsed = [0u64; SamplesRing::CAPACITY];
+        let mut gpu_elapsed = [0u64; SamplesRing::CAPACITY];
+        for index in 0..SamplesRing::CAPACITY {
+            let span = self.samples_ring[FrameIndex::from_usize(index)][sample_index.to_usize()]?;
+            cpu_elapsed[index] = span.cpu.delta();
+            gpu_elapsed[index] = span.gpu.delta();
+        }
+        Some (
+            GpuCpuStats {
+                cpu_elapsed_avg: cpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
+                cpu_elapsed_min: cpu_elapsed.iter().copied().min().unwrap(),
+                cpu_elapsed_max: cpu_elapsed.iter().copied().max().unwrap(),
+                gpu_elapsed_avg: gpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
+                gpu_elapsed_min: gpu_elapsed.iter().copied().min().unwrap(),
+                gpu_elapsed_max: gpu_elapsed.iter().copied().max().unwrap(),
+            }
+        )
     }
 }
 
@@ -508,66 +529,14 @@ impl TimeSpanProfiler {
 //         }
 //     }
 
-//     pub fn stats(&self) -> Option<GpuCpuStats> {
-//         let mut iter = self.samples[0..self.len()].iter();
-//         let first = iter.next();
-//         first.map(move |first| {
-//             let dg = first.gpu.delta();
-//             let dc = first.cpu.delta();
-//             let mut stats = iter.fold(
-//                 GpuCpuStats {
-//                     first_frame: self.first_frame().unwrap(),
-//                     last_frame: self.last_frame().unwrap(),
-//                     gpu_elapsed_avg: dg,
-//                     gpu_elapsed_min: dg,
-//                     gpu_elapsed_max: dg,
-//                     cpu_elapsed_avg: dc,
-//                     cpu_elapsed_min: dc,
-//                     cpu_elapsed_max: dc,
-//                 },
-//                 |mut stats, item| {
-//                     {
-//                         let dg = item.gpu.delta();
-//                         stats.gpu_elapsed_avg += dg;
-//                         if dg < stats.gpu_elapsed_min {
-//                             stats.gpu_elapsed_min = dg;
-//                         }
-//                         if dg > stats.gpu_elapsed_max {
-//                             stats.gpu_elapsed_max = dg;
-//                         }
-//                     }
-//                     {
-//                         let dc = item.cpu.delta();
-//                         stats.cpu_elapsed_avg += dc;
-//                         if dc < stats.cpu_elapsed_min {
-//                             stats.cpu_elapsed_min = dc;
-//                         }
-//                         if dc > stats.cpu_elapsed_max {
-//                             stats.cpu_elapsed_max = dc;
-//                         }
-//                     }
-//                     stats
-//                 },
-//             );
-
-//             stats.gpu_elapsed_avg /= Self::CAPACITY as u64;
-//             stats.cpu_elapsed_avg /= Self::CAPACITY as u64;
-
-//             stats
-//         })
-//     }
-// }
-
-// pub struct GpuCpuStats {
-//     pub first_frame: FrameIndex,
-//     pub last_frame: FrameIndex,
-//     pub gpu_elapsed_avg: u64,
-//     pub gpu_elapsed_min: u64,
-//     pub gpu_elapsed_max: u64,
-//     pub cpu_elapsed_avg: u64,
-//     pub cpu_elapsed_min: u64,
-//     pub cpu_elapsed_max: u64,
-// }
+pub struct GpuCpuStats {
+    pub gpu_elapsed_avg: u64,
+    pub gpu_elapsed_min: u64,
+    pub gpu_elapsed_max: u64,
+    pub cpu_elapsed_avg: u64,
+    pub cpu_elapsed_min: u64,
+    pub cpu_elapsed_max: u64,
+}
 
 // pub struct Profiler {
 //     pub scope: &'static str,
