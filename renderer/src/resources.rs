@@ -1,5 +1,4 @@
 use crate::light::*;
-use crate::rendering::*;
 use crate::*;
 use cgmath::*;
 use std::collections::HashMap;
