@@ -160,7 +160,7 @@ fn simulate(context: SimulateContext) {
     let SimulateContext {
         event_loop,
         running,
-        simulate_index,
+        simulate_index: _,
     } = context;
 
     event_loop.poll_events(|event| {
