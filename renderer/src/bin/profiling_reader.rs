@@ -1,17 +1,10 @@
 use clap::{App, Arg};
 use std::fs::File;
 use std::io::{BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use renderer::profiling::*;
 use renderer::*;
-
-fn get_config() -> Configuration {
-    let current_dir = std::env::current_dir().unwrap();
-    let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
-    let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
-    Configuration::read(&configuration_path)
-}
 
 fn read_events(path: impl AsRef<Path>) -> std::io::Result<Vec<MeasurementEvent>> {
     let mut file = BufReader::new(File::open(path)?);
@@ -55,9 +48,16 @@ fn main() {
         )
         .get_matches();
 
-    let cfg = get_config();
+    let current_dir = std::env::current_dir().unwrap();
+    let base_profiling_dir = current_dir.join("profiling");
+    let latest_profiling_dir = base_profiling_dir.join("latest");
+    let current_profiling_dir = std::fs::read_link(latest_profiling_dir).expect("Didn't find symlink to latest profiling directory.");
+    dbg!(&current_profiling_dir);
+    let configuration_path = current_profiling_dir.join(Configuration::DEFAULT_PATH);
+    let cfg = Configuration::read(&configuration_path);
+    let profiling_path = current_profiling_dir.join(cfg.profiling.path.as_ref().unwrap());
 
-    let events = read_events(cfg.profiling.path.as_ref().unwrap()).unwrap();
+    let events = read_events(profiling_path).unwrap();
 
     let mut sample_names = Vec::new();
     let mut max_run_index = None;
