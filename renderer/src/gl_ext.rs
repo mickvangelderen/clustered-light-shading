@@ -470,7 +470,7 @@ where
     pub unsafe fn invalidate(&mut self, gl: &gl::Gl) {
         if self.byte_capacity > 0 {
             // Invalidate buffer using old capacity.
-            gl.named_buffer_reserve(self.name, self.byte_capacity, U::value());
+            gl.invalidate_buffer_data(self.name);
         }
     }
 
