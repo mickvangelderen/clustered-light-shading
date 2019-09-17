@@ -2006,11 +2006,13 @@ impl<'s> Context<'s> {
                  ",
                 match self.configuration.global.mode {
                     ApplicationMode::Normal => "".to_string(),
-                    ApplicationMode::Record => "Recording...\n".to_string(),
+                    ApplicationMode::Record => format!("Frame {:>4} | Recording...\n", self.frame_index.to_usize()),
                     ApplicationMode::Replay => format!(
-                        "Replaying {}/{}\n",
+                        "Frame {:>4}/{} | Run {:>2}/{}\n",
+                        self.frame_index.to_usize(),
+                        self.replay_frame_events.as_ref().map(Vec::len).unwrap(),
                         self.profiling_context.run_index().to_usize() + 1,
-                        self.configuration.replay.run_count
+                        self.configuration.replay.run_count,
                     ),
                 },
                 format!("{:?}", self.shader_compiler.render_technique()),
