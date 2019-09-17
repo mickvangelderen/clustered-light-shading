@@ -474,9 +474,13 @@ where
         }
     }
 
-    pub unsafe fn ensure_capacity(&mut self, gl: &gl::Gl, byte_capacity: usize) {
+    pub unsafe fn ensure_capacity(&mut self, gl: &gl::Gl, mut byte_capacity: usize) {
         if self.byte_capacity >= byte_capacity {
             return;
+        }
+
+        if byte_capacity < (self.byte_capacity + self.byte_capacity/2) {
+            byte_capacity = self.byte_capacity + self.byte_capacity/2;
         }
 
         gl.named_buffer_reserve(self.name, byte_capacity, U::value());
