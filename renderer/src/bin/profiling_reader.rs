@@ -135,7 +135,8 @@ fn main() {
         }
     }
 
-    let mut file = std::io::BufWriter::new(std::fs::File::create("samples.bin").unwrap());
+    let samples_path = current_profiling_dir.join("samples.bin");
+    let mut file = std::io::BufWriter::new(std::fs::File::create(samples_path).unwrap());
 
     #[allow(unused)]
     struct H {
