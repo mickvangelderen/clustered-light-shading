@@ -15,11 +15,13 @@ pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
 mod basic_renderer;
+mod bmp;
 pub mod cgmath_ext;
 mod cls;
 pub mod color;
 mod depth_renderer;
 mod filters;
+mod frame_downloader;
 pub mod frustrum;
 pub mod gl_ext;
 mod glutin_ext;
@@ -52,6 +54,7 @@ use self::shader_compiler::{EntryPoint, ShaderCompiler};
 use self::text_rendering::{FontContext, TextBox};
 use self::viewport::*;
 use self::window_mode::*;
+use crate::frame_downloader::FrameDownloader;
 use crate::symlink::symlink_dir;
 
 use cgmath::*;
@@ -188,10 +191,17 @@ pub enum FrameEvent {
 
 type FrameEvents = Vec<FrameEvent>;
 
-pub struct MainContext {
+pub struct Paths {
     pub current_dir: PathBuf,
     pub resource_dir: PathBuf,
+    pub base_profiling_dir: PathBuf,
+    pub current_profiling_dir: PathBuf,
+    pub frames_dir: PathBuf,
     pub configuration_path: PathBuf,
+}
+
+pub struct MainContext {
+    pub paths: Paths,
     pub configuration: Configuration,
     pub events_loop: glutin::EventsLoop,
     pub gl_window: glutin::GlWindow,
@@ -224,6 +234,7 @@ pub struct MainContext {
 
     // More opengl resources...
     pub resources: Resources,
+    pub frame_downloader: FrameDownloader,
 
     // Per-frame resources
     pub frame_sample_index: SampleIndex,
@@ -239,7 +250,8 @@ pub struct MainContext {
 impl MainContext {
     fn new() -> Self {
         let current_dir = std::env::current_dir().unwrap();
-        let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
+        let resource_dir = current_dir.join("resources");
+
         let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
         let configuration = Configuration::read(&configuration_path);
 
@@ -256,19 +268,13 @@ impl MainContext {
         let mut fs_watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
         notify::Watcher::watch(&mut fs_watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
 
+        let base_profiling_dir: PathBuf = current_dir.join("profiling");
+        let latest_profiling_dir = base_profiling_dir.join("latest");
+        let current_profiling_dir =
+            base_profiling_dir.join(chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string());
+        let frames_dir = current_profiling_dir.join("frames");
+
         let mut profiling_context = {
-            // Directory containing all profiling directories.
-            let base_profiling_dir: PathBuf = [std::env::current_dir().unwrap().as_path(), Path::new("profiling")]
-                .iter()
-                .collect();
-
-            // Symlink path.
-            let latest_profiling_dir = base_profiling_dir.join("latest");
-
-            // Directory in which to place all profiling output.
-            let current_profiling_dir =
-                base_profiling_dir.join(chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string());
-
             if configuration.profiling.path.is_some() {
                 std::fs::create_dir_all(&current_profiling_dir).unwrap();
                 std::fs::remove_file(&latest_profiling_dir)
@@ -283,6 +289,9 @@ impl MainContext {
                     current_profiling_dir.join(Configuration::DEFAULT_PATH),
                 )
                 .unwrap();
+
+                // Make sure we can write out the frames.
+                std::fs::create_dir_all(&frames_dir).unwrap();
             }
 
             ProfilingContext::new(current_profiling_dir.as_path(), &configuration.profiling)
@@ -395,14 +404,20 @@ impl MainContext {
         drop(rendering_context);
 
         let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
+        let frame_downloader = FrameDownloader::new(&gl);
 
         let initial_win_dpi = gl_window.get_hidpi_factor();
         let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
 
         Self {
-            current_dir,
-            resource_dir,
-            configuration_path,
+            paths: Paths {
+                current_dir,
+                resource_dir,
+                base_profiling_dir,
+                current_profiling_dir,
+                frames_dir,
+                configuration_path,
+            },
             configuration,
             events_loop,
             gl_window,
@@ -427,6 +442,7 @@ impl MainContext {
             text_renderer,
             cls_renderer,
             resources,
+            frame_downloader,
             frame_sample_index: profiling_context.add_sample("frame"),
             camera_buffer_pool: BufferPool::new(),
             light_resources_vec: Vec::new(),
@@ -442,9 +458,7 @@ impl MainContext {
 
 pub struct Context<'s> {
     // From MainContext
-    pub current_dir: &'s Path,
-    pub resource_dir: &'s Path,
-    pub configuration_path: &'s Path,
+    pub paths: &'s Paths,
     pub configuration: Configuration,
     pub events_loop: &'s mut glutin::EventsLoop,
     pub gl_window: &'s mut glutin::GlWindow,
@@ -473,6 +487,7 @@ pub struct Context<'s> {
 
     // More opengl resources...
     pub resources: &'s mut Resources,
+    pub frame_downloader: &'s mut FrameDownloader,
 
     // Per-frame resources
     pub frame_sample_index: SampleIndex,
@@ -515,9 +530,7 @@ pub struct Context<'s> {
 impl<'s> Context<'s> {
     pub fn new(context: &'s mut MainContext) -> Self {
         let MainContext {
-            ref current_dir,
-            ref resource_dir,
-            ref configuration_path,
+            ref paths,
             ref configuration,
             initial_win_dpi,
             initial_win_size,
@@ -542,6 +555,7 @@ impl<'s> Context<'s> {
             ref mut text_renderer,
             ref mut cls_renderer,
             ref mut resources,
+            ref mut frame_downloader,
             frame_sample_index,
             ref mut main_parameters_vec,
             ref mut camera_buffer_pool,
@@ -571,9 +585,7 @@ impl<'s> Context<'s> {
         });
 
         Context {
-            current_dir,
-            resource_dir,
-            configuration_path,
+            paths,
             configuration,
             events_loop,
             gl_window,
@@ -602,6 +614,7 @@ impl<'s> Context<'s> {
 
             // More opengl resources...
             resources,
+            frame_downloader,
 
             // Per-frame resources
             frame_sample_index,
@@ -662,7 +675,7 @@ impl<'s> Context<'s> {
                 notify::DebouncedEvent::NoticeWrite(path) => {
                     info!(
                         "Noticed write to file {:?}",
-                        path.strip_prefix(&self.resource_dir).unwrap().display()
+                        path.strip_prefix(&self.paths.resource_dir).unwrap().display()
                     );
 
                     if let Some(source_index) = self.shader_compiler.memory.source_index(&path) {
@@ -672,7 +685,7 @@ impl<'s> Context<'s> {
                             .modify(&mut self.current);
                     }
 
-                    if &path == &self.configuration_path {
+                    if &path == &self.paths.configuration_path {
                         configuration_update = true;
                     }
                 }
@@ -684,7 +697,7 @@ impl<'s> Context<'s> {
 
         if configuration_update {
             // Read from file.
-            self.configuration = Configuration::read(&self.configuration_path);
+            self.configuration = Configuration::read(&self.paths.configuration_path);
 
             // Apply updates.
             self.cameras.main.properties = self.configuration.main_camera.into();
@@ -2116,6 +2129,17 @@ impl<'s> Context<'s> {
             self.gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
 
             self.render_text();
+        }
+
+        if self.profiling_context.run_index().to_usize() == 0 {
+            self.frame_downloader.record_frame(
+                &self.paths.frames_dir,
+                self.gl,
+                self.frame_index,
+                self.win_size.width as u32,
+                self.win_size.height as u32,
+                frame_downloader::Format::RGBA,
+            );
         }
 
         self.profiling_context.stop(self.gl, profiler_index);

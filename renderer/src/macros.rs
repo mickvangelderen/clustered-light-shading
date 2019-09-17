@@ -196,7 +196,7 @@ macro_rules! rendering_context {
     ($object: ident) => {
         crate::rendering::RenderingContext {
             gl: &$object.gl,
-            resource_dir: &$object.resource_dir,
+            resource_dir: &$object.paths.resource_dir,
             current: &mut $object.current,
             shader_compiler: &mut $object.shader_compiler,
         }
