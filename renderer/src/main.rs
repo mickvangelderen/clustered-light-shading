@@ -1649,7 +1649,7 @@ impl<'s> Context<'s> {
                     let buffer = &mut cluster_resources.light_xyzr_buffer;
                     buffer.invalidate(gl);
                     buffer.ensure_capacity(gl, padded_byte_count);
-                    buffer.write(gl, bytes);
+                    buffer.write_at(gl, bytes, 0);
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
                         cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
