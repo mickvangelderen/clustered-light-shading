@@ -10,12 +10,8 @@ pub(crate) use profiling::*;
 pub(crate) use rand::prelude::*;
 pub(crate) use std::path::Path;
 
-fn u32_div_ceil(a: u32, b: u32) -> u32 {
-    a / b
-        + match a % b {
-            0 => 0,
-            _ => 1,
-        }
+fn ceiled_div_u32(a: u32, b: u32) -> u32 {
+    (a + (b - 1))/b
 }
 
 const ITEM_COUNT_LOC: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked(0) };
@@ -25,7 +21,7 @@ fn main() {
     println!("{:#?}", cfg);
 
     // number of chunks per block.
-    let chunks_per_block = u32_div_ceil(
+    let chunks_per_block = ceiled_div_u32(
         cfg.input.count,
         cfg.prefix_sum.pass_0_threads * cfg.prefix_sum.pass_1_threads,
     );
@@ -34,7 +30,7 @@ fn main() {
     let items_per_block = chunks_per_block * cfg.prefix_sum.pass_0_threads;
 
     // number of blocks.
-    let block_count = u32_div_ceil(cfg.input.count, items_per_block);
+    let block_count = ceiled_div_u32(cfg.input.count, items_per_block);
 
     dbg!(chunks_per_block);
     dbg!(items_per_block);
@@ -313,13 +309,13 @@ impl PrefixSumResources {
         gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, 2, *output_buffer);
 
         // number of chunks per block.
-        let chunks_per_block = u32_div_ceil(count, cfg.pass_0_threads * cfg.pass_1_threads);
+        let chunks_per_block = ceiled_div_u32(count, cfg.pass_0_threads * cfg.pass_1_threads);
 
         // items per block.
         let items_per_block = chunks_per_block * cfg.pass_0_threads;
 
         // number of blocks.
-        let block_count = u32_div_ceil(count, items_per_block);
+        let block_count = ceiled_div_u32(count, items_per_block);
 
         let rec = profilers.total.record(gl, epoch);
 

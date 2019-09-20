@@ -15,9 +15,8 @@ uvec3 index_1_to_3(uint index_1, uvec3 dimensions) {
   return uvec3(x, y, z);
 }
 
-uint uint_div_ceil(uint n, uint d) {
-  uint r = n / d;
-  return ((n % d) == 0) ? r : r + 1;
+uint ceiled_div_u32(uint n, uint d) {
+  return (n + (d - 1))/d;
 }
 
 float lerp_f32_f32(float x, float x0, float x1, float y0, float y1) {
