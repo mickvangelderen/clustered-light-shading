@@ -378,7 +378,7 @@ fn prefix_sum_program(
 ",
         cfg.pass_0_threads,
         cfg.pass_1_threads,
-        ITEM_COUNT_LOC.into_i32(),
+        ITEM_COUNT_LOC.to_i32(),
     );
     let common = std::fs::read_to_string("resources/ps_common.comp").unwrap();
     let source = std::fs::read_to_string(path.as_ref()).unwrap();
