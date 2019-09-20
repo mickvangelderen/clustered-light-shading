@@ -2133,7 +2133,7 @@ impl<'s> Context<'s> {
             self.render_text();
         }
 
-        if self.profiling_context.run_index().to_usize() == 0 {
+        if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames {
             self.frame_downloader.record_frame(
                 &self.paths.frames_dir,
                 self.gl,
