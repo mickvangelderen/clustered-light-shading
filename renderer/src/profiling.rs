@@ -1,5 +1,8 @@
+mod alloc;
 mod indices;
 
+use crate::ValueAsBytes;
+use alloc::AllocBuffer;
 use gl_typed as gl;
 use ProfilingConfiguration as Configuration;
 use ProfilingContext as Context;
@@ -17,7 +20,7 @@ pub struct ProfilingConfiguration {
 enum FrameEvent {
     BeginTimeSpan(SampleIndex),
     EndTimeSpan,
-    // QueryValue(SampleIndex),
+    RecordClusterBuffer { offset: usize },
 }
 
 #[derive(Default)]
@@ -25,6 +28,7 @@ struct FrameContext {
     events: Vec<FrameEvent>,
     profilers_used: usize,
     profilers: Vec<TimeSpanProfiler>,
+    buffer: AllocBuffer,
 }
 
 #[derive(Default)]
@@ -237,9 +241,14 @@ impl Context {
                         self.thread.emit(MeasurementEvent::BeginTimeSpan(sample_index, sample));
                         samples[sample_index.to_usize()] = Some(sample);
                     }
-                    FrameEvent::EndTimeSpan => self.thread.emit(MeasurementEvent::EndTimeSpan), // FrameEvent::QueryValue(sample_index) => {
-                                                                                                //     unimplemented!();
-                                                                                                // }
+                    FrameEvent::EndTimeSpan => self.thread.emit(MeasurementEvent::EndTimeSpan),
+                    FrameEvent::RecordClusterBuffer { offset } => {
+                        let mut buffer = ClusterBuffer::default();
+                        unsafe {
+                            context.buffer.read(gl, offset, buffer.value_as_bytes_mut());
+                        }
+                        self.thread.emit(MeasurementEvent::RecordClusterBuffer(buffer));
+                    }
                 }
             }
 
@@ -283,6 +292,19 @@ impl Context {
         let context = &mut self.frame_context_ring[self.frame_index];
         context.events.push(FrameEvent::EndTimeSpan);
         context.profilers[profiler_index.0].stop(gl, self.epoch);
+    }
+
+    #[inline]
+    pub fn record_cluster_buffer(&mut self, gl: &gl::Gl, name: &gl::BufferName, offset: usize) {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
+        let offset = unsafe {
+            context
+                .buffer
+                .copy_from(gl, name, offset, std::mem::size_of::<ClusterBuffer>())
+        };
+        context.events.push(FrameEvent::RecordClusterBuffer { offset });
     }
 
     #[inline]
@@ -453,5 +475,15 @@ pub enum MeasurementEvent {
     EndFrame,
     BeginTimeSpan(SampleIndex, GpuCpuTimeSpan),
     EndTimeSpan,
-    QueryValue(SampleIndex, u64),
+    RecordClusterBuffer(ClusterBuffer),
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+pub struct ClusterBuffer {
+    active_cluster_count: u32,
+    light_indices_count: u32,
+    shade_count: u32,
+    _pad: u32,
+    frag_count_hist: [u32; 32],
+    light_count_hist: [u32; 32],
 }
