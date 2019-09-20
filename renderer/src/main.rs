@@ -47,7 +47,7 @@ use self::cls::*;
 use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
-use self::math::{CeilToMultiple, DivCeil};
+use self::math::CeiledDiv;
 use self::rendering::*;
 use self::resources::Resources;
 use self::shader_compiler::{EntryPoint, ShaderCompiler};
@@ -1422,9 +1422,9 @@ impl<'s> Context<'s> {
 
             let cluster_count = cluster_resources.computed.cluster_count();
             let blocks_per_dispatch = cluster_count
-                .div_ceil(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
+                .ceiled_div(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
-            let cluster_dispatch_count = cluster_count.div_ceil(clusters_per_dispatch);
+            let cluster_dispatch_count = cluster_count.ceiled_div(clusters_per_dispatch);
 
             unsafe {
                 let buffer = &mut cluster_resources.cluster_space_buffer;
@@ -1536,8 +1536,8 @@ impl<'s> Context<'s> {
                             );
 
                             gl.dispatch_compute(
-                                main_resources.dims.x.div_ceil(16) as u32,
-                                main_resources.dims.y.div_ceil(16) as u32,
+                                main_resources.dims.x.ceiled_div(16) as u32,
+                                main_resources.dims.y.ceiled_div(16) as u32,
                                 1,
                             );
                             gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
@@ -1657,7 +1657,7 @@ impl<'s> Context<'s> {
                         })
                         .collect();
                     let bytes = data.vec_as_bytes();
-                    let padded_byte_count = bytes.len().ceil_to_multiple(64);
+                    let padded_byte_count = bytes.len().ceiled_div(64) * 64;
 
                     let buffer = &mut cluster_resources.light_xyzr_buffer;
                     buffer.invalidate(gl);

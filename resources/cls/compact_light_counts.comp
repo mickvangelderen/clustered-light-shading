@@ -83,7 +83,7 @@ void main() {
   uint item_count =
       compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
   uint blocks_per_dispatch =
-      uint_div_ceil(item_count, PASS_0_THREADS * PASS_1_THREADS);
+      ceiled_div_u32(item_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
@@ -128,7 +128,7 @@ void main() {
   uint item_count =
       compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
   uint blocks_per_dispatch =
-      uint_div_ceil(item_count, PASS_0_THREADS * PASS_1_THREADS);
+      ceiled_div_u32(item_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
