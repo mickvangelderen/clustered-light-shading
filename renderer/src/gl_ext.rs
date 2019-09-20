@@ -483,6 +483,8 @@ where
             byte_capacity = self.byte_capacity + self.byte_capacity/2;
         }
 
+        byte_capacity = ((byte_capacity + 15)/16)*16;
+
         gl.named_buffer_reserve(self.name, byte_capacity, U::value());
         self.byte_capacity = byte_capacity;
     }
