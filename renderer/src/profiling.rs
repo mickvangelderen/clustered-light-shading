@@ -10,6 +10,7 @@ pub use indices::{FrameIndex, RunIndex, SampleIndex};
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
 pub struct ProfilingConfiguration {
     pub display: bool,
+    pub record_frames: bool,
     pub path: Option<std::path::PathBuf>,
 }
 

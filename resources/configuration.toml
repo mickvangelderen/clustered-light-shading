@@ -14,6 +14,7 @@ path = "recording.bin"
 
 [profiling]
 display = false
+record_frames = false
 path = "profiling.bin"
 
 [window]
