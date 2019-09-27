@@ -1,0 +1,35 @@
+#include "../common.glsl"
+
+// in
+#include "cluster_fragment_counts_buffer.glsl"
+// out
+#include "profiling_cluster_buffer.glsl"
+
+// NOTE(mickvangelderen): This whole shader expects local_size_z = 1
+// NOTE(mickvangelderen): We assume local_size_x equals the number of bins in the output histogram.
+layout(local_size_x = 32, local_size_y = 8) in;
+
+#define LOCAL_SIZE   (gl_WorkGroupSize.x * gl_WorkGroupSize.y)
+#define LOCAL_INDEX  (gl_LocalInvocationIndex.y * gl_WorkGroupSize.x + gl_LocalInvocationIndex.x)
+#define GLOBAL_INDEX (gl_WorkGroupID.x * LOCAL_SIZE + LOCAL_INDEX)
+
+shared uint shared_values[LOCAL_SIZE];
+
+void main() {
+  // Read a block of data in one go.
+  shared_values[LOCAL_INDEX] = cluster_fragment_counts[GLOBAL_INDEX];
+  memoryBarrierShared();
+  barrier();
+
+  // Have every thread go over local_size_x values
+  uint acc = 0;
+  for (int i = 0; i < gl_WorkGroupSize.x; i++) {
+    uint value = shared_values[gl_LocalInvocationIndex.y * gl_WorkGroupSize.x + i];
+    // If log_2(value) falls in the current thread's bin
+    if (findMSB(value) == gl_LocalInvocationIndex.x) {
+      acc += 1;
+    }
+  }
+
+  atomicAdd(profiling_cluster_buffer.frag_count_hist[gl_LocalInvocationIndex.x]);
+}

@@ -1554,6 +1554,40 @@ impl<'s> Context<'s> {
             let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
 
             // We have our fragments per cluster buffer here.
+            // TODO: Don't do this when running the application??
+            // if !self.profiling_context.time_sensitive() {
+            //     unsafe {
+            //         let buffer = &mut cluster_resources.profiling_cluster_buffer;
+            //         let byte_count = std::mem::size_of::<profiling::ClusterBuffer>();
+            //         buffer.invalidate(gl);
+            //         buffer.ensure_capacity(gl, byte_count);
+            //         buffer.clear_0u32(gl, byte_count);
+            //         gl.bind_buffer_base(
+            //             gl::SHADER_STORAGE_BUFFER,
+            //             cls_renderer::PROFILING_CLUSTER_BUFFER_BINDING,
+            //             buffer.name(),
+            //         );
+            //     }
+
+            //     unsafe {
+            //         let program = &mut self.cls_renderer.hist_fragments_program;
+            //         program.update(&mut rendering_context!(self));
+            //         if let ProgramName::Linked(name) = program.name {
+            //             gl.use_program(name);
+            //             // NOTE(mickvangelderen): 32*8 is defined in the shader
+            //             gl.dispatch_compute(cluster_count.ceiled_div(32 * 8), 1, 1);
+            //             gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+            //         }
+            //     }
+
+            //     unsafe {
+            //         self.profiling_context.record_cluster_buffer(
+            //             gl,
+            //             &cluster_resources.profiling_cluster_buffer.name(),
+            //             0,
+            //         );
+            //     }
+            // }
 
             {
                 let profiler_index = self
