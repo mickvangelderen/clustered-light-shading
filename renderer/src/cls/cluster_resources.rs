@@ -76,6 +76,7 @@ pub struct ClusterResources {
     pub draw_commands_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
     pub light_indices_buffer: DynamicBuffer,
+    pub profiling_cluster_buffer: DynamicBuffer,
     pub profilers: ClusterStages<SampleIndex>,
     // CPU
     pub active_clusters: Vec<u32>,
@@ -169,6 +170,12 @@ impl ClusterResources {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "light_indices");
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
+                buffer
+            },
+            profiling_cluster_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "profiling_cluster_buffer");
+                buffer.ensure_capacity(gl, std::mem::size_of::<profiling::ClusterBuffer>());
                 buffer
             },
             profilers: ClusterStages::new(|stage| profiling_context.add_sample(stage.title())),
