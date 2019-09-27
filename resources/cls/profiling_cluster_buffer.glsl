@@ -1,4 +1,4 @@
-struct ProfilingClusterBuffer {
+struct ProfilingCluster {
   uint active_cluster_count;
   uint light_indices_count;
   uint shade_count;
@@ -8,5 +8,6 @@ struct ProfilingClusterBuffer {
 };
 
 layout(std430, binding = PROFILING_CLUSTER_BUFFER_BINDING) buffer ProfilingClusterBuffer {
-  ProfilingClusterBuffer profiling_cluster_buffer;
+  ProfilingCluster profiling_cluster_buffer;
 };
+
