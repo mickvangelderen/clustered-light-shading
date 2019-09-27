@@ -4,7 +4,7 @@
 
 layout(std140, binding = CLUSTER_SPACE_BUFFER_BINDING) uniform ClusterSpaceBuffer {
   uvec3 dimensions;
-  uint _pad0;
+  uint cluster_count;
   Frustum frustum;
   LerpCoeffs cam_to_clp_coeffs;
   LerpCoeffs clp_to_cam_coeffs;

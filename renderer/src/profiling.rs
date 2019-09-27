@@ -23,7 +23,6 @@ enum FrameEvent {
     RecordClusterBuffer { offset: usize },
 }
 
-#[derive(Default)]
 struct FrameContext {
     events: Vec<FrameEvent>,
     profilers_used: usize,
@@ -31,16 +30,40 @@ struct FrameContext {
     buffer: AllocBuffer,
 }
 
-#[derive(Default)]
+impl FrameContext {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self {
+            events: Vec::new(),
+            profilers_used: 0,
+            profilers: Vec::new(),
+            // TODO: Maybe someday this should be changed.
+            buffer: AllocBuffer::with_capacity(gl, std::mem::size_of::<[ClusterBuffer; 2]>()),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.events.clear();
+        self.profilers_used = 0;
+        self.buffer.reset();
+    }
+}
+
 struct FrameContextRing([FrameContext; FrameContextRing::CAPACITY]);
 
 impl FrameContextRing {
     const CAPACITY: usize = 3;
 
-    pub fn clear(&mut self) {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self([
+            FrameContext::new(gl),
+            FrameContext::new(gl),
+            FrameContext::new(gl),
+        ])
+    }
+
+    pub fn reset(&mut self) {
         for context in self.0.iter_mut() {
-            context.events.clear();
-            context.profilers_used = 0;
+            context.reset();
         }
     }
 }
@@ -139,7 +162,7 @@ impl Drop for ProfilingThread {
 }
 
 impl Context {
-    pub fn new(profiling_dir: &std::path::Path, configuration: &Configuration) -> Self {
+    pub fn new(gl: &gl::Gl, profiling_dir: &std::path::Path, configuration: &Configuration) -> Self {
         let thread = ProfilingThread(configuration.path.as_ref().map(|path| {
             let mut file = std::io::BufWriter::new(std::fs::File::create(profiling_dir.join(path)).unwrap());
             let (tx, rx) = std::sync::mpsc::channel();
@@ -156,7 +179,7 @@ impl Context {
 
         Self {
             epoch: std::time::Instant::now(),
-            frame_context_ring: Default::default(),
+            frame_context_ring: FrameContextRing::new(gl),
             run_index: RunIndex::from_usize(0),
             run_started: false,
             frame_index: FrameIndex::from_usize(0),
@@ -199,7 +222,7 @@ impl Context {
 
         // Reset frame-related data.
         self.frame_index = FrameIndex::from_usize(0);
-        self.frame_context_ring.clear();
+        self.frame_context_ring.reset();
         self.samples_ring.clear();
     }
 
@@ -256,8 +279,7 @@ impl Context {
 
             debug_assert_eq!(profilers_used, context.profilers_used);
 
-            context.events.clear();
-            context.profilers_used = 0;
+            context.reset();
         }
     }
 
@@ -295,15 +317,13 @@ impl Context {
     }
 
     #[inline]
-    pub fn record_cluster_buffer(&mut self, gl: &gl::Gl, name: &gl::BufferName, offset: usize) {
+    pub unsafe fn record_cluster_buffer(&mut self, gl: &gl::Gl, name: &gl::BufferName, offset: usize) {
         assert!(true, self.run_started);
         assert!(true, self.frame_started);
         let context = &mut self.frame_context_ring[self.frame_index];
-        let offset = unsafe {
-            context
-                .buffer
-                .copy_from(gl, name, offset, std::mem::size_of::<ClusterBuffer>())
-        };
+        let offset = context
+            .buffer
+            .copy_from(gl, name, offset, std::mem::size_of::<ClusterBuffer>());
         context.events.push(FrameEvent::RecordClusterBuffer { offset });
     }
 
@@ -336,6 +356,11 @@ impl Context {
             gpu_elapsed_min: gpu_elapsed.iter().copied().min().unwrap(),
             gpu_elapsed_max: gpu_elapsed.iter().copied().max().unwrap(),
         })
+    }
+
+    pub fn time_sensitive(&self) -> bool {
+        assert!(true, self.run_started);
+        self.run_index.to_usize() != 0
     }
 }
 
@@ -479,6 +504,7 @@ pub enum MeasurementEvent {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[repr(C)]
 pub struct ClusterBuffer {
     active_cluster_count: u32,
     light_indices_count: u32,
