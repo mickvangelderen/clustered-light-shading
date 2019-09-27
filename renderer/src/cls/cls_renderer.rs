@@ -2,6 +2,7 @@ use crate::*;
 
 pub struct Renderer {
     pub count_fragments_program: rendering::Program,
+    pub hist_fragments_program: rendering::Program,
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
@@ -24,6 +25,7 @@ glsl_defines!(fixed_header {
         COMPUTE_COMMANDS_BUFFER_BINDING = 7;
         LIGHT_INDICES_BUFFER_BINDING = 8;
         CLUSTER_SPACE_BUFFER_BINDING = 9;
+        PROFILING_CLUSTER_BUFFER_BINDING = 10;
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
@@ -48,6 +50,18 @@ impl Renderer {
                     EntryPoint::new(
                         &mut shader_compilation_context,
                         "cls/count_fragments.comp",
+                        fixed_header(),
+                    ),
+                )],
+            ),
+            hist_fragments_program: rendering::Program::new(
+                context.gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context,
+                        "cls/hist_fragments.comp",
                         fixed_header(),
                     ),
                 )],

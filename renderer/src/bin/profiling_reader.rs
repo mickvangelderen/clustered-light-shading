@@ -86,6 +86,9 @@ fn main() {
                 assert_eq!(index.to_usize(), sample_names.len());
                 sample_names.push(name.clone());
             }
+            MeasurementEvent::RecordClusterBuffer(ref cluster_buffer) => {
+                dbg!(cluster_buffer);
+            },
             _ => {}
         }
     }
