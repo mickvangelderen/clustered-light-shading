@@ -1502,7 +1502,7 @@ impl<'s> Context<'s> {
 
                     unsafe {
                         // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
-                        let program = &mut self.cls_renderer.fragments_per_cluster_program;
+                        let program = &mut self.cls_renderer.count_fragments_program;
                         program.update(&mut rendering_context!(self));
                         if let ProgramName::Linked(name) = program.name {
                             gl.use_program(name);

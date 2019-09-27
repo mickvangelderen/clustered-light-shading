@@ -1,7 +1,7 @@
 use crate::*;
 
 pub struct Renderer {
-    pub fragments_per_cluster_program: rendering::Program,
+    pub count_fragments_program: rendering::Program,
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
@@ -40,14 +40,14 @@ impl Renderer {
         let mut shader_compilation_context = shader_compilation_context!(context);
 
         Renderer {
-            fragments_per_cluster_program: rendering::Program::new(
+            count_fragments_program: rendering::Program::new(
                 context.gl,
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
                     EntryPoint::new(
                         &mut shader_compilation_context,
-                        "cls/fragments_per_cluster.comp",
+                        "cls/count_fragments.comp",
                         fixed_header(),
                     ),
                 )],
