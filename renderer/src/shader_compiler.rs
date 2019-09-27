@@ -84,6 +84,7 @@ pub enum SourceReader {
     RenderTechnique,
     PrefixSum,
     ClusteredLightShading,
+    Profiling,
 }
 
 impl SourceReader {
@@ -184,12 +185,28 @@ impl SourceReader {
                      #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
                      #define CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES {}\n\
                      ",
-                    line!() - 4,
+                    line!() - 7,
                     source_index,
                     clustering_projection,
                     vars.clustered_light_shading.max_clusters,
                     vars.clustered_light_shading.max_active_clusters,
                     vars.clustered_light_shading.max_light_indices,
+                )));
+            }
+            SourceReader::Profiling => {
+                let time_sensitive = match vars.profiling.time_sensitive {
+                    true => "PROFILING_TIME_SENSITIVE",
+                    false => "PROFILING_NON_TIME_SENSITIVE",
+                };
+
+                tokens.push(Token::Literal(format!(
+                    "\
+                     #line {} {}\n\
+                     #define {}\n\
+                     ",
+                    line!() - 2,
+                    source_index,
+                    time_sensitive,
                 )));
             }
         }
@@ -413,6 +430,12 @@ pub struct Variables {
     pub render_technique: RenderTechnique,
     pub prefix_sum: PrefixSumConfiguration,
     pub clustered_light_shading: ClusteredLightShadingConfiguration,
+    pub profiling: ProfilingVariables,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct ProfilingVariables {
+    pub time_sensitive: bool,
 }
 
 pub struct NativeSourceIndices {
@@ -421,6 +444,7 @@ pub struct NativeSourceIndices {
     pub render_technique: SourceIndex,
     pub prefix_sum: SourceIndex,
     pub clustered_light_shading: SourceIndex,
+    pub profiling: SourceIndex,
 }
 
 pub struct ShaderCompilationContext<'a> {
@@ -461,6 +485,10 @@ impl ShaderCompiler {
             clustered_light_shading: memory.add_source(
                 PathBuf::from("native/CLUSTERED_LIGHT_SHADING"),
                 Source::new(current, SourceReader::ClusteredLightShading, PathBuf::from(file!())),
+            ),
+            profiling: memory.add_source(
+                PathBuf::from("native/PROFILING"),
+                Source::new(current, SourceReader::Profiling, PathBuf::from(file!())),
             ),
         };
 
@@ -563,5 +591,12 @@ impl ShaderCompiler {
                 .modify(current);
         }
         old
+    }
+
+    pub fn replace_profiling(&mut self, current: &mut Current, value: ProfilingVariables) -> ProfilingVariables {
+        if self.variables.profiling != value {
+            self.source_mut(self.indices.profiling).last_modified.modify(current);
+        }
+        std::mem::replace(&mut self.variables.profiling, value)
     }
 }
