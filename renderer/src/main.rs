@@ -383,6 +383,7 @@ impl MainContext {
                 attenuation_mode: AttenuationMode::Interpolated,
                 prefix_sum: configuration.prefix_sum,
                 clustered_light_shading: configuration.clustered_light_shading,
+                profiling: shader_compiler::ProfilingVariables { time_sensitive: false },
             },
         );
 
