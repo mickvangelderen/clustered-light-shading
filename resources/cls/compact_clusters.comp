@@ -136,7 +136,7 @@ void main() {
 
     uint blocks_per_dispatch = ceiled_div_u32(active_cluster_count, PASS_0_THREADS * PASS_1_THREADS);
     uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
-    uint dispatch_count = ceiled_div_u32(active_cluster_count, items_per_dispatch);
+    uint dispatch_count = items_per_dispatch == 0 ? 0 : ceiled_div_u32(active_cluster_count, items_per_dispatch);
 
     compute_commands[COMPUTE_COMMAND_INDEX_PREFIX_SUM_LIGHT_COUNTS].work_group_x = dispatch_count;
   }
