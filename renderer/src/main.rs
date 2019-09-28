@@ -1570,7 +1570,7 @@ impl<'s> Context<'s> {
                 }
 
                 unsafe {
-                    let program = &mut self.cls_renderer.hist_fragments_program;
+                    let program = &mut self.cls_renderer.frag_count_hist_program;
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
@@ -1578,14 +1578,6 @@ impl<'s> Context<'s> {
                         gl.dispatch_compute(cluster_count.ceiled_div(32 * 8), 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
-                }
-
-                unsafe {
-                    self.profiling_context.record_cluster_buffer(
-                        gl,
-                        &cluster_resources.profiling_cluster_buffer.name(),
-                        0,
-                    );
                 }
             }
 
@@ -1745,6 +1737,24 @@ impl<'s> Context<'s> {
 
             // We have our light counts.
 
+            if !self.profiling_context.time_sensitive() {
+                unsafe {
+                    let program = &mut self.cls_renderer.light_count_hist_program;
+                    program.update(&mut rendering_context!(self));
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.bind_buffer(
+                            gl::DISPATCH_INDIRECT_BUFFER,
+                            cluster_resources.compute_commands_buffer.name(),
+                        );
+                        gl.memory_barrier(gl::MemoryBarrierFlag::COMMAND);
+                        // NOTE: the compute command at offset 2 should be (x = active_cluster_count/(32*8), y = 1, z = 0).
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 2);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+            }
+
             {
                 let profiler_index = self
                     .profiling_context
@@ -1845,6 +1855,16 @@ impl<'s> Context<'s> {
                 }
 
                 self.profiling_context.stop(gl, profiler_index);
+            }
+
+            if !self.profiling_context.time_sensitive() {
+                unsafe {
+                    self.profiling_context.record_cluster_buffer(
+                        gl,
+                        &cluster_resources.profiling_cluster_buffer.name(),
+                        0,
+                    );
+                }
             }
         }
 

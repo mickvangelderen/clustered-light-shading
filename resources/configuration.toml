@@ -1,19 +1,19 @@
 [global]
 diffuse_srgb = true
 rain_drop_max = 10000
-mode = "Normal"
+# mode = "Normal"
 # mode = "Record"
-# mode = "Replay"
+mode = "Replay"
 
 [record]
 path = "recording.bin"
 
 [replay]
-run_count = 2
+run_count = 1
 path = "recording.bin"
 
 [profiling]
-display = false
+display = true
 record_frames = false
 path = "profiling.bin"
 

@@ -2,11 +2,12 @@ use crate::*;
 
 pub struct Renderer {
     pub count_fragments_program: rendering::Program,
-    pub hist_fragments_program: rendering::Program,
+    pub frag_count_hist_program: rendering::Program,
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
     pub count_lights_program: rendering::Program,
+    pub light_count_hist_program: rendering::Program,
     pub compact_light_counts_0_program: rendering::Program,
     pub compact_light_counts_1_program: rendering::Program,
     pub compact_light_counts_2_program: rendering::Program,
@@ -54,14 +55,14 @@ impl Renderer {
                     ),
                 )],
             ),
-            hist_fragments_program: rendering::Program::new(
+            frag_count_hist_program: rendering::Program::new(
                 context.gl,
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
                     EntryPoint::new(
                         &mut shader_compilation_context,
-                        "cls/hist_fragments.comp",
+                        "cls/frag_count_hist.comp",
                         fixed_header(),
                     ),
                 )],
@@ -108,6 +109,18 @@ impl Renderer {
                     gl,
                     gl::COMPUTE_SHADER,
                     EntryPoint::new(&mut shader_compilation_context, "cls/count_lights.comp", fixed_header()),
+                )],
+            ),
+            light_count_hist_program: rendering::Program::new(
+                gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context,
+                        "cls/light_count_hist.comp",
+                        fixed_header(),
+                    ),
                 )],
             ),
             compact_light_counts_0_program: rendering::Program::new(

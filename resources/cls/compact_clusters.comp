@@ -1,5 +1,6 @@
 #include "native/PREFIX_SUM"
 #include "native/CLUSTERED_LIGHT_SHADING"
+#include "native/PROFILING"
 
 #include "../common.glsl"
 #include "cluster_space_buffer.glsl"
@@ -11,7 +12,9 @@
 #include "active_cluster_indices_buffer.glsl"
 #include "draw_commands_buffer.glsl"
 #include "compute_commands_buffer.glsl"
+#include "profiling_cluster_buffer.glsl"
 
+// TODO: Remove, superseded by cluster space buffer.cluster_count.
 layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
 
 #if !defined(PASS)
@@ -127,7 +130,7 @@ void main() {
   offsets[tid] = values[tid];
 
   // Emit indirect draw and indirect compute data.
-  if (tid == PASS_1_THREADS - 1) {
+  if (tid == LOCAL_X - 1) {
     uint active_cluster_count = values[tid];
 
     draw_commands.prim_count = active_cluster_count;
@@ -139,6 +142,16 @@ void main() {
     uint dispatch_count = items_per_dispatch == 0 ? 0 : ceiled_div_u32(active_cluster_count, items_per_dispatch);
 
     compute_commands[COMPUTE_COMMAND_INDEX_PREFIX_SUM_LIGHT_COUNTS].work_group_x = dispatch_count;
+
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+    // NOTE: 32*8 should be the layout of light_count_hist.comp.
+    compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_HIST].work_group_x = ceiled_div_u32(active_cluster_count, 32*8);
+    profiling_cluster_buffer.active_cluster_count = active_cluster_count;
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
   }
 }
 #elif PASS == 2

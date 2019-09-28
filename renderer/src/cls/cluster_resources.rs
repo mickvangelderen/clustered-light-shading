@@ -161,6 +161,11 @@ impl ClusterResources {
                         work_group_y: 1,
                         work_group_z: 1,
                     },
+                    ComputeCommand {
+                        work_group_x: 0,
+                        work_group_y: 1,
+                        work_group_z: 1,
+                    },
                 ];
                 buffer.ensure_capacity(gl, data.vec_as_bytes().len());
                 buffer.write(gl, data.vec_as_bytes());

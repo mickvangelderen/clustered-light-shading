@@ -21,6 +21,7 @@ with open(profiling_dir + "samples.bin", "rb") as f:
     run_count = read_u64(f)
     frame_count = read_u64(f)
     sample_count = read_u64(f)
+    cluster_buffer_count = read_u64(f)
     field_count = 4
 
     stamp_count = run_count * frame_count * sample_count * field_count
@@ -32,9 +33,12 @@ with open(profiling_dir + "samples.bin", "rb") as f:
 
     stamps = np.reshape(np.fromfile(f, dtype='uint64', count = stamp_count), stamp_shape)
 
+    cluster_buffers = np.reshape(np.fromfile(f, dtype='uint32', count = frame_count*cluster_buffer_count*68), (frame_count, cluster_buffer_count, 68));
+
 deltas = np.subtract(stamps[:, :, :, [1, 3]], stamps[:, :, :, [0, 2]])
 
 print(np.shape(deltas))
+print(np.shape(cluster_buffers))
 
 # samples = np.squeeze(np.median(deltas, axis = 0, keepdims = True));
 
