@@ -194,19 +194,17 @@ impl SourceReader {
                 )));
             }
             SourceReader::Profiling => {
-                let time_sensitive = match vars.profiling.time_sensitive {
-                    true => "PROFILING_TIME_SENSITIVE",
-                    false => "PROFILING_NON_TIME_SENSITIVE",
-                };
-
                 tokens.push(Token::Literal(format!(
                     "\
                      #line {} {}\n\
-                     #define {}\n\
+                     #define PROFILING_TIME_SENSITIVE {}\n\
                      ",
                     line!() - 2,
                     source_index,
-                    time_sensitive,
+                    match vars.profiling.time_sensitive {
+                        true => "true",
+                        false => "false",
+                    }
                 )));
             }
         }

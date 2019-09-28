@@ -1,5 +1,6 @@
 #include "native/PREFIX_SUM"
 #include "native/CLUSTERED_LIGHT_SHADING"
+#include "native/PROFILING"
 
 #include "../common.glsl"
 #include "cluster_space_buffer.glsl"
@@ -10,6 +11,7 @@
 // out
 #include "active_cluster_light_offsets_buffer.glsl"
 #include "compute_commands_buffer.glsl"
+#include "profiling_cluster_buffer.glsl"
 
 #if !defined(PASS)
 #error PASS is not defined.
@@ -122,6 +124,16 @@ void main() {
 
   // Emit output from shared memory.
   offsets[tid] = values[tid];
+
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+  if (tid == LOCAL_X - 1) {
+    profiling_cluster_buffer.light_indices_count = offsets[tid];
+  }
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 }
 #elif PASS == 2
 void main() {

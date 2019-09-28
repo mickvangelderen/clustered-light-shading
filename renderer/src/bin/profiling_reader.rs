@@ -51,7 +51,8 @@ fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let base_profiling_dir = current_dir.join("profiling");
     let latest_profiling_dir = base_profiling_dir.join("latest");
-    let current_profiling_dir = std::fs::read_link(latest_profiling_dir).expect("Didn't find symlink to latest profiling directory.");
+    let current_profiling_dir =
+        std::fs::read_link(latest_profiling_dir).expect("Didn't find symlink to latest profiling directory.");
     dbg!(&current_profiling_dir);
     let configuration_path = current_profiling_dir.join(Configuration::DEFAULT_PATH);
     let cfg = Configuration::read(&configuration_path);
@@ -62,17 +63,16 @@ fn main() {
     let mut sample_names = Vec::new();
     let mut max_run_index = None;
     let mut max_frame_index = None;
+    let mut max_cluster_buffer_count = None;
 
     fn option_max_assign<T: Copy + std::cmp::Ord>(o: &mut Option<T>, v: T) {
         *o = match *o {
-            Some(o) => {
-                Some(o.max(v))
-            },
-            None => {
-                Some(v)
-            }
+            Some(o) => Some(o.max(v)),
+            None => Some(v),
         }
     }
+
+    let mut cluster_buffer_count = 0;
 
     for event in events.iter() {
         match *event {
@@ -81,35 +81,45 @@ fn main() {
             }
             MeasurementEvent::BeginFrame(frame_index) => {
                 option_max_assign(&mut max_frame_index, frame_index.to_usize());
+                cluster_buffer_count = 0;
+            }
+            MeasurementEvent::EndFrame => {
+                option_max_assign(&mut max_cluster_buffer_count, cluster_buffer_count);
             }
             MeasurementEvent::SampleName(index, ref name) => {
                 assert_eq!(index.to_usize(), sample_names.len());
                 sample_names.push(name.clone());
             }
-            MeasurementEvent::RecordClusterBuffer(ref cluster_buffer) => {
-                dbg!(cluster_buffer);
-            },
+            MeasurementEvent::RecordClusterBuffer(ref _cluster_buffer) => {
+                cluster_buffer_count += 1;
+            }
             _ => {}
         }
     }
 
-    let run_count = max_run_index.unwrap() + 1;
-    let frame_count = max_frame_index.unwrap() + 1;
+    let run_count = max_run_index.map(|index| index + 1).unwrap_or(0);
+    let frame_count = max_frame_index.map(|index| index + 1).unwrap_or(0);
     let sample_count = sample_names.len();
+    let cluster_buffer_count = max_cluster_buffer_count.unwrap_or(0);
 
     dbg!(&sample_names);
     dbg!(sample_count);
     dbg!(run_count);
     dbg!(frame_count);
+    dbg!(cluster_buffer_count);
 
     let sample_stride = 4;
     let frame_stride = sample_count * sample_stride;
     let run_stride = frame_count * frame_stride;
     let u64_count = run_count * run_stride;
     let mut flat_samples: Vec<u64> = std::iter::repeat(std::u64::MAX).take(u64_count).collect();
+    let mut flat_cluster_buffers: Vec<ClusterBuffer> = std::iter::repeat_with(Default::default)
+        .take(frame_count * cluster_buffer_count)
+        .collect();
 
     let mut run_index: Option<usize> = None;
     let mut frame_index: Option<usize> = None;
+    let mut cluster_buffer_index = 0;
 
     for event in events.iter() {
         match *event {
@@ -121,6 +131,7 @@ fn main() {
             }
             MeasurementEvent::BeginFrame(index) => {
                 frame_index = Some(index.to_usize());
+                cluster_buffer_index = 0;
             }
             MeasurementEvent::EndFrame => {
                 frame_index = None;
@@ -134,6 +145,12 @@ fn main() {
                 flat_samples[base_index + 2] = span.gpu.begin;
                 flat_samples[base_index + 3] = span.gpu.end;
             }
+            MeasurementEvent::RecordClusterBuffer(ref cluster_buffer) => {
+                assert_eq!(run_index, Some(0));
+                flat_cluster_buffers[frame_index.unwrap() * cluster_buffer_count + cluster_buffer_index] =
+                    cluster_buffer.clone();
+                cluster_buffer_index += 1;
+            }
             _ => {}
         }
     }
@@ -146,6 +163,7 @@ fn main() {
         run_count: u64,
         frame_count: u64,
         sample_count: u64,
+        cluster_buffer_count: u64,
     };
 
     file.write_all(
@@ -153,6 +171,7 @@ fn main() {
             run_count: run_count as u64,
             frame_count: frame_count as u64,
             sample_count: sample_count as u64,
+            cluster_buffer_count: cluster_buffer_count as u64,
         }
         .value_as_bytes(),
     )
@@ -170,4 +189,6 @@ fn main() {
     }
 
     file.write_all(flat_samples.vec_as_bytes()).unwrap();
+
+    file.write_all(flat_cluster_buffers.vec_as_bytes()).unwrap();
 }
