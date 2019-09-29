@@ -1,7 +1,4 @@
-use crate::configuration;
-use crate::convert::*;
 use crate::light::*;
-use crate::rendering;
 use crate::*;
 use cgmath::*;
 use std::collections::HashMap;
@@ -446,7 +443,7 @@ const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
     gl::VertexArrayBufferBindingIndex::from_u32(0);
 
 impl Resources {
-    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &configuration::Root) -> Self {
+    pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
         let resource_dir = resource_dir.as_ref();
 
         // ["two_planes.obj", "bunny.obj"]
@@ -722,8 +719,8 @@ impl Resources {
             gl.vertex_array_element_buffer(vao, eb);
 
             // Upload data.
-            gl.named_buffer_data(vb, FULL_SCREEN_VERTICES.slice_to_bytes(), gl::STATIC_DRAW);
-            gl.named_buffer_data(eb, FULL_SCREEN_INDICES.slice_to_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(vb, FULL_SCREEN_VERTICES.slice_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, FULL_SCREEN_INDICES.slice_as_bytes(), gl::STATIC_DRAW);
 
             (vao, vb, eb)
         };

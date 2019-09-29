@@ -5,7 +5,7 @@ pub struct Renderer {
     pub obj_to_wld_loc: gl::OptionUniformLocation,
 }
 
-impl Context {
+impl Context<'_> {
     pub fn render_depth(&mut self) {
         let Context {
             ref gl,

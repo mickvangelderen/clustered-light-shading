@@ -15,14 +15,13 @@ pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
 mod basic_renderer;
-pub mod camera;
+mod bmp;
 pub mod cgmath_ext;
-pub mod clamp;
 mod cls;
-mod configuration;
-mod convert;
+pub mod color;
 mod depth_renderer;
 mod filters;
+mod frame_downloader;
 pub mod frustrum;
 pub mod gl_ext;
 mod glutin_ext;
@@ -32,13 +31,14 @@ mod line_renderer;
 mod main_resources;
 mod math;
 mod overlay_renderer;
-pub mod profiling;
 mod rain;
 mod rendering;
 mod resources;
 mod shader_compiler;
+mod symlink;
 mod text_renderer;
 mod text_rendering;
+mod toggle;
 mod viewport;
 mod window_mode;
 
@@ -47,21 +47,28 @@ use self::cls::*;
 use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
-use self::math::{CeilToMultiple, DivCeil};
-use self::profiling::*;
+use self::math::CeiledDiv;
 use self::rendering::*;
 use self::resources::Resources;
 use self::shader_compiler::{EntryPoint, ShaderCompiler};
 use self::text_rendering::{FontContext, TextBox};
 use self::viewport::*;
 use self::window_mode::*;
+use crate::frame_downloader::FrameDownloader;
+use crate::symlink::symlink_dir;
+
 use cgmath::*;
-use convert::*;
 use derive::EnumNext;
-use glutin::GlContext;
 use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
+use renderer::camera;
+use renderer::profiling::*;
+use renderer::*;
+use std::fs;
+use std::io;
+use std::io::Read;
+use std::io::Write;
 use std::mem;
 use std::os::raw::c_void;
 use std::path::Path;
@@ -138,6 +145,7 @@ pub struct MainParameters {
 }
 
 const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
+const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
 
 #[derive(Debug)]
 pub struct WindowEventAccumulator {
@@ -154,44 +162,66 @@ impl std::default::Default for WindowEventAccumulator {
     }
 }
 
-pub struct Context {
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub enum WindowEvent {
+    CloseRequested,
+    HiDpiFactorChanged(f64),
+    Focused(bool),
+    Resized(glutin::dpi::LogicalSize),
+}
+
+impl WindowEvent {
+    fn from_glutin(event: glutin::WindowEvent) -> Option<Self> {
+        match event {
+            glutin::WindowEvent::CloseRequested => Some(WindowEvent::CloseRequested),
+            glutin::WindowEvent::HiDpiFactorChanged(x) => Some(WindowEvent::HiDpiFactorChanged(x)),
+            glutin::WindowEvent::Focused(x) => Some(WindowEvent::Focused(x)),
+            glutin::WindowEvent::Resized(x) => Some(WindowEvent::Resized(x)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub enum FrameEvent {
+    WindowEvent(WindowEvent),
+    DeviceKey(glutin::KeyboardInput),
+    DeviceMotion { axis: glutin::AxisId, value: f64 },
+}
+
+type FrameEvents = Vec<FrameEvent>;
+
+pub struct Paths {
+    pub current_dir: PathBuf,
     pub resource_dir: PathBuf,
+    pub base_profiling_dir: PathBuf,
+    pub current_profiling_dir: PathBuf,
+    pub frames_dir: PathBuf,
     pub configuration_path: PathBuf,
-    pub configuration: configuration::Root,
+}
+
+pub struct MainContext {
+    pub paths: Paths,
+    pub configuration: Configuration,
+    pub events_loop: glutin::EventsLoop,
+    pub gl_window: glutin::GlWindow,
     pub gl: gl::Gl,
     pub vr: Option<vr::Context>,
-    pub current: ::incremental::Current,
-    pub epoch: Instant,
-    pub running: bool,
-    pub paused: bool,
-    pub focus: bool,
-    pub tick: u64,
-    pub frame: u64,
-    pub keyboard_state: KeyboardState,
-    pub win_dpi: f64,
-    pub win_size: glutin::dpi::PhysicalSize,
-    pub clear_color: [f32; 3],
-    pub window_mode: WindowMode,
-    pub display_mode: u32,
-    pub depth_prepass: bool,
-    pub target_camera_key: CameraKey,
-    pub transition_camera: camera::TransitionCamera,
-    pub cameras: CameraMap<camera::SmoothCamera>,
-    pub rain_drops: Vec<rain::Particle>,
-    pub shader_compiler: ShaderCompiler,
-
-    // File system events
+    pub fs_watcher: notify::RecommendedWatcher,
     pub fs_rx: mpsc::Receiver<notify::DebouncedEvent>,
-    pub watcher: notify::RecommendedWatcher,
 
-    // Window.
-    pub gl_window: glutin::GlWindow,
-    pub window_event_accumulator: WindowEventAccumulator,
+    pub record_file: Option<io::BufWriter<fs::File>>,
+    pub current: ::incremental::Current,
+    pub shader_compiler: ShaderCompiler,
+    pub profiling_context: ProfilingContext,
+    pub replay_frame_events: Option<Vec<FrameEvents>>,
+    pub initial_cameras: CameraMap<camera::Camera>,
+    pub initial_win_dpi: f64,
+    pub initial_win_size: glutin::dpi::PhysicalSize,
 
     // Text rendering.
     pub sans_serif: FontContext,
     pub monospace: FontContext,
-    pub overlay_textbox: TextBox,
 
     // Renderers
     pub depth_renderer: depth_renderer::Renderer,
@@ -204,12 +234,10 @@ pub struct Context {
 
     // More opengl resources...
     pub resources: Resources,
-
-    // FPS counter
-    pub fps_average: filters::MovingAverageF32,
-    pub last_frame_start: time::Instant,
+    pub frame_downloader: FrameDownloader,
 
     // Per-frame resources
+    pub frame_sample_index: SampleIndex,
     pub main_parameters_vec: Vec<MainParameters>,
     pub camera_buffer_pool: BufferPool,
     pub light_resources_vec: Vec<light::LightResources>,
@@ -219,48 +247,67 @@ pub struct Context {
     pub point_lights: Vec<light::PointLight>,
 }
 
-impl Context {
-    pub fn new(events_loop: &mut glutin::EventsLoop) -> Self {
+impl MainContext {
+    fn new() -> Self {
         let current_dir = std::env::current_dir().unwrap();
-        let resource_dir: PathBuf = [current_dir.as_ref(), Path::new("resources")].into_iter().collect();
-        let configuration_path = resource_dir.join(configuration::FILE_PATH);
+        let resource_dir = current_dir.join("resources");
 
-        let configuration: configuration::Root = configuration::read(&configuration_path);
+        let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
+        let configuration = Configuration::read(&configuration_path);
+
+        let mut events_loop = glutin::EventsLoop::new();
+        let gl_window = create_window(&mut events_loop, &configuration.window).unwrap();
+        let gl = create_gl(&gl_window, &configuration.gl);
+        let vr = vr::Context::new(vr::ApplicationType::Scene)
+            .map_err(|error| {
+                eprintln!("Failed to acquire context: {:?}", error);
+            })
+            .ok();
 
         let (fs_tx, fs_rx) = mpsc::channel();
-        let mut watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
-        notify::Watcher::watch(&mut watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
+        let mut fs_watcher = notify::watcher(fs_tx, time::Duration::from_millis(100)).unwrap();
+        notify::Watcher::watch(&mut fs_watcher, &resource_dir, notify::RecursiveMode::Recursive).unwrap();
 
-        let gl_window = glutin::GlWindow::new(
-            glutin::WindowBuilder::new()
-                .with_title("VR Lab - Loading...")
-                .with_dimensions(
-                    // Jump through some hoops to ensure a physical size, which is
-                    // what I want in case I'm recording at a specific resolution.
-                    glutin::dpi::PhysicalSize::new(
-                        f64::from(configuration.window.width),
-                        f64::from(configuration.window.height),
-                    )
-                    .to_logical(events_loop.get_primary_monitor().get_hidpi_factor()),
+        let base_profiling_dir: PathBuf = current_dir.join("profiling");
+        let latest_profiling_dir = base_profiling_dir.join("latest");
+        let current_profiling_dir =
+            base_profiling_dir.join(chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string());
+        let frames_dir = current_profiling_dir.join("frames");
+
+        let mut profiling_context = {
+            if configuration.profiling.path.is_some() {
+                std::fs::create_dir_all(&current_profiling_dir).unwrap();
+                std::fs::remove_file(&latest_profiling_dir)
+                    .or_else(|error| match error.kind() {
+                        std::io::ErrorKind::NotFound => Ok(()),
+                        _ => Err(error),
+                    })
+                    .unwrap();
+                symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
+                std::fs::copy(
+                    &configuration_path,
+                    current_profiling_dir.join(Configuration::DEFAULT_PATH),
                 )
-                .with_maximized(false),
-            glutin::ContextBuilder::new()
-                .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
-                .with_gl_profile(glutin::GlProfile::Core)
-                // We do not wan't vsync since it will cause our loop to sync to the
-                // desktop display frequency which is probably lower than the HMD's
-                // 90Hz.
-                .with_gl_debug_flag(cfg!(debug_assertions))
-                .with_vsync(configuration.window.vsync)
-                // .with_multisampling(16)
-                .with_pixel_format(configuration.window.rgb_bits, configuration.window.alpha_bits)
-                .with_srgb(configuration.window.srgb)
-                .with_double_buffer(Some(true)),
-            &events_loop,
-        )
-        .unwrap();
+                .unwrap();
 
-        unsafe { gl_window.make_current().unwrap() };
+                // Make sure we can write out the frames.
+                std::fs::create_dir_all(&frames_dir).unwrap();
+            }
+
+            ProfilingContext::new(&gl, current_profiling_dir.as_path(), &configuration.profiling)
+        };
+
+        let mut record_file = match configuration.global.mode {
+            ApplicationMode::Record => Some(io::BufWriter::new(
+                fs::File::create(&configuration.record.path).unwrap(),
+            )),
+            _ => None,
+        };
+
+        let mut replay_file = match configuration.global.mode {
+            ApplicationMode::Replay => Some(io::BufReader::new(fs::File::open(&configuration.replay.path).unwrap())),
+            _ => None,
+        };
 
         let default_camera_transform = camera::CameraTransform {
             position: Point3::new(0.0, 1.0, 1.5),
@@ -269,7 +316,7 @@ impl Context {
             fovy: Deg(90.0).into(),
         };
 
-        let mut cameras = CameraMap::new(|key| camera::Camera {
+        let mut initial_cameras = CameraMap::new(|key| camera::Camera {
             properties: match key {
                 CameraKey::Main => configuration.main_camera,
                 CameraKey::Debug => configuration.debug_camera,
@@ -280,48 +327,48 @@ impl Context {
 
         // Load state.
         {
-            use std::fs;
-            use std::io;
-            use std::io::Read;
-            match fs::File::open("state.bin") {
-                Ok(file) => {
-                    let mut file = io::BufReader::new(file);
-                    for key in CameraKey::iter() {
-                        file.read_exact(cameras[key].value_as_bytes_mut())
-                            .unwrap_or_else(|_| eprintln!("Failed to read state file."));
-                    }
+            let read_cameras = |file: &mut std::io::BufReader<std::fs::File>,
+                                initial_cameras: &mut CameraMap<camera::Camera>| unsafe {
+                for key in CameraKey::iter() {
+                    file.read_exact(initial_cameras[key].value_as_bytes_mut())
+                        .unwrap_or_else(|_| eprintln!("Failed to read state file."));
                 }
-                Err(_) => {
-                    // Whatever.
+            };
+
+            match replay_file.as_mut() {
+                Some(file) => {
+                    read_cameras(file, &mut initial_cameras);
+                }
+                None => {
+                    match fs::File::open("state.bin") {
+                        Ok(file) => {
+                            let mut file = io::BufReader::new(file);
+                            read_cameras(&mut file, &mut initial_cameras);
+                        }
+                        Err(_) => {
+                            // Whatever.
+                        }
+                    }
                 }
             }
         }
 
-        let gl = unsafe {
-            let gl = gl::Gl::load_with(|s| gl_window.context().get_proc_address(s) as *const _);
+        let replay_frame_events = replay_file.as_mut().map(|file| {
+            let mut accumulator = Vec::new();
 
-            println!("OpenGL version {}.", gl.get_string(gl::VERSION));
-            let flags = gl.get_context_flags();
-            if flags.contains(gl::ContextFlag::DEBUG) {
-                println!("OpenGL debugging enabled.");
-                gl.enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
+            while let Ok(events) = bincode::deserialize_from(&mut *file) {
+                accumulator.push(events);
             }
 
-            // NOTE: This alignment is hardcoded in rendering.rs.
-            assert_eq!(256, gl.get_uniform_buffer_offset_alignment());
+            accumulator
+        });
 
-            // Reverse-Z.
-            gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
-            gl.depth_func(gl::GREATER);
-
-            if configuration.global.framebuffer_srgb {
-                gl.enable(gl::FRAMEBUFFER_SRGB);
-            } else {
-                gl.disable(gl::FRAMEBUFFER_SRGB);
+        if let Some(file) = record_file.as_mut() {
+            for key in CameraKey::iter() {
+                let camera = initial_cameras[key];
+                file.write_all(camera.value_as_bytes()).unwrap();
             }
-
-            gl
-        };
+        }
 
         let sans_serif = FontContext::new(&gl, resource_dir.join("fonts/OpenSans-Regular.fnt"));
         let monospace = FontContext::new(&gl, resource_dir.join("fonts/RobotoMono-Regular.fnt"));
@@ -336,6 +383,7 @@ impl Context {
                 attenuation_mode: AttenuationMode::Interpolated,
                 prefix_sum: configuration.prefix_sum,
                 clustered_light_shading: configuration.clustered_light_shading,
+                profiling: shader_compiler::ProfilingVariables { time_sensitive: false },
             },
         );
 
@@ -357,65 +405,204 @@ impl Context {
         drop(rendering_context);
 
         let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
+        let frame_downloader = FrameDownloader::new(&gl);
 
-        let vr = vr::Context::new(vr::ApplicationType::Scene)
-            .map_err(|error| {
-                eprintln!("Failed to acquire context: {:?}", error);
-            })
-            .ok();
+        let initial_win_dpi = gl_window.get_hidpi_factor();
+        let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
 
-        let win_dpi = gl_window.get_hidpi_factor();
-        let win_size = gl_window.get_inner_size().unwrap().to_physical(win_dpi);
-
-        Context {
-            resource_dir,
-            configuration_path,
+        Self {
+            paths: Paths {
+                current_dir,
+                resource_dir,
+                base_profiling_dir,
+                current_profiling_dir,
+                frames_dir,
+                configuration_path,
+            },
             configuration,
+            events_loop,
+            gl_window,
             gl,
             vr,
-            current,
-            epoch: Instant::now(),
-            running: true,
-            paused: false,
-            focus: false,
-            tick: 0,
-            frame: 0,
-            keyboard_state: Default::default(),
-            win_dpi,
-            win_size,
-            clear_color: [0.0; 3],
-            window_mode: WindowMode::Main,
-            display_mode: 1,
-            depth_prepass: true,
-            target_camera_key: CameraKey::Main,
-            transition_camera: camera::TransitionCamera {
-                start_camera: cameras.main,
-                current_camera: cameras.main,
-                progress: 0.0,
-            },
-            cameras: cameras.map(|camera| camera::SmoothCamera {
-                properties: camera.properties,
-                current_transform: camera.transform,
-                target_transform: camera.transform,
-                smooth_enabled: true,
-                current_smoothness: configuration.camera.maximum_smoothness,
-                maximum_smoothness: configuration.camera.maximum_smoothness,
-            }),
-            rain_drops: Vec::new(),
-            shader_compiler,
-
-            // File system events
+            fs_watcher,
             fs_rx,
-            watcher,
+            record_file,
+            current,
+            shader_compiler,
+            replay_frame_events,
+            initial_cameras,
+            initial_win_dpi,
+            initial_win_size,
+            sans_serif,
+            monospace,
+            depth_renderer,
+            line_renderer,
+            basic_renderer,
+            overlay_renderer,
+            cluster_renderer,
+            text_renderer,
+            cls_renderer,
+            resources,
+            frame_downloader,
+            frame_sample_index: profiling_context.add_sample("frame"),
+            camera_buffer_pool: BufferPool::new(),
+            light_resources_vec: Vec::new(),
+            light_params_vec: Vec::new(),
+            main_parameters_vec: Vec::new(),
+            cluster_resources_pool: ClusterResourcesPool::new(),
+            main_resources_pool: MainResourcesPool::new(),
+            point_lights: Vec::new(),
+            profiling_context,
+        }
+    }
+}
 
-            // Window.
+pub struct Context<'s> {
+    // From MainContext
+    pub paths: &'s Paths,
+    pub configuration: Configuration,
+    pub events_loop: &'s mut glutin::EventsLoop,
+    pub gl_window: &'s mut glutin::GlWindow,
+    pub gl: &'s gl::Gl,
+    pub vr: &'s mut Option<vr::Context>,
+    pub fs_rx: &'s mut mpsc::Receiver<notify::DebouncedEvent>,
+
+    pub record_file: &'s mut Option<io::BufWriter<fs::File>>,
+    pub current: &'s mut ::incremental::Current,
+    pub shader_compiler: &'s mut ShaderCompiler,
+    pub profiling_context: &'s mut ProfilingContext,
+    pub replay_frame_events: &'s Option<Vec<FrameEvents>>,
+
+    // Text rendering.
+    pub sans_serif: &'s mut FontContext,
+    pub monospace: &'s mut FontContext,
+
+    // Renderers
+    pub depth_renderer: &'s mut depth_renderer::Renderer,
+    pub line_renderer: &'s mut line_renderer::Renderer,
+    pub basic_renderer: &'s mut basic_renderer::Renderer,
+    pub overlay_renderer: &'s mut overlay_renderer::Renderer,
+    pub cluster_renderer: &'s mut cluster_renderer::Renderer,
+    pub text_renderer: &'s mut text_renderer::Renderer,
+    pub cls_renderer: &'s mut cls_renderer::Renderer,
+
+    // More opengl resources...
+    pub resources: &'s mut Resources,
+    pub frame_downloader: &'s mut FrameDownloader,
+
+    // Per-frame resources
+    pub frame_sample_index: SampleIndex,
+    pub main_parameters_vec: &'s mut Vec<MainParameters>,
+    pub camera_buffer_pool: &'s mut BufferPool,
+    pub light_resources_vec: &'s mut Vec<light::LightResources>,
+    pub light_params_vec: &'s mut Vec<light::LightParameters>,
+    pub cluster_resources_pool: &'s mut ClusterResourcesPool,
+    pub main_resources_pool: &'s mut MainResourcesPool,
+    pub point_lights: &'s mut Vec<light::PointLight>,
+
+    pub rng: StdRng,
+    pub overlay_textbox: TextBox,
+    pub running: bool,
+    pub paused: bool,
+    pub focus: bool,
+    pub tick: u64,
+    pub event_index: usize,
+    pub frame_index: FrameIndex,
+    pub keyboard_state: KeyboardState,
+    pub win_dpi: f64,
+    pub win_size: glutin::dpi::PhysicalSize,
+    pub clear_color: [f32; 3],
+    pub window_mode: WindowMode,
+    pub display_mode: u32,
+    pub depth_prepass: bool,
+    pub target_camera_key: CameraKey,
+    pub transition_camera: camera::TransitionCamera,
+    pub cameras: CameraMap<camera::SmoothCamera>,
+    pub rain_drops: Vec<rain::Particle>,
+
+    // Window.
+    pub window_event_accumulator: WindowEventAccumulator,
+
+    // FPS counter
+    pub fps_average: filters::MovingAverageF32,
+    pub last_frame_start: time::Instant,
+}
+
+impl<'s> Context<'s> {
+    pub fn new(context: &'s mut MainContext) -> Self {
+        let MainContext {
+            ref paths,
+            ref configuration,
+            initial_win_dpi,
+            initial_win_size,
+            ref mut events_loop,
+            ref mut gl_window,
+            ref gl,
+            ref mut vr,
+            ref mut fs_rx,
+            ref mut record_file,
+            ref mut current,
+            ref mut shader_compiler,
+            ref mut profiling_context,
+            ref replay_frame_events,
+            ref initial_cameras,
+            ref mut sans_serif,
+            ref mut monospace,
+            ref mut depth_renderer,
+            ref mut line_renderer,
+            ref mut basic_renderer,
+            ref mut overlay_renderer,
+            ref mut cluster_renderer,
+            ref mut text_renderer,
+            ref mut cls_renderer,
+            ref mut resources,
+            ref mut frame_downloader,
+            frame_sample_index,
+            ref mut main_parameters_vec,
+            ref mut camera_buffer_pool,
+            ref mut light_resources_vec,
+            ref mut light_params_vec,
+            ref mut cluster_resources_pool,
+            ref mut main_resources_pool,
+            ref mut point_lights,
+            ..
+        } = *context;
+
+        // Clone starting configuration.
+        let configuration = configuration.clone();
+
+        let transition_camera = camera::TransitionCamera {
+            start_camera: initial_cameras.main,
+            current_camera: initial_cameras.main,
+            progress: 0.0,
+        };
+        let cameras = initial_cameras.map(|camera| camera::SmoothCamera {
+            properties: camera.properties,
+            current_transform: camera.transform,
+            target_transform: camera.transform,
+            smooth_enabled: true,
+            current_smoothness: configuration.camera.maximum_smoothness,
+            maximum_smoothness: configuration.camera.maximum_smoothness,
+        });
+
+        Context {
+            paths,
+            configuration,
+            events_loop,
             gl_window,
-            window_event_accumulator: Default::default(),
+            gl,
+            vr,
+            fs_rx,
+
+            record_file,
+            current,
+            shader_compiler,
+            profiling_context,
+            replay_frame_events,
 
             // Text rendering.
             sans_serif,
             monospace,
-            overlay_textbox: TextBox::new(13, 10, win_size.width as i32 - 26, win_size.height as i32 - 20),
 
             // Renderers
             depth_renderer,
@@ -428,19 +615,45 @@ impl Context {
 
             // More opengl resources...
             resources,
-
-            // FPS counter
-            fps_average: filters::MovingAverageF32::new(0.0),
-            last_frame_start: Instant::now(),
+            frame_downloader,
 
             // Per-frame resources
-            camera_buffer_pool: BufferPool::new(),
-            light_resources_vec: Vec::new(),
-            light_params_vec: Vec::new(),
-            main_parameters_vec: Vec::new(),
-            cluster_resources_pool: ClusterResourcesPool::new(),
-            main_resources_pool: MainResourcesPool::new(),
-            point_lights: Vec::new(),
+            frame_sample_index,
+            main_parameters_vec,
+            camera_buffer_pool,
+            light_resources_vec,
+            light_params_vec,
+            cluster_resources_pool,
+            main_resources_pool,
+            point_lights,
+
+            rng: SeedableRng::from_seed(SEED),
+            running: true,
+            paused: false,
+            focus: false,
+            tick: 0,
+            event_index: 0,
+            frame_index: FrameIndex::from_usize(0),
+            keyboard_state: Default::default(),
+            win_dpi: initial_win_dpi,
+            win_size: initial_win_size,
+            clear_color: [0.0; 3],
+            window_mode: WindowMode::Main,
+            display_mode: 1,
+            depth_prepass: true,
+            target_camera_key: CameraKey::Main,
+            transition_camera,
+            cameras,
+            rain_drops: Vec::new(),
+            window_event_accumulator: Default::default(),
+            overlay_textbox: TextBox::new(
+                13,
+                10,
+                initial_win_size.width as i32 - 26,
+                initial_win_size.height as i32 - 20,
+            ),
+            fps_average: filters::MovingAverageF32::new(0.0),
+            last_frame_start: Instant::now(),
         }
     }
 
@@ -448,14 +661,11 @@ impl Context {
         &self.cameras[self.target_camera_key]
     }
 
-    fn target_camera_mut(&mut self) -> &mut camera::SmoothCamera {
-        &mut self.cameras[self.target_camera_key]
-    }
-
-    pub fn process_events(&mut self, events_loop: &mut glutin::EventsLoop) {
+    pub fn process_events(&mut self) {
         self.process_file_events();
-        self.process_window_events(events_loop);
+        self.process_window_events();
         self.process_vr_events();
+        self.event_index += 1;
     }
 
     fn process_file_events(&mut self) {
@@ -466,7 +676,7 @@ impl Context {
                 notify::DebouncedEvent::NoticeWrite(path) => {
                     info!(
                         "Noticed write to file {:?}",
-                        path.strip_prefix(&self.resource_dir).unwrap().display()
+                        path.strip_prefix(&self.paths.resource_dir).unwrap().display()
                     );
 
                     if let Some(source_index) = self.shader_compiler.memory.source_index(&path) {
@@ -476,7 +686,7 @@ impl Context {
                             .modify(&mut self.current);
                     }
 
-                    if &path == &self.configuration_path {
+                    if &path == &self.paths.configuration_path {
                         configuration_update = true;
                     }
                 }
@@ -488,7 +698,7 @@ impl Context {
 
         if configuration_update {
             // Read from file.
-            self.configuration = configuration::read(&self.configuration_path);
+            self.configuration = Configuration::read(&self.paths.configuration_path);
 
             // Apply updates.
             self.cameras.main.properties = self.configuration.main_camera.into();
@@ -504,7 +714,7 @@ impl Context {
 
             unsafe {
                 let gl = &self.gl;
-                if self.configuration.global.framebuffer_srgb {
+                if self.configuration.gl.framebuffer_srgb {
                     gl.enable(gl::FRAMEBUFFER_SRGB);
                 } else {
                     gl.disable(gl::FRAMEBUFFER_SRGB);
@@ -513,7 +723,7 @@ impl Context {
         }
     }
 
-    fn process_window_events(&mut self, events_loop: &mut glutin::EventsLoop) {
+    fn process_window_events(&mut self) {
         let mut new_target_camera_key = self.target_camera_key;
         let new_window_mode = self.window_mode;
         let mut new_light_space = self.shader_compiler.light_space();
@@ -521,90 +731,24 @@ impl Context {
         let mut new_render_technique = self.shader_compiler.render_technique();
         let mut reset_debug_camera = false;
 
-        events_loop.poll_events(|event| {
+        let mut frame_events: Vec<FrameEvent> = Vec::new();
+
+        self.events_loop.poll_events(|event| {
             use glutin::Event;
             match event {
                 Event::WindowEvent { event, .. } => {
-                    use glutin::WindowEvent;
-                    match event {
-                        WindowEvent::CloseRequested => self.running = false,
-                        WindowEvent::HiDpiFactorChanged(val) => {
-                            let win_size = self.win_size.to_logical(self.win_dpi);
-                            self.win_dpi = val;
-                            self.win_size = win_size.to_physical(self.win_dpi);
-                        }
-                        WindowEvent::Focused(val) => self.focus = val,
-                        WindowEvent::Resized(val) => {
-                            self.win_size = val.to_physical(self.win_dpi);
-                        }
-                        _ => (),
+                    if let Some(event) = WindowEvent::from_glutin(event).map(FrameEvent::WindowEvent) {
+                        frame_events.push(event)
                     }
                 }
                 Event::DeviceEvent { event, .. } => {
                     use glutin::DeviceEvent;
                     match event {
                         DeviceEvent::Key(keyboard_input) => {
-                            self.keyboard_state.update(keyboard_input);
-
-                            if let Some(vk) = keyboard_input.virtual_keycode {
-                                if keyboard_input.state.is_pressed() && self.focus {
-                                    use glutin::VirtualKeyCode;
-                                    match vk {
-                                        VirtualKeyCode::Tab => {
-                                            // Don't trigger when we ALT TAB.
-                                            if self.keyboard_state.lalt.is_released() {
-                                                new_target_camera_key.wrapping_next_assign();
-                                            }
-                                        }
-                                        VirtualKeyCode::Key1 => {
-                                            new_attenuation_mode.wrapping_next_assign();
-                                        }
-                                        VirtualKeyCode::Key2 => {
-                                            // new_window_mode.wrapping_next_assign();
-                                            self.display_mode += 1;
-                                            if self.display_mode >= 4 {
-                                                self.display_mode = 1;
-                                            }
-                                        }
-                                        VirtualKeyCode::Key3 => {
-                                            new_render_technique.wrapping_next_assign();
-                                        }
-                                        VirtualKeyCode::Key4 => {
-                                            new_light_space.wrapping_next_assign();
-                                        }
-                                        VirtualKeyCode::Key5 => {
-                                            self.depth_prepass = !self.depth_prepass;
-                                        }
-                                        VirtualKeyCode::R => {
-                                            reset_debug_camera = true;
-                                        }
-                                        VirtualKeyCode::Backslash => {
-                                            self.configuration.virtual_stereo.enabled =
-                                                !self.configuration.virtual_stereo.enabled;
-                                        }
-                                        VirtualKeyCode::C => {
-                                            self.target_camera_mut().toggle_smoothness();
-                                        }
-                                        VirtualKeyCode::Escape => {
-                                            self.running = false;
-                                        }
-                                        VirtualKeyCode::Space => {
-                                            self.paused = !self.paused;
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                            }
+                            frame_events.push(FrameEvent::DeviceKey(keyboard_input));
                         }
                         DeviceEvent::Motion { axis, value } => {
-                            if self.focus {
-                                match axis {
-                                    0 => self.window_event_accumulator.mouse_delta.x += value,
-                                    1 => self.window_event_accumulator.mouse_delta.y += value,
-                                    3 => self.window_event_accumulator.scroll_delta += value,
-                                    _ => (),
-                                }
-                            }
+                            frame_events.push(FrameEvent::DeviceMotion { axis, value });
                         }
                         _ => (),
                     }
@@ -612,6 +756,92 @@ impl Context {
                 _ => (),
             }
         });
+
+        if let Some(file) = self.record_file.as_mut() {
+            bincode::serialize_into(file, &frame_events).unwrap();
+        }
+
+        for event in match self.replay_frame_events {
+            Some(ref replay_frame_events) => replay_frame_events[self.event_index].iter(),
+            None => frame_events.iter(),
+        } {
+            match *event {
+                FrameEvent::WindowEvent(ref event) => match *event {
+                    WindowEvent::CloseRequested => self.running = false,
+                    WindowEvent::HiDpiFactorChanged(val) => {
+                        let size = self.win_size.to_logical(self.win_dpi);
+                        self.win_dpi = val;
+                        self.win_size = size.to_physical(val);
+                    }
+                    WindowEvent::Focused(val) => self.focus = val,
+                    WindowEvent::Resized(val) => {
+                        self.win_size = val.to_physical(self.win_dpi);
+                    }
+                },
+                FrameEvent::DeviceKey(keyboard_input) => {
+                    self.keyboard_state.update(keyboard_input);
+                    if let Some(vk) = keyboard_input.virtual_keycode {
+                        if keyboard_input.state.is_pressed() && self.focus {
+                            use glutin::VirtualKeyCode;
+                            match vk {
+                                VirtualKeyCode::Tab => {
+                                    // Don't trigger when we ALT TAB.
+                                    if self.keyboard_state.lalt.is_released() {
+                                        new_target_camera_key.wrapping_next_assign();
+                                    }
+                                }
+                                VirtualKeyCode::Key1 => {
+                                    new_attenuation_mode.wrapping_next_assign();
+                                }
+                                VirtualKeyCode::Key2 => {
+                                    // new_window_mode.wrapping_next_assign();
+                                    self.display_mode += 1;
+                                    if self.display_mode >= 4 {
+                                        self.display_mode = 1;
+                                    }
+                                }
+                                VirtualKeyCode::Key3 => {
+                                    new_render_technique.wrapping_next_assign();
+                                }
+                                VirtualKeyCode::Key4 => {
+                                    new_light_space.wrapping_next_assign();
+                                }
+                                VirtualKeyCode::Key5 => {
+                                    self.depth_prepass = !self.depth_prepass;
+                                }
+                                VirtualKeyCode::R => {
+                                    reset_debug_camera = true;
+                                }
+                                VirtualKeyCode::Backslash => {
+                                    self.configuration.virtual_stereo.enabled =
+                                        !self.configuration.virtual_stereo.enabled;
+                                }
+                                VirtualKeyCode::C => {
+                                    self.cameras[self.target_camera_key].toggle_smoothness();
+                                }
+                                VirtualKeyCode::Escape => {
+                                    self.running = false;
+                                }
+                                VirtualKeyCode::Space => {
+                                    self.paused = !self.paused;
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+                }
+                FrameEvent::DeviceMotion { axis, value } => {
+                    if self.focus {
+                        match axis {
+                            0 => self.window_event_accumulator.mouse_delta.x += value,
+                            1 => self.window_event_accumulator.mouse_delta.y += value,
+                            3 => self.window_event_accumulator.scroll_delta += value,
+                            _ => (),
+                        }
+                    }
+                }
+            }
+        }
 
         self.window_mode = new_window_mode;
 
@@ -629,7 +859,9 @@ impl Context {
 
         if reset_debug_camera {
             self.cameras.debug.target_transform = self.cameras.main.target_transform;
-            self.transition_camera.start_transition();
+            if self.target_camera_key == CameraKey::Debug {
+                self.transition_camera.start_transition();
+            }
         }
     }
 
@@ -682,17 +914,17 @@ impl Context {
             {
                 // let center = self.transition_camera.current_camera.transform.position;
                 let center = Vector3::zero();
-                let mut rng = rand::thread_rng();
+                let rng = &mut self.rng;
                 let p0 = Point3::from_value(-30.0) + center;
                 let p1 = Point3::from_value(30.0) + center;
 
                 for rain_drop in self.rain_drops.iter_mut() {
-                    rain_drop.update(delta_time, &mut rng, p0, p1);
+                    rain_drop.update(delta_time, rng, p0, p1);
                 }
 
                 for _ in 0..100 {
                     if self.rain_drops.len() < self.configuration.global.rain_drop_max as usize {
-                        self.rain_drops.push(rain::Particle::new(&mut rng, p0, p1));
+                        self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
                     if self.rain_drops.len() > self.configuration.global.rain_drop_max as usize {
                         self.rain_drops
@@ -834,9 +1066,13 @@ impl Context {
             }
         }
 
-        for res in &mut self.light_resources_vec {
+        for res in self.light_resources_vec.iter_mut() {
             res.dirty = true;
         }
+
+        self.profiling_context.begin_frame(self.gl, self.frame_index);
+
+        let profiler_index = self.profiling_context.start(self.gl, self.frame_sample_index);
 
         let mut light_index = None;
         let mut cluster_resources_index = None;
@@ -914,15 +1150,15 @@ impl Context {
                 }
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping
-                        == configuration::ClusteringGrouping::Enclosed
+                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
+                        &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_ccam: cluster_c1.wld_to_hmd,
-                            ccam_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -950,15 +1186,15 @@ impl Context {
                     }
 
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                        && self.configuration.clustered_light_shading.grouping
-                            == configuration::ClusteringGrouping::Individual
+                        && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
                     {
                         cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                             gl,
+                            &mut self.profiling_context,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
-                                wld_to_ccam: cluster_c1.wld_to_hmd,
-                                ccam_to_wld: cluster_c1.hmd_to_wld,
+                                wld_to_hmd: cluster_c1.wld_to_hmd,
+                                hmd_to_wld: cluster_c1.hmd_to_wld,
                             },
                         ));
                     }
@@ -977,6 +1213,7 @@ impl Context {
 
                         let _ = camera_resources_pool.next_unused(
                             gl,
+                            &mut self.profiling_context,
                             ClusterCameraParameters {
                                 frame_dims: win_size,
 
@@ -1057,15 +1294,15 @@ impl Context {
                 }
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping
-                        == configuration::ClusteringGrouping::Enclosed
+                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
+                        &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_ccam: cluster_c1.wld_to_hmd,
-                            ccam_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1091,15 +1328,15 @@ impl Context {
                 }
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping
-                        == configuration::ClusteringGrouping::Individual
+                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
+                        &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_ccam: cluster_c1.wld_to_hmd,
-                            ccam_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_hmd: cluster_c1.wld_to_hmd,
+                            hmd_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1118,6 +1355,7 @@ impl Context {
 
                     let _ = camera_resources_pool.next_unused(
                         gl,
+                        &mut self.profiling_context,
                         ClusterCameraParameters {
                             frame_dims: dimensions,
 
@@ -1185,16 +1423,16 @@ impl Context {
 
             let cluster_count = cluster_resources.computed.cluster_count();
             let blocks_per_dispatch = cluster_count
-                .div_ceil(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
+                .ceiled_div(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
-            let cluster_dispatch_count = cluster_count.div_ceil(clusters_per_dispatch);
+            let cluster_dispatch_count = cluster_count.ceiled_div(clusters_per_dispatch);
 
             unsafe {
                 let buffer = &mut cluster_resources.cluster_space_buffer;
                 let data = ClusterSpaceBuffer::new(
                     cluster_resources.computed.dimensions,
                     cluster_resources.computed.frustum,
-                    cluster_resources.parameters.wld_to_ccam,
+                    cluster_resources.computed.wld_to_ccam,
                 );
 
                 buffer.invalidate(gl);
@@ -1221,9 +1459,10 @@ impl Context {
                 let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
                 let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
                 let camera_parameters = &camera_resources.parameters;
-                let profiler = &mut camera_resources.profilers.render_depth;
 
-                profiler.start(gl, self.frame, self.epoch);
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, camera_resources.profilers.render_depth);
 
                 unsafe {
                     let camera_buffer = CameraBuffer {
@@ -1244,7 +1483,9 @@ impl Context {
                     gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
                 }
 
-                let main_resources_index = self.main_resources_pool.next_unused(gl, camera_parameters.frame_dims);
+                let main_resources_index =
+                    self.main_resources_pool
+                        .next_unused(gl, &mut self.profiling_context, camera_parameters.frame_dims);
 
                 self.clear_and_render_depth(main_resources_index);
 
@@ -1252,19 +1493,17 @@ impl Context {
                 let gl = &self.gl;
                 let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
                 let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
+                self.profiling_context.stop(gl, profiler_index);
+
                 let camera_parameters = &camera_resources.parameters;
-                let profiler = &mut camera_resources.profilers.render_depth;
                 let main_resources = &mut self.main_resources_pool[main_resources_index];
 
-                profiler.stop(gl, self.frame, self.epoch);
-
                 {
-                    let profiler = &mut camera_resources.profilers.count_frags;
-                    profiler.start(gl, self.frame, self.epoch);
+                    let profiler_index = self.profiling_context.start(gl, camera_resources.profilers.count_frags);
 
                     unsafe {
                         // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
-                        let program = &mut self.cls_renderer.fragments_per_cluster_program;
+                        let program = &mut self.cls_renderer.count_fragments_program;
                         program.update(&mut rendering_context!(self));
                         if let ProgramName::Linked(name) = program.name {
                             gl.use_program(name);
@@ -1298,14 +1537,15 @@ impl Context {
                             );
 
                             gl.dispatch_compute(
-                                main_resources.dims.x.div_ceil(16) as u32,
-                                main_resources.dims.y.div_ceil(16) as u32,
+                                main_resources.dims.x.ceiled_div(16) as u32,
+                                main_resources.dims.y.ceiled_div(16) as u32,
                                 1,
                             );
                             gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                         }
                     }
-                    profiler.stop(gl, self.frame, self.epoch);
+
+                    self.profiling_context.stop(gl, profiler_index);
                 }
             }
 
@@ -1314,10 +1554,37 @@ impl Context {
             let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
 
             // We have our fragments per cluster buffer here.
+            // TODO: Don't do this when running the application??
+            if !self.profiling_context.time_sensitive() {
+                unsafe {
+                    let buffer = &mut cluster_resources.profiling_cluster_buffer;
+                    let byte_count = std::mem::size_of::<profiling::ClusterBuffer>();
+                    buffer.invalidate(gl);
+                    buffer.ensure_capacity(gl, byte_count);
+                    buffer.clear_0u32(gl, byte_count);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        cls_renderer::PROFILING_CLUSTER_BUFFER_BINDING,
+                        buffer.name(),
+                    );
+                }
+
+                unsafe {
+                    let program = &mut self.cls_renderer.frag_count_hist_program;
+                    program.update(&mut rendering_context!(self));
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        // NOTE(mickvangelderen): 32*8 is defined in the shader
+                        gl.dispatch_compute(cluster_count.ceiled_div(32 * 8), 1, 1);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+            }
 
             {
-                let profiler = &mut cluster_resources.profilers.compact_clusters;
-                profiler.start(gl, self.frame, self.epoch);
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.compact_clusters);
 
                 unsafe {
                     let buffer = &mut cluster_resources.offset_buffer;
@@ -1392,14 +1659,16 @@ impl Context {
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
-                profiler.stop(gl, self.frame, self.epoch);
+
+                self.profiling_context.stop(gl, profiler_index);
             }
 
             // We have our active clusters.
 
             {
-                let profiler = &mut cluster_resources.profilers.upload_lights;
-                profiler.start(gl, self.frame, self.epoch);
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.upload_lights);
 
                 unsafe {
                     let data: Vec<[f32; 4]> = self
@@ -1407,7 +1676,7 @@ impl Context {
                         .iter()
                         .map(|&light| {
                             let pos_in_ccam = cluster_resources
-                                .parameters
+                                .computed
                                 .wld_to_ccam
                                 .transform_point(light.pos_in_wld.cast().unwrap());
                             let [x, y, z]: [f32; 3] = pos_in_ccam.cast::<f32>().unwrap().into();
@@ -1415,12 +1684,12 @@ impl Context {
                         })
                         .collect();
                     let bytes = data.vec_as_bytes();
-                    let padded_byte_count = bytes.len().ceil_to_multiple(64);
+                    let padded_byte_count = bytes.len().ceiled_div(64) * 64;
 
                     let buffer = &mut cluster_resources.light_xyzr_buffer;
                     buffer.invalidate(gl);
                     buffer.ensure_capacity(gl, padded_byte_count);
-                    buffer.write(gl, bytes);
+                    buffer.write_at(gl, bytes, 0);
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
                         cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
@@ -1428,13 +1697,13 @@ impl Context {
                     );
                 }
 
-                let profiler = &mut cluster_resources.profilers.upload_lights;
-                profiler.stop(gl, self.frame, self.epoch);
+                self.profiling_context.stop(gl, profiler_index);
             }
 
             {
-                let profiler = &mut cluster_resources.profilers.count_lights;
-                profiler.start(gl, self.frame, self.epoch);
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.count_lights);
 
                 unsafe {
                     let buffer = &mut cluster_resources.active_cluster_light_counts_buffer;
@@ -1463,14 +1732,33 @@ impl Context {
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
-                profiler.stop(gl, self.frame, self.epoch);
+                self.profiling_context.stop(gl, profiler_index);
             }
 
             // We have our light counts.
 
+            if !self.profiling_context.time_sensitive() {
+                unsafe {
+                    let program = &mut self.cls_renderer.light_count_hist_program;
+                    program.update(&mut rendering_context!(self));
+                    if let ProgramName::Linked(name) = program.name {
+                        gl.use_program(name);
+                        gl.bind_buffer(
+                            gl::DISPATCH_INDIRECT_BUFFER,
+                            cluster_resources.compute_commands_buffer.name(),
+                        );
+                        gl.memory_barrier(gl::MemoryBarrierFlag::COMMAND);
+                        // NOTE: the compute command at offset 2 should be (x = active_cluster_count/(32*8), y = 1, z = 0).
+                        gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 2);
+                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    }
+                }
+            }
+
             {
-                let profiler = &mut cluster_resources.profilers.light_offsets;
-                profiler.start(gl, self.frame, self.epoch);
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.light_offsets);
 
                 unsafe {
                     let buffer = &mut cluster_resources.offset_buffer;
@@ -1527,14 +1815,16 @@ impl Context {
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
-                profiler.stop(gl, self.frame, self.epoch);
+
+                self.profiling_context.stop(gl, profiler_index);
             }
 
             // We have our light offsets.
 
             {
-                let profiler = &mut cluster_resources.profilers.assign_lights;
-                profiler.start(gl, self.frame, self.epoch);
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.assign_lights);
 
                 unsafe {
                     let buffer = &mut cluster_resources.light_indices_buffer;
@@ -1563,7 +1853,18 @@ impl Context {
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
-                profiler.stop(gl, self.frame, self.epoch);
+
+                self.profiling_context.stop(gl, profiler_index);
+            }
+
+            if !self.profiling_context.time_sensitive() {
+                unsafe {
+                    self.profiling_context.record_cluster_buffer(
+                        gl,
+                        &cluster_resources.profiling_cluster_buffer.name(),
+                        0,
+                    );
+                }
             }
         }
 
@@ -1657,7 +1958,9 @@ impl Context {
                 gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
             }
 
-            let main_resources_index = self.main_resources_pool.next_unused(gl, dimensions);
+            let main_resources_index =
+                self.main_resources_pool
+                    .next_unused(gl, &mut self.profiling_context, dimensions);
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
@@ -1680,9 +1983,32 @@ impl Context {
                                     * camera_resources.parameters.clp_to_cam)
                                     .cast()
                                     .unwrap(),
+                                color: color::MAGENTA,
                             },
                         );
                     }
+
+                    let vertices: Vec<[f32; 3]> = match self.configuration.clustered_light_shading.projection {
+                        ClusteringProjection::Perspective => {
+                            cluster_resources.computed.frustum.corners_in_cam_perspective()
+                        }
+                        ClusteringProjection::Orthographic => {
+                            cluster_resources.computed.frustum.corners_in_cam_orthographic()
+                        }
+                    }
+                    .iter()
+                    .map(|&p| p.cast().unwrap().into())
+                    .collect();
+
+                    self.line_renderer.render(
+                        &mut rendering_context!(self),
+                        &line_renderer::Parameters {
+                            vertices: &vertices,
+                            indices: FRUSTRUM_LINE_MESH_INDICES,
+                            obj_to_wld: &(cluster_resources.computed.ccam_to_wld.cast().unwrap()),
+                            color: color::RED,
+                        },
+                    );
 
                     {
                         // Reborrow.
@@ -1729,9 +2055,21 @@ impl Context {
             &self.monospace,
             &format!(
                 "\
+                 {}\
                  Render Technique: {:<14} | CLS Grouping:     {:<14} | CLS Projection:   {:<14}\n\
                  Attenuation Mode: {:<14} | Lighting Space:   {:<14} | Light Count:      {:<14}\n\
                  ",
+                match self.configuration.global.mode {
+                    ApplicationMode::Normal => "".to_string(),
+                    ApplicationMode::Record => format!("Frame {:>4} | Recording...\n", self.frame_index.to_usize()),
+                    ApplicationMode::Replay => format!(
+                        "Frame {:>4}/{} | Run {:>2}/{}\n",
+                        self.frame_index.to_usize(),
+                        self.replay_frame_events.as_ref().map(Vec::len).unwrap(),
+                        self.profiling_context.run_index().to_usize() + 1,
+                        self.configuration.replay.run_count,
+                    ),
+                },
                 format!("{:?}", self.shader_compiler.render_technique()),
                 format!("{:?}", self.configuration.clustered_light_shading.grouping),
                 format!("{:?}", self.configuration.clustered_light_shading.projection),
@@ -1751,108 +2089,126 @@ impl Context {
             let res = &mut self.cluster_resources_pool[cluster_resources_index];
             let dimensions_u32 = res.computed.dimensions;
 
-            overlay_textbox.write(
-                &monospace,
-                &format!(
-                    "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
-                    cluster_resources_index.to_usize(),
-                    dimensions_u32.x,
-                    dimensions_u32.y,
-                    dimensions_u32.z,
-                ),
-            );
+            if self.configuration.profiling.display {
+                overlay_textbox.write(
+                    &monospace,
+                    &format!(
+                        "[{}] cluster dimensions {{ x: {:3}, y: {:3}, z: {:3} }}\n",
+                        cluster_resources_index.to_usize(),
+                        dimensions_u32.x,
+                        dimensions_u32.y,
+                        dimensions_u32.z,
+                    ),
+                );
+            }
 
             for camera_resources_index in res.camera_resources_pool.used_index_iter() {
                 let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
                 for &stage in &CameraStage::VALUES {
-                    let stats = &mut camera_resources.profilers[stage].stats(self.frame);
-                    if let Some(stats) = stats {
-                        overlay_textbox.write(
-                            &monospace,
-                            &format!(
-                                "[{}][{}] {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                cluster_resources_index.to_usize(),
-                                camera_resources_index.to_usize(),
-                                stage.title(),
-                                stats.cpu_elapsed_min as f64 / 1000.0,
-                                stats.cpu_elapsed_avg as f64 / 1000.0,
-                                stats.cpu_elapsed_max as f64 / 1000.0,
-                                stats.gpu_elapsed_min as f64 / 1000.0,
-                                stats.gpu_elapsed_avg as f64 / 1000.0,
-                                stats.gpu_elapsed_max as f64 / 1000.0,
-                            ),
-                        );
+                    let sample_index = camera_resources.profilers[stage];
+                    if self.configuration.profiling.display {
+                        if let Some(stats) = self.profiling_context.stats(sample_index) {
+                            overlay_textbox.write(
+                                    &monospace,
+                                    &format!(
+                                        "[{}][{}] {:<28} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                        cluster_resources_index.to_usize(),
+                                        camera_resources_index.to_usize(),
+                                        stage.title(),
+                                        stats.cpu_elapsed_min as f64 / 1000.0,
+                                        stats.cpu_elapsed_avg as f64 / 1000.0,
+                                        stats.cpu_elapsed_max as f64 / 1000.0,
+                                        stats.gpu_elapsed_min as f64 / 1000.0,
+                                        stats.gpu_elapsed_avg as f64 / 1000.0,
+                                        stats.gpu_elapsed_max as f64 / 1000.0,
+                                    ),
+                                );
+                        }
                     }
                 }
             }
 
             for &stage in &ClusterStage::VALUES {
-                let stats = &mut res.profilers[stage].stats(self.frame);
-                if let Some(stats) = stats {
-                    overlay_textbox.write(
-                        &monospace,
-                        &format!(
-                            "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            cluster_resources_index.to_usize(),
-                            stage.title(),
-                            stats.cpu_elapsed_min as f64 / 1000.0,
-                            stats.cpu_elapsed_avg as f64 / 1000.0,
-                            stats.cpu_elapsed_max as f64 / 1000.0,
-                            stats.gpu_elapsed_min as f64 / 1000.0,
-                            stats.gpu_elapsed_avg as f64 / 1000.0,
-                            stats.gpu_elapsed_max as f64 / 1000.0,
-                        ),
-                    );
+                let sample_index = res.profilers[stage];
+
+                if self.configuration.profiling.display {
+                    if let Some(stats) = self.profiling_context.stats(sample_index) {
+                        overlay_textbox.write(
+                                &monospace,
+                                &format!(
+                                    "[{}]    {:<28} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                    cluster_resources_index.to_usize(),
+                                    stage.title(),
+                                    stats.cpu_elapsed_min as f64 / 1000.0,
+                                    stats.cpu_elapsed_avg as f64 / 1000.0,
+                                    stats.cpu_elapsed_max as f64 / 1000.0,
+                                    stats.gpu_elapsed_min as f64 / 1000.0,
+                                    stats.gpu_elapsed_avg as f64 / 1000.0,
+                                    stats.gpu_elapsed_max as f64 / 1000.0,
+                                ),
+                            );
+                    }
                 }
             }
         }
 
         for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
-            for (name, profiler) in [
-                ("depth", &main_resources.depth_pass_profiler),
-                ("basic", &main_resources.basic_pass_profiler),
+            for &(name, sample_index) in [
+                ("depth", main_resources.depth_pass_profiler),
+                ("basic", main_resources.basic_pass_profiler),
             ]
             .iter()
             {
-                let stats = profiler.stats(self.frame);
-                if let Some(stats) = stats {
-                    overlay_textbox.write(
-                        &monospace,
-                        &format!(
-                            "[{}]    {:<20} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                            main_resources_index,
-                            name,
-                            stats.cpu_elapsed_min as f64 / 1000.0,
-                            stats.cpu_elapsed_avg as f64 / 1000.0,
-                            stats.cpu_elapsed_max as f64 / 1000.0,
-                            stats.gpu_elapsed_min as f64 / 1000.0,
-                            stats.gpu_elapsed_avg as f64 / 1000.0,
-                            stats.gpu_elapsed_max as f64 / 1000.0,
-                        ),
-                    );
+                if self.configuration.profiling.display {
+                    if let Some(stats) = self.profiling_context.stats(sample_index) {
+                        overlay_textbox.write(
+                                &monospace,
+                                &format!(
+                                    "[{}]    {:<28} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                    main_resources_index,
+                                    name,
+                                    stats.cpu_elapsed_min as f64 / 1000.0,
+                                    stats.cpu_elapsed_avg as f64 / 1000.0,
+                                    stats.cpu_elapsed_max as f64 / 1000.0,
+                                    stats.gpu_elapsed_min as f64 / 1000.0,
+                                    stats.gpu_elapsed_avg as f64 / 1000.0,
+                                    stats.gpu_elapsed_max as f64 / 1000.0,
+                                ),
+                            );
+                    }
                 }
             }
         }
 
-        // Reborrow.
-        let gl = &self.gl;
-
         unsafe {
             let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
-            gl.viewport(0, 0, dimensions.x, dimensions.y);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
+            self.gl.viewport(0, 0, dimensions.x, dimensions.y);
+            self.gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
 
             self.render_text();
         }
 
-        // Reborrow.
-        let gl = &self.gl;
+        if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames {
+            self.frame_downloader.record_frame(
+                &self.paths.frames_dir,
+                self.gl,
+                self.frame_index,
+                self.win_size.width as u32,
+                self.win_size.height as u32,
+                frame_downloader::Format::RGBA,
+            );
+        }
+
+        self.profiling_context.stop(self.gl, profiler_index);
+
+        self.profiling_context.end_frame(self.frame_index);
 
         self.gl_window.swap_buffers().unwrap();
-        self.frame += 1;
+
+        self.frame_index.increment();
 
         // TODO: Borrow the pool instead.
-        self.camera_buffer_pool.reset(gl);
+        self.camera_buffer_pool.reset(self.gl);
 
         // std::thread::sleep(time::Duration::from_millis(17));
 
@@ -1925,9 +2281,9 @@ impl Context {
         }
 
         if self.depth_prepass {
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
-            let profiler = &mut main_resources.depth_pass_profiler;
-            profiler.start(gl, self.frame, self.epoch);
+            let profiler_index = self
+                .profiling_context
+                .start(gl, self.main_resources_pool[main_resources_index].depth_pass_profiler);
 
             self.render_depth();
 
@@ -1938,20 +2294,14 @@ impl Context {
                 gl.depth_mask(gl::FALSE);
             }
 
-            // Reborrow.
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
-            let profiler = &mut main_resources.depth_pass_profiler;
-
-            profiler.stop(gl, self.frame, self.epoch);
+            self.profiling_context.stop(gl, profiler_index);
         }
 
         {
             // Reborrow
             let gl = &self.gl;
             let main_resources = &mut self.main_resources_pool[main_resources_index];
-            let profiler = &mut main_resources.basic_pass_profiler;
-
-            profiler.start(gl, self.frame, self.epoch);
+            let profiler_index = self.profiling_context.start(gl, main_resources.basic_pass_profiler);
 
             self.render_main(&basic_renderer::Parameters {
                 mode: match self.target_camera_key {
@@ -1963,8 +2313,6 @@ impl Context {
 
             // Reborrow.
             let gl = &self.gl;
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
-            let profiler = &mut main_resources.basic_pass_profiler;
 
             if self.depth_prepass {
                 unsafe {
@@ -1973,7 +2321,7 @@ impl Context {
                 }
             }
 
-            profiler.stop(gl, self.frame, self.epoch);
+            self.profiling_context.stop(gl, profiler_index);
         }
     }
 }
@@ -1981,29 +2329,48 @@ impl Context {
 fn main() {
     env_logger::init();
 
-    let mut events_loop = glutin::EventsLoop::new();
+    let mut context = MainContext::new();
 
-    let mut context = Context::new(&mut events_loop);
+    let mut run_index = RunIndex::from_usize(0);
+    let run_count = RunIndex::from_usize(match context.configuration.global.mode {
+        ApplicationMode::Normal | ApplicationMode::Record => 1,
+        ApplicationMode::Replay => context.configuration.replay.run_count,
+    });
 
-    while context.running {
-        context.render();
-        context.process_events(&mut events_loop);
-        context.simulate();
-    }
+    while run_index < run_count {
+        let mut context = Context::new(&mut context);
 
-    // Save state.
-    {
-        use std::fs;
-        use std::io;
-        use std::io::Write;
-        let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
-        for key in CameraKey::iter() {
-            let camera = context.cameras[key].current_to_camera();
-            file.write_all(camera.value_as_bytes()).unwrap();
+        context.profiling_context.begin_run(run_index);
+
+        while context.running {
+            context.render();
+            context.process_events();
+            context.simulate();
         }
+
+        context.profiling_context.end_run(run_index);
+
+        match context.configuration.global.mode {
+            ApplicationMode::Normal | ApplicationMode::Record => {
+                // Save state.
+                let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
+                for key in CameraKey::iter() {
+                    let camera = context.cameras[key].current_to_camera();
+                    file.write_all(camera.value_as_bytes()).unwrap();
+                }
+                break;
+            }
+            ApplicationMode::Replay => {
+                // Do nothing.
+            }
+        }
+
+        run_index.increment();
     }
 }
 
+// FIXME: Use.
+#[allow(unused)]
 fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
     // NOTE(mickvangelderen): The handle is not actually a pointer in
     // OpenGL's case, it's just the texture name.

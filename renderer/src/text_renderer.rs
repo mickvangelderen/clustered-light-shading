@@ -7,7 +7,7 @@ pub struct Renderer {
     pub text_dimensions_loc: gl::OptionUniformLocation,
 }
 
-impl Context {
+impl Context<'_> {
     pub fn render_text(&mut self) {
         let Context {
             ref gl,

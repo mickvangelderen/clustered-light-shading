@@ -1,43 +1,17 @@
-pub trait DivCeil {
-    fn div_ceil(self, rhs: Self) -> Self;
+pub trait CeiledDiv {
+    fn ceiled_div(self, rhs: Self) -> Self;
 }
 
-impl<T> DivCeil for T
+impl<T> CeiledDiv for T
 where
     T: Copy
         + std::ops::Div<Output = Self>
         + std::ops::Add<Output = Self>
-        + std::ops::Rem<Output = Self>
-        + Eq
-        + Zero
-        + One,
-{
-    fn div_ceil(self, rhs: Self) -> Self {
-        self / rhs + if self % rhs == T::ZERO { T::ZERO } else { T::ONE }
-    }
-}
-
-pub trait CeilToMultiple {
-    fn ceil_to_multiple(self, rhs: Self) -> Self;
-}
-
-impl<T> CeilToMultiple for T
-where
-    T: Copy
-        + std::ops::Add<Output = Self>
         + std::ops::Sub<Output = Self>
-        + std::ops::Rem<Output = Self>
-        + Eq
-        + Zero
         + One,
 {
-    fn ceil_to_multiple(self, rhs: Self) -> Self {
-        let rem = self % rhs;
-        if rem == T::ZERO {
-            self
-        } else {
-            self - rem + rhs
-        }
+    fn ceiled_div(self, rhs: Self) -> Self {
+        (self + rhs - T::ONE) / rhs
     }
 }
 

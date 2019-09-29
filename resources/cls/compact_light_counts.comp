@@ -1,5 +1,6 @@
 #include "native/PREFIX_SUM"
 #include "native/CLUSTERED_LIGHT_SHADING"
+#include "native/PROFILING"
 
 #include "../common.glsl"
 #include "cluster_space_buffer.glsl"
@@ -10,6 +11,7 @@
 // out
 #include "active_cluster_light_offsets_buffer.glsl"
 #include "compute_commands_buffer.glsl"
+#include "profiling_cluster_buffer.glsl"
 
 #if !defined(PASS)
 #error PASS is not defined.
@@ -83,7 +85,7 @@ void main() {
   uint item_count =
       compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
   uint blocks_per_dispatch =
-      uint_div_ceil(item_count, PASS_0_THREADS * PASS_1_THREADS);
+      ceiled_div_u32(item_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
@@ -122,13 +124,23 @@ void main() {
 
   // Emit output from shared memory.
   offsets[tid] = values[tid];
+
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+  if (tid == LOCAL_X - 1) {
+    profiling_cluster_buffer.light_indices_count = offsets[tid];
+  }
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 }
 #elif PASS == 2
 void main() {
   uint item_count =
       compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
   uint blocks_per_dispatch =
-      uint_div_ceil(item_count, PASS_0_THREADS * PASS_1_THREADS);
+      ceiled_div_u32(item_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;

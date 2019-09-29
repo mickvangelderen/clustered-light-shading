@@ -34,7 +34,7 @@ glsl_defines!(fixed_header {
     },
 });
 
-impl Context {
+impl Context<'_> {
     pub fn render_main(&mut self, params: &Parameters) {
         let Context {
             ref gl,

@@ -1,34 +1,372 @@
-use crate::*;
+mod alloc;
+mod indices;
 
-// pub struct QueryPool {
-//     names: [gl::QueryName; 2],
-// }
+use crate::ValueAsBytes;
+use alloc::AllocBuffer;
+use gl_typed as gl;
+use ProfilingConfiguration as Configuration;
+use ProfilingContext as Context;
 
-// impl QueryPool {
-//     pub fn new(gl: &gl::Gl) -> Self {
-//         unsafe {
-//             Self {
-//                 names: [
-//                     gl.create_query(gl::TIMESTAMP),
-//                     gl.create_query(gl::TIMESTAMP),
-//                     // gl.create_query(gl::TIMESTAMP),
-//                     // gl.create_query(gl::TIMESTAMP),
-//                 ],
-//             }
-//         }
-//     }
+use indices::ProfilerIndex;
+pub use indices::{FrameIndex, RunIndex, SampleIndex};
 
-//     pub fn now(&self, gl: &gl::Gl, tick: u64) -> Option<NonZeroU64> {
-//         unsafe {
-//             let name = &self.names[tick as usize % self.names.len()];
-//             let result = gl.try_query_result_u64(name);
-//             gl.query_counter(name);
-//             result
-//         }
-//     }
-// }
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
+pub struct ProfilingConfiguration {
+    pub display: bool,
+    pub record_frames: bool,
+    pub path: Option<std::path::PathBuf>,
+}
 
-#[derive(Debug, Copy, Clone, Default)]
+enum FrameEvent {
+    BeginTimeSpan(SampleIndex),
+    EndTimeSpan,
+    RecordClusterBuffer { offset: usize },
+}
+
+struct FrameContext {
+    events: Vec<FrameEvent>,
+    profilers_used: usize,
+    profilers: Vec<TimeSpanProfiler>,
+    buffer: AllocBuffer,
+}
+
+impl FrameContext {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self {
+            events: Vec::new(),
+            profilers_used: 0,
+            profilers: Vec::new(),
+            // TODO: Maybe someday this should be changed.
+            buffer: AllocBuffer::with_capacity(gl, std::mem::size_of::<[ClusterBuffer; 2]>()),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.events.clear();
+        self.profilers_used = 0;
+        self.buffer.reset();
+    }
+}
+
+struct FrameContextRing([FrameContext; FrameContextRing::CAPACITY]);
+
+impl FrameContextRing {
+    const CAPACITY: usize = 3;
+
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self([
+            FrameContext::new(gl),
+            FrameContext::new(gl),
+            FrameContext::new(gl),
+        ])
+    }
+
+    pub fn reset(&mut self) {
+        for context in self.0.iter_mut() {
+            context.reset();
+        }
+    }
+}
+
+impl std::ops::Index<FrameIndex> for FrameContextRing {
+    type Output = FrameContext;
+
+    fn index(&self, index: FrameIndex) -> &Self::Output {
+        &self.0[index.to_usize() % Self::CAPACITY]
+    }
+}
+
+impl std::ops::IndexMut<FrameIndex> for FrameContextRing {
+    fn index_mut(&mut self, index: FrameIndex) -> &mut Self::Output {
+        &mut self.0[index.to_usize() % Self::CAPACITY]
+    }
+}
+
+#[derive(Default)]
+struct SamplesRing {
+    sample_count: usize,
+    ring: [Vec<Option<GpuCpuTimeSpan>>; SamplesRing::CAPACITY],
+}
+
+impl SamplesRing {
+    const CAPACITY: usize = 9;
+
+    pub fn add_sample(&mut self) -> SampleIndex {
+        let index = SampleIndex::from_usize(self.sample_count);
+        self.sample_count += 1;
+
+        for samples in self.ring.iter_mut() {
+            samples.push(None);
+            debug_assert_eq!(samples.len(), self.sample_count);
+        }
+
+        index
+    }
+
+    pub fn clear(&mut self) {
+        for samples in self.ring.iter_mut() {
+            for sample in samples.iter_mut() {
+                *sample = None;
+            }
+        }
+    }
+}
+
+impl std::ops::Index<FrameIndex> for SamplesRing {
+    type Output = Vec<Option<GpuCpuTimeSpan>>;
+
+    fn index(&self, index: FrameIndex) -> &Self::Output {
+        &self.ring[index.to_usize() % Self::CAPACITY]
+    }
+}
+
+impl std::ops::IndexMut<FrameIndex> for SamplesRing {
+    fn index_mut(&mut self, index: FrameIndex) -> &mut Self::Output {
+        &mut self.ring[index.to_usize() % Self::CAPACITY]
+    }
+}
+
+pub struct ProfilingContext {
+    epoch: std::time::Instant,
+    run_index: RunIndex,
+    run_started: bool,
+    frame_index: FrameIndex,
+    frame_started: bool,
+    frame_context_ring: FrameContextRing,
+    samples_ring: SamplesRing,
+    thread: ProfilingThread,
+}
+
+struct ProfilingThreadInner {
+    handle: std::thread::JoinHandle<()>,
+    tx: std::sync::mpsc::Sender<Option<MeasurementEvent>>,
+}
+
+pub struct ProfilingThread(Option<ProfilingThreadInner>);
+
+impl ProfilingThread {
+    fn emit(&mut self, event: MeasurementEvent) {
+        if let Some(thread) = self.0.as_mut() {
+            thread.tx.send(Some(event)).unwrap();
+        }
+    }
+}
+
+impl Drop for ProfilingThread {
+    fn drop(&mut self) {
+        if let Some(thread) = self.0.take() {
+            thread.tx.send(None).unwrap();
+            thread.handle.join().unwrap();
+        }
+    }
+}
+
+impl Context {
+    pub fn new(gl: &gl::Gl, profiling_dir: &std::path::Path, configuration: &Configuration) -> Self {
+        let thread = ProfilingThread(configuration.path.as_ref().map(|path| {
+            let mut file = std::io::BufWriter::new(std::fs::File::create(profiling_dir.join(path)).unwrap());
+            let (tx, rx) = std::sync::mpsc::channel();
+            let handle = std::thread::Builder::new()
+                .name("profiling".to_string())
+                .spawn(move || {
+                    while let Some(event) = rx.recv().unwrap() {
+                        bincode::serialize_into(&mut file, &event).unwrap();
+                    }
+                })
+                .unwrap();
+            ProfilingThreadInner { handle, tx }
+        }));
+
+        Self {
+            epoch: std::time::Instant::now(),
+            frame_context_ring: FrameContextRing::new(gl),
+            run_index: RunIndex::from_usize(0),
+            run_started: false,
+            frame_index: FrameIndex::from_usize(0),
+            frame_started: false,
+            samples_ring: Default::default(),
+            thread,
+        }
+    }
+
+    #[inline]
+    pub fn run_index(&self) -> RunIndex {
+        assert_eq!(true, self.run_started);
+        self.run_index
+    }
+
+    #[inline]
+    pub fn add_sample(&mut self, sample: &'static str) -> SampleIndex {
+        let sample_index = self.samples_ring.add_sample();
+        self.thread
+            .emit(MeasurementEvent::SampleName(sample_index, sample.to_string()));
+        sample_index
+    }
+
+    #[inline]
+    pub fn begin_run(&mut self, run_index: RunIndex) {
+        assert_eq!(false, self.run_started);
+        assert_eq!(self.run_index, run_index);
+        self.run_started = true;
+        self.thread.emit(MeasurementEvent::BeginRun(run_index));
+    }
+
+    #[inline]
+    pub fn end_run(&mut self, run_index: RunIndex) {
+        assert_eq!(true, self.run_started);
+        assert_eq!(self.run_index, run_index);
+        self.run_started = false;
+        self.run_index.increment();
+
+        self.thread.emit(MeasurementEvent::EndRun);
+
+        // Reset frame-related data.
+        self.frame_index = FrameIndex::from_usize(0);
+        self.frame_context_ring.reset();
+        self.samples_ring.clear();
+    }
+
+    #[inline]
+    pub fn begin_frame(&mut self, gl: &gl::Gl, frame_index: FrameIndex) {
+        assert_eq!(true, self.run_started);
+        assert_eq!(false, self.frame_started);
+        self.frame_started = true;
+        assert_eq!(self.frame_index, frame_index);
+
+        let context = &mut self.frame_context_ring[frame_index];
+
+        if frame_index.to_usize() >= FrameContextRing::CAPACITY {
+            // Compute the frame index when these events were recorded.
+            let frame_index = FrameIndex::from_usize(frame_index.to_usize() - FrameContextRing::CAPACITY);
+
+            self.thread.emit(MeasurementEvent::BeginFrame(frame_index));
+
+            let samples = &mut self.samples_ring[frame_index];
+
+            // Clear all samples because we're not sure we will write to every one.
+            for sample in samples.iter_mut() {
+                *sample = None;
+            }
+
+            // Read back data from the GPU.
+            let mut profilers_used = 0;
+            for event in context.events.iter() {
+                match *event {
+                    FrameEvent::BeginTimeSpan(sample_index) => {
+                        let profiler_index = profilers_used;
+                        profilers_used += 1;
+                        debug_assert!(
+                            samples[sample_index.to_usize()].is_none(),
+                            "{:?} is writen to more than once",
+                            sample_index
+                        );
+                        let sample = context.profilers[profiler_index].read(gl).unwrap();
+                        self.thread.emit(MeasurementEvent::BeginTimeSpan(sample_index, sample));
+                        samples[sample_index.to_usize()] = Some(sample);
+                    }
+                    FrameEvent::EndTimeSpan => self.thread.emit(MeasurementEvent::EndTimeSpan),
+                    FrameEvent::RecordClusterBuffer { offset } => {
+                        let mut buffer = ClusterBuffer::default();
+                        unsafe {
+                            context.buffer.read(gl, offset, buffer.value_as_bytes_mut());
+                        }
+                        self.thread.emit(MeasurementEvent::RecordClusterBuffer(buffer));
+                    }
+                }
+            }
+
+            self.thread.emit(MeasurementEvent::EndFrame);
+
+            debug_assert_eq!(profilers_used, context.profilers_used);
+
+            context.reset();
+        }
+    }
+
+    #[inline]
+    pub fn end_frame(&mut self, frame_index: FrameIndex) {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        assert_eq!(self.frame_index, frame_index);
+        self.frame_started = false;
+        self.frame_index.increment();
+    }
+
+    #[inline]
+    pub fn start(&mut self, gl: &gl::Gl, sample_index: SampleIndex) -> ProfilerIndex {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
+        context.events.push(FrameEvent::BeginTimeSpan(sample_index));
+        let profiler_index = ProfilerIndex(context.profilers_used);
+        context.profilers_used += 1;
+        while context.profilers.len() < profiler_index.0 + 1 {
+            context.profilers.push(TimeSpanProfiler::new(gl));
+        }
+        context.profilers[profiler_index.0].start(gl, self.epoch);
+        profiler_index
+    }
+
+    #[inline]
+    pub fn stop(&mut self, gl: &gl::Gl, profiler_index: ProfilerIndex) {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
+        context.events.push(FrameEvent::EndTimeSpan);
+        context.profilers[profiler_index.0].stop(gl, self.epoch);
+    }
+
+    #[inline]
+    pub unsafe fn record_cluster_buffer(&mut self, gl: &gl::Gl, name: &gl::BufferName, offset: usize) {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
+        let offset = context
+            .buffer
+            .copy_from(gl, name, offset, std::mem::size_of::<ClusterBuffer>());
+        context.events.push(FrameEvent::RecordClusterBuffer { offset });
+    }
+
+    #[inline]
+    pub fn sample(&self, sample_index: SampleIndex) -> Option<GpuCpuTimeSpan> {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        if self.frame_index.to_usize() >= FrameContextRing::CAPACITY {
+            let frame_index = FrameIndex::from_usize(self.frame_index.to_usize() - FrameContextRing::CAPACITY);
+            self.samples_ring[frame_index][sample_index.to_usize()]
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn stats(&self, sample_index: SampleIndex) -> Option<GpuCpuStats> {
+        let mut cpu_elapsed = [0u64; SamplesRing::CAPACITY];
+        let mut gpu_elapsed = [0u64; SamplesRing::CAPACITY];
+        for index in 0..SamplesRing::CAPACITY {
+            let span = self.samples_ring[FrameIndex::from_usize(index)][sample_index.to_usize()]?;
+            cpu_elapsed[index] = span.cpu.delta();
+            gpu_elapsed[index] = span.gpu.delta();
+        }
+        Some(GpuCpuStats {
+            cpu_elapsed_avg: cpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
+            cpu_elapsed_min: cpu_elapsed.iter().copied().min().unwrap(),
+            cpu_elapsed_max: cpu_elapsed.iter().copied().max().unwrap(),
+            gpu_elapsed_avg: gpu_elapsed.iter().copied().sum::<u64>() / SamplesRing::CAPACITY as u64,
+            gpu_elapsed_min: gpu_elapsed.iter().copied().min().unwrap(),
+            gpu_elapsed_max: gpu_elapsed.iter().copied().max().unwrap(),
+        })
+    }
+
+    pub fn time_sensitive(&self) -> bool {
+        assert!(true, self.run_started);
+        self.run_index.to_usize() != 0
+    }
+}
+
+pub type Epoch = std::time::Instant;
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Default)]
 pub struct TimeSpan {
     pub begin: u64,
     pub end: u64,
@@ -41,194 +379,105 @@ impl TimeSpan {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Default)]
 pub struct GpuCpuTimeSpan {
     pub gpu: TimeSpan,
     pub cpu: TimeSpan,
 }
 
 #[derive(Debug)]
-pub struct ProfilerTimer {
+pub struct TimeSpanProfiler {
     begin_query_name: gl::QueryName,
     end_query_name: gl::QueryName,
-    cpu_begin: Option<NonZeroU64>,
-    cpu_end: Option<NonZeroU64>,
+    state: State,
 }
 
-impl ProfilerTimer {
+#[derive(Debug)]
+enum State {
+    Empty,
+    Started { cpu_begin: u64 },
+    Stopped { cpu_begin: u64, cpu_end: u64 },
+}
+
+impl TimeSpanProfiler {
     #[inline]
     pub fn new(gl: &gl::Gl) -> Self {
         Self {
             begin_query_name: unsafe { gl.create_query(gl::TIMESTAMP) },
             end_query_name: unsafe { gl.create_query(gl::TIMESTAMP) },
-            cpu_begin: None,
-            cpu_end: None,
+            state: State::Empty,
         }
     }
 
     #[inline]
-    pub fn clear(&mut self) {
-        self.cpu_begin = None;
-        self.cpu_end = None;
+    pub fn start(&mut self, gl: &gl::Gl, epoch: Epoch) {
+        self.state = match self.state {
+            State::Empty | State::Stopped { .. } => {
+                unsafe {
+                    gl.query_counter(self.begin_query_name);
+                }
+                State::Started {
+                    cpu_begin: epoch.elapsed().as_nanos() as u64,
+                }
+            }
+            State::Started { .. } => {
+                panic!("Tried to start a profiler that had already been started!");
+            }
+        };
     }
 
     #[inline]
-    pub fn start(&mut self, gl: &gl::Gl, epoch: Instant) {
-        unsafe {
-            gl.query_counter(self.begin_query_name);
+    pub fn stop(&mut self, gl: &gl::Gl, epoch: Epoch) {
+        self.state = match self.state {
+            State::Empty => {
+                panic!("Tried to stop a profiler that was never started!");
+            }
+            State::Started { cpu_begin } => {
+                unsafe {
+                    gl.query_counter(self.end_query_name);
+                }
+                State::Stopped {
+                    cpu_begin,
+                    cpu_end: epoch.elapsed().as_nanos() as u64,
+                }
+            }
+            State::Stopped { .. } => {
+                panic!("Tried to stop a profiler that had already been stopped!");
+            }
         }
-        debug_assert!(self.cpu_begin.is_none(), "Profiler was started more than once!");
-        self.cpu_begin = Some(NonZeroU64::new(epoch.elapsed().as_nanos() as u64).unwrap());
-    }
-
-    #[inline]
-    pub fn stop(&mut self, gl: &gl::Gl, epoch: Instant) {
-        unsafe {
-            gl.query_counter(self.end_query_name);
-        }
-        debug_assert!(self.cpu_begin.is_some(), "Profiler was stopped before it was started!");
-        debug_assert!(self.cpu_end.is_none(), "Profiler was stopped more than once!");
-        self.cpu_end = Some(NonZeroU64::new(epoch.elapsed().as_nanos() as u64).unwrap());
     }
 
     #[inline]
     pub fn read(&mut self, gl: &gl::Gl) -> Option<GpuCpuTimeSpan> {
-        unsafe {
-            self.cpu_begin.take().map(|cpu_begin| {
-                let gpu_begin = gl
-                    .try_query_result_u64(self.begin_query_name)
-                    .expect("Query result was not ready!");
-                let gpu_end = gl
-                    .try_query_result_u64(self.end_query_name)
-                    .expect("Query result was not ready!");
-                GpuCpuTimeSpan {
+        match self.state {
+            State::Empty => None,
+            State::Started { .. } => {
+                panic!("Tried to read a profiler that was started but never stopped!");
+            }
+            State::Stopped { cpu_begin, cpu_end } => {
+                // Not really necessary but I wan't to catch double reads.
+                self.state = State::Empty;
+
+                let (gpu_begin, gpu_end) = unsafe {
+                    (
+                        gl.try_query_result_u64(self.begin_query_name)
+                            .expect("Query result was not ready!"),
+                        gl.try_query_result_u64(self.end_query_name)
+                            .expect("Query result was not ready!"),
+                    )
+                };
+
+                Some(GpuCpuTimeSpan {
                     gpu: TimeSpan {
                         begin: gpu_begin.get(),
                         end: gpu_end.get(),
                     },
                     cpu: TimeSpan {
-                        begin: cpu_begin.get(),
-                        end: self
-                            .cpu_end
-                            .take()
-                            .expect("Profiler was started but never stopped!")
-                            .get(),
+                        begin: cpu_begin,
+                        end: cpu_end,
                     },
-                }
-            })
-        }
-    }
-}
-
-pub struct ProfilerTimerPool {
-    pool: [ProfilerTimer; Self::CAPACITY],
-}
-
-impl ProfilerTimerPool {
-    pub const CAPACITY: usize = 3;
-
-    pub fn new(gl: &gl::Gl) -> Self {
-        Self {
-            pool: [ProfilerTimer::new(gl), ProfilerTimer::new(gl), ProfilerTimer::new(gl)],
-        }
-    }
-}
-
-impl std::ops::Index<u64> for ProfilerTimerPool {
-    type Output = ProfilerTimer;
-
-    #[inline]
-    fn index(&self, frame: u64) -> &Self::Output {
-        &self.pool[(frame % Self::CAPACITY as u64) as usize]
-    }
-}
-
-impl std::ops::IndexMut<u64> for ProfilerTimerPool {
-    #[inline]
-    fn index_mut(&mut self, frame: u64) -> &mut Self::Output {
-        &mut self.pool[(frame % Self::CAPACITY as u64) as usize]
-    }
-}
-
-/// Stores profiling samples in a circular buffer. Will clear the buffer when
-/// samples aren't inserted consecutively.
-pub struct ProfilerSampleBuffer {
-    samples: [GpuCpuTimeSpan; Self::CAPACITY],
-    frame: u64,
-    count: usize,
-}
-
-impl ProfilerSampleBuffer {
-    pub const CAPACITY: usize = 8;
-
-    pub fn new() -> Self {
-        Self {
-            samples: [GpuCpuTimeSpan::default(); Self::CAPACITY],
-            frame: 0,
-            count: 0,
-        }
-    }
-
-    pub fn update(&mut self, frame: u64, sample: GpuCpuTimeSpan) {
-        self.samples[(frame % Self::CAPACITY as u64) as usize] = sample;
-        if self.frame + 1 == frame {
-            if self.count < Self::CAPACITY {
-                self.count += 1;
+                })
             }
-        } else {
-            self.count = 1;
-        }
-        self.frame = frame;
-    }
-
-    pub fn stats(&self, frame: u64) -> Option<GpuCpuStats> {
-        if self.frame == frame {
-            let mut iter = self.samples.iter();
-            let first = iter.next();
-            first.map(move |first| {
-                let dg = first.gpu.delta();
-                let dc = first.cpu.delta();
-                let mut stats = iter.fold(
-                    GpuCpuStats {
-                        gpu_elapsed_avg: dg,
-                        gpu_elapsed_min: dg,
-                        gpu_elapsed_max: dg,
-                        cpu_elapsed_avg: dc,
-                        cpu_elapsed_min: dc,
-                        cpu_elapsed_max: dc,
-                    },
-                    |mut stats, item| {
-                        {
-                            let dg = item.gpu.delta();
-                            stats.gpu_elapsed_avg += dg;
-                            if dg < stats.gpu_elapsed_min {
-                                stats.gpu_elapsed_min = dg;
-                            }
-                            if dg > stats.gpu_elapsed_max {
-                                stats.gpu_elapsed_max = dg;
-                            }
-                        }
-                        {
-                            let dc = item.cpu.delta();
-                            stats.cpu_elapsed_avg += dc;
-                            if dc < stats.cpu_elapsed_min {
-                                stats.cpu_elapsed_min = dc;
-                            }
-                            if dc > stats.cpu_elapsed_max {
-                                stats.cpu_elapsed_max = dc;
-                            }
-                        }
-                        stats
-                    },
-                );
-
-                stats.gpu_elapsed_avg /= Self::CAPACITY as u64;
-                stats.cpu_elapsed_avg /= Self::CAPACITY as u64;
-
-                stats
-            })
-        } else {
-            None
         }
     }
 }
@@ -242,34 +491,25 @@ pub struct GpuCpuStats {
     pub cpu_elapsed_max: u64,
 }
 
-pub struct Profiler {
-    timers: ProfilerTimerPool,
-    samples: ProfilerSampleBuffer,
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub enum MeasurementEvent {
+    SampleName(SampleIndex, String),
+    BeginRun(RunIndex),
+    EndRun,
+    BeginFrame(FrameIndex),
+    EndFrame,
+    BeginTimeSpan(SampleIndex, GpuCpuTimeSpan),
+    EndTimeSpan,
+    RecordClusterBuffer(ClusterBuffer),
 }
 
-impl Profiler {
-    pub fn new(gl: &gl::Gl) -> Self {
-        Self {
-            timers: ProfilerTimerPool::new(gl),
-            samples: ProfilerSampleBuffer::new(),
-        }
-    }
-
-    pub fn start(&mut self, gl: &gl::Gl, frame: u64, epoch: Instant) {
-        let timer = &mut self.timers[frame];
-        let sample = timer.read(gl);
-        if let Some(sample) = sample {
-            self.samples.update(frame, sample);
-        }
-        timer.start(&gl, epoch);
-    }
-
-    pub fn stop(&mut self, gl: &gl::Gl, frame: u64, epoch: Instant) {
-        let timer = &mut self.timers[frame];
-        timer.stop(&gl, epoch);
-    }
-
-    pub fn stats(&self, frame: u64) -> Option<GpuCpuStats> {
-        self.samples.stats(frame)
-    }
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[repr(C)]
+pub struct ClusterBuffer {
+    active_cluster_count: u32,
+    light_indices_count: u32,
+    shade_count: u32,
+    _pad: u32,
+    frag_count_hist: [u32; 32],
+    light_count_hist: [u32; 32],
 }
