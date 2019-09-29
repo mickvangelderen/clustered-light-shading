@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from profiling_data import ProfilingData
 
-profiling_dir = "../profiling/2019-09-28_12-28-49/"
+profiling_dir = "../profiling/2019-09-29_12-10-51/"
 pd = ProfilingData(profiling_dir)
 
 deltas = np.subtract(pd.stamps[:, :, :, [1, 3]], pd.stamps[:, :, :, [0, 2]])
@@ -26,7 +26,7 @@ for sample_index in range(0, pd.sample_count):
     sub.set_ylabel("ns");
 
     # Omit the first run. Take all the frames.
-    current_samples = np.transpose(deltas[0:, :, sample_index, 0])
+    current_samples = np.transpose(deltas[1:, :, sample_index, 0])
     sub.plot(current_samples, color = (0, 0, 0, 0.1))
     sub.plot(np.median(current_samples, axis = 1, keepdims = True))
 
@@ -41,7 +41,7 @@ for sample_index in range(0, pd.sample_count):
     sub.set_ylabel("ns");
 
     # Omit the first run. Take all the frames.
-    current_samples = np.transpose(deltas[0:, :, sample_index, 1])
+    current_samples = np.transpose(deltas[1:, :, sample_index, 1])
     sub.plot(current_samples, color = (0, 0, 0, 0.1))
     sub.plot(np.median(current_samples, axis = 1, keepdims = True))
 
