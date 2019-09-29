@@ -1,6 +1,7 @@
 use crate::*;
 
 use incremental::{Current, LastComputed, LastModified, LastVerified};
+use renderer::*;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -83,6 +84,7 @@ pub enum SourceReader {
     RenderTechnique,
     PrefixSum,
     ClusteredLightShading,
+    Profiling,
 }
 
 impl SourceReader {
@@ -168,8 +170,8 @@ impl SourceReader {
             }
             SourceReader::ClusteredLightShading => {
                 let clustering_projection = match vars.clustered_light_shading.projection {
-                    configuration::ClusteringProjection::Orthographic => "CLUSTERING_PROJECTION_ORTHOGRAPHIC",
-                    configuration::ClusteringProjection::Perspective => "CLUSTERING_PROJECTION_PERSPECTIVE",
+                    ClusteringProjection::Orthographic => "CLUSTERING_PROJECTION_ORTHOGRAPHIC",
+                    ClusteringProjection::Perspective => "CLUSTERING_PROJECTION_PERSPECTIVE",
                 };
 
                 tokens.push(Token::Literal(format!(
@@ -183,12 +185,26 @@ impl SourceReader {
                      #define CLUSTERED_LIGHT_SHADING_MAX_ACTIVE_CLUSTERS {}\n\
                      #define CLUSTERED_LIGHT_SHADING_MAX_LIGHT_INDICES {}\n\
                      ",
-                    line!() - 4,
+                    line!() - 7,
                     source_index,
                     clustering_projection,
                     vars.clustered_light_shading.max_clusters,
                     vars.clustered_light_shading.max_active_clusters,
                     vars.clustered_light_shading.max_light_indices,
+                )));
+            }
+            SourceReader::Profiling => {
+                tokens.push(Token::Literal(format!(
+                    "\
+                     #line {} {}\n\
+                     #define PROFILING_TIME_SENSITIVE {}\n\
+                     ",
+                    line!() - 2,
+                    source_index,
+                    match vars.profiling.time_sensitive {
+                        true => "true",
+                        false => "false",
+                    }
                 )));
             }
         }
@@ -410,8 +426,14 @@ pub struct Variables {
     pub light_space: LightSpace,
     pub attenuation_mode: AttenuationMode,
     pub render_technique: RenderTechnique,
-    pub prefix_sum: configuration::PrefixSum,
-    pub clustered_light_shading: configuration::ClusteredLightShading,
+    pub prefix_sum: PrefixSumConfiguration,
+    pub clustered_light_shading: ClusteredLightShadingConfiguration,
+    pub profiling: ProfilingVariables,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct ProfilingVariables {
+    pub time_sensitive: bool,
 }
 
 pub struct NativeSourceIndices {
@@ -420,6 +442,7 @@ pub struct NativeSourceIndices {
     pub render_technique: SourceIndex,
     pub prefix_sum: SourceIndex,
     pub clustered_light_shading: SourceIndex,
+    pub profiling: SourceIndex,
 }
 
 pub struct ShaderCompilationContext<'a> {
@@ -460,6 +483,10 @@ impl ShaderCompiler {
             clustered_light_shading: memory.add_source(
                 PathBuf::from("native/CLUSTERED_LIGHT_SHADING"),
                 Source::new(current, SourceReader::ClusteredLightShading, PathBuf::from(file!())),
+            ),
+            profiling: memory.add_source(
+                PathBuf::from("native/PROFILING"),
+                Source::new(current, SourceReader::Profiling, PathBuf::from(file!())),
             ),
         };
 
@@ -534,15 +561,15 @@ impl ShaderCompiler {
         old
     }
 
-    pub fn prefix_sum(&self) -> configuration::PrefixSum {
+    pub fn prefix_sum(&self) -> PrefixSumConfiguration {
         self.variables.prefix_sum
     }
 
     pub fn replace_prefix_sum(
         &mut self,
         current: &mut Current,
-        prefix_sum: configuration::PrefixSum,
-    ) -> configuration::PrefixSum {
+        prefix_sum: PrefixSumConfiguration,
+    ) -> PrefixSumConfiguration {
         let old = std::mem::replace(&mut self.variables.prefix_sum, prefix_sum);
         if old != prefix_sum {
             self.source_mut(self.indices.prefix_sum).last_modified.modify(current);
@@ -553,8 +580,8 @@ impl ShaderCompiler {
     pub fn replace_clustered_light_shading(
         &mut self,
         current: &mut Current,
-        clustered_light_shading: configuration::ClusteredLightShading,
-    ) -> configuration::ClusteredLightShading {
+        clustered_light_shading: ClusteredLightShadingConfiguration,
+    ) -> ClusteredLightShadingConfiguration {
         let old = std::mem::replace(&mut self.variables.clustered_light_shading, clustered_light_shading);
         if old != clustered_light_shading {
             self.source_mut(self.indices.clustered_light_shading)
@@ -562,5 +589,12 @@ impl ShaderCompiler {
                 .modify(current);
         }
         old
+    }
+
+    pub fn replace_profiling(&mut self, current: &mut Current, value: ProfilingVariables) -> ProfilingVariables {
+        if self.variables.profiling != value {
+            self.source_mut(self.indices.profiling).last_modified.modify(current);
+        }
+        std::mem::replace(&mut self.variables.profiling, value)
     }
 }

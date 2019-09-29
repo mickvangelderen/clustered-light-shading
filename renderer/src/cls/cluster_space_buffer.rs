@@ -34,7 +34,7 @@ where
 #[repr(C)]
 pub struct ClusterSpaceBuffer {
     dimensions: Vector3<u32>,
-    _pad0: [f32; 1],
+    cluster_count: u32,
     frustum: Frustum<f32>,
     _pad1: [f32; 2],
     cam_to_clp_coeffs: [LerpCoeffs<f32>; 3],
@@ -49,7 +49,7 @@ impl ClusterSpaceBuffer {
     pub fn new(dimensions: Vector3<u32>, frustum: Frustum<f64>, wld_to_cam: Matrix4<f64>) -> Self {
         Self {
             dimensions,
-            _pad0: Default::default(),
+            cluster_count: dimensions.product(),
             frustum: frustum.cast().unwrap(),
             _pad1: Default::default(),
             cam_to_clp_coeffs: [

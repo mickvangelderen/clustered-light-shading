@@ -1,11 +1,13 @@
 use crate::*;
 
 pub struct Renderer {
-    pub fragments_per_cluster_program: rendering::Program,
+    pub count_fragments_program: rendering::Program,
+    pub frag_count_hist_program: rendering::Program,
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
     pub count_lights_program: rendering::Program,
+    pub light_count_hist_program: rendering::Program,
     pub compact_light_counts_0_program: rendering::Program,
     pub compact_light_counts_1_program: rendering::Program,
     pub compact_light_counts_2_program: rendering::Program,
@@ -24,6 +26,7 @@ glsl_defines!(fixed_header {
         COMPUTE_COMMANDS_BUFFER_BINDING = 7;
         LIGHT_INDICES_BUFFER_BINDING = 8;
         CLUSTER_SPACE_BUFFER_BINDING = 9;
+        PROFILING_CLUSTER_BUFFER_BINDING = 10;
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
@@ -40,14 +43,26 @@ impl Renderer {
         let mut shader_compilation_context = shader_compilation_context!(context);
 
         Renderer {
-            fragments_per_cluster_program: rendering::Program::new(
+            count_fragments_program: rendering::Program::new(
                 context.gl,
                 vec![rendering::Shader::new(
                     gl,
                     gl::COMPUTE_SHADER,
                     EntryPoint::new(
                         &mut shader_compilation_context,
-                        "cls/fragments_per_cluster.comp",
+                        "cls/count_fragments.comp",
+                        fixed_header(),
+                    ),
+                )],
+            ),
+            frag_count_hist_program: rendering::Program::new(
+                context.gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context,
+                        "cls/frag_count_hist.comp",
                         fixed_header(),
                     ),
                 )],
@@ -94,6 +109,18 @@ impl Renderer {
                     gl,
                     gl::COMPUTE_SHADER,
                     EntryPoint::new(&mut shader_compilation_context, "cls/count_lights.comp", fixed_header()),
+                )],
+            ),
+            light_count_hist_program: rendering::Program::new(
+                gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context,
+                        "cls/light_count_hist.comp",
+                        fixed_header(),
+                    ),
                 )],
             ),
             compact_light_counts_0_program: rendering::Program::new(
