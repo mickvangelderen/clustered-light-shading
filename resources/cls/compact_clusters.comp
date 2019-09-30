@@ -9,13 +9,11 @@
 // use
 #include "offsets_buffer.glsl"
 // out
-#include "active_cluster_indices_buffer.glsl"
+#include "cluster_maybe_active_cluster_indices_buffer.glsl"
+#include "active_cluster_cluster_indices_buffer.glsl"
 #include "draw_commands_buffer.glsl"
 #include "compute_commands_buffer.glsl"
 #include "profiling_cluster_buffer.glsl"
-
-// TODO: Remove, superseded by cluster space buffer.cluster_count.
-layout(location = ITEM_COUNT_LOC) uniform uint ITEM_COUNT;
 
 #if !defined(PASS)
   #error PASS is not defined.
@@ -86,7 +84,7 @@ void scan() {
 
 #if PASS == 0
 void main() {
-  uint blocks_per_dispatch = ceiled_div_u32(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint blocks_per_dispatch = ceiled_div_u32(cluster_space.cluster_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
@@ -97,7 +95,7 @@ void main() {
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     uint cluster_index = offset + tid;
-    if (cluster_index < ITEM_COUNT) {
+    if (cluster_index < cluster_space.cluster_count) {
       uint fragment_count = cluster_fragment_counts[offset + tid];
       if (fragment_count > 0) {
         acc += 1;
@@ -156,7 +154,7 @@ void main() {
 }
 #elif PASS == 2
 void main() {
-  uint blocks_per_dispatch = ceiled_div_u32(ITEM_COUNT, PASS_0_THREADS * PASS_1_THREADS);
+  uint blocks_per_dispatch = ceiled_div_u32(cluster_space.cluster_count, PASS_0_THREADS * PASS_1_THREADS);
   uint items_per_dispatch = PASS_0_THREADS * blocks_per_dispatch;
 
   uint offset_begin = wid * items_per_dispatch;
@@ -166,7 +164,7 @@ void main() {
   for (uint offset = offset_begin; offset < offset_end;
        offset += PASS_0_THREADS) {
     uint cluster_index = offset + tid;
-    if (cluster_index < ITEM_COUNT) {
+    if (cluster_index < cluster_space.cluster_count) {
       // Initialize shared memory
       uint fragment_count = cluster_fragment_counts[cluster_index];
       bool cluster_active = fragment_count > 0;
@@ -178,17 +176,17 @@ void main() {
 
       scan();
 
+      uint active_cluster_index_index = acc + values[tid] - 1;
+
       if (cluster_active) {
-        // Instead of writing out the offsets, we use them immediately to emit
-        // active cluster indices.
-        uint active_cluster_index_index = acc + values[tid] - 1;
-        active_cluster_indices[active_cluster_index_index] = cluster_index;
-        // We also write the active cluster index back into the fragment count
-        // buffer, except we use 0 as a sentinel value to denote the cluster is
-        // inactive. Therefore we store the active cluster index incremented by
-        // one.
-        cluster_fragment_counts[cluster_index] = active_cluster_index_index + 1;
+        // Instead of writing out the offsets, we use them immediately.
+        // We store the link from active_cluster to cluster.
+        active_cluster_cluster_indices[active_cluster_index_index] = cluster_index;
       }
+
+      // And we store the link from cluster to active cluster by writing
+      // active cluster index + 1, or 0 if the cluster isn't active.
+      cluster_maybe_active_cluster_indices[cluster_index] = cluster_active ? active_cluster_index_index + 1 : 0;
 
       // Add the total sum of the current segment to the accumulator.
       acc += values[LOCAL_X - 1];
