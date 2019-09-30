@@ -510,6 +510,7 @@ pub struct ClusterBuffer {
     light_indices_count: u32,
     shade_count: u32,
     _pad: u32,
-    frag_count_hist: [u32; 32],
-    light_count_hist: [u32; 32],
+    fragments_per_cluster_hist: [u32; 32],
+    lights_per_cluster_hist: [u32; 32],
+    lights_per_fragment_hist: [u32; 32],
 }

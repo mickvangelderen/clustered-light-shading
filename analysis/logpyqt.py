@@ -9,7 +9,7 @@ pg.setConfigOption('antialias', True)
 pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 
-profiling_dir = "../profiling//2019-09-29_12-10-51/"
+profiling_dir = "../profiling/2019-09-30_17-05-39/"
 
 pd = ProfilingData(profiling_dir)
 deltas = np.subtract(pd.stamps[:, :, :, [1, 3]], pd.stamps[:, :, :, [0, 2]])
@@ -91,21 +91,23 @@ class HistPlotWidget(QtWidgets.QWidget):
         # self._sample_combo.currentIndexChanged.connect(self.set_sample_index)
 
         self._hist_combo = QtWidgets.QComboBox()
-        self._hist_combo.addItems(['Fragments per cluster', 'Light indices per cluster'])
+        self._hist_combo.addItems(['Fragments per cluster', 'Light indices per cluster', 'Light indices per fragment'])
         self._hist_combo.currentIndexChanged.connect(self.set_hist_index)
 
         self._plot = pg.PlotWidget(name = 'sample_cpu')
         left_axis = self._plot.getAxis('left');
         left_axis.enableAutoSIPrefix(enable = False)
-        left_axis.setLabel('Count')
 
         g_layout = QtWidgets.QGridLayout()
         self._cluster_count_label = QtWidgets.QLabel()
         self._light_indices_count_label = QtWidgets.QLabel()
+        self._fragment_count_label = QtWidgets.QLabel()
         g_layout.addWidget(QtWidgets.QLabel("visible cluster count"), 0, 0)
         g_layout.addWidget(self._cluster_count_label, 0, 1)
         g_layout.addWidget(QtWidgets.QLabel("total light indices"), 1, 0)
         g_layout.addWidget(self._light_indices_count_label, 1, 1)
+        g_layout.addWidget(QtWidgets.QLabel("total fragments in cluster space"), 2, 0)
+        g_layout.addWidget(self._fragment_count_label, 2, 1)
 
         h_layout = QtWidgets.QHBoxLayout()
         h_layout.addWidget(self._sample_combo)
@@ -131,19 +133,30 @@ class HistPlotWidget(QtWidgets.QWidget):
             x = np.arange(1, 33, dtype = np.uint64)
             y = data[self.frame_index, :]
             self._plot.setYRange(np.min(data), np.max(data))
-            self._plot.setLabel('bottom', 'log_2(Fragments per cluster)')
+            self._plot.setLabel('left', 'Cluster Count')
+            self._plot.setLabel('bottom', 'log_2(Fragments)')
 
         elif self.hist_index == 1:
             data = pd.cluster_buffers[:, 0, 36:68]
-            x = 8*np.arange(33, dtype = np.uint64)
+            x = 8*np.arange(-0.5, 32.5)
             y = data[self.frame_index, :]
             self._plot.setYRange(np.min(data), np.max(data))
-            self._plot.setLabel('bottom', 'Lights per cluster')
+            self._plot.setLabel('left', 'Cluster Count')
+            self._plot.setLabel('bottom', 'Light Count')
+
+        elif self.hist_index == 2:
+            data = pd.cluster_buffers[:, 0, 68:100]
+            x = 8*np.arange(-0.5, 32.5)
+            y = data[self.frame_index, :]
+            self._plot.setYRange(np.min(data), np.max(data))
+            self._plot.setLabel('left', 'Fragment Count')
+            self._plot.setLabel('bottom', 'Light Count')
 
         self._plot.addItem(pg.PlotDataItem(x, y, stepMode = True))
 
         self._cluster_count_label.setText("{}".format(pd.cluster_buffers[self.frame_index, 0, 0]))
         self._light_indices_count_label.setText("{}".format(pd.cluster_buffers[self.frame_index, 0, 1]))
+        self._fragment_count_label.setText("{}".format(np.sum(pd.cluster_buffers[self.frame_index, 0, 68:100])))
 
     def set_frame_index(self, frame_index):
         self.frame_index = frame_index

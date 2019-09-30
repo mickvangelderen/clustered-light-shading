@@ -15,8 +15,6 @@ def read_padded_string(f):
         f.read(pad_count)
     return string
 
-profiling_dir = "../profiling/2019-09-28_12-28-49/"
-
 class ProfilingData:
     def __init__(self, profiling_dir):
         with open(profiling_dir + "samples.bin", "rb") as f:
@@ -35,5 +33,9 @@ class ProfilingData:
 
             self.stamps = np.reshape(np.fromfile(f, dtype='uint64', count = stamp_count), stamp_shape)
 
-            self.cluster_buffers = np.reshape(np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*68), (self.frame_count, self.cluster_buffer_count, 68));
+            cluster_buffer_u32_size = 4+32*3
 
+            self.cluster_buffers = np.reshape(
+                np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*cluster_buffer_u32_size),
+                (self.frame_count, self.cluster_buffer_count, cluster_buffer_u32_size)
+            );
