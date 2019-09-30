@@ -151,6 +151,9 @@ fn main() {
                     cluster_buffer.clone();
                 cluster_buffer_index += 1;
             }
+            MeasurementEvent::RecordBasicBuffer(ref ops) => {
+                dbg!(frame_index, ops);
+            }
             _ => {}
         }
     }
