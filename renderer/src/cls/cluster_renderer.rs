@@ -8,7 +8,7 @@ glsl_defines! {
     fixed_header {
         bindings: {
             CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING = 0;
-            ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
+            ACTIVE_CLUSTER_CLUSTER_INDICES_BUFFER_BINDING = 1;
             ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 2;
             ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 3;
             LIGHT_INDICES_BUFFER_BINDING = 4;
@@ -53,8 +53,8 @@ impl Context<'_> {
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
-                    cluster_resources.active_cluster_indices_buffer.name(),
+                    ACTIVE_CLUSTER_CLUSTER_INDICES_BUFFER_BINDING,
+                    cluster_resources.active_cluster_cluster_indices_buffer.name(),
                 );
 
                 gl.bind_buffer_base(

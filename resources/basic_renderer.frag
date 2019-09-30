@@ -27,7 +27,7 @@ in vec3 fs_tan_in_lgt;
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
 #include "cls/cluster_space_buffer.glsl"
-#include "cls/maybe_active_cluster_indices_buffer.glsl"
+#include "cls/cluster_maybe_active_cluster_indices_buffer.glsl"
 #include "cls/active_cluster_light_counts_buffer.glsl"
 #include "cls/active_cluster_light_offsets_buffer.glsl"
 #include "cls/light_indices_buffer.glsl"
@@ -185,7 +185,7 @@ void main() {
 
     uint cluster_index = index_3_to_1(fs_idx_in_cls, cluster_space.dimensions);
     uint maybe_active_cluster_index =
-        maybe_active_cluster_indices[cluster_index];
+        cluster_maybe_active_cluster_indices[cluster_index];
 
     if (maybe_active_cluster_index == 0) {
       // We generally shouldn't see clusters that don't have any fragments.

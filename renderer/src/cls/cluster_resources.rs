@@ -67,15 +67,21 @@ impl ClusterComputed {
 pub struct ClusterResources {
     // GPU
     pub cluster_space_buffer: DynamicBuffer,
+
     pub cluster_fragment_counts_buffer: DynamicBuffer,
-    pub active_cluster_indices_buffer: DynamicBuffer,
+    pub cluster_maybe_active_cluster_indices_buffer: DynamicBuffer,
+
+    pub active_cluster_cluster_indices_buffer: DynamicBuffer,
     pub active_cluster_light_counts_buffer: DynamicBuffer,
     pub active_cluster_light_offsets_buffer: DynamicBuffer,
+
     pub light_xyzr_buffer: DynamicBuffer,
+    pub light_indices_buffer: DynamicBuffer,
+
     pub offset_buffer: DynamicBuffer,
     pub draw_commands_buffer: DynamicBuffer,
     pub compute_commands_buffer: DynamicBuffer,
-    pub light_indices_buffer: DynamicBuffer,
+
     pub profiling_cluster_buffer: DynamicBuffer,
     pub profilers: ClusterStages<SampleIndex>,
     // CPU
@@ -105,9 +111,15 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_clusters as usize);
                 buffer
             },
-            active_cluster_indices_buffer: unsafe {
+            cluster_maybe_active_cluster_indices_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
-                gl.buffer_label(&buffer, "active_cluster_indices");
+                gl.buffer_label(&buffer, "cluster_maybe_active_cluster_indices");
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_clusters as usize);
+                buffer
+            },
+            active_cluster_cluster_indices_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "active_cluster_cluster_indices");
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_clusters as usize);
                 buffer
             },
@@ -126,6 +138,12 @@ impl ClusterResources {
             light_xyzr_buffer: unsafe {
                 let buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "light_xyrz");
+                buffer
+            },
+            light_indices_buffer: unsafe {
+                let mut buffer = Buffer::new(gl);
+                gl.buffer_label(&buffer, "light_indices");
+                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
                 buffer
             },
             offset_buffer: unsafe {
@@ -169,12 +187,6 @@ impl ClusterResources {
                 ];
                 buffer.ensure_capacity(gl, data.vec_as_bytes().len());
                 buffer.write(gl, data.vec_as_bytes());
-                buffer
-            },
-            light_indices_buffer: unsafe {
-                let mut buffer = Buffer::new(gl);
-                gl.buffer_label(&buffer, "light_indices");
-                buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_light_indices as usize);
                 buffer
             },
             profiling_cluster_buffer: unsafe {
