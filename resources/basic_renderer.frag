@@ -2,6 +2,7 @@
 #include "cotangent_frame.glsl"
 #include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
+#include "native/PROFILING"
 #include "heatmap.glsl"
 #include "light_buffer.glsl"
 
@@ -17,8 +18,15 @@ uniform vec2 normal_dimensions;
 
 uniform uint display_mode;
 
-// layout(binding = 0) uniform atomic_uint shading_ops;
-// layout(early_fragment_tests) in;
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+layout(early_fragment_tests) in;
+layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_ops;
+layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 
 in vec2 fs_pos_in_tex;
 in vec3 fs_pos_in_lgt;
@@ -221,6 +229,14 @@ void main() {
       // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
       // ACTUAL SHADING
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+      atomicCounterIncrement(shading_ops);
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
+
       vec3 color_accumulator = vec3(0.0);
       for (uint i = 0; i < cluster_light_count; i++) {
         uint light_index = light_indices[cluster_light_offset + i];
@@ -228,7 +244,13 @@ void main() {
         color_accumulator += point_light_contribution(
             light_buffer.point_lights[light_index], nor_in_lgt, fs_pos_in_lgt,
             cam_dir_in_lgt_norm);
-        // atomicCounterIncrement(shading_ops);
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+        atomicCounterIncrement(lighting_ops);
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
       }
       frag_color = vec4(color_accumulator, 1.0);
     }

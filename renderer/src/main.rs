@@ -1422,8 +1422,9 @@ impl<'s> Context<'s> {
             cluster_resources.recompute();
 
             let cluster_count = cluster_resources.computed.cluster_count();
-            let blocks_per_dispatch = cluster_count
-                .ceiled_div(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
+            let blocks_per_dispatch = cluster_count.ceiled_div(
+                self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads,
+            );
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
             let cluster_dispatch_count = cluster_count.ceiled_div(clusters_per_dispatch);
 
@@ -1949,6 +1950,21 @@ impl<'s> Context<'s> {
                 );
             }
 
+            let profiling_basic_buffer = match self.profiling_context.time_sensitive() {
+                true => None,
+                false => unsafe {
+                    let view = self.profiling_context.begin_basic_buffer(gl);
+                    gl.bind_buffer_range(
+                        gl::ATOMIC_COUNTER_BUFFER,
+                        basic_renderer::BASIC_ATOMIC_BINDING,
+                        view.name(),
+                        view.byte_offset(),
+                        view.byte_count(),
+                    );
+                    Some(view)
+                },
+            };
+
             let cam_pos_in_lgt = light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
 
             unsafe {
@@ -1974,6 +1990,12 @@ impl<'s> Context<'s> {
                     .next_unused(gl, &mut self.profiling_context, dimensions);
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
+
+            if let Some(view) = profiling_basic_buffer {
+                unsafe {
+                    self.profiling_context.end_basic_buffer(self.gl, view);
+                }
+            }
 
             if self.target_camera_key == CameraKey::Debug {
                 let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
@@ -2353,10 +2375,12 @@ fn main() {
 
         context.profiling_context.begin_run(run_index);
 
-        context.shader_compiler
-            .replace_profiling(&mut context.current, shader_compiler::ProfilingVariables {
-                time_sensitive: context.profiling_context.time_sensitive()
-            });
+        context.shader_compiler.replace_profiling(
+            &mut context.current,
+            shader_compiler::ProfilingVariables {
+                time_sensitive: context.profiling_context.time_sensitive(),
+            },
+        );
 
         while context.running {
             context.render();

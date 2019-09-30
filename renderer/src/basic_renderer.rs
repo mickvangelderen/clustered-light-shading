@@ -29,6 +29,7 @@ glsl_defines!(fixed_header {
         LIGHT_BUFFER_BINDING = 4;
         LIGHT_INDICES_BUFFER_BINDING = 8;
         CLUSTER_SPACE_BUFFER_BINDING = 9;
+        BASIC_ATOMIC_BINDING = 0;
     },
     uniforms: {
     },
