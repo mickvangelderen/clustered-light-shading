@@ -2353,6 +2353,11 @@ fn main() {
 
         context.profiling_context.begin_run(run_index);
 
+        context.shader_compiler
+            .replace_profiling(&mut context.current, shader_compiler::ProfilingVariables {
+                time_sensitive: context.profiling_context.time_sensitive()
+            });
+
         while context.running {
             context.render();
             context.process_events();
