@@ -17,6 +17,7 @@ def read_padded_string(f):
 
 class ProfilingData:
     def __init__(self, profiling_dir):
+        self.profiling_dir = profiling_dir
         with open(profiling_dir + "samples.bin", "rb") as f:
             self.run_count = read_u64(f)
             self.frame_count = read_u64(f)
