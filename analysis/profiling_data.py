@@ -35,6 +35,8 @@ class ProfilingData:
 
             self.stamps = np.reshape(np.fromfile(f, dtype='uint64', count = stamp_count), stamp_shape)
 
+            self.deltas = np.subtract(self.stamps[:, :, :, [1, 3]], self.stamps[:, :, :, [0, 2]])
+
             cluster_buffer_u32_size = 4+32*3
 
             self.cluster_buffers = np.reshape(
