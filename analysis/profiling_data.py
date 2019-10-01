@@ -22,6 +22,7 @@ class ProfilingData:
             self.frame_count = read_u64(f)
             self.sample_count = read_u64(f)
             self.cluster_buffer_count = read_u64(f)
+            self.basic_buffer_count = read_u64(f)
             self.field_count = 4
 
             stamp_count = self.run_count * self.frame_count * self.sample_count * self.field_count
@@ -38,4 +39,11 @@ class ProfilingData:
             self.cluster_buffers = np.reshape(
                 np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*cluster_buffer_u32_size),
                 (self.frame_count, self.cluster_buffer_count, cluster_buffer_u32_size)
+            );
+
+            basic_buffer_u32_size = 2
+
+            self.basic_buffers = np.reshape(
+                np.fromfile(f, dtype='uint32', count = self.frame_count*self.basic_buffer_count*basic_buffer_u32_size),
+                (self.frame_count, self.basic_buffer_count, basic_buffer_u32_size)
             );
