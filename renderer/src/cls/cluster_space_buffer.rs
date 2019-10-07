@@ -37,9 +37,9 @@ pub struct ClusterSpaceBuffer {
     cluster_count: u32,
     frustum: Frustum<f32>,
     _pad1: [f32; 2],
-    cam_to_clp_coeffs: [LerpCoeffs<f32>; 3],
+    cam_to_cls_coeffs: [LerpCoeffs<f32>; 3],
     _pad2: [f32; 2],
-    clp_to_cam_coeffs: [LerpCoeffs<f32>; 3],
+    cls_to_cam_coeffs: [LerpCoeffs<f32>; 3],
     _pad3: [f32; 2],
     wld_to_cam: Matrix4<f32>,
     cam_to_wld: Matrix4<f32>,
@@ -52,7 +52,7 @@ impl ClusterSpaceBuffer {
             cluster_count: dimensions.product(),
             frustum: frustum.cast().unwrap(),
             _pad1: Default::default(),
-            cam_to_clp_coeffs: [
+            cam_to_cls_coeffs: [
                 LerpCoeffs::new(frustum.x0, frustum.x1, 0.0, dimensions.x as f64)
                     .cast()
                     .unwrap(),
@@ -64,7 +64,7 @@ impl ClusterSpaceBuffer {
                     .unwrap(),
             ],
             _pad2: Default::default(),
-            clp_to_cam_coeffs: [
+            cls_to_cam_coeffs: [
                 LerpCoeffs::new(0.0, dimensions.x as f64, frustum.x0, frustum.x1)
                     .cast()
                     .unwrap(),

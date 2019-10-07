@@ -1,5 +1,5 @@
-use renderer::*;
 use crate::*;
+use renderer::*;
 
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -212,58 +212,84 @@ impl ClusterResources {
         let parameters = &self.parameters;
         let cfg = &parameters.configuration;
 
-        // TODO: Refactor, this is for multiple orthographic cameras but turns
-        // out to work for a single perspective camera.
+        self.computed = match cfg.projection {
+            ClusteringProjection::Orthographic => {
+                // Compute bounding box of all camera frustum corners.
+                let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                let range = Range3::<f64>::from_points({
+                    self.camera_resources_pool.used_slice().iter().flat_map(
+                        |&ClusterCameraResources {
+                             parameters: ref cam_par,
+                             ..
+                         }| {
+                            let clp_to_hmd = parameters.wld_to_hmd * cam_par.cam_to_wld * cam_par.clp_to_cam;
+                            corners_in_clp
+                                .into_iter()
+                                .map(move |&p| clp_to_hmd.transform_point(p).cast::<f64>().unwrap())
+                        },
+                    )
+                })
+                .unwrap();
 
-        // Compute bounding box of all camera frustum corners.
-        let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
-        let range = Range3::<f64>::from_points({
-            self.camera_resources_pool.used_slice().iter().flat_map(
-                |&ClusterCameraResources {
-                     parameters: ref cam_par,
-                     ..
-                 }| {
-                    let clp_to_hmd = parameters.wld_to_hmd * cam_par.cam_to_wld * cam_par.clp_to_cam;
-                    corners_in_clp
-                        .into_iter()
-                        .map(move |&p| clp_to_hmd.transform_point(p).cast::<f64>().unwrap())
-                },
-            )
-        })
-        .unwrap();
+                let dimensions = range
+                    .delta()
+                    .div_element_wise(Vector3::from(cfg.orthographic_sides.to_array()))
+                    .map(f64::ceil);
 
-        let dimensions = range.delta().div_element_wise(cfg.cluster_sides()).map(f64::ceil);
+                let dimensions_u32 = dimensions.cast::<u32>().unwrap();
 
-        let dimensions_u32 = dimensions.cast::<u32>().unwrap();
-
-        if dimensions_u32.product() > cfg.max_clusters {
-            panic!(
-                "Cluster dimensions are too large: {} x {} x {} exceeds the maximum {}.",
-                dimensions_u32.x, dimensions_u32.y, dimensions_u32.z, cfg.max_clusters,
-            );
-        }
-
-        struct Things {
-            frustum: Frustum<f64>,
-            wld_to_ccam: Matrix4<f64>,
-            ccam_to_wld: Matrix4<f64>,
-        }
-
-        let things: Things = match cfg.projection {
-            ClusteringProjection::Orthographic => Things {
-                frustum: Frustum::<f64>::from_range(&range),
-                wld_to_ccam: parameters.wld_to_hmd,
-                ccam_to_wld: parameters.hmd_to_wld,
-            },
+                if dimensions_u32.product() > cfg.max_clusters {
+                    panic!(
+                        "Cluster dimensions are too large: {} x {} x {} exceeds the maximum {}.",
+                        dimensions_u32.x, dimensions_u32.y, dimensions_u32.z, cfg.max_clusters,
+                    );
+                }
+                ClusterComputed {
+                    dimensions: dimensions_u32,
+                    frustum: Frustum::<f64>::from_range(&range),
+                    wld_to_ccam: parameters.wld_to_hmd,
+                    ccam_to_wld: parameters.hmd_to_wld,
+                }
+            }
             ClusteringProjection::Perspective => {
                 let cameras = self.camera_resources_pool.used_slice();
 
                 match cameras.len() {
-                    1 => Things {
-                        frustum: cameras[0].parameters.frustum,
-                        wld_to_ccam: cameras[0].parameters.wld_to_cam,
-                        ccam_to_wld: cameras[0].parameters.cam_to_wld,
-                    },
+                    1 => {
+                        let camera = &cameras[0];
+
+                        let d = camera.parameters.frame_dims;
+                        let f = camera.parameters.frustum;
+
+                        let x_per_c = f.dx() * 64.0 / d.x as f64;
+                        let y_per_c = f.dy() * 64.0 / d.y as f64;
+
+                        assert!(x_per_c - y_per_c < std::f64::EPSILON);
+
+                        let cls_x = d.x.ceiled_div(64) as u32;
+                        let cls_y = d.y.ceiled_div(64) as u32;
+                        let cls_z = (f.z0 / f.z1).log(1.0 + -f.z1 * x_per_c).ceil() as u32;
+
+                        // We adjust the frustum to make clusters line up nicely
+                        // with pixels in the framebuffer..
+                        let frustum = Frustum {
+                            x0: f.x0,
+                            x1: cls_x as f64 * x_per_c + f.x0,
+                            y0: f.y0,
+                            y1: cls_y as f64 * y_per_c + f.y0,
+                            z0: f.z1*(1.0 + -f.z1 * x_per_c).powi(cls_z as i32),
+                            z1: f.z1,
+                        };
+
+                        let dimensions = Vector3::new(cls_x, cls_y, cls_z);
+
+                        ClusterComputed {
+                            dimensions,
+                            frustum,
+                            wld_to_ccam: camera.parameters.wld_to_cam,
+                            ccam_to_wld: camera.parameters.cam_to_wld,
+                        }
+                    }
                     2 => {
                         let far_pos_in_clp = [
                             Point3::new(-1.0, -1.0, DEPTH_RANGE.1),
@@ -493,15 +519,55 @@ impl ClusterResources {
                         let hmd_to_ccam = Matrix4::from_translation(Point3::origin() - origin);
                         let ccam_to_hmd = Matrix4::from_translation(origin - Point3::origin());
 
-                        Things {
-                            frustum: Frustum {
-                                x0: x0.unwrap(),
-                                x1: x1.unwrap(),
-                                y0: y0.unwrap(),
-                                y1: y1.unwrap(),
-                                z0: z0.unwrap() - origin.z,
-                                z1: z1.unwrap() - origin.z,
-                            },
+                        let f = Frustum {
+                            x0: x0.unwrap(),
+                            x1: x1.unwrap(),
+                            y0: y0.unwrap(),
+                            y1: y1.unwrap(),
+                            z0: z0.unwrap() - origin.z,
+                            z1: z1.unwrap() - origin.z,
+                        };
+
+                        let dim_x = self
+                            .camera_resources_pool
+                            .used_slice()
+                            .iter()
+                            .map(|camera| camera.parameters.frame_dims.x)
+                            .max()
+                            .unwrap();
+
+                        let dim_y = self
+                            .camera_resources_pool
+                            .used_slice()
+                            .iter()
+                            .map(|camera| camera.parameters.frame_dims.y)
+                            .max()
+                            .unwrap();
+
+                        let x_per_c = f.dx() * 64.0 / dim_x as f64;
+                        let y_per_c = f.dy() * 64.0 / dim_y as f64;
+
+                        // NOTE: Didn't think about this a lot.
+                        let x_per_c = x_per_c.min(y_per_c);
+
+                        let cls_x = dim_x.ceiled_div(64) as u32;
+                        let cls_y = dim_y.ceiled_div(64) as u32;
+                        let cls_z = (f.z0 / f.z1).log(1.0 + -f.z1 * x_per_c).ceil() as u32;
+
+                        // We adjust the frustum to make clusters line up nicely
+                        // with pixels in the framebuffer..
+                        let frustum = Frustum {
+                            x0: f.x0,
+                            x1: cls_x as f64 * x_per_c + f.x0,
+                            y0: f.y0,
+                            y1: cls_y as f64 * y_per_c + f.y0,
+                            z0: f.z1*(1.0 + -f.z1 * x_per_c).powi(cls_z as i32),
+                            z1: f.z1,
+                        };
+
+                        ClusterComputed {
+                            dimensions: Vector3::new(cls_x, cls_y, cls_z),
+                            frustum,
                             wld_to_ccam: hmd_to_ccam * parameters.wld_to_hmd,
                             ccam_to_wld: parameters.hmd_to_wld * ccam_to_hmd,
                         }
@@ -511,13 +577,6 @@ impl ClusterResources {
                     }
                 }
             }
-        };
-
-        self.computed = ClusterComputed {
-            dimensions: dimensions.cast().unwrap(),
-            frustum: things.frustum,
-            wld_to_ccam: things.wld_to_ccam,
-            ccam_to_wld: things.ccam_to_wld,
         };
     }
 

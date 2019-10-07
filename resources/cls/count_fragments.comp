@@ -17,8 +17,6 @@ void main() {
   }
 
   // pos_in_ndc is known.
-  // inverse projection clp_to_cls is known.
-  // assuming w_cls = 1, we can compute pos_in_cls.
   vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - ivec2(fb_dims)) / vec2(fb_dims);
   float z_ndc = texelFetch(depth_sampler, ivec2(gl_GlobalInvocationID.xy), 0).r;
 
@@ -28,9 +26,8 @@ void main() {
   }
 
   vec4 pos_in_ndc = to_homogeneous(vec3(xy_ndc, z_ndc));
-  vec3 pos_in_cam = from_homogeneous(cluster_space.wld_to_cam * clp_to_wld * pos_in_ndc);
-  vec4 pos_in_clp = cluster_cam_to_clp(pos_in_cam);
-  vec3 pos_in_cls = vec3(pos_in_clp.x / pos_in_clp.w, pos_in_clp.y / pos_in_clp.w, pos_in_clp.z);
+  vec3 pos_in_ccam = from_homogeneous(cluster_space.wld_to_cam * clp_to_wld * pos_in_ndc);
+  vec3 pos_in_cls = cluster_cam_to_cls(pos_in_ccam);
 
   uvec3 idx_in_cls = uvec3(pos_in_cls);
   if (all(lessThan(idx_in_cls, cluster_space.dimensions))) {
