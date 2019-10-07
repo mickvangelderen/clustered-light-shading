@@ -1,5 +1,9 @@
 use crate::*;
 
+mod buffer;
+
+pub use buffer::*;
+
 #[derive(Debug, Copy, Clone)]
 pub struct TextureUpdateData<'a> {
     pub width: i32,
