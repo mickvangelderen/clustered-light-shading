@@ -29,8 +29,8 @@ height = 720
 framebuffer_srgb = true
 
 [clustered_light_shading]
-projection = "Orthographic"
-# projection = "Perspective"
+# projection = "Orthographic"
+projection = "Perspective"
 # grouping = "Individual"
 grouping = "Enclosed"
 orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
