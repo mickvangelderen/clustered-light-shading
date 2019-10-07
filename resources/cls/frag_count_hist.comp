@@ -44,5 +44,5 @@ void main() {
     }
   }
 
-  atomicAdd(profiling_cluster_buffer.frag_count_hist[gl_LocalInvocationID.x], acc);
+  atomicAdd(profiling_cluster_buffer.fragments_per_cluster_hist[gl_LocalInvocationID.x], acc);
 }

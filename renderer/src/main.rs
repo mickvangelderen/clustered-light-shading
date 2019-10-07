@@ -1422,8 +1422,9 @@ impl<'s> Context<'s> {
             cluster_resources.recompute();
 
             let cluster_count = cluster_resources.computed.cluster_count();
-            let blocks_per_dispatch = cluster_count
-                .ceiled_div(self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads);
+            let blocks_per_dispatch = cluster_count.ceiled_div(
+                self.configuration.prefix_sum.pass_0_threads * self.configuration.prefix_sum.pass_1_threads,
+            );
             let clusters_per_dispatch = self.configuration.prefix_sum.pass_0_threads * blocks_per_dispatch;
             let cluster_dispatch_count = cluster_count.ceiled_div(clusters_per_dispatch);
 
@@ -1450,6 +1451,20 @@ impl<'s> Context<'s> {
                 buffer.invalidate(gl);
                 // buffer.ensure_capacity(gl, byte_count);
                 buffer.clear_0u32(gl, byte_count);
+            }
+
+            unsafe {
+                let buffer = &mut cluster_resources.cluster_maybe_active_cluster_indices_buffer;
+                let byte_count = std::mem::size_of::<u32>() * cluster_resources.computed.cluster_count() as usize;
+                assert!(byte_count <= buffer.byte_capacity());
+                buffer.invalidate(gl);
+                // buffer.ensure_capacity(gl, byte_count);
+                // buffer.clear_0u32(gl, byte_count);
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
+                    buffer.name(),
+                );
             }
 
             // NOTE: Work around borrow checker.
@@ -1600,13 +1615,13 @@ impl<'s> Context<'s> {
                 }
 
                 unsafe {
-                    let buffer = &mut cluster_resources.active_cluster_indices_buffer;
+                    let buffer = &mut cluster_resources.active_cluster_cluster_indices_buffer;
                     buffer.invalidate(gl);
                     // buffer.ensure_capacity(gl, byte_count);
                     buffer.clear_0u32(gl, buffer.byte_capacity());
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        cls_renderer::ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
+                        cls_renderer::ACTIVE_CLUSTER_CLUSTER_INDICES_BUFFER_BINDING,
                         buffer.name(),
                     );
                 }
@@ -1632,7 +1647,6 @@ impl<'s> Context<'s> {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.computed.cluster_count());
                         gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1643,7 +1657,6 @@ impl<'s> Context<'s> {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.computed.cluster_count());
                         gl.dispatch_compute(1, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1654,7 +1667,6 @@ impl<'s> Context<'s> {
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
                         gl.use_program(name);
-                        gl.uniform_1ui(cls_renderer::ITEM_COUNT_LOC, cluster_resources.computed.cluster_count());
                         gl.dispatch_compute(cluster_dispatch_count, 1, 1);
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
@@ -1938,6 +1950,21 @@ impl<'s> Context<'s> {
                 );
             }
 
+            let profiling_basic_buffer = match self.profiling_context.time_sensitive() {
+                true => None,
+                false => unsafe {
+                    let view = self.profiling_context.begin_basic_buffer(gl);
+                    gl.bind_buffer_range(
+                        gl::ATOMIC_COUNTER_BUFFER,
+                        basic_renderer::BASIC_ATOMIC_BINDING,
+                        view.name(),
+                        view.byte_offset(),
+                        view.byte_count(),
+                    );
+                    Some(view)
+                },
+            };
+
             let cam_pos_in_lgt = light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
 
             unsafe {
@@ -1963,6 +1990,12 @@ impl<'s> Context<'s> {
                     .next_unused(gl, &mut self.profiling_context, dimensions);
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
+
+            if let Some(view) = profiling_basic_buffer {
+                unsafe {
+                    self.profiling_context.end_basic_buffer(self.gl, view);
+                }
+            }
 
             if self.target_camera_key == CameraKey::Debug {
                 let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
@@ -2341,6 +2374,13 @@ fn main() {
         let mut context = Context::new(&mut context);
 
         context.profiling_context.begin_run(run_index);
+
+        context.shader_compiler.replace_profiling(
+            &mut context.current,
+            shader_compiler::ProfilingVariables {
+                time_sensitive: context.profiling_context.time_sensitive(),
+            },
+        );
 
         while context.running {
             context.render();

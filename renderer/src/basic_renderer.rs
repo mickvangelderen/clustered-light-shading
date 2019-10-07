@@ -23,12 +23,13 @@ pub struct Parameters {
 
 glsl_defines!(fixed_header {
     bindings: {
-        MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
+        CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
         ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 2;
         ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 3;
         LIGHT_BUFFER_BINDING = 4;
         LIGHT_INDICES_BUFFER_BINDING = 8;
         CLUSTER_SPACE_BUFFER_BINDING = 9;
+        BASIC_ATOMIC_BINDING = 0;
     },
     uniforms: {
     },
@@ -54,12 +55,10 @@ impl Context<'_> {
                         self.shader_compiler.variables.render_technique
                     );
 
-                    // NOTE: The cluster_fragment_counts buffer is re-used as
-                    // the maybe_active_cluster_indices_buffer.
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
-                        MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
-                        cluster_resources.cluster_fragment_counts_buffer.name(),
+                        CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
+                        cluster_resources.cluster_maybe_active_cluster_indices_buffer.name(),
                     );
 
                     gl.bind_buffer_base(

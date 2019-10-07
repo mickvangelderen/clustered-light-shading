@@ -2,7 +2,7 @@ mod alloc;
 mod indices;
 
 use crate::ValueAsBytes;
-use alloc::AllocBuffer;
+use alloc::{AllocBuffer, BufferView};
 use gl_typed as gl;
 use ProfilingConfiguration as Configuration;
 use ProfilingContext as Context;
@@ -20,7 +20,8 @@ pub struct ProfilingConfiguration {
 enum FrameEvent {
     BeginTimeSpan(SampleIndex),
     EndTimeSpan,
-    RecordClusterBuffer { offset: usize },
+    RecordClusterBuffer { byte_offset: usize },
+    RecordBasicBuffer { byte_offset: usize },
 }
 
 struct FrameContext {
@@ -54,11 +55,7 @@ impl FrameContextRing {
     const CAPACITY: usize = 3;
 
     pub fn new(gl: &gl::Gl) -> Self {
-        Self([
-            FrameContext::new(gl),
-            FrameContext::new(gl),
-            FrameContext::new(gl),
-        ])
+        Self([FrameContext::new(gl), FrameContext::new(gl), FrameContext::new(gl)])
     }
 
     pub fn reset(&mut self) {
@@ -265,13 +262,16 @@ impl Context {
                         samples[sample_index.to_usize()] = Some(sample);
                     }
                     FrameEvent::EndTimeSpan => self.thread.emit(MeasurementEvent::EndTimeSpan),
-                    FrameEvent::RecordClusterBuffer { offset } => {
+                    FrameEvent::RecordClusterBuffer { byte_offset } => unsafe {
                         let mut buffer = ClusterBuffer::default();
-                        unsafe {
-                            context.buffer.read(gl, offset, buffer.value_as_bytes_mut());
-                        }
+                        context.buffer.read(gl, byte_offset, buffer.value_as_bytes_mut());
                         self.thread.emit(MeasurementEvent::RecordClusterBuffer(buffer));
-                    }
+                    },
+                    FrameEvent::RecordBasicBuffer { byte_offset } => unsafe {
+                        let mut buffer = BasicBuffer::default();
+                        context.buffer.read(gl, byte_offset, buffer.value_as_bytes_mut());
+                        self.thread.emit(MeasurementEvent::RecordBasicBuffer(buffer));
+                    },
                 }
             }
 
@@ -317,14 +317,35 @@ impl Context {
     }
 
     #[inline]
-    pub unsafe fn record_cluster_buffer(&mut self, gl: &gl::Gl, name: &gl::BufferName, offset: usize) {
+    pub unsafe fn record_cluster_buffer(&mut self, gl: &gl::Gl, name: &gl::BufferName, byte_offset: usize) {
         assert!(true, self.run_started);
         assert!(true, self.frame_started);
         let context = &mut self.frame_context_ring[self.frame_index];
-        let offset = context
-            .buffer
-            .copy_from(gl, name, offset, std::mem::size_of::<ClusterBuffer>());
-        context.events.push(FrameEvent::RecordClusterBuffer { offset });
+        let view = context.buffer.alloc::<ClusterBuffer>(gl, 1);
+        gl.copy_named_buffer_sub_data(name, view.name, byte_offset, view.byte_offset, view.byte_count);
+        context.events.push(FrameEvent::RecordClusterBuffer { byte_offset: view.byte_offset });
+    }
+
+    #[inline]
+    pub unsafe fn begin_basic_buffer(&mut self, gl: &gl::Gl) -> BufferView {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
+
+        let mut view = context.buffer.alloc::<BasicBuffer>(gl, 1);
+        view.clear_0u32(gl);
+        view
+    }
+
+    #[inline]
+    pub unsafe fn end_basic_buffer(&mut self, _gl: &gl::Gl, view: BufferView) {
+        assert!(true, self.run_started);
+        assert!(true, self.frame_started);
+        let context = &mut self.frame_context_ring[self.frame_index];
+
+        context.events.push(FrameEvent::RecordBasicBuffer {
+            byte_offset: view.byte_offset,
+        });
     }
 
     #[inline]
@@ -501,6 +522,7 @@ pub enum MeasurementEvent {
     BeginTimeSpan(SampleIndex, GpuCpuTimeSpan),
     EndTimeSpan,
     RecordClusterBuffer(ClusterBuffer),
+    RecordBasicBuffer(BasicBuffer),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
@@ -508,8 +530,15 @@ pub enum MeasurementEvent {
 pub struct ClusterBuffer {
     active_cluster_count: u32,
     light_indices_count: u32,
-    shade_count: u32,
-    _pad: u32,
-    frag_count_hist: [u32; 32],
-    light_count_hist: [u32; 32],
+    _pad: [u32; 2],
+    fragments_per_cluster_hist: [u32; 32],
+    lights_per_cluster_hist: [u32; 32],
+    lights_per_fragment_hist: [u32; 32],
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[repr(C)]
+pub struct BasicBuffer {
+    shading_ops: u32,
+    lighting_ops: u32,
 }

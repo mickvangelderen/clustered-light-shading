@@ -15,15 +15,15 @@ def read_padded_string(f):
         f.read(pad_count)
     return string
 
-profiling_dir = "../profiling/2019-09-28_12-28-49/"
-
 class ProfilingData:
     def __init__(self, profiling_dir):
+        self.profiling_dir = profiling_dir
         with open(profiling_dir + "samples.bin", "rb") as f:
             self.run_count = read_u64(f)
             self.frame_count = read_u64(f)
             self.sample_count = read_u64(f)
             self.cluster_buffer_count = read_u64(f)
+            self.basic_buffer_count = read_u64(f)
             self.field_count = 4
 
             stamp_count = self.run_count * self.frame_count * self.sample_count * self.field_count
@@ -35,5 +35,18 @@ class ProfilingData:
 
             self.stamps = np.reshape(np.fromfile(f, dtype='uint64', count = stamp_count), stamp_shape)
 
-            self.cluster_buffers = np.reshape(np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*68), (self.frame_count, self.cluster_buffer_count, 68));
+            self.deltas = np.subtract(self.stamps[:, :, :, [1, 3]], self.stamps[:, :, :, [0, 2]])
 
+            cluster_buffer_u32_size = 4+32*3
+
+            self.cluster_buffers = np.reshape(
+                np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*cluster_buffer_u32_size),
+                (self.frame_count, self.cluster_buffer_count, cluster_buffer_u32_size)
+            );
+
+            basic_buffer_u32_size = 2
+
+            self.basic_buffers = np.reshape(
+                np.fromfile(f, dtype='uint32', count = self.frame_count*self.basic_buffer_count*basic_buffer_u32_size),
+                (self.frame_count, self.basic_buffer_count, basic_buffer_u32_size)
+            );

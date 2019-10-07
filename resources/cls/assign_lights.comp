@@ -4,7 +4,7 @@
 #include "../common.glsl"
 #include "cluster_space_buffer.glsl"
 // in
-#include "active_cluster_indices_buffer.glsl"
+#include "active_cluster_cluster_indices_buffer.glsl"
 #include "active_cluster_light_counts_buffer.glsl"
 #include "active_cluster_light_offsets_buffer.glsl"
 #include "light_xyzr_buffer.glsl"
@@ -70,7 +70,7 @@ void scan() {
 
 void main() {
   uvec3 dimensions = cluster_space.dimensions;
-  uint cluster_index = active_cluster_indices[wid];
+  uint cluster_index = active_cluster_cluster_indices[wid];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, dimensions);
 
   // NOTE: Offset is already corrected to have first value 0.
