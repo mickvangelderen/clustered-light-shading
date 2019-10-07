@@ -64,6 +64,7 @@ fn main() {
     let mut max_run_index = None;
     let mut max_frame_index = None;
     let mut max_cluster_buffer_count = None;
+    let mut max_basic_buffer_count = None;
 
     fn option_max_assign<T: Copy + std::cmp::Ord>(o: &mut Option<T>, v: T) {
         *o = match *o {
@@ -73,6 +74,7 @@ fn main() {
     }
 
     let mut cluster_buffer_count = 0;
+    let mut basic_buffer_count = 0;
 
     for event in events.iter() {
         match *event {
@@ -82,9 +84,11 @@ fn main() {
             MeasurementEvent::BeginFrame(frame_index) => {
                 option_max_assign(&mut max_frame_index, frame_index.to_usize());
                 cluster_buffer_count = 0;
+                basic_buffer_count = 0;
             }
             MeasurementEvent::EndFrame => {
                 option_max_assign(&mut max_cluster_buffer_count, cluster_buffer_count);
+                option_max_assign(&mut max_basic_buffer_count, basic_buffer_count);
             }
             MeasurementEvent::SampleName(index, ref name) => {
                 assert_eq!(index.to_usize(), sample_names.len());
@@ -92,6 +96,9 @@ fn main() {
             }
             MeasurementEvent::RecordClusterBuffer(ref _cluster_buffer) => {
                 cluster_buffer_count += 1;
+            }
+            MeasurementEvent::RecordBasicBuffer(ref _basic_buffer) => {
+                basic_buffer_count += 1;
             }
             _ => {}
         }
@@ -101,12 +108,14 @@ fn main() {
     let frame_count = max_frame_index.map(|index| index + 1).unwrap_or(0);
     let sample_count = sample_names.len();
     let cluster_buffer_count = max_cluster_buffer_count.unwrap_or(0);
+    let basic_buffer_count = max_basic_buffer_count.unwrap_or(0);
 
     dbg!(&sample_names);
     dbg!(sample_count);
     dbg!(run_count);
     dbg!(frame_count);
     dbg!(cluster_buffer_count);
+    dbg!(basic_buffer_count);
 
     let sample_stride = 4;
     let frame_stride = sample_count * sample_stride;
@@ -116,10 +125,14 @@ fn main() {
     let mut flat_cluster_buffers: Vec<ClusterBuffer> = std::iter::repeat_with(Default::default)
         .take(frame_count * cluster_buffer_count)
         .collect();
+    let mut flat_basic_buffers: Vec<BasicBuffer> = std::iter::repeat_with(Default::default)
+        .take(frame_count * basic_buffer_count)
+        .collect();
 
     let mut run_index: Option<usize> = None;
     let mut frame_index: Option<usize> = None;
     let mut cluster_buffer_index = 0;
+    let mut basic_buffer_index = 0;
 
     for event in events.iter() {
         match *event {
@@ -132,6 +145,7 @@ fn main() {
             MeasurementEvent::BeginFrame(index) => {
                 frame_index = Some(index.to_usize());
                 cluster_buffer_index = 0;
+                basic_buffer_index = 0;
             }
             MeasurementEvent::EndFrame => {
                 frame_index = None;
@@ -151,6 +165,12 @@ fn main() {
                     cluster_buffer.clone();
                 cluster_buffer_index += 1;
             }
+            MeasurementEvent::RecordBasicBuffer(ref basic_buffer) => {
+                assert_eq!(run_index, Some(0));
+                flat_basic_buffers[frame_index.unwrap() * basic_buffer_count + basic_buffer_index] =
+                    basic_buffer.clone();
+                basic_buffer_index += 1;
+            }
             _ => {}
         }
     }
@@ -164,6 +184,7 @@ fn main() {
         frame_count: u64,
         sample_count: u64,
         cluster_buffer_count: u64,
+        basic_buffer_count: u64,
     };
 
     file.write_all(
@@ -172,6 +193,7 @@ fn main() {
             frame_count: frame_count as u64,
             sample_count: sample_count as u64,
             cluster_buffer_count: cluster_buffer_count as u64,
+            basic_buffer_count: basic_buffer_count as u64,
         }
         .value_as_bytes(),
     )
@@ -189,6 +211,6 @@ fn main() {
     }
 
     file.write_all(flat_samples.vec_as_bytes()).unwrap();
-
     file.write_all(flat_cluster_buffers.vec_as_bytes()).unwrap();
+    file.write_all(flat_basic_buffers.vec_as_bytes()).unwrap();
 }

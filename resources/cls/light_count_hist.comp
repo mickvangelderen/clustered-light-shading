@@ -2,8 +2,9 @@
 
 #include "cluster_space_buffer.glsl"
 #include "compute_commands_buffer.glsl"
-// in
 #include "active_cluster_light_counts_buffer.glsl"
+#include "active_cluster_cluster_indices_buffer.glsl"
+#include "cluster_fragment_counts_buffer.glsl"
 // out
 #include "profiling_cluster_buffer.glsl"
 
@@ -17,7 +18,8 @@ layout(local_size_x = 32, local_size_y = 8) in;
 #define GLOBAL_OFFSET (gl_WorkGroupID.x * LOCAL_SIZE)
 #define GLOBAL_INDEX (GLOBAL_OFFSET + LOCAL_INDEX)
 
-shared uint shared_values[LOCAL_SIZE];
+shared uint shared_light_counts[LOCAL_SIZE];
+shared uint shared_fragment_counts[LOCAL_SIZE];
 
 uint bin(uint value) {
   return min(gl_WorkGroupSize.x - 1, value / 8);
@@ -28,19 +30,23 @@ void main() {
   bool within_bounds = GLOBAL_INDEX < item_count;
 
   // Read a block of data in one go.
-  shared_values[LOCAL_INDEX] = within_bounds ? active_cluster_light_counts[GLOBAL_INDEX] : 0;
+  shared_light_counts[LOCAL_INDEX] = within_bounds ? active_cluster_light_counts[GLOBAL_INDEX] : 0;
+  shared_fragment_counts[LOCAL_INDEX] = within_bounds ? cluster_fragment_counts[active_cluster_cluster_indices[GLOBAL_INDEX]] : 0;
   memoryBarrierShared();
   barrier();
 
   // Have every thread go over up to local_size_x values
   uint local_end = min(LOCAL_OFFSET + gl_WorkGroupSize.x, item_count - GLOBAL_OFFSET);
-  uint acc = 0;
+  uint clus_acc = 0;
+  uint frag_acc = 0;
   for (uint i = LOCAL_OFFSET; i < local_end; i++) {
-    uint value = shared_values[i];
+    uint value = shared_light_counts[i];
     if (bin(value) == gl_LocalInvocationID.x) {
-      acc += 1;
+      clus_acc += 1;
+      frag_acc += shared_fragment_counts[i];
     }
   }
 
-  atomicAdd(profiling_cluster_buffer.light_count_hist[gl_LocalInvocationID.x], acc);
+  atomicAdd(profiling_cluster_buffer.lights_per_cluster_hist[gl_LocalInvocationID.x], clus_acc);
+  atomicAdd(profiling_cluster_buffer.lights_per_fragment_hist[gl_LocalInvocationID.x], frag_acc);
 }

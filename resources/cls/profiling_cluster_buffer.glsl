@@ -3,8 +3,9 @@ struct ProfilingCluster {
   uint light_indices_count;
   uint shade_count;
   uint _pad;
-  uint frag_count_hist[32];
-  uint light_count_hist[32];
+  uint fragments_per_cluster_hist[32];
+  uint lights_per_cluster_hist[32];
+  uint lights_per_fragment_hist[32];
 };
 
 layout(std430, binding = PROFILING_CLUSTER_BUFFER_BINDING) buffer ProfilingClusterBuffer {

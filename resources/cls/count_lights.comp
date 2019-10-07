@@ -4,7 +4,7 @@
 #include "../common.glsl"
 #include "cluster_space_buffer.glsl"
 // in
-#include "active_cluster_indices_buffer.glsl"
+#include "active_cluster_cluster_indices_buffer.glsl"
 #include "light_xyzr_buffer.glsl"
 // use
 // out
@@ -69,7 +69,7 @@ void scan() {
 
 void main() {
   uvec3 dimensions = cluster_space.dimensions;
-  uint cluster_index = active_cluster_indices[wid];
+  uint cluster_index = active_cluster_cluster_indices[wid];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, dimensions);
 
   uint intersection_count = 0;
