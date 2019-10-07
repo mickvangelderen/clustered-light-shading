@@ -5,7 +5,6 @@ members = [
     "incremental",
     "polygen",
     "renderer",
-    "log-viewer",
     "kernel-generator",
 ]
 exclude = [
