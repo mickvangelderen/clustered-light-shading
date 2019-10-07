@@ -751,13 +751,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "log-viewer"
-version = "0.1.0"
-dependencies = [
- "renderer 0.1.1",
-]
-
-[[package]]
 name = "lzw"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
