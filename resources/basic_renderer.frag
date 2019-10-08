@@ -40,7 +40,7 @@ in vec3 fs_tan_in_lgt;
 #include "cls/active_cluster_light_offsets_buffer.glsl"
 #include "cls/light_indices_buffer.glsl"
 
-in vec4 fs_pos_in_cclp;
+in vec3 fs_pos_in_ccam;
 #endif
 
 layout(location = 0) out vec4 frag_color;
@@ -171,27 +171,25 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_cls = cluster_clp_to_cls(fs_pos_in_cclp);
+    vec3 pos_in_cls = cluster_cam_to_cls(fs_pos_in_ccam);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
     // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 
-    uvec3 fs_idx_in_cls = idx_in_cls;
-
     // CLUSTER INDICES X, Y, Z
-    // frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
+    // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
 
     // CLUSTER INDICES X, Y, Z mod 3
-    // vec3 cluster_index_colors = vec3((fs_idx_in_cls % 3) + 1)/4.0;
+    // vec3 cluster_index_colors = vec3((idx_in_cls % 3) + 1)/4.0;
     // frag_color = vec4(cluster_index_colors.xyz, 1.0);
 
     // CLUSTER MORTON INDEX
-    // uint cluster_morton_index = to_morton_3(fs_idx_in_cls);
+    // uint cluster_morton_index = to_morton_3(idx_in_cls);
     // frag_color = vec4(                              //
     //     float((cluster_morton_index >> 16) & 0xff) / 255.0, //
     //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
     //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
 
-    uint cluster_index = index_3_to_1(fs_idx_in_cls, cluster_space.dimensions);
+    uint cluster_index = index_3_to_1(idx_in_cls, cluster_space.dimensions);
     uint maybe_active_cluster_index =
         cluster_maybe_active_cluster_indices[cluster_index];
 

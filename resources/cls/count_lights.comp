@@ -85,8 +85,9 @@ void main() {
   float y1 = lerp_u32_f32(idx_in_cls.y + 1, 0, dimensions.y, frustum.y0, frustum.y1);
 
   // Depths. z0 < z1 < 0
-  float z0 = lerp_u32_f32(idx_in_cls.z, 0, dimensions.z, frustum.z0, frustum.z1);
-  float z1 = lerp_u32_f32(idx_in_cls.z + 1, 0, dimensions.z, frustum.z0, frustum.z1);
+  float d = (frustum.x1 - frustum.x0) / float(dimensions.x);
+  float z0 = frustum.z1 * pow(1.0 + d, float(dimensions.z) - float(idx_in_cls.z));
+  float z1 = frustum.z1 * pow(1.0 + d, float(dimensions.z) - float(idx_in_cls.z + 1));
 
   // Tangent plane normals.
   vec2 nx = normalize(vec2(-1.0, -x0));
