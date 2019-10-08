@@ -386,17 +386,17 @@ where
     }
 
     #[inline]
-    fn dx(&self) -> T {
+    pub fn dx(&self) -> T {
         self.x1 - self.x0
     }
 
     #[inline]
-    fn dy(&self) -> T {
+    pub fn dy(&self) -> T {
         self.y1 - self.y0
     }
 
     #[inline]
-    fn dz(&self) -> T {
+    pub fn dz(&self) -> T {
         self.z1 - self.z0
     }
 

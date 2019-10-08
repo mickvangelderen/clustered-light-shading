@@ -100,16 +100,6 @@ pub struct ClusteredLightShadingConfiguration {
     pub max_light_indices: u32,
 }
 
-impl ClusteredLightShadingConfiguration {
-    pub fn cluster_sides(&self) -> cgmath::Vector3<f64> {
-        let sides: [f64; 3] = match self.projection {
-            ClusteringProjection::Perspective => self.perspective_sides.to_array(),
-            ClusteringProjection::Orthographic => self.orthographic_sides.to_array(),
-        };
-        sides.into()
-    }
-}
-
 #[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub struct PrefixSumConfiguration {
     pub pass_0_threads: u32,

@@ -1,15 +1,15 @@
 [global]
 diffuse_srgb = true
 rain_drop_max = 10000
-# mode = "Normal"
+mode = "Normal"
 # mode = "Record"
-mode = "Replay"
+# mode = "Replay"
 
 [record]
 path = "recording.bin"
 
 [replay]
-run_count = 1
+run_count = 4
 path = "recording.bin"
 
 [profiling]
@@ -29,8 +29,8 @@ height = 720
 framebuffer_srgb = true
 
 [clustered_light_shading]
-projection = "Orthographic"
-# projection = "Perspective"
+# projection = "Orthographic"
+projection = "Perspective"
 # grouping = "Individual"
 grouping = "Enclosed"
 orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
@@ -48,14 +48,14 @@ yaw_deg = 5.0
 maximum_smoothness = 0.80
 
 [main_camera]
-z0 = -0.2
-z1 = -80.0
+z0 = -0.4
+z1 = -100.0
 positional_velocity = 8.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
 
 [debug_camera]
-z0 = -0.2
+z0 = -0.4
 z1 = -1000.0
 positional_velocity = 16.0
 angular_velocity = 0.4
