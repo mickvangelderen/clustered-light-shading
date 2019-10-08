@@ -24,7 +24,7 @@ vec3 cluster_cam_to_cls(vec3 pos_in_cam) {
   float frac_1_neg_z_cam = -1.0 / pos_in_cam.z;
   float x_cls = frac_1_neg_z_cam * (c.xa * pos_in_cam.x) + c.xb;
   float y_cls = frac_1_neg_z_cam * (c.ya * pos_in_cam.y) + c.yb;
-  float d = -f.z1 * (f.x1 - f.x0) / float(cluster_space.dimensions.x);
+  float d = (f.x1 - f.x0) / float(cluster_space.dimensions.x);
   float z_cls = float(cluster_space.dimensions.z) -
                 log(pos_in_cam.z / f.z1) / log(1.0 + d);
   return vec3(x_cls, y_cls, z_cls);
@@ -47,7 +47,7 @@ vec3 cluster_cls_to_cam(vec3 pos_in_cls) {
 #endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
   // NOTE: I expect dx to be roughly equal to dy.
-  float d = -f.z1 * (f.x1 - f.x0) / float(cluster_space.dimensions.x);
+  float d = (f.x1 - f.x0) / float(cluster_space.dimensions.x);
   float z_cam =
       f.z1 * pow(1.0 + d, float(cluster_space.dimensions.z) - pos_in_cls.z);
   float x_cam = -z_cam * (c.xa * pos_in_cls.x + c.xb);
