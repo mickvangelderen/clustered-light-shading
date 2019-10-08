@@ -1,5 +1,6 @@
 use crate::*;
 use renderer::*;
+use std::cmp::Ordering;
 
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -212,7 +213,7 @@ impl ClusterResources {
         let parameters = &self.parameters;
         let cfg = &parameters.configuration;
 
-        self.computed = match cfg.projection {
+        let mut computed = match cfg.projection {
             ClusteringProjection::Orthographic => {
                 // Compute bounding box of all camera frustum corners.
                 let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
@@ -238,12 +239,6 @@ impl ClusterResources {
 
                 let dimensions_u32 = dimensions.cast::<u32>().unwrap();
 
-                if dimensions_u32.product() > cfg.max_clusters {
-                    panic!(
-                        "Cluster dimensions are too large: {} x {} x {} exceeds the maximum {}.",
-                        dimensions_u32.x, dimensions_u32.y, dimensions_u32.z, cfg.max_clusters,
-                    );
-                }
                 ClusterComputed {
                     dimensions: dimensions_u32,
                     frustum: Frustum::<f64>::from_range(&range),
@@ -277,7 +272,7 @@ impl ClusterResources {
                             x1: cls_x as f64 * x_per_c + f.x0,
                             y0: f.y0,
                             y1: cls_y as f64 * y_per_c + f.y0,
-                            z0: f.z1*(1.0 + -f.z1 * x_per_c).powi(cls_z as i32),
+                            z0: f.z1 * (1.0 + -f.z1 * x_per_c).powi(cls_z as i32),
                             z1: f.z1,
                         };
 
@@ -528,40 +523,38 @@ impl ClusterResources {
                             z1: z1.unwrap() - origin.z,
                         };
 
-                        let dim_x = self
-                            .camera_resources_pool
-                            .used_slice()
-                            .iter()
-                            .map(|camera| camera.parameters.frame_dims.x)
-                            .max()
-                            .unwrap();
+                        let d_per_c = {
+                            let mut iter = self.camera_resources_pool.used_slice().iter().map(|camera| {
+                                let d = &camera.parameters.frame_dims;
+                                let f = &camera.parameters.frustum;
+                                let x_per_c = f.dx() * 64.0 / d.x as f64;
+                                let y_per_c = f.dy() * 64.0 / d.y as f64;
+                                match x_per_c.partial_cmp(&y_per_c).unwrap() {
+                                    Ordering::Less | Ordering::Equal => x_per_c,
+                                    Ordering::Greater => y_per_c,
+                                }
+                            });
 
-                        let dim_y = self
-                            .camera_resources_pool
-                            .used_slice()
-                            .iter()
-                            .map(|camera| camera.parameters.frame_dims.y)
-                            .max()
-                            .unwrap();
+                            let first = iter.next().unwrap();
 
-                        let x_per_c = f.dx() * 64.0 / dim_x as f64;
-                        let y_per_c = f.dy() * 64.0 / dim_y as f64;
+                            iter.fold(first, |min, val| match min.partial_cmp(&val).unwrap() {
+                                Ordering::Less | Ordering::Equal => min,
+                                Ordering::Greater => val,
+                            })
+                        };
 
-                        // NOTE: Didn't think about this a lot.
-                        let x_per_c = x_per_c.min(y_per_c);
-
-                        let cls_x = dim_x.ceiled_div(64) as u32;
-                        let cls_y = dim_y.ceiled_div(64) as u32;
-                        let cls_z = (f.z0 / f.z1).log(1.0 + -f.z1 * x_per_c).ceil() as u32;
+                        let cls_x = (f.dx() / d_per_c).ceil() as u32;
+                        let cls_y = (f.dy() / d_per_c).ceil() as u32;
+                        let cls_z = (f.z0 / f.z1).log(1.0 + -f.z1 * d_per_c).ceil() as u32;
 
                         // We adjust the frustum to make clusters line up nicely
                         // with pixels in the framebuffer..
                         let frustum = Frustum {
                             x0: f.x0,
-                            x1: cls_x as f64 * x_per_c + f.x0,
+                            x1: cls_x as f64 * d_per_c + f.x0,
                             y0: f.y0,
-                            y1: cls_y as f64 * y_per_c + f.y0,
-                            z0: f.z1*(1.0 + -f.z1 * x_per_c).powi(cls_z as i32),
+                            y1: cls_y as f64 * d_per_c + f.y0,
+                            z0: f.z1 * (1.0 + -f.z1 * d_per_c).powi(cls_z as i32),
                             z1: f.z1,
                         };
 
@@ -578,6 +571,17 @@ impl ClusterResources {
                 }
             }
         };
+
+        for i in 0..3 {
+            if computed.dimensions[i] < 1 {
+                computed.dimensions[i] = 1;
+            }
+            if computed.dimensions[i] > 1000 {
+                computed.dimensions[i] = 1000;
+            }
+        }
+
+        self.computed = computed;
     }
 
     pub fn reset(&mut self, _gl: &gl::Gl, _profiling_context: &mut ProfilingContext, parameters: ClusterParameters) {
