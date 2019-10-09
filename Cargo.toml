@@ -6,6 +6,7 @@ members = [
     "polygen",
     "renderer",
     "kernel-generator",
+    "fbx",
 ]
 exclude = [
     "polygen/profiling",
