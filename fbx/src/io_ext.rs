@@ -27,3 +27,13 @@ impl<R: io::Read> ReadExt for R {
         Ok(elements)
     }
 }
+
+pub trait SeekExt {
+    fn pos(&mut self) -> u64;
+}
+
+impl<S: io::Seek> SeekExt for S {
+    fn pos(&mut self) -> u64 {
+        self.seek(io::SeekFrom::Current(0)).unwrap()
+    }
+}
