@@ -448,7 +448,7 @@ impl Resources {
 
         // ["two_planes.obj", "bunny.obj"]
         // ["shadow_test.obj"]
-        let objs: Vec<(PathBuf, Vec<tobj::Model>, Vec<tobj::Material>)> = ["sponza/sponza.obj", "keyboard.obj"]
+        let objs: Vec<(PathBuf, Vec<tobj::Model>, Vec<tobj::Material>)> = ["bistro.obj"]
             .into_iter()
             .map(PathBuf::from)
             .map(|rel_file_path| {
@@ -544,21 +544,34 @@ impl Resources {
                     let diffuse = *if !material.diffuse_texture.is_empty() {
                         let file_path = material_dir.join(&material.diffuse_texture);
                         path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            let img = image::open(&file_path)
-                                .expect("Failed to load image.")
-                                .flipv()
-                                .to_rgba();
-                            total_bytes += std::mem::size_of_val(&*img);
+                            match file_path.extension().unwrap() {
+                                x if x == "dds" => {
+                                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
+                                    let mut reader = std::io::BufReader::new(file);
+                                    let dds = dds::DDS::decode(&mut reader).unwrap();
 
-                            let texture = if configuration.global.diffuse_srgb {
-                                create_srgb_texture(gl, img)
-                            } else {
-                                create_texture(gl, img)
-                            };
+                                    println!("{:?}", &dds.header);
 
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
+                                    0
+                                }
+                                _ => {
+                                    let img = image::open(&file_path)
+                                        .expect("Failed to load image.")
+                                        .flipv()
+                                        .to_rgba();
+                                    total_bytes += std::mem::size_of_val(&*img);
+
+                                    let texture = if configuration.global.diffuse_srgb {
+                                        create_srgb_texture(gl, img)
+                                    } else {
+                                        create_texture(gl, img)
+                                    };
+
+                                    let index = textures.len() as TextureIndex;
+                                    textures.push(texture);
+                                    index
+                                }
+                            }
                         })
                     } else {
                         let rgba_u8 =
@@ -581,16 +594,29 @@ impl Resources {
                     let normal = *if let Some(bump_path) = material.unknown_param.get("map_bump") {
                         let file_path = material_dir.join(bump_path);
                         path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            let img = image::open(&file_path)
-                                .expect("Failed to load image.")
-                                .flipv()
-                                .to_rgba();
-                            total_bytes += std::mem::size_of_val(&*img);
+                            match file_path.extension().unwrap() {
+                                x if x == "dds" => {
+                                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
+                                    let mut reader = std::io::BufReader::new(file);
+                                    let dds = dds::DDS::decode(&mut reader).unwrap();
 
-                            let texture = create_texture(gl, img);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
+                                    println!("{:?}", &dds.header);
+
+                                    0
+                                }
+                                _ => {
+                                    let img = image::open(&file_path)
+                                        .expect("Failed to load image.")
+                                        .flipv()
+                                        .to_rgba();
+                                    total_bytes += std::mem::size_of_val(&*img);
+
+                                    let texture = create_texture(gl, img);
+                                    let index = textures.len() as TextureIndex;
+                                    textures.push(texture);
+                                    index
+                                }
+                            }
                         })
                     } else {
                         let rgba_u8 = rgba_f32_to_rgba_u8([0.5, 0.5, 0.5, 1.0]);
@@ -607,16 +633,29 @@ impl Resources {
                     let specular = *if !material.specular_texture.is_empty() {
                         let file_path = material_dir.join(&material.specular_texture);
                         path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            let img = image::open(&file_path)
-                                .expect("Failed to load image.")
-                                .flipv()
-                                .to_rgba();
-                            total_bytes += std::mem::size_of_val(&*img);
+                            match file_path.extension().unwrap() {
+                                x if x == "dds" => {
+                                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
+                                    let mut reader = std::io::BufReader::new(file);
+                                    let dds = dds::DDS::decode(&mut reader).unwrap();
 
-                            let texture = create_texture(gl, img);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
+                                    println!("{:?}", &dds.header);
+
+                                    0
+                                }
+                                _ => {
+                                    let img = image::open(&file_path)
+                                        .expect("Failed to load image.")
+                                        .flipv()
+                                        .to_rgba();
+                                    total_bytes += std::mem::size_of_val(&*img);
+
+                                    let texture = create_texture(gl, img);
+                                    let index = textures.len() as TextureIndex;
+                                    textures.push(texture);
+                                    index
+                                }
+                            }
                         })
                     } else {
                         let rgba_u8 = rgba_f32_to_rgba_u8([

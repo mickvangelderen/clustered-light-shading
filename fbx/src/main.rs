@@ -33,14 +33,15 @@ fn visit(node: &Node, depth: usize) {
     let mut visited = std::collections::HashMap::<String, usize>::new();
 
     for child in node.children.iter() {
-        let count = visited.entry(child.name.clone()).or_default();
-        if *count < 5 {
-            visit(child, depth + 1)
-        } else {
-            println!("{}...", "  ".repeat(depth + 1));
-            break;
-        }
-        *count += 1;
+        visit(child, depth + 1);
+        // let count = visited.entry(child.name.clone()).or_default();
+        // if *count < 5 {
+        //     visit(child, depth + 1)
+        // } else {
+        //     println!("{}...", "  ".repeat(depth + 1));
+        //     break;
+        // }
+        // *count += 1;
     }
 }
 

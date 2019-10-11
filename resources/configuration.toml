@@ -40,7 +40,7 @@ max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, lig
 max_light_indices = 1048576 # 2^20 u32 4MB * (light index)
 
 [virtual_stereo]
-enabled = true
+enabled = false
 pitch_deg = 0.0
 yaw_deg = 5.0
 
