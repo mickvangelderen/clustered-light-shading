@@ -21,13 +21,16 @@ impl FileHeader {
     pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let header = RawFileHeader::parse(reader)?;
         assert_eq!(header.magic, MAGIC);
-        assert_eq!({
-            // NOTE: Do an unaligned read of header.version, the pass the copy
-            // to assert_eq. It takes a reference by default and reading
-            // unaligned values from references is problematic.
-            let version = header.version;
-            version
-        }, VERSION_7300);
+        assert_eq!(
+            {
+                // NOTE: Do an unaligned read of header.version, the pass the copy
+                // to assert_eq. It takes a reference by default and reading
+                // unaligned values from references is problematic.
+                let version = header.version;
+                version
+            },
+            VERSION_7300
+        );
         Ok(Self {
             version: header.version.to_ne(),
         })
@@ -56,40 +59,27 @@ macro_rules! impl_parse_array {
         fn $f<R: io::Read + io::Seek>(reader: &mut R) -> io::Result<Self> {
             let array_header = RawArrayHeader::parse(reader)?;
             let element_count = array_header.element_count.to_ne() as usize;
-            let byte_count = array_header.byte_count.to_ne() as usize;
-            match array_header.encoding {
-                RawEncodingKind::PLAIN => {
-                    assert_eq!(element_count * std::mem::size_of::<$B>(), byte_count);
-                }
-                RawEncodingKind::DEFLATE => {
-                    // Nothing to assert.
-                }
-                unknown => panic!("Unknown encoding: {:?}", unknown),
-            };
-
-            let bytes = unsafe { reader.read_vec::<u8>(byte_count)? };
+            let encoded_byte_count = array_header.byte_count.to_ne() as usize;
+            let decoded_byte_count = element_count * std::mem::size_of::<$B>();
 
             let bytes = match array_header.encoding {
-                RawEncodingKind::PLAIN => {
-                    // Nothing to do.
-                    bytes
-                }
+                RawEncodingKind::PLAIN => reader.read_bytes(encoded_byte_count)?,
                 RawEncodingKind::DEFLATE => {
-                    let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
-                    let mut decoded_bytes = Vec::with_capacity(element_count * std::mem::size_of::<$B>());
-                    match io::Read::read_to_end(&mut decoder, &mut decoded_bytes) {
-                        Ok(_) => {
-                            assert_eq!(element_count * std::mem::size_of::<$B>(), decoded_bytes.len());
-                        }
-                        Err(err) => {
-                            eprintln!("Decoding error: {:?}", err);
-                        }
-                    }
+                    // NOTE: Because we don't own reader, we can't directly
+                    // construct a decoder around it. So we copy into a vec
+                    // first and then decode that. Kind of sucks but w/e.
+                    let bytes = reader.read_bytes(encoded_byte_count)?;
+                    let mut decoder = flate2::bufread::ZlibDecoder::new(&bytes[..]);
+                    let mut decoded_bytes = Vec::with_capacity(decoded_byte_count);
+                    io::Read::read_to_end(&mut decoder, &mut decoded_bytes).unwrap();
                     decoded_bytes
                 }
                 unknown => panic!("Unknown encoding: {:?}", unknown),
             };
 
+            assert_eq!(decoded_byte_count, bytes.len());
+
+            // [u8; B*N] -> [[u8; B]; N]
             let bytes = unsafe {
                 let mut bytes = std::mem::ManuallyDrop::new(bytes);
                 assert_eq!(0, bytes.len() % std::mem::size_of::<$B>());
@@ -155,12 +145,12 @@ impl Property {
             RawPropertyKind::F64_ARRAY => Self::parse_f64_array(reader)?,
             RawPropertyKind::STRING => {
                 let byte_count = unsafe { reader.read_val::<u32le>()? }.to_ne() as usize;
-                let bytes = unsafe { reader.read_vec::<u8>(byte_count)? };
+                let bytes = reader.read_bytes(byte_count)?;
                 Self::String(String::from_utf8(bytes).unwrap())
             }
             RawPropertyKind::BYTES => {
                 let byte_count = unsafe { reader.read_val::<u32le>()? }.to_ne() as usize;
-                let bytes = unsafe { reader.read_vec::<u8>(byte_count)? };
+                let bytes = reader.read_bytes(byte_count)?;
                 Self::Bytes(bytes)
             }
             unknown => {
@@ -182,34 +172,54 @@ impl Node {
         let header = RawNodeHeader::parse(reader)?;
         let end_offset = header.end_offset.to_ne() as u64;
 
-        if end_offset == 0 {
-            return Ok(None);
+        match end_offset {
+            0 => Ok(None),
+            _ => {
+                let name = String::from_utf8(reader.read_bytes(header.name_len as usize)?).unwrap();
+                let properties = Self::parse_properties(reader, &header)?;
+                let children = Self::parse_children(reader, &header)?;
+
+                debug_assert_eq!(end_offset, reader.pos());
+
+                Ok(Some(Node {
+                    name,
+                    properties,
+                    children,
+                }))
+            }
         }
+    }
 
-        let name = String::from_utf8(unsafe { reader.read_vec::<u8>(header.name_len as usize)? }).unwrap();
-
-        let prop_count = header.property_count.to_ne() as usize;
-        let mut properties = Vec::with_capacity(prop_count);
-        for _ in 0..prop_count {
+    #[inline]
+    fn parse_properties<R: io::Read + io::Seek>(reader: &mut R, header: &RawNodeHeader) -> io::Result<Vec<Property>> {
+        let property_count = header.property_count.to_ne() as usize;
+        let mut properties = Vec::with_capacity(property_count);
+        for _ in 0..property_count {
             properties.push(Property::parse(reader)?);
         }
+        Ok(properties)
+    }
 
+    #[inline]
+    fn skip_properties<R: io::Read + io::Seek>(reader: &mut R, header: &RawNodeHeader) -> io::Result<()> {
+        let properties_byte_count = header.properties_byte_count.to_ne() as i64;
+        reader.seek(io::SeekFrom::Current(properties_byte_count))?;
+        Ok(())
+    }
+
+    #[inline]
+    fn parse_children<R: io::Read + io::Seek>(reader: &mut R, header: &RawNodeHeader) -> io::Result<Vec<Node>> {
+        let end_offset = header.end_offset.to_ne() as u64;
         let mut children = Vec::new();
-        // NOTE(mickvangeldern): Sometimes child nodes aren't "null terminated" so this condition is necessary.
+        // NOTE(mickvangelderen): Sometimes child nodes aren't "null terminated"
+        // so this condition is necessary.
         while reader.pos() < end_offset {
             match Node::parse(reader)? {
                 Some(node) => children.push(node),
                 None => break,
             }
         }
-
-        debug_assert_eq!(end_offset, reader.pos());
-
-        Ok(Some(Node {
-            name,
-            properties,
-            children,
-        }))
+        Ok(children)
     }
 }
 

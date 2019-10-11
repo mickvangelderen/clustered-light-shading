@@ -1,14 +1,12 @@
+use crate::io_ext::*;
 use crate::num::*;
 use std::io;
-use crate::io_ext::*;
 
 macro_rules! impl_parse {
     ($T: ident) => {
         impl $T {
             pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-                unsafe {
-                    reader.read_val::<Self>()
-                }
+                unsafe { reader.read_val::<Self>() }
             }
         }
     };

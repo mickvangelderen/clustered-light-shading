@@ -3,6 +3,7 @@ use std::io;
 pub trait ReadExt {
     unsafe fn read_val<T>(&mut self) -> io::Result<T>;
     unsafe fn read_vec<T>(&mut self, element_count: usize) -> io::Result<Vec<T>>;
+    fn read_bytes(&mut self, byte_count: usize) -> io::Result<Vec<u8>>;
 }
 
 impl<R: io::Read> ReadExt for R {
@@ -25,6 +26,18 @@ impl<R: io::Read> ReadExt for R {
         ))?;
         elements.set_len(element_count);
         Ok(elements)
+    }
+
+    fn read_bytes(&mut self, byte_count: usize) -> io::Result<Vec<u8>> {
+        unsafe {
+            let mut bytes = Vec::with_capacity(byte_count);
+            self.read_exact(std::slice::from_raw_parts_mut(
+                bytes.as_mut_ptr() as *mut u8,
+                byte_count,
+            ))?;
+            bytes.set_len(byte_count);
+            Ok(bytes)
+        }
     }
 }
 
