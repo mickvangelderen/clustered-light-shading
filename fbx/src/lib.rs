@@ -10,7 +10,7 @@ use num::*;
 pub use raw::*;
 
 pub const MAGIC: [u8; 21] = *b"Kaydara FBX Binary  \0";
-pub const VERSION_7300: u32le = u32le::from_bytes([132, 28, 0, 0]);
+pub const VERSION_7300: u32le = u32le::from_ne(7300);
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct FileHeader {
@@ -21,7 +21,9 @@ impl FileHeader {
     pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let header = RawFileHeader::parse(reader)?;
         assert_eq!(header.magic, MAGIC);
-        assert_eq!(header.version, VERSION_7300);
+        // NOTE: Unaligned read.
+        let version = header.version;
+        assert_eq!(version, VERSION_7300);
         Ok(Self {
             version: header.version.to_ne(),
         })
