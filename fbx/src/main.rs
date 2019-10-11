@@ -10,7 +10,7 @@ fn read(path: impl AsRef<path::Path>) -> io::Result<File> {
 }
 
 fn visit(node: &Node, depth: usize) {
-    print!("{}ENTERING {}", "  ".repeat(depth), node.name);
+    print!("{}{}", "  ".repeat(depth), node.name);
     for property in node.properties.iter() {
         match property {
             Property::Bool(value) => print!(" {},", value),
@@ -33,8 +33,6 @@ fn visit(node: &Node, depth: usize) {
     for child in node.children.iter() {
         visit(child, depth + 1);
     }
-
-    println!("{}LEAVING  {}", "  ".repeat(depth), node.name);
 }
 
 fn main() {
