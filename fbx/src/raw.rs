@@ -2,24 +2,6 @@ use crate::convert::*;
 use crate::num::*;
 use std::io;
 
-#[derive(Debug, Copy, Clone, Default)]
-#[repr(C, packed)]
-pub struct RawFileHeader {
-    pub magic: [u8; 21],
-    pub unknown: [u8; 2],
-    pub version: u32le,
-}
-
-impl RawFileHeader {
-    pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        unsafe {
-            let mut value: Self = Default::default();
-            reader.read_exact(value.value_as_bytes_mut())?;
-            Ok(value)
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct RawPropertyKind(pub u8);
 
@@ -54,6 +36,33 @@ impl RawEncodingKind {
     pub const DEFLATE: Self = Self(u32le::from_bytes([1, 0, 0, 0]));
 }
 
+macro_rules! impl_parse {
+    ($T: ident) => {
+        impl $T {
+            pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+                unsafe {
+                    let mut value = std::mem::MaybeUninit::<Self>::uninit();
+                    reader.read_exact(std::slice::from_raw_parts_mut(
+                        value.as_mut_ptr() as *mut u8,
+                        std::mem::size_of::<Self>(),
+                    ))?;
+                    Ok(value.assume_init())
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+#[repr(C, packed)]
+pub struct RawFileHeader {
+    pub magic: [u8; 21],
+    pub unknown: [u8; 2],
+    pub version: u32le,
+}
+
+impl_parse!(RawFileHeader);
+
 #[derive(Debug, Default)]
 #[repr(C, packed)]
 pub struct RawArrayHeader {
@@ -62,15 +71,7 @@ pub struct RawArrayHeader {
     pub byte_count: u32le,
 }
 
-impl RawArrayHeader {
-    pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        unsafe {
-            let mut value: Self = Default::default();
-            reader.read_exact(value.value_as_bytes_mut())?;
-            Ok(value)
-        }
-    }
-}
+impl_parse!(RawArrayHeader);
 
 #[derive(Debug, Copy, Clone, Default)]
 #[repr(C, packed)]
@@ -81,12 +82,4 @@ pub struct RawNodeHeader {
     pub name_len: u8,
 }
 
-impl RawNodeHeader {
-    pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        unsafe {
-            let mut value: Self = Default::default();
-            reader.read_exact(value.value_as_bytes_mut())?;
-            Ok(value)
-        }
-    }
-}
+impl_parse!(RawNodeHeader);
