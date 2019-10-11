@@ -49,7 +49,7 @@ macro_rules! impl_parse {
                 }
             }
         }
-    }
+    };
 }
 
 #[derive(Debug, Copy, Clone, Default)]

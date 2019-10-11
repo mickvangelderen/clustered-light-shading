@@ -1,11 +1,11 @@
 #![feature(float_to_from_bytes)]
 use std::io;
 
-mod convert;
+mod io_ext;
 mod num;
 mod raw;
 
-use convert::*;
+use io_ext::*;
 use num::*;
 pub use raw::*;
 
@@ -61,15 +61,7 @@ macro_rules! impl_parse_array {
                 unknown => panic!("Unknown encoding: {:?}", unknown),
             };
 
-            let bytes = unsafe {
-                let mut bytes = Vec::<u8>::with_capacity(byte_count);
-                reader.read_exact(std::slice::from_raw_parts_mut(
-                    bytes.as_mut_ptr(),
-                    byte_count,
-                ))?;
-                bytes.set_len(byte_count);
-                bytes
-            };
+            let bytes = unsafe { reader.read_vec::<u8>(byte_count)? };
 
             let bytes = match array_header.encoding {
                 RawEncodingKind::PLAIN => {
@@ -78,14 +70,10 @@ macro_rules! impl_parse_array {
                 }
                 RawEncodingKind::DEFLATE => {
                     let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
-                    let mut decoded_bytes =
-                        Vec::with_capacity(element_count * std::mem::size_of::<$B>());
+                    let mut decoded_bytes = Vec::with_capacity(element_count * std::mem::size_of::<$B>());
                     match io::Read::read_to_end(&mut decoder, &mut decoded_bytes) {
                         Ok(_) => {
-                            assert_eq!(
-                                element_count * std::mem::size_of::<$B>(),
-                                decoded_bytes.len()
-                            );
+                            assert_eq!(element_count * std::mem::size_of::<$B>(), decoded_bytes.len());
                         }
                         Err(err) => {
                             eprintln!("Decoding error: {:?}", err);
@@ -160,39 +148,13 @@ impl Property {
             RawPropertyKind::F32_ARRAY => Self::parse_f32_array(reader)?,
             RawPropertyKind::F64_ARRAY => Self::parse_f64_array(reader)?,
             RawPropertyKind::STRING => {
-                let element_count = unsafe {
-                    let mut value = u32le::from_bytes([0, 0, 0, 0]);
-                    reader.read_exact(value.value_as_bytes_mut())?;
-                    value.to_ne() as usize
-                };
-
-                let bytes = unsafe {
-                    let mut bytes = Vec::with_capacity(element_count);
-                    reader.read_exact(std::slice::from_raw_parts_mut(
-                        bytes.as_mut_ptr() as *mut u8,
-                        element_count,
-                    ))?;
-                    bytes.set_len(element_count);
-                    bytes
-                };
+                let byte_count = unsafe { reader.read_val::<u32le>()? }.to_ne() as usize;
+                let bytes = unsafe { reader.read_vec::<u8>(byte_count)? };
                 Self::String(String::from_utf8(bytes).unwrap())
             }
             RawPropertyKind::BYTES => {
-                let element_count = unsafe {
-                    let mut value = u32le::from_bytes([0, 0, 0, 0]);
-                    reader.read_exact(value.value_as_bytes_mut())?;
-                    value.to_ne() as usize
-                };
-
-                let bytes = unsafe {
-                    let mut bytes = Vec::with_capacity(element_count);
-                    reader.read_exact(std::slice::from_raw_parts_mut(
-                        bytes.as_mut_ptr() as *mut u8,
-                        element_count,
-                    ))?;
-                    bytes.set_len(element_count);
-                    bytes
-                };
+                let byte_count = unsafe { reader.read_val::<u32le>()? }.to_ne() as usize;
+                let bytes = unsafe { reader.read_vec::<u8>(byte_count)? };
                 Self::Bytes(bytes)
             }
             unknown => {
@@ -218,13 +180,7 @@ impl Node {
             return Ok(None);
         }
 
-        let name = {
-            let mut name_bytes: Vec<u8> = std::iter::repeat(0)
-                .take(header.name_len as usize)
-                .collect();
-            reader.read_exact(&mut name_bytes)?;
-            String::from_utf8(name_bytes).unwrap()
-        };
+        let name = String::from_utf8(unsafe { reader.read_vec::<u8>(header.name_len as usize)? }).unwrap();
 
         let prop_count = header.property_count.to_ne();
         let mut properties = Vec::with_capacity(prop_count as usize);
