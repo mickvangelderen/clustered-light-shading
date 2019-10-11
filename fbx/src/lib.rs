@@ -21,9 +21,13 @@ impl FileHeader {
     pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let header = RawFileHeader::parse(reader)?;
         assert_eq!(header.magic, MAGIC);
-        // NOTE: Unaligned read.
-        let version = header.version;
-        assert_eq!(version, VERSION_7300);
+        assert_eq!({
+            // NOTE: Do an unaligned read of header.version, the pass the copy
+            // to assert_eq. It takes a reference by default and reading
+            // unaligned values from references is problematic.
+            let version = header.version;
+            version
+        }, VERSION_7300);
         Ok(Self {
             version: header.version.to_ne(),
         })
@@ -184,22 +188,22 @@ impl Node {
 
         let name = String::from_utf8(unsafe { reader.read_vec::<u8>(header.name_len as usize)? }).unwrap();
 
-        let prop_count = header.property_count.to_ne();
-        let mut properties = Vec::with_capacity(prop_count as usize);
+        let prop_count = header.property_count.to_ne() as usize;
+        let mut properties = Vec::with_capacity(prop_count);
         for _ in 0..prop_count {
             properties.push(Property::parse(reader)?);
         }
 
         let mut children = Vec::new();
-
-        while reader.seek(io::SeekFrom::Current(0)).unwrap() < end_offset {
+        // NOTE(mickvangeldern): Sometimes child nodes aren't "null terminated" so this condition is necessary.
+        while reader.pos() < end_offset {
             match Node::parse(reader)? {
                 Some(node) => children.push(node),
                 None => break,
             }
         }
 
-        assert_eq!(end_offset, reader.seek(io::SeekFrom::Current(0)).unwrap());
+        debug_assert_eq!(end_offset, reader.pos());
 
         Ok(Some(Node {
             name,
@@ -219,10 +223,8 @@ impl File {
         let header = FileHeader::parse(reader)?;
 
         let mut children = Vec::new();
-
         loop {
-            let node = Node::parse(reader)?;
-            match node {
+            match Node::parse(reader)? {
                 Some(node) => children.push(node),
                 None => break,
             }
