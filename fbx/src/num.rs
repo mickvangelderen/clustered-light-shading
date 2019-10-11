@@ -2,17 +2,17 @@
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct u32le([u8; 4]);
+pub struct u32le(u32);
 
 impl u32le {
     #[inline]
-    pub const fn from_bytes(bytes: [u8; 4]) -> Self {
-        Self(bytes)
+    pub const fn from_ne(val: u32) -> Self {
+        Self(val.to_le())
     }
 
     #[inline]
-    pub fn to_ne(self) -> u32 {
-        u32::from_le_bytes(self.0)
+    pub const fn to_ne(self) -> u32 {
+        u32::from_le(self.0)
     }
 }
 

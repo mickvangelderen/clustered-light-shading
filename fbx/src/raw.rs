@@ -1,7 +1,21 @@
 use crate::num::*;
 use std::io;
+use crate::io_ext::*;
+
+macro_rules! impl_parse {
+    ($T: ident) => {
+        impl $T {
+            pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+                unsafe {
+                    reader.read_val::<Self>()
+                }
+            }
+        }
+    };
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct RawPropertyKind(pub u8);
 
 impl RawPropertyKind {
@@ -18,41 +32,20 @@ impl RawPropertyKind {
     pub const F64_ARRAY: Self = Self(b'd');
     pub const STRING: Self = Self(b'S');
     pub const BYTES: Self = Self(b'R');
-
-    pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        let mut value = 0u8;
-        reader.read_exact(std::slice::from_mut(&mut value))?;
-        Ok(Self(value))
-    }
 }
 
-#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+impl_parse!(RawPropertyKind);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct RawEncodingKind(pub u32le);
 
 impl RawEncodingKind {
-    pub const PLAIN: Self = Self(u32le::from_bytes([0, 0, 0, 0]));
-    pub const DEFLATE: Self = Self(u32le::from_bytes([1, 0, 0, 0]));
+    pub const PLAIN: Self = Self(u32le::from_ne(0));
+    pub const DEFLATE: Self = Self(u32le::from_ne(1));
 }
 
-macro_rules! impl_parse {
-    ($T: ident) => {
-        impl $T {
-            pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-                unsafe {
-                    let mut value = std::mem::MaybeUninit::<Self>::uninit();
-                    reader.read_exact(std::slice::from_raw_parts_mut(
-                        value.as_mut_ptr() as *mut u8,
-                        std::mem::size_of::<Self>(),
-                    ))?;
-                    Ok(value.assume_init())
-                }
-            }
-        }
-    };
-}
-
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RawFileHeader {
     pub magic: [u8; 21],
@@ -62,7 +55,7 @@ pub struct RawFileHeader {
 
 impl_parse!(RawFileHeader);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RawArrayHeader {
     pub element_count: u32le,
@@ -72,7 +65,7 @@ pub struct RawArrayHeader {
 
 impl_parse!(RawArrayHeader);
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RawNodeHeader {
     pub end_offset: u32le,
