@@ -78,24 +78,54 @@ fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
 struct Geometry {
     id: u64,
     name: String,
+    kind: String,
+    vertices: Vec<f64>,
+    indices: Vec<u32>,
+    normals: Vec<f64>,
+}
+
+fn panic_wrong_property_kind() -> !{
+    panic!("Wrong property kind");
 }
 
 fn parse_geometry(node: &Node, stack: &mut Vec<String>) -> Geometry {
     stack.push(node.name.clone());
 
-    let id = match node.properties.get(0) {
-        Some(&Property::I64(id)) => id.try_into().unwrap(),
-        _ => panic!("Geometry doesn't have id."),
+    let id = match node.properties[0] {
+        Property::I64(id) => id.try_into().unwrap(),
+        _ => wrong_property_kind(),
     };
 
-    let name = match node.properties.get(1) {
-        Some(Property::String(name)) => name.clone(),
-        _ => panic!("Geometry doesn't have name."),
+    let name = match node.properties[1] {
+        Property::String(ref name) => name.clone(),
+        _ => wrong_property_kind(),
     };
+
+    let kind = match node.properties[2] {
+        Property::String(ref kind) => kind.clone(),
+        _ => wrong_property_kind(),
+    };
+
+    for child in file.children.iter() {
+        match child.name.as_str() {
+            "Vertices" => {
+                assert!(vertices.is_empty());
+                vertices = match child.properties[0] {
+                    Property::F64Array(vertices) => vertices.clone(),
+                    _ => wrong_property_kind(),
+                }
+            }
+            "PolygonVertexIndex" => 
+            other => {
+                // Don't care.
+            }
+        }
+        // visit(child, 0);
+    }
 
     stack.pop();
 
-    Geometry { id, name }
+    Geometry { id, name, kind }
 }
 
 fn main() {
