@@ -354,35 +354,81 @@ fn rgba_f32_to_rgba_u8(input: [f32; 4]) -> [u8; 4] {
     output
 }
 
-#[inline]
-fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
-    unsafe {
-        let name = gl.create_texture(gl::TEXTURE_2D);
+impl Resources {
+    fn load_or_create_texture(&mut self, gl: &gl::Gl, path: impl AsRef<Path>, srgb: bool) {
+        self.path_to_texture_index
+            .entry(file_path.clone())
+            .or_insert_with(|| match file_path.extension().unwrap() {
+                x if x == "dds" => {
+                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
+                    let mut reader = std::io::BufReader::new(file);
+                    let dds = dds::DDS::decode(&mut reader).unwrap();
 
-        gl.bind_texture(gl::TEXTURE_2D, name);
-        gl.tex_image_2d(
-            gl::TEXTURE_2D,
-            0,
-            gl::RGBA8,
-            img.width() as i32,
-            img.height() as i32,
-            gl::RGBA,
-            gl::UNSIGNED_BYTE,
-            img.as_ptr() as *const std::os::raw::c_void,
-        );
-        gl.generate_texture_mipmap(name);
-        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+                    let internal_format = match dds.header.compression {
+                        dds::Compression::DXT1 => {
 
-        Texture {
-            name,
-            dimensions: [img.width() as f32, img.height() as f32],
-        }
+                        },
+                        dds::Compression::DXT3 => {
+
+                        }
+                        dds::Compression::DXT5 => {
+
+                        }
+                        other => {
+                            panic!("Compression {:?} not supported.", other);
+                        }
+                    }
+
+                    unsafe {
+                        let name = gl.create_texture(gl::TEXTURE_2D);
+
+                        gl.bind_texture(gl::TEXTURE_2D, name);
+
+                        for level in 
+                        gl.compressed_tex_image_2d(
+                            gl::TEXTURE_2D,
+                            0,
+                            match srgb {
+                                true => gl::SRGB8_ALPHA8,
+                                false => gl::RGBA8,
+                            },
+                            img.width() as i32,
+                            img.height() as i32,
+                            gl::RGBA,
+                            gl::UNSIGNED_BYTE,
+                            img.as_ptr() as *const std::os::raw::c_void,
+                        );
+                        gl.generate_texture_mipmap(name);
+                        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+                        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+
+                        Texture {
+                            name,
+                            dimensions: [img.width() as f32, img.height() as f32],
+                        }
+                    }
+                    let components = 
+                    println!("{:?}", &dds.header);
+                }
+                _ => {
+                    let img = image::open(&file_path)
+                        .expect("Failed to load image.")
+                        .flipv()
+                        .to_rgba();
+                    total_bytes += std::mem::size_of_val(&*img);
+
+                    let texture = create_texture(gl, img, srgb);
+
+                    let index = self.textures.len() as TextureIndex;
+                    self.textures.push(texture);
+                    index
+                }
+            })
     }
 }
 
 #[inline]
-fn create_srgb_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
+fn create_texture(gl: &gl::Gl, img: image::RgbaImage, srgb: bool) -> Texture {
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
 
@@ -390,7 +436,10 @@ fn create_srgb_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
         gl.tex_image_2d(
             gl::TEXTURE_2D,
             0,
-            gl::SRGB8_ALPHA8,
+            match srgb {
+                true => gl::SRGB8_ALPHA8,
+                false => gl::RGBA8,
+            },
             img.width() as i32,
             img.height() as i32,
             gl::RGBA,
@@ -561,11 +610,7 @@ impl Resources {
                                         .to_rgba();
                                     total_bytes += std::mem::size_of_val(&*img);
 
-                                    let texture = if configuration.global.diffuse_srgb {
-                                        create_srgb_texture(gl, img)
-                                    } else {
-                                        create_texture(gl, img)
-                                    };
+                                    let texture = create_texture(gl, img, configuration.global.diffuse_srgb);
 
                                     let index = textures.len() as TextureIndex;
                                     textures.push(texture);
@@ -579,11 +624,7 @@ impl Resources {
                         color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
                             let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
-                            let texture = if configuration.global.diffuse_srgb {
-                                create_srgb_texture(gl, img)
-                            } else {
-                                create_texture(gl, img)
-                            };
+                            let texture = create_texture(gl, img, configuration.global.diffuse_srgb);
 
                             let index = textures.len() as TextureIndex;
                             textures.push(texture);
@@ -622,8 +663,7 @@ impl Resources {
                         let rgba_u8 = rgba_f32_to_rgba_u8([0.5, 0.5, 0.5, 1.0]);
                         color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
                             let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-
-                            let texture = create_texture(gl, img);
+                            let texture = create_texture(gl, img, false);
                             let index = textures.len() as TextureIndex;
                             textures.push(texture);
                             index
@@ -650,7 +690,7 @@ impl Resources {
                                         .to_rgba();
                                     total_bytes += std::mem::size_of_val(&*img);
 
-                                    let texture = create_texture(gl, img);
+                                    let texture = create_texture(gl, img, false);
                                     let index = textures.len() as TextureIndex;
                                     textures.push(texture);
                                     index
@@ -667,7 +707,7 @@ impl Resources {
                         color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
                             let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
 
-                            let texture = create_texture(gl, img);
+                            let texture = create_texture(gl, img, false);
                             let index = textures.len() as TextureIndex;
                             textures.push(texture);
                             index

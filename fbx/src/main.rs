@@ -36,9 +36,9 @@ fn visit(node: &Node, depth: usize) {
     for child in node.children.iter() {
         // visit(child, depth + 1);
         let count = visited.entry(child.name.clone()).or_default();
-        if *count < 5 {
+        if *count < 10 || &child.name == "P" || &child.name == "Material" || &child.name == "Texture" {
             visit(child, depth + 1)
-        } else if *count == 5 {
+        } else if *count == 10 {
             // First node thats skipped of this kind.
             println!("{}...", "  ".repeat(depth + 1));
         } else {
@@ -74,17 +74,37 @@ fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
     Objects { geometries }
 }
 
-#[derive(Debug)]
-struct Geometry {
-    id: u64,
-    name: String,
-    kind: String,
-    vertices: Vec<f64>,
-    indices: Vec<u32>,
-    normals: Vec<f64>,
+#[repr(C)]
+pub struct OpaqueDepthVertex {
+    pub pos_in_obj: [f32; 3],
 }
 
-fn panic_wrong_property_kind() -> !{
+#[repr(C)]
+pub struct MaskedDepthVertex {
+    pub pos_in_obj: [f32; 3],
+    pub pos_in_tex: [f32; 2],
+}
+
+#[repr(C)]
+pub struct FullVertex {
+    pub pos_in_obj: [f32; 3],
+    pub nor_in_obj: [f32; 3],
+    pub pos_in_tex: [f32; 2],
+}
+
+#[derive(Debug)]
+pub struct Geometry {
+    pub id: u64,
+    pub name: String,
+    pub kind: String,
+}
+
+pub struct Mesh<Vertex> {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+}
+
+fn panic_wrong_property_kind() -> ! {
     panic!("Wrong property kind");
 }
 
@@ -93,29 +113,38 @@ fn parse_geometry(node: &Node, stack: &mut Vec<String>) -> Geometry {
 
     let id = match node.properties[0] {
         Property::I64(id) => id.try_into().unwrap(),
-        _ => wrong_property_kind(),
+        _ => panic_wrong_property_kind(),
     };
 
     let name = match node.properties[1] {
         Property::String(ref name) => name.clone(),
-        _ => wrong_property_kind(),
+        _ => panic_wrong_property_kind(),
     };
 
     let kind = match node.properties[2] {
         Property::String(ref kind) => kind.clone(),
-        _ => wrong_property_kind(),
+        _ => panic_wrong_property_kind(),
     };
 
-    for child in file.children.iter() {
+    let mut vertices = None;
+    let mut indices = None;
+
+    for child in node.children.iter() {
         match child.name.as_str() {
             "Vertices" => {
-                assert!(vertices.is_empty());
+                assert!(vertices.is_none());
                 vertices = match child.properties[0] {
-                    Property::F64Array(vertices) => vertices.clone(),
-                    _ => wrong_property_kind(),
+                    Property::F64Array(ref vertices) => Some(vertices),
+                    _ => panic_wrong_property_kind(),
                 }
             }
-            "PolygonVertexIndex" => 
+            "PolygonVertexIndex" => {
+                assert!(indices.is_none());
+                indices = match child.properties[0] {
+                    Property::I32Array(ref indices) => Some(indices),
+                    _ => panic_wrong_property_kind(),
+                }
+            }
             other => {
                 // Don't care.
             }
@@ -137,6 +166,8 @@ fn main() {
     let mut objects = None;
 
     for child in file.children.iter() {
+        visit(child, 0);
+
         match child.name.as_str() {
             "Objects" => {
                 assert!(objects.is_none(), "Multiple \"Objects\" nodes.");
@@ -151,5 +182,5 @@ fn main() {
 
     let objects = objects.expect("Missing \"Objects\" node.");
 
-    dbg!(&objects);
+    // dbg!(&objects);
 }
