@@ -158,6 +158,69 @@ impl Property {
             }
         })
     }
+
+    pub fn to_f32_exact(&self) -> f32 {
+        match *self {
+            Property::F32(val) => val,
+            _ => panic!("Expected f32 but got {:?}", self),
+        }
+    }
+
+    pub fn to_i32_exact(&self) -> i32 {
+        match *self {
+            Property::I32(val) => val,
+            _ => panic!("Expected i32 but got {:?}", self),
+        }
+    }
+
+    pub fn to_f64_exact(&self) -> f64 {
+        match *self {
+            Property::F64(val) => val,
+            _ => panic!("Expected f64 but got {:?}", self),
+        }
+    }
+
+    pub fn to_i64_exact(&self) -> i64 {
+        match *self {
+            Property::I64(val) => val,
+            _ => panic!("Expected i64 but got {:?}", self),
+        }
+    }
+
+    pub fn as_f32_array_exact(&self) -> &[f32] {
+        match *self {
+            Property::F32Array(ref val) => val,
+            _ => panic!("Expected [f32] but got {:?}", self),
+        }
+    }
+
+    pub fn as_f64_array_exact(&self) -> &[f64] {
+        match *self {
+            Property::F64Array(ref val) => val,
+            _ => panic!("Expected [f64] but got {:?}", self),
+        }
+    }
+
+    pub fn as_i32_array_exact(&self) -> &[i32] {
+        match *self {
+            Property::I32Array(ref val) => val,
+            _ => panic!("Expected [i32] but got {:?}", self),
+        }
+    }
+
+    pub fn as_i64_array_exact(&self) -> &[i64] {
+        match *self {
+            Property::I64Array(ref val) => val,
+            _ => panic!("Expected [i64] but got {:?}", self),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match *self {
+            Property::String(ref val) => val,
+            _ => panic!("Expected string but got {:?}", self),
+        }
+    }
 }
 
 #[derive(Debug)]
