@@ -5,6 +5,10 @@ use std::path;
 
 use fbx::*;
 
+mod model;
+
+use model::Model;
+
 fn read(path: impl AsRef<path::Path>) -> io::Result<File> {
     let mut reader = io::BufReader::new(fs::File::open(path)?);
     File::parse(&mut reader)
@@ -104,6 +108,7 @@ impl Default for MaterialProperties {
 struct Objects {
     geometries: Vec<Geometry>,
     materials: Vec<Material>,
+    models: Vec<Model>,
 }
 
 fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
@@ -111,6 +116,7 @@ fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
 
     let mut geometries = Vec::new();
     let mut materials = Vec::new();
+    let mut models = Vec::new();
 
     for child in node.children.iter() {
         match child.name.as_str() {
@@ -120,6 +126,9 @@ fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
             "Material" => {
                 materials.push(parse_material(child, stack));
             }
+            "Model" => {
+                models.push(Model::from_fbx(child, stack));
+            }
             _ => {
                 // Ignore.
             }
@@ -128,7 +137,7 @@ fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
 
     stack.pop();
 
-    Objects { geometries, materials }
+    Objects { geometries, materials, models }
 }
 
 #[repr(C)]
@@ -726,13 +735,12 @@ fn main() {
         }
     }
 
-    let _objects = objects.expect("Missing \"Objects\" node.");
+    let objects = objects.expect("Missing \"Objects\" node.");
+    // dbg!(&objects.materials);
+    dbg!(objects.materials.len());
+    dbg!(objects.geometries.len());
 
-    dbg!(&_objects.materials);
-    for geometry in _objects.geometries.iter() {
-        dbg!(geometry.
-
+    for geometry in objects.geometries.iter() {
+        dbg!(&geometry.name);
     }
-
-    // dbg!(&objects);
 }
