@@ -1,4 +1,5 @@
 use crate::num::*;
+use gl_typed as gl;
 use std::io;
 
 /// Pixel information as represented in the DDS file
@@ -52,6 +53,7 @@ impl RawFileHeader {
     }
 }
 
+#[derive(Debug)]
 pub struct FileHeader {
     pub width: u32,
     pub height: u32,
@@ -70,13 +72,13 @@ impl From<RawFileHeader> for FileHeader {
 
         let pixel_format: Format = if pixel_format_flags & PixelFormatFlags::FOURCC == PixelFormatFlags::FOURCC {
             match header.pixel_format.four_cc {
-                FOURCC_DXT1 => Format::BC1_UNORM,
-                FOURCC_DXT2 | FOURCC_DXT3 => Format::BC2_UNORM,
-                FOURCC_DXT4 | FOURCC_DXT5 => Format::BC3_UNORM,
-                FOURCC_ATI1 | FOURCC_BC4U => Format::BC4_UNORM,
-                FOURCC_BC4S => Format::BC4_SNORM,
-                FOURCC_ATI2 | FOURCC_BC5U => Format::BC5_UNORM,
-                FOURCC_BC5S => Format::BC5_SNORM,
+                FOURCC_DXT1 => Format::BC1_UNORM_RGB,
+                FOURCC_DXT2 | FOURCC_DXT3 => Format::BC2_UNORM_RGBA,
+                FOURCC_DXT4 | FOURCC_DXT5 => Format::BC3_UNORM_RGBA,
+                FOURCC_ATI1 | FOURCC_BC4U => Format::BC4_UNORM_R,
+                FOURCC_BC4S => Format::BC4_SNORM_R,
+                FOURCC_ATI2 | FOURCC_BC5U => Format::BC5_UNORM_RG,
+                FOURCC_BC5S => Format::BC5_SNORM_RG,
                 other => {
                     panic!(
                         "Unsupported four_cc: {:?} in header {:#?}.",
@@ -115,10 +117,6 @@ pub struct File {
     pub header: FileHeader,
     pub layers: Vec<Layer>,
     pub bytes: Vec<u8>,
-}
-
-fn compute_block_count(width: u32, height: u32) -> u32 {
-    ((width + 3) / 4) * ((height + 3) / 4)
 }
 
 pub const FOURCC_DXT1: [u8; 4] = *b"DXT1";
@@ -189,145 +187,94 @@ impl PixelFormatFlags {
 // static const uint32_t kCaps2CubeMapNegZMask = 0x8000;
 // static const uint32_t kCaps2VolumeMask = 0x200000;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[allow(non_camel_case_types)]
-pub enum Format {
-    // R32G32B32A32_TYPELESS,
-    // R32G32B32A32_FLOAT,
-    // R32G32B32A32_UINT,
-    // R32G32B32A32_SINT,
-    // R32G32B32_TYPELESS,
-    // R32G32B32_FLOAT,
-    // R32G32B32_UINT,
-    // R32G32B32_SINT,
-    // R16G16B16A16_TYPELESS,
-    // R16G16B16A16_FLOAT,
-    // R16G16B16A16_UNORM,
-    // R16G16B16A16_UINT,
-    // R16G16B16A16_SNORM,
-    // R16G16B16A16_SINT,
-    // R32G32_TYPELESS,
-    // R32G32_FLOAT,
-    // R32G32_UINT,
-    // R32G32_SINT,
-    // R32G8X24_TYPELESS,
-    // D32_FLOAT_S8X24_UINT,
-    // R32_FLOAT_X8X24_TYPELESS,
-    // X32_TYPELESS_G8X24_UINT,
-    // R10G10B10A2_TYPELESS,
-    // R10G10B10A2_UNORM,
-    // R10G10B10A2_UINT,
-    // R11G11B10_FLOAT,
-    // R8G8B8A8_TYPELESS,
-    // R8G8B8A8_UNORM,
-    // R8G8B8A8_UNORM_SRGB,
-    // R8G8B8A8_UINT,
-    // R8G8B8A8_SNORM,
-    // R8G8B8A8_SINT,
-    // R16G16_TYPELESS,
-    // R16G16_FLOAT,
-    // R16G16_UNORM,
-    // R16G16_UINT,
-    // R16G16_SNORM,
-    // R16G16_SINT,
-    // R32_TYPELESS,
-    // D32_FLOAT,
-    // R32_FLOAT,
-    // R32_UINT,
-    // R32_SINT,
-    // R24G8_TYPELESS,
-    // D24_UNORM_S8_UINT,
-    // R24_UNORM_X8_TYPELESS,
-    // X24_TYPELESS_G8_UINT,
-    // R8G8_TYPELESS,
-    // R8G8_UNORM,
-    // R8G8_UINT,
-    // R8G8_SNORM,
-    // R8G8_SINT,
-    // R16_TYPELESS,
-    // R16_FLOAT,
-    // D16_UNORM,
-    // R16_UNORM,
-    // R16_UINT,
-    // R16_SNORM,
-    // R16_SINT,
-    // R8_TYPELESS,
-    // R8_UNORM,
-    // R8_UINT,
-    // R8_SNORM,
-    // R8_SINT,
-    // A8_UNORM,
-    // R1_UNORM,
-    // R9G9B9E5_SHAREDEXP,
-    // R8G8_B8G8_UNORM,
-    // G8R8_G8B8_UNORM,
-    // BC1_TYPELESS,
-    BC1_UNORM,
-    // BC1_UNORM_SRGB,
-    // BC2_TYPELESS,
-    BC2_UNORM,
-    // BC2_UNORM_SRGB,
-    // BC3_TYPELESS,
-    BC3_UNORM,
-    // BC3_UNORM_SRGB,
-    // BC4_TYPELESS,
-    BC4_UNORM,
-    BC4_SNORM,
-    // BC5_TYPELESS,
-    BC5_UNORM,
-    BC5_SNORM,
-    // B5G6R5_UNORM,
-    // B5G5R5A1_UNORM,
-    // B8G8R8A8_UNORM,
-    // B8G8R8X8_UNORM,
-    // R10G10B10_XR_BIAS_A2_UNORM,
-    // B8G8R8A8_TYPELESS,
-    // B8G8R8A8_UNORM_SRGB,
-    // B8G8R8X8_TYPELESS,
-    // B8G8R8X8_UNORM_SRGB,
-    // BC6H_TYPELESS,
-    // BC6H_UF16,
-    // BC6H_SF16,
-    // BC7_TYPELESS,
-    // BC7_UNORM,
-    // BC7_UNORM_SRGB,
-    // AYUV,
-    // Y410,
-    // Y416,
-    // NV12,
-    // P010,
-    // P016,
-    // F420_OPAQUE,
-    // YUY2,
-    // Y210,
-    // Y216,
-    // NV11,
-    // AI44,
-    // IA44,
-    // P8,
-    // A8P8,
-    // B4G4R4A4_UNORM,
-    // P208,
-    // V208,
-    // V408,
-    // FORCE_UINT,
-}
+macro_rules! impl_format {
+    ($(
+        ($Variant: ident, $bytes_per_block: expr, $component_count: expr, $component_type: expr, $depth: expr, $stencil: expr, $compression_x: expr, $compression_y: expr, $gl_internal_format: expr, $gl_format: expr, $gl_component_type: expr),
+    )*) => {
+        #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+        #[allow(non_camel_case_types)]
+        pub enum Format {
+            $(
+                $Variant,
+            )*
+        }
 
-impl Format {
-    fn block_byte_size(&self) -> usize {
-        match *self {
-            Self::BC1_UNORM => 8,
-            Self::BC2_UNORM => 16,
-            Self::BC3_UNORM => 16,
-            Self::BC4_UNORM => 16,
-            Self::BC4_SNORM => 16,
-            Self::BC5_UNORM => 16,
-            Self::BC5_SNORM => 16,
+        impl Format {
+            #[inline]
+            pub fn bytes_per_block(&self) -> usize {
+                match *self {
+                    $(
+                        Self::$Variant => $bytes_per_block,
+                    )*
+                }
+            }
+
+            #[inline]
+            pub fn compute_block_count(&self, width: u32, height: u32) -> usize {
+                let (x, y) = match *self {
+                    $(
+                        Self::$Variant => ($compression_x, $compression_y),
+                    )*
+                };
+
+                ((width + (x - 1)) / x) as usize * ((height + (y - 1)) / y) as usize
+            }
+
+            #[inline]
+            pub fn compute_byte_count(&self, width: u32, height: u32) -> usize {
+                self.bytes_per_block() * self.compute_block_count(width, height)
+            }
+
+            // #[inline]
+            // pub fn component_count(&self) -> u8 {
+            //     match *self {
+            //         $(
+            //             Self::$Variant => $component_count,
+            //         )*
+            //     }
+            // }
+
+            // #[inline]
+            // pub fn component_type(&self) -> ComponentType {
+            //     match *self {
+            //         $(
+            //             Self::$Variant => $component_type,
+            //         )*
+            //     }
+            // }
+
+            #[inline]
+            pub fn to_gl_internal_format(&self) -> gl::InternalFormat {
+                match *self {
+                    $(
+                        Self::$Variant => $gl_internal_format.into(),
+                    )*
+                }
+            }
         }
     }
 }
 
-impl RawFile {
+pub enum ComponentType {
+    FLOAT,
+    UNORM,
+    SNORM,
+    UINT,
+    SINT,
+}
+
+impl_format! {
+    (BC1_UNORM_RGB,           8,           3,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGB_S3TC_DXT1_EXT,  gl::RGB,  gl::NONE),
+    (BC1_UNORM_RGBA,          8,           4,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT, gl::RGBA, gl::NONE),
+    (BC2_UNORM_RGBA,         16,           4,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT, gl::RGBA, gl::NONE),
+    (BC3_UNORM_RGBA,         16,           4,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT, gl::RGBA, gl::NONE),
+    (BC4_UNORM_R,             8,           1,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RED_RGTC1,          gl::RED,  gl::NONE),
+    (BC4_SNORM_R,             8,           1,  ComponentType::SNORM,      false,  false,        4, 4, gl::COMPRESSED_SIGNED_RED_RGTC1,   gl::RED,  gl::NONE),
+    (BC5_UNORM_RG,           16,           2,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RG_RGTC2,           gl::RG,   gl::NONE),
+    (BC5_SNORM_RG,           16,           2,  ComponentType::SNORM,      false,  false,        4, 4, gl::COMPRESSED_SIGNED_RG_RGTC2,    gl::RG,   gl::NONE),
+}
+
+impl File {
     pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let header = FileHeader::from(RawFileHeader::parse(reader)?);
 
@@ -347,11 +294,11 @@ impl RawFile {
             .into_iter()
             .map({
                 let state = &mut state;
+                let pixel_format = &header.pixel_format;
                 move |_layer_index| {
                     let layer = Layer {
                         byte_offset: state.byte_offset,
-                        byte_count: compute_block_count(state.width, state.height) as usize
-                            * header.pixel_format.block_byte_size(),
+                        byte_count: pixel_format.compute_byte_count(state.width, state.height),
                         width: state.width,
                         height: state.height,
                     };
@@ -376,18 +323,4 @@ impl RawFile {
 
         Ok(Self { header, layers, bytes })
     }
-
-    // case FOURCC_DXT1:
-    // genericImage->format = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-    // break;
-    // case FOURCC_DXT3:
-    // genericImage->format = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-    // break;
-    // case FOURCC_DXT5:
-    // genericImage->format = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-    // break;
-    // default:
-    // free(genericImage->pixels);
-    // free(genericImage);
-    // ret
 }
