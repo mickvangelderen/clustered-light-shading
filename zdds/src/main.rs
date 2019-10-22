@@ -10,26 +10,20 @@ use gl_typed as gl;
 fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
     let file = std::fs::File::open(file_path).unwrap();
     let mut reader = std::io::BufReader::new(file);
-    let raw_file = RawFile::parse(&mut reader).unwrap();
+    let dds = dds::File::parse(&mut reader).unwrap();
 
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
         // NOTE(mickvangelderen): No dsa for compressed textures??
         gl.bind_texture(gl::TEXTURE_2D, name);
-        for (layer_index, layer) in raw_file.layers.iter().enumerate() {
-            let internal_format: gl::InternalFormat = match raw_file.header.pixel_format.four_cc {
-                dds::FOURCC_DXT1 => gl::COMPRESSED_RGBA_S3TC_DXT1_EXT.into(),
-                dds::FOURCC_DXT3 => gl::COMPRESSED_RGBA_S3TC_DXT3_EXT.into(),
-                dds::FOURCC_DXT5 => gl::COMPRESSED_RGBA_S3TC_DXT5_EXT.into(),
-                other => panic!("Unsupported four_cc: {:?}.", other),
-            };
+        for (layer_index, layer) in dds.layers.iter().enumerate() {
             gl.compressed_tex_image_2d(
                 gl::TEXTURE_2D,
                 layer_index as i32,
-                internal_format,
+                dds.header.pixel_format.to_gl_internal_format(),
                 layer.width as i32,
                 layer.height as i32,
-                &raw_file.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],
+                &dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],
             );
         }
 
