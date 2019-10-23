@@ -55,7 +55,7 @@ impl Texture {
         for node in node.children.iter() {
             stack.push(node.name.clone());
             match node.name.as_str() {
-                "Version" | "Shading" | "Culling" => {
+                "Version" | "TextureName" | "FileName" | "Cropping" | "Media" => {
                     // Don't care.
                 }
                 "Type" => {
