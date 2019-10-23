@@ -1,24 +1,20 @@
-use std::convert::TryInto;
 use std::fs;
 use std::io;
 use std::path;
 
+mod objects;
+mod connections;
+mod global_settings;
+
+use objects::*;
+use connections::*;
+use global_settings::*;
+
 use fbx::*;
-
-mod model;
-mod texture;
-mod geometry;
-mod material;
-
-use model::*;
-use texture::*;
-use geometry::*;
-use material::*;
 
 fn panic_wrong_property_kind() -> ! {
     panic!("Wrong property kind");
 }
-
 
 fn read(path: impl AsRef<path::Path>) -> io::Result<File> {
     let mut reader = io::BufReader::new(fs::File::open(path)?);
@@ -63,47 +59,6 @@ fn visit(node: &Node, depth: usize) {
     }
 }
 
-#[derive(Debug)]
-struct Objects {
-    geometries: Vec<Geometry>,
-    materials: Vec<Material>,
-    models: Vec<Model>,
-    textures: Vec<Texture>,
-}
-
-fn parse_objects(node: &Node, stack: &mut Vec<String>) -> Objects {
-    stack.push(node.name.clone());
-
-    let mut geometries = Vec::new();
-    let mut materials = Vec::new();
-    let mut models = Vec::new();
-    let mut textures = Vec::new();
-
-    for child in node.children.iter() {
-        match child.name.as_str() {
-            "Geometry" => {
-                geometries.push(Geometry::from_fbx(child, stack));
-            }
-            "Material" => {
-                materials.push(Material::from_fbx(child, stack));
-            }
-            "Model" => {
-                models.push(Model::from_fbx(child, stack));
-            }
-            "Texture" => {
-                textures.push(Texture::from_fbx(child, stack));
-            }
-            _ => {
-                // Ignore.
-            }
-        }
-    }
-
-    stack.pop();
-
-    Objects { geometries, materials, models, textures }
-}
-
 #[repr(C)]
 pub struct OpaqueDepthVertex {
     pub pos_in_obj: [f32; 3],
@@ -130,26 +85,43 @@ fn main() {
     let stack = &mut Vec::<String>::new();
 
     let mut objects: Option<Objects> = None;
+    let mut connections: Option<Connections> = None;
+    let mut global_settings: Option<GlobalSettings> = None;
 
-    for child in file.children.iter() {
-        // visit(child, 0);
+    for node in file.children.iter() {
+        stack.push(node.name.to_string());
 
-        match child.name.as_str() {
+        // visit(node, 0);
+
+        match node.name.as_str() {
+            "GlobalSettings" => {
+                assert!(global_settings.is_none());
+                global_settings = Some(GlobalSettings::from_fbx(node, stack));
+            }
             "Objects" => {
-                assert!(objects.is_none(), "Multiple \"Objects\" nodes.");
-                objects = Some(parse_objects(child, stack));
+                assert!(objects.is_none());
+                objects = Some(Objects::from_fbx(node, stack));
+            }
+            "Connections" => {
+                assert!(connections.is_none());
+                connections = Some(Connections::from_fbx(node, stack));
             }
             _ => {
                 // Don't care.
             }
         }
+
+        stack.pop();
     }
 
     let objects = objects.expect("Missing \"Objects\" node.");
     // dbg!(&objects.materials);
     // dbg!(objects.materials.len());
     // dbg!(objects.geometries.len());
-    dbg!(objects.textures);
+    // dbg!(objects.textures);
+
+    // dbg!(connections);
+    dbg!(global_settings.unwrap());
 
     for geometry in objects.geometries.iter() {
         // dbg!(&geometry.name);
