@@ -123,8 +123,8 @@ pub struct FullVertex {
 }
 
 fn main() {
-    let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
-    // let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
+    // let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
+    let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
     dbg!(&file.header, file.children.len());
 
     let stack = &mut Vec::<String>::new();
@@ -132,7 +132,7 @@ fn main() {
     let mut objects: Option<Objects> = None;
 
     for child in file.children.iter() {
-        visit(child, 0);
+        // visit(child, 0);
 
         match child.name.as_str() {
             "Objects" => {
@@ -149,6 +149,7 @@ fn main() {
     // dbg!(&objects.materials);
     // dbg!(objects.materials.len());
     // dbg!(objects.geometries.len());
+    dbg!(objects.textures);
 
     for geometry in objects.geometries.iter() {
         // dbg!(&geometry.name);
