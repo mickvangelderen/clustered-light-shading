@@ -2,13 +2,13 @@ use std::fs;
 use std::io;
 use std::path;
 
-mod objects;
 mod connections;
 mod global_settings;
+mod objects;
 
-use objects::*;
 use connections::*;
 use global_settings::*;
+use objects::*;
 
 use fbx::*;
 
@@ -78,8 +78,8 @@ pub struct FullVertex {
 }
 
 fn main() {
-    // let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
-    let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
+    let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
+    // let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
     dbg!(&file.header, file.children.len());
 
     let stack = &mut Vec::<String>::new();
@@ -121,9 +121,111 @@ fn main() {
     // dbg!(objects.textures);
 
     // dbg!(connections);
-    dbg!(global_settings.unwrap());
+    // dbg!(global_settings.unwrap());
+
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+    struct Vertex {
+        pos_in_obj: [FiniteF32; 3],
+    }
 
     for geometry in objects.geometries.iter() {
-        // dbg!(&geometry.name);
+        println!("Geometry {:?} with {} vertices, {} indices.", &geometry.name, geometry.vertices.len(), geometry.polygon_vertex_index.len());
+
+        // Deduplicate vertices.
+        use std::collections::HashMap;
+
+        assert_eq!(0, geometry.vertices.len() % 3);
+
+        let mut vertex_map: HashMap<Vertex, u32> = HashMap::new();
+        let mut vertices: Vec<Vertex> = Vec::new();
+        let mut index_map: Vec<u32> = Vec::with_capacity(geometry.vertices.len() / 3);
+
+        for chunk in geometry.vertices.chunks_exact(3) {
+            let vertex = Vertex {
+                pos_in_obj: [
+                    FiniteF32::new(chunk[0] as f32).unwrap(),
+                    FiniteF32::new(chunk[1] as f32).unwrap(),
+                    FiniteF32::new(chunk[2] as f32).unwrap(),
+                ],
+            };
+
+            let index = vertex_map.len() as u32;
+            let index = *vertex_map.entry(vertex).or_insert_with(|| {
+                vertices.push(vertex);
+                index
+            });
+            index_map.push(index);
+        }
+
+        assert_eq!(geometry.vertices.len() / 3, index_map.len());
+        assert_eq!(vertices.len(), vertex_map.len());
+
+        println!("Deduplicated {} vertices", (geometry.vertices.len() / 3) - vertices.len());
+
+        let mut triangles = Vec::<[u32; 3]>::new();
+
+        let mut count = 0;
+        let mut triangle = [0u32; 3];
+
+        // Convert ngon indices to triangles.
+        for &index in geometry.polygon_vertex_index.iter() {
+            let (index, should_reset) = if index < 0 {
+                ((index ^ -1) as u32, true)
+            } else {
+                (index as u32, false)
+            };
+
+            let index = index_map[index as usize];
+
+            if count < 3 {
+                triangle[count] = index;
+                count += 1;
+            } else {
+                triangle[1] = triangle[2];
+                triangle[2] = index;
+            }
+
+            if count == 3 {
+                triangles.push(triangle);
+            }
+
+            if should_reset {
+                assert_eq!(3, count); // panic when we only have 0, 1 or 2 indices.
+                count = 0;
+            }
+        }
+
+        println!("Triangulated {} indices to {} triangles", geometry.polygon_vertex_index.len(), triangles.len());
+
+        // dbg!(triangles);
+        // break;
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct FiniteF32(f32);
+
+impl FiniteF32 {
+    pub fn new(val: f32) -> Option<Self> {
+        if val.is_finite() {
+            Some(Self(val))
+        } else {
+            None
+        }
+    }
+}
+
+impl std::hash::Hash for FiniteF32 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state)
+    }
+}
+
+impl std::cmp::PartialEq for FiniteF32 {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+
+impl std::cmp::Eq for FiniteF32 {}
