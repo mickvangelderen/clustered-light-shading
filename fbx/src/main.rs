@@ -128,8 +128,69 @@ fn main() {
         pos_in_obj: [FiniteF32; 3],
     }
 
+    pub struct MeshDescription {
+        pub index_byte_offset: u64,
+        pub vertex_offset: u32,
+        pub element_count: u32,
+    }
+
+    pub struct File {
+        pub mesh_descriptions: Vec<MeshDescription>,
+        pub vertex_buffer: Vec<Vertex>,
+        pub triangle_buffer: Vec<[u32; 3]>,
+    }
+
+    #[repr(C)]
+    pub struct FileHeader {
+        pub mesh_count: u64,
+        pub vertex_count: u64,
+        pub triangle_count: u64,
+    }
+
+    impl File {
+        pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+            let header = FileHeader {
+                mesh_count: self.mesh_descriptions.len() as u64,
+                vertex_count: self.vertex_buffer.len() as u64,
+                triangle_count: self.triangle_buffer.len() as u64,
+            };
+
+            unsafe {
+                writer.write_all(std::slice::from_raw_parts(
+                    &header as *const _ as *const u8,
+                    std::mem::size_of::<FileHeader>(),
+                ))?;
+                writer.write_all(std::slice::from_raw_parts(
+                    self.mesh_descriptions.as_ptr() as *const u8,
+                    std::mem::size_of_val(&self.mesh_descriptions[..]),
+                ))?;
+                writer.write_all(std::slice::from_raw_parts(
+                    self.vertex_buffer.as_ptr() as *const u8,
+                    std::mem::size_of_val(&self.vertex_buffer[..]),
+                ))?;
+                writer.write_all(std::slice::from_raw_parts(
+                    self.triangle_buffer.as_ptr() as *const u8,
+                    std::mem::size_of_val(&self.triangle_buffer[..]),
+                ))?;
+            }
+
+            Ok(())
+        }
+    }
+
+    let mut file = File {
+        mesh_descriptions: Vec::new(),
+        vertex_buffer: Vec::new(),
+        triangle_buffer: Vec::new(),
+    };
+
     for geometry in objects.geometries.iter() {
-        println!("Geometry {:?} with {} vertices, {} indices.", &geometry.name, geometry.vertices.len(), geometry.polygon_vertex_index.len());
+        println!(
+            "Geometry {:?} with {} vertices, {} indices.",
+            &geometry.name,
+            geometry.vertices.len(),
+            geometry.polygon_vertex_index.len()
+        );
 
         // Deduplicate vertices.
         use std::collections::HashMap;
@@ -160,7 +221,10 @@ fn main() {
         assert_eq!(geometry.vertices.len() / 3, index_map.len());
         assert_eq!(vertices.len(), vertex_map.len());
 
-        println!("Deduplicated {} vertices", (geometry.vertices.len() / 3) - vertices.len());
+        println!(
+            "Deduplicated {} vertices",
+            (geometry.vertices.len() / 3) - vertices.len()
+        );
 
         let mut triangles = Vec::<[u32; 3]>::new();
 
@@ -195,11 +259,26 @@ fn main() {
             }
         }
 
-        println!("Triangulated {} indices to {} triangles", geometry.polygon_vertex_index.len(), triangles.len());
+        println!(
+            "Triangulated {} indices to {} triangles",
+            geometry.polygon_vertex_index.len(),
+            triangles.len()
+        );
+
+        file.mesh_descriptions.push(MeshDescription {
+            index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
+            vertex_offset: file.vertex_buffer.len() as u32,
+            element_count: (triangles.len() * 3) as u32,
+        });
+        file.vertex_buffer.extend(vertices);
+        file.triangle_buffer.extend(triangles);
 
         // dbg!(triangles);
         // break;
     }
+
+    file.write(&mut std::io::BufWriter::new(std::fs::File::create("out.bin").unwrap()))
+        .unwrap()
 }
 
 #[derive(Debug, Copy, Clone)]
