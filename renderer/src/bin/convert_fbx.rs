@@ -1,64 +1,9 @@
-use fbx::tree::{File, Node, Property};
 use fbx::dom::*;
-
+use fbx::tree::{File, Node, Property};
+use renderer::scene_file::*;
 use std::fs;
 use std::io;
 use std::path;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Vertex {
-    pub pos_in_obj: [FiniteF32; 3],
-}
-
-pub struct MeshDescription {
-    pub index_byte_offset: u64,
-    pub vertex_offset: u32,
-    pub element_count: u32,
-}
-
-pub struct OutFile {
-    pub mesh_descriptions: Vec<MeshDescription>,
-    pub vertex_buffer: Vec<Vertex>,
-    pub triangle_buffer: Vec<[u32; 3]>,
-}
-
-#[repr(C)]
-pub struct FileHeader {
-    pub mesh_count: u64,
-    pub vertex_count: u64,
-    pub triangle_count: u64,
-}
-
-impl OutFile {
-    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        let header = FileHeader {
-            mesh_count: self.mesh_descriptions.len() as u64,
-            vertex_count: self.vertex_buffer.len() as u64,
-            triangle_count: self.triangle_buffer.len() as u64,
-        };
-
-        unsafe {
-            writer.write_all(std::slice::from_raw_parts(
-                &header as *const _ as *const u8,
-                std::mem::size_of::<FileHeader>(),
-            ))?;
-            writer.write_all(std::slice::from_raw_parts(
-                self.mesh_descriptions.as_ptr() as *const u8,
-                std::mem::size_of_val(&self.mesh_descriptions[..]),
-            ))?;
-            writer.write_all(std::slice::from_raw_parts(
-                self.vertex_buffer.as_ptr() as *const u8,
-                std::mem::size_of_val(&self.vertex_buffer[..]),
-            ))?;
-            writer.write_all(std::slice::from_raw_parts(
-                self.triangle_buffer.as_ptr() as *const u8,
-                std::mem::size_of_val(&self.triangle_buffer[..]),
-            ))?;
-        }
-
-        Ok(())
-    }
-}
 
 fn read(path: impl AsRef<path::Path>) -> io::Result<File> {
     let mut reader = io::BufReader::new(fs::File::open(path)?);
@@ -101,24 +46,6 @@ fn visit(node: &Node, depth: usize) {
         }
         *count += 1;
     }
-}
-
-#[repr(C)]
-pub struct OpaqueDepthVertex {
-    pub pos_in_obj: [f32; 3],
-}
-
-#[repr(C)]
-pub struct MaskedDepthVertex {
-    pub pos_in_obj: [f32; 3],
-    pub pos_in_tex: [f32; 2],
-}
-
-#[repr(C)]
-pub struct FullVertex {
-    pub pos_in_obj: [f32; 3],
-    pub nor_in_obj: [f32; 3],
-    pub pos_in_tex: [f32; 2],
 }
 
 fn main() {
@@ -167,7 +94,7 @@ fn main() {
     // dbg!(connections);
     // dbg!(global_settings.unwrap());
 
-    let mut file = OutFile {
+    let mut file = SceneFile {
         mesh_descriptions: Vec::new(),
         vertex_buffer: Vec::new(),
         triangle_buffer: Vec::new(),
@@ -267,33 +194,12 @@ fn main() {
     }
 
     file.write(&mut std::io::BufWriter::new(std::fs::File::create("out.bin").unwrap()))
-        .unwrap()
+        .unwrap();
+
+    let mut file = std::fs::File::open("out.bin").unwrap();
+    let scene_file = SceneFile::read(&mut file).unwrap();
+
+    dbg!(scene_file.mesh_descriptions);
+    dbg!(scene_file.vertex_buffer.len());
+    dbg!(scene_file.triangle_buffer.len());
 }
-
-#[derive(Debug, Copy, Clone)]
-#[repr(transparent)]
-pub struct FiniteF32(f32);
-
-impl FiniteF32 {
-    pub fn new(val: f32) -> Option<Self> {
-        if val.is_finite() {
-            Some(Self(val))
-        } else {
-            None
-        }
-    }
-}
-
-impl std::hash::Hash for FiniteF32 {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.to_bits().hash(state)
-    }
-}
-
-impl std::cmp::PartialEq for FiniteF32 {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_bits() == other.0.to_bits()
-    }
-}
-
-impl std::cmp::Eq for FiniteF32 {}

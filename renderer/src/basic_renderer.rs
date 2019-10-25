@@ -31,8 +31,7 @@ glsl_defines!(fixed_header {
         CLUSTER_SPACE_BUFFER_BINDING = 9;
         BASIC_ATOMIC_BINDING = 0;
     },
-    uniforms: {
-    },
+    uniforms: {},
 });
 
 impl Context<'_> {
@@ -103,55 +102,54 @@ impl Context<'_> {
                 }
 
                 // Cache texture binding.
-                let mut bound_material = None;
+                // let mut bound_material = None;
 
                 gl.bind_vertex_array(self.resources.scene_vao);
 
-                for (i, mesh_meta) in self.resources.mesh_metas.iter().enumerate() {
-                    let maybe_material_index = self.resources.meshes[i].material_index;
-                    if bound_material != maybe_material_index {
-                        bound_material = maybe_material_index;
-                        if let Some(material_index) = maybe_material_index {
-                            let material = &self.resources.materials[material_index as usize];
+                for mesh_description in self.resources.scene_file.mesh_descriptions.iter() {
+                    // let maybe_material_index = self.resources.meshes[i].material_index;
+                    // if bound_material != maybe_material_index {
+                    //     bound_material = maybe_material_index;
+                    //     if let Some(material_index) = maybe_material_index {
+                    //         let material = &self.resources.materials[material_index as usize];
 
-                            let diffuse_texture = &self.resources.textures[material.diffuse as usize];
-                            let normal_texture = &self.resources.textures[material.normal as usize];
-                            let specular_texture = &self.resources.textures[material.specular as usize];
+                    //         let diffuse_texture = &self.resources.textures[material.diffuse as usize];
+                    //         let normal_texture = &self.resources.textures[material.normal as usize];
+                    //         let specular_texture = &self.resources.textures[material.specular as usize];
 
-                            gl.bind_texture_unit(1, diffuse_texture.name);
-                            gl.bind_texture_unit(2, normal_texture.name);
-                            gl.bind_texture_unit(3, specular_texture.name);
+                    //         gl.bind_texture_unit(1, diffuse_texture.name);
+                    //         gl.bind_texture_unit(2, normal_texture.name);
+                    //         gl.bind_texture_unit(3, specular_texture.name);
 
-                            if let Some(loc) = basic_renderer.diffuse_dimensions_loc.into() {
-                                gl.uniform_2f(loc, diffuse_texture.dimensions);
-                            }
+                    //         if let Some(loc) = basic_renderer.diffuse_dimensions_loc.into() {
+                    //             gl.uniform_2f(loc, diffuse_texture.dimensions);
+                    //         }
 
-                            if let Some(loc) = basic_renderer.normal_dimensions_loc.into() {
-                                gl.uniform_2f(loc, normal_texture.dimensions);
-                            }
+                    //         if let Some(loc) = basic_renderer.normal_dimensions_loc.into() {
+                    //             gl.uniform_2f(loc, normal_texture.dimensions);
+                    //         }
 
-                            if let Some(loc) = basic_renderer.specular_dimensions_loc.into() {
-                                gl.uniform_2f(loc, specular_texture.dimensions);
-                            }
+                    //         if let Some(loc) = basic_renderer.specular_dimensions_loc.into() {
+                    //             gl.uniform_2f(loc, specular_texture.dimensions);
+                    //         }
 
-                        // params.material_resources.bind_index(gl, material_index as usize);
-                        } else {
-                            // TODO SET DEFAULTS
-                        }
-                    }
+                    //     // params.material_resources.bind_index(gl, material_index as usize);
+                    //     } else {
+                    //         // TODO SET DEFAULTS
+                    //     }
+                    // }
 
                     if let Some(loc) = basic_renderer.obj_to_wld_loc.into() {
-                        let obj_to_wld = Matrix4::from_translation(self.resources.meshes[i].translate);
-
+                        let obj_to_wld = Matrix4::identity();
                         gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
                     }
 
                     gl.draw_elements_base_vertex(
                         gl::TRIANGLES,
-                        mesh_meta.element_count,
+                        mesh_description.element_count,
                         gl::UNSIGNED_INT,
-                        mesh_meta.element_offset,
-                        mesh_meta.vertex_base,
+                        mesh_description.index_byte_offset as usize,
+                        mesh_description.vertex_offset,
                     );
                 }
 

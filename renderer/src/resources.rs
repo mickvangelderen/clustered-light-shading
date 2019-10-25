@@ -312,16 +312,17 @@ pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
 #[allow(unused)]
 pub struct Resources {
-    pub meshes: Vec<Mesh>,
-    pub materials: Vec<Material>,
-    pub textures: Vec<Texture>,
-    pub path_to_texture_index: HashMap<PathBuf, TextureIndex>,
-    pub color_to_texture_index: HashMap<[u8; 4], TextureIndex>,
+    // pub meshes: Vec<Mesh>,
+    // pub materials: Vec<Material>,
+    // pub textures: Vec<Texture>,
+    // pub path_to_texture_index: HashMap<PathBuf, TextureIndex>,
+    // pub color_to_texture_index: HashMap<[u8; 4], TextureIndex>,
     pub scene_vao: gl::VertexArrayName,
-    pub scene_pos_vao: gl::VertexArrayName,
     pub scene_vb: gl::BufferName,
     pub scene_eb: gl::BufferName,
-    pub mesh_metas: Vec<MeshMeta>,
+
+    pub scene_file: renderer::scene_file::SceneFile,
+
     pub point_lights: Vec<PointLight>,
 
     pub full_screen_vao: gl::VertexArrayName,
@@ -354,78 +355,78 @@ fn rgba_f32_to_rgba_u8(input: [f32; 4]) -> [u8; 4] {
     output
 }
 
-impl Resources {
-    fn load_or_create_texture(&mut self, gl: &gl::Gl, path: impl AsRef<Path>, srgb: bool) {
-        self.path_to_texture_index
-            .entry(file_path.clone())
-            .or_insert_with(|| match file_path.extension().unwrap() {
-                x if x == "dds" => {
-                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
-                    let mut reader = std::io::BufReader::new(file);
-                    let dds = dds::DDS::decode(&mut reader).unwrap();
+// impl Resources {
+//     fn load_or_create_texture(&mut self, gl: &gl::Gl, path: impl AsRef<Path>, srgb: bool) {
+//         self.path_to_texture_index
+//             .entry(file_path.clone())
+//             .or_insert_with(|| match file_path.extension().unwrap() {
+//                 x if x == "dds" => {
+//                     let file = std::fs::File::open(Path::new(&file_path)).unwrap();
+//                     let mut reader = std::io::BufReader::new(file);
+//                     let dds = dds::DDS::decode(&mut reader).unwrap();
 
-                    let internal_format = match dds.header.compression {
-                        dds::Compression::DXT1 => {
+//                     let internal_format = match dds.header.compression {
+//                         dds::Compression::DXT1 => {
 
-                        },
-                        dds::Compression::DXT3 => {
+//                         },
+//                         dds::Compression::DXT3 => {
 
-                        }
-                        dds::Compression::DXT5 => {
+//                         }
+//                         dds::Compression::DXT5 => {
 
-                        }
-                        other => {
-                            panic!("Compression {:?} not supported.", other);
-                        }
-                    }
+//                         }
+//                         other => {
+//                             panic!("Compression {:?} not supported.", other);
+//                         }
+//                     };
 
-                    unsafe {
-                        let name = gl.create_texture(gl::TEXTURE_2D);
+//                     unsafe {
+//                         let name = gl.create_texture(gl::TEXTURE_2D);
 
-                        gl.bind_texture(gl::TEXTURE_2D, name);
+//                         gl.bind_texture(gl::TEXTURE_2D, name);
 
-                        for level in 
-                        gl.compressed_tex_image_2d(
-                            gl::TEXTURE_2D,
-                            0,
-                            match srgb {
-                                true => gl::SRGB8_ALPHA8,
-                                false => gl::RGBA8,
-                            },
-                            img.width() as i32,
-                            img.height() as i32,
-                            gl::RGBA,
-                            gl::UNSIGNED_BYTE,
-                            img.as_ptr() as *const std::os::raw::c_void,
-                        );
-                        gl.generate_texture_mipmap(name);
-                        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-                        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+//                         for level in
+//                         gl.compressed_tex_image_2d(
+//                             gl::TEXTURE_2D,
+//                             0,
+//                             match srgb {
+//                                 true => gl::SRGB8_ALPHA8,
+//                                 false => gl::RGBA8,
+//                             },
+//                             img.width() as i32,
+//                             img.height() as i32,
+//                             gl::RGBA,
+//                             gl::UNSIGNED_BYTE,
+//                             img.as_ptr() as *const std::os::raw::c_void,
+//                         );
+//                         gl.generate_texture_mipmap(name);
+//                         gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
+//                         gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
 
-                        Texture {
-                            name,
-                            dimensions: [img.width() as f32, img.height() as f32],
-                        }
-                    }
-                    let components = 
-                    println!("{:?}", &dds.header);
-                }
-                _ => {
-                    let img = image::open(&file_path)
-                        .expect("Failed to load image.")
-                        .flipv()
-                        .to_rgba();
-                    total_bytes += std::mem::size_of_val(&*img);
+//                         Texture {
+//                             name,
+//                             dimensions: [img.width() as f32, img.height() as f32],
+//                         }
+//                     }
+//                     let components =
+//                     println!("{:?}", &dds.header);
+//                 }
+//                 _ => {
+//                     let img = image::open(&file_path)
+//                         .expect("Failed to load image.")
+//                         .flipv()
+//                         .to_rgba();
+//                     total_bytes += std::mem::size_of_val(&*img);
 
-                    let texture = create_texture(gl, img, srgb);
+//                     let texture = create_texture(gl, img, srgb);
 
-                    let index = self.textures.len() as TextureIndex;
-                    self.textures.push(texture);
-                    index
-                }
-            })
-    }
-}
+//                     let index = self.textures.len() as TextureIndex;
+//                     self.textures.push(texture);
+//                     index
+//                 }
+//             })
+//     }
+// }
 
 #[inline]
 fn create_texture(gl: &gl::Gl, img: image::RgbaImage, srgb: bool) -> Texture {
@@ -437,8 +438,8 @@ fn create_texture(gl: &gl::Gl, img: image::RgbaImage, srgb: bool) -> Texture {
             gl::TEXTURE_2D,
             0,
             match srgb {
-                true => gl::SRGB8_ALPHA8,
-                false => gl::RGBA8,
+                true => gl::InternalFormat::from(gl::SRGB8_ALPHA8),
+                false => gl::InternalFormat::from(gl::RGBA8),
             },
             img.width() as i32,
             img.height() as i32,
@@ -495,291 +496,37 @@ impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        // ["two_planes.obj", "bunny.obj"]
-        // ["shadow_test.obj"]
-        let objs: Vec<(PathBuf, Vec<tobj::Model>, Vec<tobj::Material>)> = ["bistro.obj"]
-            .into_iter()
-            .map(PathBuf::from)
-            .map(|rel_file_path| {
-                let file_path = resource_dir.join(&rel_file_path);
-                info!("Loading {:?}...", file_path.display());
-                let now = Instant::now();
-                let obj = tobj::load_obj(&file_path).unwrap();
-                let vertex_count: usize = obj.0.iter().map(|model| model.mesh.indices.len()).sum();
-                let elapsed = now.elapsed();
-                info!(
-                    "Loaded {:?} with {} vertices in {}µs.",
-                    file_path.display(),
-                    vertex_count,
-                    elapsed.as_micros()
-                );
-                (rel_file_path, obj.0, obj.1)
-            })
-            .collect();
+        let scene_file = {
+            let mut file = std::fs::File::open("out.bin").unwrap();
+            renderer::scene_file::SceneFile::read(&mut file).unwrap()
+        };
 
-        let material_offsets: Vec<u32> = objs
-            .iter()
-            .scan(0, |sum, (_, _, ref materials)| {
-                let offset = *sum;
-                *sum += materials.len() as u32;
-                Some(offset)
-            })
-            .collect();
-
-        let mut meshes: Vec<Mesh> = Vec::with_capacity(objs.iter().map(|(_, ref models, _)| models.len()).sum());
-        let mut materials: Vec<Material> =
-            Vec::with_capacity(objs.iter().map(|(_, _, ref materials)| materials.len()).sum());
-
-        let mut textures = Vec::new();
-        let mut path_to_texture_index = HashMap::new();
-        let mut color_to_texture_index = HashMap::new();
-
-        for (i, (rel_file_path, obj_models, obj_materials)) in objs.into_iter().enumerate() {
-            let material_offset = material_offsets[i];
-
-            meshes.extend(obj_models.into_iter().map(|model| {
-                let tobj::Model { mesh, name } = model;
-                let tobj::Mesh {
-                    positions,
-                    normals: _normals,
-                    texcoords,
-                    indices,
-                    material_id,
-                } = mesh;
-
-                let triangles: Vec<[u32; 3]> = indices.unflatten();
-                let pos_in_obj: Vec<[f32; 3]> = positions.unflatten();
-
-                let pos_in_tex: Vec<[f32; 2]> = texcoords.unflatten();
-                let nor_in_obj = polygen::compute_normals(&triangles, &pos_in_obj);
-                let tan_in_obj = if pos_in_tex.is_empty() {
-                    Vec::new()
-                } else {
-                    polygen::compute_tangents(&triangles, &pos_in_obj, &pos_in_tex)
-                };
-                let material_index = material_id.map(|id| id as MaterialIndex + material_offset);
-
-                Mesh {
-                    name,
-                    triangles,
-                    pos_in_obj: if rel_file_path == Path::new("sponza/sponza.obj") {
-                        pos_in_obj
-                            .into_iter()
-                            .map(|p| (Vector3::from(p) * 0.01).into())
-                            .collect()
-                    } else {
-                        pos_in_obj
-                    },
-                    pos_in_tex,
-                    nor_in_obj,
-                    tan_in_obj,
-                    translate: if rel_file_path == Path::new("keyboard.obj") {
-                        Vector3::new(0.0, 0.3, 0.0)
-                    } else {
-                        Vector3::zero()
-                    },
-                    material_index,
-                }
-            }));
-
-            let material_dir = resource_dir.join(rel_file_path.parent().unwrap());
-
-            {
-                info!("Loading textures...");
-                let now = Instant::now();
-                let mut total_bytes = 0;
-                materials.extend(obj_materials.into_iter().map(|material| {
-                    // https://github.com/rust-lang/rfcs/pull/1769
-                    let diffuse = *if !material.diffuse_texture.is_empty() {
-                        let file_path = material_dir.join(&material.diffuse_texture);
-                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            match file_path.extension().unwrap() {
-                                x if x == "dds" => {
-                                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
-                                    let mut reader = std::io::BufReader::new(file);
-                                    let dds = dds::DDS::decode(&mut reader).unwrap();
-
-                                    println!("{:?}", &dds.header);
-
-                                    0
-                                }
-                                _ => {
-                                    let img = image::open(&file_path)
-                                        .expect("Failed to load image.")
-                                        .flipv()
-                                        .to_rgba();
-                                    total_bytes += std::mem::size_of_val(&*img);
-
-                                    let texture = create_texture(gl, img, configuration.global.diffuse_srgb);
-
-                                    let index = textures.len() as TextureIndex;
-                                    textures.push(texture);
-                                    index
-                                }
-                            }
-                        })
-                    } else {
-                        let rgba_u8 =
-                            rgba_f32_to_rgba_u8([material.diffuse[0], material.diffuse[1], material.diffuse[2], 1.0]);
-                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-
-                            let texture = create_texture(gl, img, configuration.global.diffuse_srgb);
-
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    };
-
-                    let normal = *if let Some(bump_path) = material.unknown_param.get("map_bump") {
-                        let file_path = material_dir.join(bump_path);
-                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            match file_path.extension().unwrap() {
-                                x if x == "dds" => {
-                                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
-                                    let mut reader = std::io::BufReader::new(file);
-                                    let dds = dds::DDS::decode(&mut reader).unwrap();
-
-                                    println!("{:?}", &dds.header);
-
-                                    0
-                                }
-                                _ => {
-                                    let img = image::open(&file_path)
-                                        .expect("Failed to load image.")
-                                        .flipv()
-                                        .to_rgba();
-                                    total_bytes += std::mem::size_of_val(&*img);
-
-                                    let texture = create_texture(gl, img);
-                                    let index = textures.len() as TextureIndex;
-                                    textures.push(texture);
-                                    index
-                                }
-                            }
-                        })
-                    } else {
-                        let rgba_u8 = rgba_f32_to_rgba_u8([0.5, 0.5, 0.5, 1.0]);
-                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-                            let texture = create_texture(gl, img, false);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    };
-
-                    let specular = *if !material.specular_texture.is_empty() {
-                        let file_path = material_dir.join(&material.specular_texture);
-                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            match file_path.extension().unwrap() {
-                                x if x == "dds" => {
-                                    let file = std::fs::File::open(Path::new(&file_path)).unwrap();
-                                    let mut reader = std::io::BufReader::new(file);
-                                    let dds = dds::DDS::decode(&mut reader).unwrap();
-
-                                    println!("{:?}", &dds.header);
-
-                                    0
-                                }
-                                _ => {
-                                    let img = image::open(&file_path)
-                                        .expect("Failed to load image.")
-                                        .flipv()
-                                        .to_rgba();
-                                    total_bytes += std::mem::size_of_val(&*img);
-
-                                    let texture = create_texture(gl, img, false);
-                                    let index = textures.len() as TextureIndex;
-                                    textures.push(texture);
-                                    index
-                                }
-                            }
-                        })
-                    } else {
-                        let rgba_u8 = rgba_f32_to_rgba_u8([
-                            material.specular[0],
-                            material.specular[1],
-                            material.specular[2],
-                            1.0,
-                        ]);
-                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-
-                            let texture = create_texture(gl, img, false);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    };
-
-                    Material {
-                        diffuse,
-                        normal,
-                        specular,
-                        shininess: material.shininess,
-                    }
-                }));
-                let elapsed = now.elapsed();
-                info!(
-                    "Loaded {}MB of textures in {}µs.",
-                    total_bytes / 1000_000,
-                    elapsed.as_micros()
-                );
-            }
-        }
-
-        let mut vertex_data: Vec<Vertex> = Vec::new();
-        let mut element_data: Vec<[u32; 3]> = Vec::new();
-        let mut mesh_metas: Vec<MeshMeta> = Vec::new();
-
-        for mesh in meshes.iter() {
-            let vertex_count = mesh.pos_in_obj.len();
-            assert_eq!(vertex_count, mesh.pos_in_obj.len());
-            assert_eq!(vertex_count, mesh.pos_in_tex.len());
-            assert_eq!(vertex_count, mesh.nor_in_obj.len());
-            assert_eq!(vertex_count, mesh.tan_in_obj.len());
-
-            // Get this BEFORE appending.
-            let vertex_base = u32::try_from(vertex_data.len()).unwrap();
-
-            for i in 0..vertex_count {
-                vertex_data.push(Vertex {
-                    pos_in_obj: mesh.pos_in_obj[i],
-                    pos_in_tex: mesh.pos_in_tex[i],
-                    nor_in_obj: mesh.nor_in_obj[i],
-                    tan_in_obj: mesh.tan_in_obj[i],
-                });
-            }
-
-            // Get this BEFORE appending.
-            let element_offset = std::mem::size_of_val(&element_data[..]);
-
-            element_data.extend(mesh.triangles.iter());
-
-            mesh_metas.push(MeshMeta {
-                element_count: (mesh.triangles.len() * 3).try_into().unwrap(),
-                element_offset,
-                vertex_base,
-                vertex_count: vertex_count.try_into().unwrap(),
-            });
-        }
-
-        let (scene_vao, scene_pos_vao, scene_vb, scene_eb) = unsafe {
+        let (scene_vao, scene_vb, scene_eb) = unsafe {
             let vao = gl.create_vertex_array();
-            let pos_vao = gl.create_vertex_array();
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            Vertex::set_format(gl, vao, vb, eb);
-            Vertex::set_pos_format(gl, pos_vao, vb, eb);
+            set_attrib!(
+                gl,
+                vao,
+                rendering::VS_POS_IN_OBJ_LOC,
+                3,
+                gl::FLOAT,
+                Vertex,
+                pos_in_obj,
+                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+            );
+
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<renderer::scene_file::Vertex>() as u32;
+            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
 
             // Upload data.
-            gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
-            gl.named_buffer_data(eb, element_data.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(vb, scene_file.vertex_buffer.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, scene_file.triangle_buffer.vec_as_bytes(), gl::STATIC_DRAW);
 
-            (vao, pos_vao, vb, eb)
+            (vao, vb, eb)
         };
 
         let (full_screen_vao, full_screen_vb, full_screen_eb) = unsafe {
@@ -821,16 +568,10 @@ impl Resources {
         };
 
         Resources {
-            meshes,
-            materials,
-            textures,
-            path_to_texture_index,
-            color_to_texture_index,
             scene_vao,
-            scene_pos_vao,
             scene_vb,
             scene_eb,
-            mesh_metas,
+            scene_file,
             full_screen_vao,
             full_screen_vb,
             full_screen_eb,

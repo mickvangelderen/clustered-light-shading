@@ -7,6 +7,7 @@ mod create_window;
 mod flatten;
 pub mod profiling;
 pub mod profiling_by_value;
+pub mod scene_file;
 
 pub use as_bytes::*;
 pub use configuration::{

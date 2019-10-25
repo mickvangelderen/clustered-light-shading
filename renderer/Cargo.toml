@@ -28,6 +28,7 @@ rand = "0.7.0"
 clap = "2.33.0"
 chrono = "0.4.9"
 dds-rs = "0.7.0"
+fbx = { path = "../fbx" }
 
 [build-dependencies]
 kernel-generator = { path = "../kernel-generator" }
