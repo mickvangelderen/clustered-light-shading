@@ -1,5 +1,5 @@
-use crate::io_ext::*;
-use crate::num::*;
+use super::io_ext::*;
+use super::num::*;
 use std::io;
 
 macro_rules! impl_parse {

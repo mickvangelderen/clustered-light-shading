@@ -1,4 +1,4 @@
-use crate::*;
+use crate::tree::*;
 
 #[derive(Debug)]
 pub struct Geometry {

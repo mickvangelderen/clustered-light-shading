@@ -10,7 +10,7 @@ pub use model::*;
 pub use texture::*;
 pub use video::*;
 
-use fbx::*;
+use crate::tree::*;
 
 #[derive(Debug)]
 pub struct Objects {
