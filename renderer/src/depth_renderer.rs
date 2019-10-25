@@ -17,21 +17,20 @@ impl Context<'_> {
             depth_renderer.update(&mut rendering_context!(self));
             if let ProgramName::Linked(name) = depth_renderer.program.name {
                 gl.use_program(name);
-                gl.bind_vertex_array(resources.scene_pos_vao);
+                gl.bind_vertex_array(resources.scene_vao);
 
-                for (i, mesh_meta) in resources.mesh_metas.iter().enumerate() {
+                for mesh_description in resources.scene_file.mesh_descriptions.iter() {
                     if let Some(loc) = depth_renderer.obj_to_wld_loc.into() {
-                        let obj_to_wld = Matrix4::from_translation(resources.meshes[i].translate);
-
+                        let obj_to_wld = Matrix4::identity();
                         gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
                     }
 
                     gl.draw_elements_base_vertex(
                         gl::TRIANGLES,
-                        mesh_meta.element_count,
+                        mesh_description.element_count,
                         gl::UNSIGNED_INT,
-                        mesh_meta.element_offset,
-                        mesh_meta.vertex_base,
+                        mesh_description.index_byte_offset as usize,
+                        mesh_description.vertex_offset,
                     );
                 }
 

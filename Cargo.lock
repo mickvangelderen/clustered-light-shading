@@ -1335,6 +1335,7 @@ dependencies = [
  "dds-rs 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive 0.1.0",
  "env_logger 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fbx 0.1.0",
  "gl-typed 0.6.0 (git+https://github.com/mickvangelderen/gl-typed-rust)",
  "glutin 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.22.2 (registry+https://github.com/rust-lang/crates.io-index)",
