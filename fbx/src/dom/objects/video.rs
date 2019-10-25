@@ -1,13 +1,14 @@
-use crate::*;
+use crate::tree::*;
+
 use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Video {
-    id: u64,
-    name: String,
-    kind: String,
-    file_path: PathBuf,
-    properties: VideoProperties,
+    pub id: u64,
+    pub name: String,
+    pub kind: String,
+    pub file_path: PathBuf,
+    pub properties: VideoProperties,
 }
 
 #[derive(Debug)]
@@ -36,7 +37,7 @@ impl Video {
 
         let mut kind = None;
         let mut file_path = None;
-        let mut properties = VideoProperties::default();
+        let properties = VideoProperties::default();
 
         for node in node.children.iter() {
             stack.push(node.name.clone());

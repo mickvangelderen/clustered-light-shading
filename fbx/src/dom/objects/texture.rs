@@ -1,4 +1,5 @@
-use crate::*;
+use crate::tree::*;
+
 use std::path::PathBuf;
 
 #[derive(Debug)]

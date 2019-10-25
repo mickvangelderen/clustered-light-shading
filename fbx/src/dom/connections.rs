@@ -1,4 +1,4 @@
-use fbx::*;
+use crate::tree::*;
 
 #[derive(Debug)]
 pub struct Connections {

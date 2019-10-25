@@ -1,10 +1,10 @@
-use crate::*;
+use crate::tree::*;
 
 #[derive(Debug)]
 pub struct Model {
-    id: u64,
-    name: String,
-    properties: ModelProperties,
+    pub id: u64,
+    pub name: String,
+    pub properties: ModelProperties,
 }
 
 #[derive(Debug)]
@@ -78,87 +78,87 @@ impl Model {
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "RotationPivot" => {
                                 properties.rotation_pivot = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "ScalingOffset" => {
                                 properties.scaling_offset = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "ScalingPivot" => {
                                 properties.rotation_pivot = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "PreRotation" => {
                                 properties.pre_rotation = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "PostRotation" => {
                                 properties.post_rotation = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "GeometricTranslation" => {
                                 properties.geometric_translation = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "GeometricRotation" => {
                                 properties.geometric_rotation = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "GeometricScaling" => {
                                 properties.geometric_scaling = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "Lcl Translation" => {
                                 properties.lcl_translation = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "Lcl Rotation" => {
                                 properties.lcl_rotation = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             "Lcl Scaling" => {
                                 properties.lcl_scaling = [
                                     node.properties[4].to_f64_exact(),
                                     node.properties[5].to_f64_exact(),
                                     node.properties[6].to_f64_exact(),
                                 ];
-                            },
+                            }
                             unknown => {
                                 // Don't care.
-                                // eprintln!("Unknown model properties property: {:?}", unknown);
+                                eprintln!("Unknown model properties property: {:?}", unknown);
                             }
                         }
 
