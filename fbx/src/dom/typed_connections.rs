@@ -1,12 +1,13 @@
 use crate::dom::*;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct TypedConnections {
     pub oo: Vec<(TypedIndex, TypedIndex)>,
     pub op: Vec<(TypedIndex, TypedIndex, String)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum TypedIndex {
     Root,
     Geometry(usize),
