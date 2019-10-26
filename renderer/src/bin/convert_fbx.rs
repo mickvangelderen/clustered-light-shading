@@ -98,6 +98,9 @@ fn main() {
         mesh_descriptions: Vec::new(),
         vertex_buffer: Vec::new(),
         triangle_buffer: Vec::new(),
+        transforms: Vec::new(),
+        transform_relations: Vec::new(),
+        instances: Vec::new(),
     };
 
     for geometry in objects.geometries.iter() {
