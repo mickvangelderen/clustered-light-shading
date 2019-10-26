@@ -1,7 +1,20 @@
+use cgmath::*;
 use renderer::scene_file::*;
 use std::fs;
 use std::io;
 use std::path;
+
+pub trait ModelExt {
+    fn transform_to_parent(&self) -> Matrix4<f64>;
+}
+
+impl ModelExt for fbx::dom::Model {
+    fn transform_to_parent(&self) -> Matrix4<f64> {
+        let t = Matrix4::from_translation(Vector3::from(self.properties.lcl_translation));
+
+        t
+    }
+}
 
 use std::collections::HashMap;
 
@@ -60,13 +73,17 @@ fn main() {
         mesh_descriptions: Vec::new(),
         vertex_buffer: Vec::new(),
         triangle_buffer: Vec::new(),
-        transforms: vec![
-            Transform {
-                translation: [0.0; 3],
-                rotation: [0.0; 3],
-                scaling: [1.0; 3],
-            }
-        ],
+        transforms: std::iter::once(renderer::scene_file::Transform {
+            translation: [0.0; 3],
+            rotation: [0.0; 3],
+            scaling: [1.0; 3],
+        })
+        .chain(root.objects.models.iter().map(|model| renderer::scene_file::Transform {
+            translation: Vector3::from(model.properties.lcl_translation).cast().unwrap().into(),
+            rotation: Vector3::from(model.properties.lcl_rotation).cast().unwrap().into(),
+            scaling: Vector3::from(model.properties.lcl_scaling).cast().unwrap().into(),
+        }))
+        .collect(),
         transform_relations: Vec::new(),
         instances: Vec::new(),
     };
@@ -160,12 +177,48 @@ fn main() {
     }
 
     for oo in root.connections.oo {
-        println!("{:?} {:?}", oo.0, oo.1);
+        use fbx::dom::TypedIndex;
+
+        match oo.0 {
+            TypedIndex::Model(child_index) => {
+                let parent_index = match oo.1 {
+                    TypedIndex::Root => 0,
+                    TypedIndex::Model(index) => index as u32 + 1,
+                    _ => {
+                        panic!("Didn't expect this relation {:?}", oo);
+                    }
+                };
+                file.transform_relations.push(TransformRelation {
+                    parent_index,
+                    child_index: child_index as u32,
+                });
+            }
+            TypedIndex::Geometry(geometry_index) => match oo.1 {
+                TypedIndex::Model(model_index) => {
+                    file.instances.push(Instance {
+                        mesh_index: geometry_index as u32,
+                        transform_index: model_index as u32 + 1,
+                    });
+                }
+                _ => {
+                    panic!("Didn't expect this relation {:?}", oo);
+                }
+            },
+            other => {
+                println!("Unhandled connection {:?}", oo);
+            }
+        }
     }
 
-    for op in root.connections.op {
-        println!("{:?} {:?} {:?}", op.0, op.1, op.2);
+    // for op in root.connections.op {
+    //     println!("{:?} {:?} {:?}", op.0, op.1, op.2);
+    // }
+
+    for model in root.objects.models {
+        println!("{:#?}", model);
     }
+
+    // println!("{:#?}", file.transforms);
 
     // file.write(&mut std::io::BufWriter::new(std::fs::File::create("out.bin").unwrap()))
     //     .unwrap();
