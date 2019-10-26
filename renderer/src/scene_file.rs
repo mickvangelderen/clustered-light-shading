@@ -14,10 +14,35 @@ pub struct MeshDescription {
 
 #[derive(Debug)]
 #[repr(C)]
+pub struct Transform {
+    pub translation: [FiniteF32; 3],
+    pub rotation: [FiniteF32; 3],
+    pub scaling: [FiniteF32; 3],
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct TransformRelation {
+    pub parent_index: u32,
+    pub child_index: u32,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Instance {
+    pub mesh_index: u32,
+    pub transform_index: u32,
+}
+
+#[derive(Debug)]
+#[repr(C)]
 pub struct FileHeader {
     pub mesh_count: u64,
     pub vertex_count: u64,
     pub triangle_count: u64,
+    pub transform_count: u64,
+    pub transform_relation_count: u64,
+    pub instance_count: u64,
 }
 
 type Triangle = [u32; 3];
@@ -27,6 +52,9 @@ pub struct SceneFile {
     pub mesh_descriptions: Vec<MeshDescription>,
     pub vertex_buffer: Vec<Vertex>,
     pub triangle_buffer: Vec<Triangle>,
+    pub transforms: Vec<Transform>,
+    pub transform_relations: Vec<TransformRelation>,
+    pub instances: Vec<Instance>,
 }
 
 unsafe fn write_vec<T, W: std::io::Write>(vec: &Vec<T>, writer: &mut W) -> std::io::Result<usize> {
@@ -51,6 +79,9 @@ impl SceneFile {
             mesh_count: self.mesh_descriptions.len() as u64,
             vertex_count: self.vertex_buffer.len() as u64,
             triangle_count: self.triangle_buffer.len() as u64,
+            transform_count: self.transforms.len() as u64,
+            transform_relation_count: self.transform_relations.len() as u64,
+            instance_count: self.instances.len() as u64,
         };
 
         unsafe {
@@ -61,6 +92,9 @@ impl SceneFile {
             write_vec(&self.mesh_descriptions, writer)?;
             write_vec(&self.vertex_buffer, writer)?;
             write_vec(&self.triangle_buffer, writer)?;
+            write_vec(&self.transforms, writer)?;
+            write_vec(&self.transform_relations, writer)?;
+            write_vec(&self.instances, writer)?;
         }
 
         Ok(())
@@ -80,11 +114,18 @@ impl SceneFile {
             let mesh_descriptions = read_vec::<MeshDescription, _>(header.mesh_count as usize, reader)?;
             let vertex_buffer = read_vec::<Vertex, _>(header.vertex_count as usize, reader)?;
             let triangle_buffer = read_vec::<Triangle, _>(header.triangle_count as usize, reader)?;
+            let transforms = read_vec::<Transform, _>(header.transform_count as usize, reader)?;
+            let transform_relations =
+                read_vec::<TransformRelation, _>(header.transform_relation_count as usize, reader)?;
+            let instances = read_vec::<Instance, _>(header.instance_count as usize, reader)?;
 
             Ok(SceneFile {
                 mesh_descriptions,
                 vertex_buffer,
                 triangle_buffer,
+                transforms,
+                transform_relations,
+                instances,
             })
         }
     }
