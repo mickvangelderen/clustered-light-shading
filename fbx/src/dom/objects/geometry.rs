@@ -2,7 +2,7 @@ use crate::tree::*;
 
 #[derive(Debug)]
 pub struct Geometry {
-    pub id: u64,
+    pub id: i64,
     pub name: String,
     pub vertices: Vec<f64>,
     pub polygon_vertex_index: Vec<i32>,
@@ -69,7 +69,7 @@ impl Geometry {
     pub fn from_fbx(node: &Node, stack: &mut Vec<String>) -> Self {
         stack.push(node.name.clone());
 
-        let id = node.properties[0].to_i64_exact() as u64;
+        let id = node.properties[0].to_i64_exact();
 
         let name = {
             let name = node.properties[1].as_str();

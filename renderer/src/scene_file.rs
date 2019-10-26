@@ -15,9 +15,9 @@ pub struct MeshDescription {
 #[derive(Debug)]
 #[repr(C)]
 pub struct Transform {
-    pub translation: [FiniteF32; 3],
-    pub rotation: [FiniteF32; 3],
-    pub scaling: [FiniteF32; 3],
+    pub translation: [f32; 3],
+    pub rotation: [f32; 3],
+    pub scaling: [f32; 3],
 }
 
 #[derive(Debug)]
