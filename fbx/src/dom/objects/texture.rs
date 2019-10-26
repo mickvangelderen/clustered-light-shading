@@ -4,21 +4,21 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Texture {
-    id: u64,
-    name: String,
-    kind: String,
-    file_path: PathBuf,
-    properties: TextureProperties,
-    uv_translation: [f64; 2],
-    uv_scaling: [f64; 2],
-    alpha_source: String,
+    pub id: i64,
+    pub name: String,
+    pub kind: String,
+    pub file_path: PathBuf,
+    pub properties: TextureProperties,
+    pub uv_translation: [f64; 2],
+    pub uv_scaling: [f64; 2],
+    pub alpha_source: String,
 }
 
 #[derive(Debug)]
 pub struct TextureProperties {
-    blend_mode: i32,
-    uv_set: String,
-    use_material: i32,
+    pub blend_mode: i32,
+    pub uv_set: String,
+    pub use_material: i32,
 }
 
 impl Default for TextureProperties {
@@ -35,7 +35,7 @@ impl Texture {
     pub fn from_fbx(node: &Node, stack: &mut Vec<String>) -> Self {
         stack.push(node.name.clone());
 
-        let id = node.properties[0].to_i64_exact() as u64;
+        let id = node.properties[0].to_i64_exact();
 
         let name = {
             let name = node.properties[1].as_str();

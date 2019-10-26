@@ -1,18 +1,19 @@
-use fbx::dom::*;
-use fbx::tree::{File, Node, Property};
 use renderer::scene_file::*;
 use std::fs;
 use std::io;
 use std::path;
 
-fn read(path: impl AsRef<path::Path>) -> io::Result<File> {
+use std::collections::HashMap;
+
+fn read(path: impl AsRef<path::Path>) -> io::Result<fbx::tree::File> {
     let mut reader = io::BufReader::new(fs::File::open(path)?);
-    File::parse(&mut reader)
+    fbx::tree::File::parse(&mut reader)
 }
 
-fn visit(node: &Node, depth: usize) {
+fn visit(node: &fbx::tree::Node, depth: usize) {
     print!("{}{}", "  ".repeat(depth), node.name);
     for property in node.properties.iter() {
+        use fbx::tree::Property;
         match property {
             Property::Bool(value) => print!(" {}: bool,", value),
             Property::I16(value) => print!(" {}: i16,", value),
@@ -49,71 +50,36 @@ fn visit(node: &Node, depth: usize) {
 }
 
 fn main() {
-    let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
-    // let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
+    // let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
+    let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
     dbg!(&file.header, file.children.len());
 
-    let stack = &mut Vec::<String>::new();
-
-    let mut objects: Option<Objects> = None;
-    let mut connections: Option<Connections> = None;
-    let mut global_settings: Option<GlobalSettings> = None;
-
-    for node in file.children.iter() {
-        stack.push(node.name.to_string());
-
-        // visit(node, 0);
-
-        match node.name.as_str() {
-            "GlobalSettings" => {
-                assert!(global_settings.is_none());
-                global_settings = Some(GlobalSettings::from_fbx(node, stack));
-            }
-            "Objects" => {
-                assert!(objects.is_none());
-                objects = Some(Objects::from_fbx(node, stack));
-            }
-            "Connections" => {
-                assert!(connections.is_none());
-                connections = Some(Connections::from_fbx(node, stack));
-            }
-            _ => {
-                // Don't care.
-            }
-        }
-
-        stack.pop();
-    }
-
-    let objects = objects.expect("Missing \"Objects\" node.");
-    // dbg!(&objects.materials);
-    // dbg!(objects.materials.len());
-    // dbg!(objects.geometries.len());
-    // dbg!(objects.textures);
-
-    // dbg!(connections);
-    // dbg!(global_settings.unwrap());
+    let root = fbx::dom::Root::from_fbx_file(&file);
 
     let mut file = SceneFile {
         mesh_descriptions: Vec::new(),
         vertex_buffer: Vec::new(),
         triangle_buffer: Vec::new(),
-        transforms: Vec::new(),
+        transforms: vec![
+            Transform {
+                translation: [0.0; 3],
+                rotation: [0.0; 3],
+                scaling: [1.0; 3],
+            }
+        ],
         transform_relations: Vec::new(),
         instances: Vec::new(),
     };
 
-    for geometry in objects.geometries.iter() {
-        println!(
-            "Geometry {:?} with {} vertices, {} indices.",
-            &geometry.name,
-            geometry.vertices.len(),
-            geometry.polygon_vertex_index.len()
-        );
+    for geometry in root.objects.geometries.iter() {
+        // println!(
+        //     "Geometry {:?} with {} vertices, {} indices.",
+        //     &geometry.name,
+        //     geometry.vertices.len(),
+        //     geometry.polygon_vertex_index.len()
+        // );
 
         // Deduplicate vertices.
-        use std::collections::HashMap;
-
         assert_eq!(0, geometry.vertices.len() % 3);
 
         let mut vertex_map: HashMap<Vertex, u32> = HashMap::new();
@@ -140,10 +106,10 @@ fn main() {
         assert_eq!(geometry.vertices.len() / 3, index_map.len());
         assert_eq!(vertices.len(), vertex_map.len());
 
-        println!(
-            "Deduplicated {} vertices",
-            (geometry.vertices.len() / 3) - vertices.len()
-        );
+        // println!(
+        //     "Deduplicated {} vertices",
+        //     (geometry.vertices.len() / 3) - vertices.len()
+        // );
 
         let mut triangles = Vec::<[u32; 3]>::new();
 
@@ -178,11 +144,11 @@ fn main() {
             }
         }
 
-        println!(
-            "Triangulated {} indices to {} triangles",
-            geometry.polygon_vertex_index.len(),
-            triangles.len()
-        );
+        // println!(
+        //     "Triangulated {} indices to {} triangles",
+        //     geometry.polygon_vertex_index.len(),
+        //     triangles.len()
+        // );
 
         file.mesh_descriptions.push(MeshDescription {
             index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
@@ -191,18 +157,23 @@ fn main() {
         });
         file.vertex_buffer.extend(vertices);
         file.triangle_buffer.extend(triangles);
-
-        // dbg!(triangles);
-        // break;
     }
 
-    file.write(&mut std::io::BufWriter::new(std::fs::File::create("out.bin").unwrap()))
-        .unwrap();
+    for oo in root.connections.oo {
+        println!("{:?} {:?}", oo.0, oo.1);
+    }
 
-    let mut file = std::fs::File::open("out.bin").unwrap();
-    let scene_file = SceneFile::read(&mut file).unwrap();
+    for op in root.connections.op {
+        println!("{:?} {:?} {:?}", op.0, op.1, op.2);
+    }
 
-    dbg!(scene_file.mesh_descriptions);
-    dbg!(scene_file.vertex_buffer.len());
-    dbg!(scene_file.triangle_buffer.len());
+    // file.write(&mut std::io::BufWriter::new(std::fs::File::create("out.bin").unwrap()))
+    //     .unwrap();
+
+    // let mut file = std::fs::File::open("out.bin").unwrap();
+    // let scene_file = SceneFile::read(&mut file).unwrap();
+
+    // dbg!(scene_file.mesh_descriptions);
+    // dbg!(scene_file.vertex_buffer.len());
+    // dbg!(scene_file.triangle_buffer.len());
 }

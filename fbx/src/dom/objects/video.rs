@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Video {
-    pub id: u64,
+    pub id: i64,
     pub name: String,
     pub kind: String,
     pub file_path: PathBuf,
@@ -24,7 +24,7 @@ impl Video {
     pub fn from_fbx(node: &Node, stack: &mut Vec<String>) -> Self {
         stack.push(node.name.clone());
 
-        let id = node.properties[0].to_i64_exact() as u64;
+        let id = node.properties[0].to_i64_exact();
 
         let name = {
             let name = node.properties[1].as_str();
