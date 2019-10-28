@@ -57,7 +57,7 @@ impl Vertex {
                 gl::FLOAT,
                 Vertex,
                 pos_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+                BBI_00
             );
             set_attrib!(
                 gl,
@@ -67,7 +67,7 @@ impl Vertex {
                 gl::FLOAT,
                 Vertex,
                 pos_in_tex,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+                BBI_00
             );
             set_attrib!(
                 gl,
@@ -77,7 +77,7 @@ impl Vertex {
                 gl::FLOAT,
                 Vertex,
                 nor_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+                BBI_00
             );
             set_attrib!(
                 gl,
@@ -87,12 +87,12 @@ impl Vertex {
                 gl::FLOAT,
                 Vertex,
                 tan_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+                BBI_00
             );
 
             // Bind buffers to vao.
             let stride = std::mem::size_of::<Vertex>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_vertex_buffer(vao, BBI_00, vb, 0, stride);
             gl.vertex_array_element_buffer(vao, eb);
         }
     }
@@ -107,12 +107,12 @@ impl Vertex {
                 gl::FLOAT,
                 Vertex,
                 pos_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
+                BBI_00
             );
 
             // Bind buffers to vao.
             let stride = std::mem::size_of::<Vertex>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_vertex_buffer(vao, BBI_00, vb, 0, stride);
             gl.vertex_array_element_buffer(vao, eb);
         }
     }
@@ -489,8 +489,9 @@ pub struct Material {
     pub shininess: f32,
 }
 
-const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
-    gl::VertexArrayBufferBindingIndex::from_u32(0);
+const BBI_00: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(0);
+const BBI_01: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(1);
+const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(2);
 
 impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
@@ -506,27 +507,69 @@ impl Resources {
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            set_attrib!(
-                gl,
-                vao,
-                rendering::VS_POS_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                Vertex,
-                pos_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
-            );
+            fn align_16(n: usize) -> usize {
+                ((n + 15) / 16) * 16
+            }
 
-            // TODO NOR AND TEX
+            let pos_in_obj_bytes = scene_file.pos_in_obj_buffer.vec_as_bytes();
+            let pos_in_obj_byte_length = pos_in_obj_bytes.len();
+            let pos_in_obj_byte_offset = 0;
 
-            // Bind buffers to vao.
-            let stride = std::mem::size_of::<[f32; 3]>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
-            gl.vertex_array_element_buffer(vao, eb);
+            let nor_in_obj_bytes = scene_file.nor_in_obj_buffer.vec_as_bytes();
+            let nor_in_obj_byte_length = nor_in_obj_bytes.len();
+            let nor_in_obj_byte_offset = align_16(pos_in_obj_byte_offset + pos_in_obj_byte_length);
+
+            let pos_in_tex_bytes = scene_file.pos_in_tex_buffer.vec_as_bytes();
+            let pos_in_tex_byte_length = pos_in_tex_bytes.len();
+            let pos_in_tex_byte_offset = align_16(nor_in_obj_byte_offset + nor_in_obj_byte_length);
+
+            let total_byte_length = align_16(pos_in_tex_byte_offset + pos_in_tex_byte_length);
 
             // Upload data.
-            gl.named_buffer_data(vb, scene_file.pos_in_obj_buffer.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_reserve(vb, total_byte_length, gl::STATIC_DRAW);
+            gl.named_buffer_sub_data(vb, pos_in_obj_byte_offset, pos_in_obj_bytes);
+            gl.named_buffer_sub_data(vb, nor_in_obj_byte_offset, nor_in_obj_bytes);
+            gl.named_buffer_sub_data(vb, pos_in_tex_byte_offset, pos_in_tex_bytes);
             gl.named_buffer_data(eb, scene_file.triangle_buffer.vec_as_bytes(), gl::STATIC_DRAW);
+
+            // Attribute layout specification.
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_NOR_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
+
+            // Attribute source specification.
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, BBI_00);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_NOR_IN_OBJ_LOC, BBI_01);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_02);
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_00,
+                vb,
+                pos_in_obj_byte_offset,
+                std::mem::size_of::<[f32; 3]>() as u32,
+            );
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_01,
+                vb,
+                nor_in_obj_byte_offset,
+                std::mem::size_of::<[f32; 3]>() as u32,
+            );
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_02,
+                vb,
+                pos_in_tex_byte_offset,
+                std::mem::size_of::<[f32; 2]>() as u32,
+            );
+
+            // Element buffer.
+            gl.vertex_array_element_buffer(vao, eb);
 
             (vao, vb, eb)
         };
@@ -539,11 +582,11 @@ impl Resources {
             // Set up attributes.
             gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_00);
 
             // Bind buffers to vao.
             let stride = std::mem::size_of::<[f32; 2]>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_vertex_buffer(vao, BBI_00, vb, 0, stride);
             gl.vertex_array_element_buffer(vao, eb);
 
             // Upload data.
