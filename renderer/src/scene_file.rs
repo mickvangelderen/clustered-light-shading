@@ -38,6 +38,31 @@ pub struct Instance {
 
 #[derive(Debug)]
 #[repr(C)]
+pub struct RawMaterial {
+    ambient_color: [f32; 3],
+    ambient_texture: Option<NonZeroU32>,
+    diffuse_color: [f32; 3],
+    diffuse_texture: Option<NonZeroU32>,
+    specular_color: [f32; 3],
+    specular_texture: Option<NonZeroU32>,
+    shininess: f32,
+    opacity: f32,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct RawTexture {
+    path_byte_offset: u64,
+    path_byte_length: u64,
+}
+
+#[derive(Debug)]
+pub struct Texture {
+    path: PathBuf,
+}
+
+#[derive(Debug)]
+#[repr(C)]
 pub struct FileHeader {
     pub mesh_count: u64,
     pub vertex_count: u64,
@@ -45,6 +70,9 @@ pub struct FileHeader {
     pub transform_count: u64,
     pub transform_relation_count: u64,
     pub instance_count: u64,
+    pub material_count: u64,
+    pub texture_count: u64,
+    pub string_byte_count: u64,
 }
 
 type Triangle = [u32; 3];
@@ -59,6 +87,8 @@ pub struct SceneFile {
     pub transforms: Vec<Transform>,
     pub transform_relations: Vec<TransformRelation>,
     pub instances: Vec<Instance>,
+    pub materials: Vec<Material>,
+    pub textures: Vec<Texture>,
 }
 
 unsafe fn write_vec<T, W: std::io::Write>(vec: &Vec<T>, writer: &mut W) -> std::io::Result<usize> {
@@ -85,6 +115,18 @@ impl SceneFile {
         assert_eq!(vertex_count, self.nor_in_obj_buffer.len());
         assert_eq!(vertex_count, self.pos_in_tex_buffer.len());
 
+        let mut string_bytes = Vec::new();
+
+        let materials: Vec<RawMaterial> = self.materials.iter().map(|material| {
+            RawMaterial {
+
+            }
+        }).collect();
+
+        let textures: Vec<RawTextures> = self.textures.iter().map(|texture| {
+
+        }).collect();
+
         let header = FileHeader {
             mesh_count: self.mesh_descriptions.len() as u64,
             vertex_count: vertex_count as u64,
@@ -92,6 +134,8 @@ impl SceneFile {
             transform_count: self.transforms.len() as u64,
             transform_relation_count: self.transform_relations.len() as u64,
             instance_count: self.instances.len() as u64,
+            material_count: self.materials.len() as u64,
+            texture_count: self.textures.len() as u64,
         };
 
         unsafe {
