@@ -14,22 +14,11 @@ pub struct Texture {
     pub alpha_source: String,
 }
 
-#[derive(Debug)]
-pub struct TextureProperties {
-    pub blend_mode: i32,
-    pub uv_set: String,
-    pub use_material: i32,
-}
-
-impl Default for TextureProperties {
-    fn default() -> Self {
-        Self {
-            blend_mode: 0,
-            uv_set: String::new(),
-            use_material: 0,
-        }
-    }
-}
+impl_properties70!(TextureProperties {
+    "CurrentTextureBlendMode" => blend_mode: i32 = 0,
+    "UVSet" => uv_set: String = String::new(),
+    "UseMaterial" => use_material: i32 = 0,
+});
 
 impl Texture {
     pub fn from_fbx(node: &Node, stack: &mut Vec<String>) -> Self {
@@ -48,7 +37,7 @@ impl Texture {
 
         let mut kind = None;
         let mut file_path = None;
-        let mut properties = TextureProperties::default();
+        let mut properties = None;
         let mut uv_translation = None;
         let mut uv_scaling = None;
         let mut alpha_source = None;
@@ -80,28 +69,8 @@ impl Texture {
                     alpha_source = Some(node.properties[0].as_str().to_string());
                 }
                 "Properties70" => {
-                    for node in node.children.iter() {
-                        stack.push(node.name.clone());
-
-                        assert_eq!(node.name.as_str(), "P");
-
-                        match node.properties[0].as_str() {
-                            "CurrentTextureBlendMode" => {
-                                properties.blend_mode = node.properties[4].to_i32_exact();
-                            }
-                            "UVSet" => {
-                                properties.uv_set = node.properties[4].as_str().to_string();
-                            }
-                            "UseMaterial" => {
-                                properties.use_material = node.properties[4].to_i32_exact();
-                            }
-                            unknown => {
-                                eprintln!("Unknown texture properties property: {:?}", unknown);
-                            }
-                        }
-
-                        stack.pop();
-                    }
+                    assert!(properties.is_none());
+                    properties = Some(TextureProperties::from_fbx(node, stack));
                 }
                 unknown => {
                     panic!("Unknown texture property: {:?}", unknown);
@@ -117,85 +86,10 @@ impl Texture {
             name,
             kind: kind.unwrap(),
             file_path: file_path.unwrap(),
-            properties,
+            properties: properties.unwrap(),
             uv_translation: uv_translation.unwrap(),
             uv_scaling: uv_scaling.unwrap(),
             alpha_source: alpha_source.unwrap(),
         }
     }
 }
-
-// P "AxisLen" "double" "Number" "" 10: f64,
-// P "DefaultAttributeIndex" "int" "Integer" "" -1: i32,
-// P "Freeze" "bool" "" "" 0: i32,
-// P "GeometricRotation" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "GeometricRotation" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "GeometricScaling" "Vector3D" "Vector" "" 1: f64, 1: f64, 1: f64,
-// P "GeometricScaling" "Vector3D" "Vector" "" 1: f64, 1: f64, 1: f64,
-// P "GeometricTranslation" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "GeometricTranslation" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "InheritType" "enum" "" "" 0: i32,
-// P "LODBox" "bool" "" "" 0: i32,
-// P "Lcl Rotation" "Lcl Rotation" "" "A" 0: f64, 0: f64, 0: f64,
-// P "Lcl Scaling" "Lcl Scaling" "" "A" 1: f64, 1: f64, 1: f64,
-// P "Lcl Translation" "Lcl Translation" "" "A" 0: f64, 0: f64, 0: f64,
-// P "LookAtProperty" "object" "" ""
-// P "MaxDampRangeX" "double" "Number" "" 0: f64,
-// P "MaxDampRangeY" "double" "Number" "" 0: f64,
-// P "MaxDampRangeZ" "double" "Number" "" 0: f64,
-// P "MaxDampStrengthX" "double" "Number" "" 0: f64,
-// P "MaxDampStrengthY" "double" "Number" "" 0: f64,
-// P "MaxDampStrengthZ" "double" "Number" "" 0: f64,
-// P "MinDampRangeX" "double" "Number" "" 0: f64,
-// P "MinDampRangeY" "double" "Number" "" 0: f64,
-// P "MinDampRangeZ" "double" "Number" "" 0: f64,
-// P "MinDampStrengthX" "double" "Number" "" 0: f64,
-// P "MinDampStrengthY" "double" "Number" "" 0: f64,
-// P "MinDampStrengthZ" "double" "Number" "" 0: f64,
-// P "NegativePercentShapeSupport" "bool" "" "" 1: i32,
-// P "PostRotation" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "PreRotation" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "PreferedAngleX" "double" "Number" "" 0: f64,
-// P "PreferedAngleY" "double" "Number" "" 0: f64,
-// P "PreferedAngleZ" "double" "Number" "" 0: f64,
-// P "QuaternionInterpolate" "enum" "" "" 0: i32,
-// P "RotationActive" "bool" "" "" 0: i32,
-// P "RotationMax" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "RotationMaxX" "bool" "" "" 0: i32,
-// P "RotationMaxY" "bool" "" "" 0: i32,
-// P "RotationMaxZ" "bool" "" "" 0: i32,
-// P "RotationMin" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "RotationMinX" "bool" "" "" 0: i32,
-// P "RotationMinY" "bool" "" "" 0: i32,
-// P "RotationMinZ" "bool" "" "" 0: i32,
-// P "RotationOffset" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "RotationOrder" "enum" "" "" 0: i32,
-// P "RotationPivot" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "RotationSpaceForLimitOnly" "bool" "" "" 0: i32,
-// P "RotationStiffnessX" "double" "Number" "" 0: f64,
-// P "RotationStiffnessY" "double" "Number" "" 0: f64,
-// P "RotationStiffnessZ" "double" "Number" "" 0: f64,
-// P "ScalingActive" "bool" "" "" 0: i32,
-// P "ScalingMax" "Vector3D" "Vector" "" 1: f64, 1: f64, 1: f64,
-// P "ScalingMaxX" "bool" "" "" 0: i32,
-// P "ScalingMaxY" "bool" "" "" 0: i32,
-// P "ScalingMaxZ" "bool" "" "" 0: i32,
-// P "ScalingMin" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "ScalingMinX" "bool" "" "" 0: i32,
-// P "ScalingMinY" "bool" "" "" 0: i32,
-// P "ScalingMinZ" "bool" "" "" 0: i32,
-// P "ScalingOffset" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "ScalingPivot" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "Show" "bool" "" "" 1: i32,
-// P "TranslationActive" "bool" "" "" 0: i32,
-// P "TranslationMax" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "TranslationMaxX" "bool" "" "" 0: i32,
-// P "TranslationMaxY" "bool" "" "" 0: i32,
-// P "TranslationMaxZ" "bool" "" "" 0: i32,
-// P "TranslationMin" "Vector3D" "Vector" "" 0: f64, 0: f64, 0: f64,
-// P "TranslationMinX" "bool" "" "" 0: i32,
-// P "TranslationMinY" "bool" "" "" 0: i32,
-// P "TranslationMinZ" "bool" "" "" 0: i32,
-// P "UpVectorProperty" "object" "" ""
-// P "Visibility Inheritance" "Visibility Inheritance" "" "" 1: i32,
-// P "Visibility" "Visibility" "" "A" 1: f64,
