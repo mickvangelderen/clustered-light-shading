@@ -19,10 +19,25 @@ impl Context<'_> {
                 gl.use_program(name);
                 gl.bind_vertex_array(resources.scene_vao);
 
-                for mesh_description in resources.scene_file.mesh_descriptions.iter() {
+                let scene_file = &self.resources.scene_file;
+
+                for instance in scene_file.instances.iter() {
+                    let transform = &scene_file.transforms[instance.transform_index as usize];
+                    let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
+
                     if let Some(loc) = depth_renderer.obj_to_wld_loc.into() {
-                        let obj_to_wld = Matrix4::identity();
-                        gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.as_ref());
+                        let obj_to_wld = Matrix4::from_translation(transform.translation.into())
+                            * Matrix4::from(Euler {
+                                x: Deg(transform.rotation[0]),
+                                y: Deg(transform.rotation[1]),
+                                z: Deg(transform.rotation[2]),
+                            })
+                            * Matrix4::from_nonuniform_scale(
+                                transform.scaling[0],
+                                transform.scaling[1],
+                                transform.scaling[2],
+                            );
+                        gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.cast().unwrap().as_ref());
                     }
 
                     gl.draw_elements_base_vertex(

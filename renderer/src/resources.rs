@@ -497,7 +497,7 @@ impl Resources {
         let resource_dir = resource_dir.as_ref();
 
         let scene_file = {
-            let mut file = std::fs::File::open("out.bin").unwrap();
+            let mut file = std::fs::File::open(&resource_dir.join(&configuration.global.scene_path)).unwrap();
             renderer::scene_file::SceneFile::read(&mut file).unwrap()
         };
 

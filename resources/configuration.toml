@@ -4,6 +4,8 @@ rain_drop_max = 10000
 mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
+# scene_path = "bistro/Bistro_Exterior.bin"
+scene_path = "sun_temple/SunTemple.bin"
 
 [record]
 path = "recording.bin"
@@ -56,8 +58,8 @@ zoom_velocity = 0.5
 
 [debug_camera]
 z0 = -0.4
-z1 = -1000.0
-positional_velocity = 16.0
+z1 = -3000.0
+positional_velocity = 32.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
 
