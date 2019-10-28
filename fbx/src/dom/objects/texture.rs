@@ -86,7 +86,7 @@ impl Texture {
             name,
             kind: kind.unwrap(),
             file_path: file_path.unwrap(),
-            properties: properties.unwrap(),
+            properties: properties.unwrap_or_default(),
             uv_translation: uv_translation.unwrap(),
             uv_scaling: uv_scaling.unwrap(),
             alpha_source: alpha_source.unwrap(),
