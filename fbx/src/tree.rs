@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::io;
 
 mod io_ext;
@@ -158,10 +159,19 @@ impl Property {
         })
     }
 
-    pub fn to_f32_exact(&self) -> f32 {
+    pub fn to_u8_exact(&self) -> u8 {
         match *self {
-            Property::F32(val) => val,
-            _ => panic!("Expected f32 but got {:?}", self),
+            Property::Bool(val) => val,
+            _ => panic!("Expected u8 but got {:?}", self),
+        }
+    }
+
+    pub fn to_u8(&self) -> u8 {
+        match *self {
+            Property::Bool(val) => val,
+            Property::I32(val) => val.try_into().unwrap(),
+            Property::I64(val) => val.try_into().unwrap(),
+            _ => panic!("Expected u8 but got {:?}", self),
         }
     }
 
@@ -172,10 +182,12 @@ impl Property {
         }
     }
 
-    pub fn to_f64_exact(&self) -> f64 {
+    pub fn to_i32(&self) -> i32 {
         match *self {
-            Property::F64(val) => val,
-            _ => panic!("Expected f64 but got {:?}", self),
+            Property::Bool(val) => val.try_into().unwrap(),
+            Property::I32(val) => val,
+            Property::I64(val) => val.try_into().unwrap(),
+            _ => panic!("Expected i32 but got {:?}", self),
         }
     }
 
@@ -183,6 +195,29 @@ impl Property {
         match *self {
             Property::I64(val) => val,
             _ => panic!("Expected i64 but got {:?}", self),
+        }
+    }
+
+    pub fn to_i64(&self) -> i64 {
+        match *self {
+            Property::Bool(val) => val.try_into().unwrap(),
+            Property::I32(val) => val.try_into().unwrap(),
+            Property::I64(val) => val,
+            _ => panic!("Expected i64 but got {:?}", self),
+        }
+    }
+
+    pub fn to_f32_exact(&self) -> f32 {
+        match *self {
+            Property::F32(val) => val,
+            _ => panic!("Expected f32 but got {:?}", self),
+        }
+    }
+
+    pub fn to_f64_exact(&self) -> f64 {
+        match *self {
+            Property::F64(val) => val,
+            _ => panic!("Expected f64 but got {:?}", self),
         }
     }
 

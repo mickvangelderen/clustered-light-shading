@@ -1,3 +1,6 @@
+#[macro_use]
+mod macros;
+
 mod connections;
 mod global_settings;
 mod objects;
