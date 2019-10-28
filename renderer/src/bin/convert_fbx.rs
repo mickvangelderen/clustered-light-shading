@@ -72,7 +72,9 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 
     let mut file = SceneFile {
         mesh_descriptions: Vec::new(),
-        vertex_buffer: Vec::new(),
+        pos_in_obj_buffer: Vec::new(),
+        nor_in_obj_buffer: Vec::new(),
+        pos_in_tex_buffer: Vec::new(),
         triangle_buffer: Vec::new(),
         transforms: std::iter::once(renderer::scene_file::Transform {
             translation: [0.0; 3],
@@ -157,66 +159,106 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
     };
 
     for geometry in root.objects.geometries.iter() {
-        // println!(
-        //     "Geometry {:?} with {} vertices, {} indices.",
-        //     &geometry.name,
-        //     geometry.vertices.len(),
-        //     geometry.polygon_vertex_index.len()
-        // );
-
-        // Deduplicate vertices.
         assert_eq!(0, geometry.vertices.len() % 3);
 
-        let mut vertex_map: HashMap<Vertex, u32> = HashMap::new();
-        let mut vertices: Vec<Vertex> = Vec::new();
-        let mut index_map: Vec<u32> = Vec::with_capacity(geometry.vertices.len() / 3);
-
-        for chunk in geometry.vertices.chunks_exact(3) {
-            let vertex = Vertex {
-                pos_in_obj: [
-                    FiniteF32::new(chunk[0] as f32).unwrap(),
-                    FiniteF32::new(chunk[1] as f32).unwrap(),
-                    FiniteF32::new(chunk[2] as f32).unwrap(),
-                ],
-            };
-
-            let index = vertex_map.len() as u32;
-            let index = *vertex_map.entry(vertex).or_insert_with(|| {
-                vertices.push(vertex);
-                index
-            });
-            index_map.push(index);
-        }
-
-        assert_eq!(geometry.vertices.len() / 3, index_map.len());
-        assert_eq!(vertices.len(), vertex_map.len());
-
-        // println!(
-        //     "Deduplicated {} vertices",
-        //     (geometry.vertices.len() / 3) - vertices.len()
-        // );
-
-        let mut triangles = Vec::<[u32; 3]>::new();
+        // Initialize with best-guess capacity.
+        let mut vertices = Vec::<Vertex>::with_capacity(geometry.vertices.len() / 3);
+        let mut triangles = Vec::<[u32; 3]>::with_capacity(geometry.polygon_vertex_index.len() / 3);
+        let mut vertex_map = HashMap::<Vertex, u32>::new();
 
         let mut count = 0;
         let mut triangle = [0u32; 3];
+        let mut polygon_index = 0;
 
-        // Convert ngon indices to triangles.
-        for &index in geometry.polygon_vertex_index.iter() {
-            let (index, should_reset) = if index < 0 {
-                ((index ^ -1) as u32, true)
+        // Go over all polygons.
+        for (polygon_vertex_index, &vertex_index) in geometry.polygon_vertex_index.iter().enumerate() {
+            let (vertex_index, should_reset) = if vertex_index < 0 {
+                ((vertex_index ^ -1) as u32, true)
             } else {
-                (index as u32, false)
+                (vertex_index as u32, false)
             };
 
-            let index = index_map[index as usize];
+            // Load vertex.
+            let pos_in_obj = [
+                FiniteF32::new(geometry.vertices[vertex_index as usize * 3 + 0] as f32).unwrap(),
+                FiniteF32::new(geometry.vertices[vertex_index as usize * 3 + 1] as f32).unwrap(),
+                FiniteF32::new(geometry.vertices[vertex_index as usize * 3 + 2] as f32).unwrap(),
+            ];
 
+            use fbx::dom::AttributeMapping;
+
+            let nor_in_obj = match geometry.layers[0].normals.as_ref() {
+                Some(attribute) => {
+                    let index = match attribute.mapping {
+                        AttributeMapping::ByPolygon => polygon_index as usize,
+                        AttributeMapping::ByVertex => vertex_index as usize,
+                        AttributeMapping::ByPolygonVertex => polygon_vertex_index as usize,
+                        _ => unimplemented!(),
+                    };
+
+                    let index = match attribute.indices.as_ref() {
+                        Some(indices) => indices[index] as usize,
+                        None => index,
+                    };
+
+                    [
+                        FiniteF32::new(attribute.elements[index * 3 + 0] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 3 + 1] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 3 + 2] as f32).unwrap(),
+                    ]
+                }
+                None => [
+                    FiniteF32::new(0.0).unwrap(),
+                    FiniteF32::new(0.0).unwrap(),
+                    FiniteF32::new(0.0).unwrap(),
+                ],
+            };
+
+            let pos_in_tex = match geometry.layers[0].uvs.as_ref() {
+                Some(attribute) => {
+                    let index = match attribute.mapping {
+                        AttributeMapping::ByPolygon => polygon_index as usize,
+                        AttributeMapping::ByVertex => vertex_index as usize,
+                        AttributeMapping::ByPolygonVertex => polygon_vertex_index as usize,
+                        _ => unimplemented!(),
+                    };
+
+                    let index = match attribute.indices.as_ref() {
+                        Some(indices) => indices[index] as usize,
+                        None => index,
+                    };
+
+                    [
+                        FiniteF32::new(attribute.elements[index * 2 + 0] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 2 + 1] as f32).unwrap(),
+                    ]
+                }
+                None => [FiniteF32::new(0.0).unwrap(), FiniteF32::new(0.0).unwrap()],
+            };
+
+            let vertex = Vertex {
+                pos_in_obj,
+                nor_in_obj,
+                pos_in_tex,
+            };
+
+            let deduplicated_vertex_index = match vertex_map.get(&vertex) {
+                Some(&index) => index,
+                None => {
+                    let index = vertices.len() as u32;
+                    vertices.push(vertex);
+                    vertex_map.insert(vertex, index);
+                    index
+                }
+            };
+
+            // Triangulate.
             if count < 3 {
-                triangle[count] = index;
+                triangle[count] = deduplicated_vertex_index;
                 count += 1;
             } else {
                 triangle[1] = triangle[2];
-                triangle[2] = index;
+                triangle[2] = deduplicated_vertex_index;
             }
 
             if count == 3 {
@@ -226,21 +268,19 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             if should_reset {
                 assert_eq!(3, count); // panic when we only have 0, 1 or 2 indices.
                 count = 0;
+                polygon_index += 1;
             }
         }
 
-        // println!(
-        //     "Triangulated {} indices to {} triangles",
-        //     geometry.polygon_vertex_index.len(),
-        //     triangles.len()
-        // );
-
         file.mesh_descriptions.push(MeshDescription {
             index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
-            vertex_offset: file.vertex_buffer.len() as u32,
+            vertex_offset: file.pos_in_obj_buffer.len() as u32,
             element_count: (triangles.len() * 3) as u32,
         });
-        file.vertex_buffer.extend(vertices);
+
+        file.pos_in_obj_buffer.extend(vertices.iter().map(|v| v.pos_in_obj));
+        file.nor_in_obj_buffer.extend(vertices.iter().map(|v| v.nor_in_obj));
+        file.pos_in_tex_buffer.extend(vertices.iter().map(|v| v.pos_in_tex));
         file.triangle_buffer.extend(triangles);
     }
 

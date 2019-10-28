@@ -2,6 +2,8 @@
 #[repr(C)]
 pub struct Vertex {
     pub pos_in_obj: [FiniteF32; 3],
+    pub nor_in_obj: [FiniteF32; 3],
+    pub pos_in_tex: [FiniteF32; 2],
 }
 
 #[derive(Debug)]
@@ -50,7 +52,9 @@ type Triangle = [u32; 3];
 #[derive(Debug)]
 pub struct SceneFile {
     pub mesh_descriptions: Vec<MeshDescription>,
-    pub vertex_buffer: Vec<Vertex>,
+    pub pos_in_obj_buffer: Vec<[FiniteF32; 3]>,
+    pub nor_in_obj_buffer: Vec<[FiniteF32; 3]>,
+    pub pos_in_tex_buffer: Vec<[FiniteF32; 2]>,
     pub triangle_buffer: Vec<Triangle>,
     pub transforms: Vec<Transform>,
     pub transform_relations: Vec<TransformRelation>,
@@ -75,9 +79,15 @@ unsafe fn read_vec<T, R: std::io::Read>(count: usize, reader: &mut R) -> std::io
 
 impl SceneFile {
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let vertex_count = self.pos_in_obj_buffer.len();
+
+        assert_eq!(vertex_count, self.pos_in_obj_buffer.len());
+        assert_eq!(vertex_count, self.nor_in_obj_buffer.len());
+        assert_eq!(vertex_count, self.pos_in_tex_buffer.len());
+
         let header = FileHeader {
             mesh_count: self.mesh_descriptions.len() as u64,
-            vertex_count: self.vertex_buffer.len() as u64,
+            vertex_count: vertex_count as u64,
             triangle_count: self.triangle_buffer.len() as u64,
             transform_count: self.transforms.len() as u64,
             transform_relation_count: self.transform_relations.len() as u64,
@@ -90,7 +100,9 @@ impl SceneFile {
                 std::mem::size_of::<FileHeader>(),
             ))?;
             write_vec(&self.mesh_descriptions, writer)?;
-            write_vec(&self.vertex_buffer, writer)?;
+            write_vec(&self.pos_in_obj_buffer, writer)?;
+            write_vec(&self.nor_in_obj_buffer, writer)?;
+            write_vec(&self.pos_in_tex_buffer, writer)?;
             write_vec(&self.triangle_buffer, writer)?;
             write_vec(&self.transforms, writer)?;
             write_vec(&self.transform_relations, writer)?;
@@ -112,7 +124,9 @@ impl SceneFile {
             let header = header.assume_init();
 
             let mesh_descriptions = read_vec::<MeshDescription, _>(header.mesh_count as usize, reader)?;
-            let vertex_buffer = read_vec::<Vertex, _>(header.vertex_count as usize, reader)?;
+            let pos_in_obj_buffer = read_vec::<[FiniteF32; 3], _>(header.vertex_count as usize, reader)?;
+            let nor_in_obj_buffer = read_vec::<[FiniteF32; 3], _>(header.vertex_count as usize, reader)?;
+            let pos_in_tex_buffer = read_vec::<[FiniteF32; 2], _>(header.vertex_count as usize, reader)?;
             let triangle_buffer = read_vec::<Triangle, _>(header.triangle_count as usize, reader)?;
             let transforms = read_vec::<Transform, _>(header.transform_count as usize, reader)?;
             let transform_relations =
@@ -121,7 +135,9 @@ impl SceneFile {
 
             Ok(SceneFile {
                 mesh_descriptions,
-                vertex_buffer,
+                pos_in_obj_buffer,
+                nor_in_obj_buffer,
+                pos_in_tex_buffer,
                 triangle_buffer,
                 transforms,
                 transform_relations,

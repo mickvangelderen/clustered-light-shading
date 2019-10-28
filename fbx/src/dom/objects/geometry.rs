@@ -19,7 +19,7 @@ pub struct GeometryLayer {
     pub materials: Option<Attribute<i32, i32>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum AttributeMapping {
     ByPolygon,
     ByVertex,
@@ -41,6 +41,7 @@ impl AttributeMapping {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum ReferenceInformationType {
     Direct,
     IndexToDirect,

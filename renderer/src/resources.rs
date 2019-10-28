@@ -517,13 +517,15 @@ impl Resources {
                 VERTEX_ARRAY_BUFFER_BINDING_INDEX
             );
 
+            // TODO NOR AND TEX
+
             // Bind buffers to vao.
-            let stride = std::mem::size_of::<renderer::scene_file::Vertex>() as u32;
+            let stride = std::mem::size_of::<[f32; 3]>() as u32;
             gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
             gl.vertex_array_element_buffer(vao, eb);
 
             // Upload data.
-            gl.named_buffer_data(vb, scene_file.vertex_buffer.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(vb, scene_file.pos_in_obj_buffer.vec_as_bytes(), gl::STATIC_DRAW);
             gl.named_buffer_data(eb, scene_file.triangle_buffer.vec_as_bytes(), gl::STATIC_DRAW);
 
             (vao, vb, eb)
