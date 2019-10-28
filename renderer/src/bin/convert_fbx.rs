@@ -3,6 +3,7 @@ use renderer::scene_file::*;
 use std::fs;
 use std::io;
 use std::path;
+use std::path::Path;
 
 pub trait ModelExt {
     fn transform_to_parent(&self) -> Matrix4<f64>;
@@ -23,6 +24,7 @@ fn read(path: impl AsRef<path::Path>) -> io::Result<fbx::tree::File> {
     fbx::tree::File::parse(&mut reader)
 }
 
+#[allow(unused)]
 fn visit(node: &fbx::tree::Node, depth: usize) {
     print!("{}{}", "  ".repeat(depth), node.name);
     for property in node.properties.iter() {
@@ -62,9 +64,8 @@ fn visit(node: &fbx::tree::Node, depth: usize) {
     }
 }
 
-fn main() {
-    // let file = read("resources/sun_temple/SunTemple.fbx").unwrap();
-    let file = read("resources/bistro/Bistro_Exterior.fbx").unwrap();
+fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
+    let file = read(path).unwrap();
     dbg!(&file.header, file.children.len());
 
     let root = fbx::dom::Root::from_fbx_file(&file);
@@ -78,10 +79,77 @@ fn main() {
             rotation: [0.0; 3],
             scaling: [1.0; 3],
         })
-        .chain(root.objects.models.iter().map(|model| renderer::scene_file::Transform {
-            translation: Vector3::from(model.properties.lcl_translation).cast().unwrap().into(),
-            rotation: Vector3::from(model.properties.lcl_rotation).cast().unwrap().into(),
-            scaling: Vector3::from(model.properties.lcl_scaling).cast().unwrap().into(),
+        .chain(root.objects.models.iter().map(|model| {
+            assert_eq!(fbx::types::RotationOrder::XYZ, model.properties.rotation_order);
+            assert_eq!([0.0; 3], model.properties.geometric_translation);
+            assert_eq!([0.0; 3], model.properties.geometric_rotation);
+            assert_eq!([1.0; 3], model.properties.geometric_scaling);
+
+            fn rotation_matrix(xyz_deg: [f64; 3]) -> Matrix4<f64> {
+                Matrix4::from(Euler {
+                    x: Deg(xyz_deg[0]),
+                    y: Deg(xyz_deg[1]),
+                    z: Deg(xyz_deg[2]),
+                })
+            }
+
+            fn translation_matrix(xyz: [f64; 3]) -> Matrix4<f64> {
+                Matrix4::from_translation(xyz.into())
+            }
+
+            fn scaling_matrix(xyz: [f64; 3]) -> Matrix4<f64> {
+                Matrix4::from_nonuniform_scale(xyz[0], xyz[1], xyz[2])
+            }
+
+            let p = &model.properties;
+
+            let translation = translation_matrix(p.lcl_translation);
+            let rotation = rotation_matrix(p.lcl_rotation);
+            let scaling = scaling_matrix(p.lcl_scaling);
+
+            let roff = translation_matrix(p.rotation_offset);
+            let rpiv = translation_matrix(p.rotation_pivot);
+            let rpre = rotation_matrix(p.pre_rotation);
+            let rpost = rotation_matrix(p.post_rotation);
+
+            let soff = translation_matrix(p.scaling_offset);
+            let spiv = translation_matrix(p.scaling_pivot);
+
+            let to_parent = translation
+                * roff
+                * rpiv
+                * rpre
+                * rotation
+                * rpost.invert().unwrap()
+                * rpiv.invert().unwrap()
+                * soff
+                * spiv
+                * scaling
+                * spiv.invert().unwrap();
+
+            let t = to_parent.w.truncate();
+
+            let s = [
+                to_parent.x.truncate().magnitude(),
+                to_parent.y.truncate().magnitude(),
+                to_parent.z.truncate().magnitude(),
+            ];
+
+            let r = Euler::from(Quaternion::from(Matrix3::from_cols(
+                to_parent.x.truncate() / s[0],
+                to_parent.y.truncate() / s[1],
+                to_parent.z.truncate() / s[2],
+            )));
+
+            renderer::scene_file::Transform {
+                translation: [t[0] as f32, t[1] as f32, t[2] as f32],
+                rotation: [
+                    Deg::from(r.x).0 as f32,
+                    Deg::from(r.y).0 as f32,
+                    Deg::from(r.z).0 as f32,
+                ],
+                scaling: [s[0] as f32, s[1] as f32, s[2] as f32],
+            }
         }))
         .collect(),
         transform_relations: Vec::new(),
@@ -204,7 +272,7 @@ fn main() {
                     panic!("Didn't expect this relation {:?}", oo);
                 }
             },
-            other => {
+            _ => {
                 println!("Unhandled connection {:?}", oo);
             }
         }
@@ -214,14 +282,14 @@ fn main() {
     //     println!("{:?} {:?} {:?}", op.0, op.1, op.2);
     // }
 
-    for model in root.objects.models {
-        println!("{:#?}", model);
-    }
+    // for model in root.objects.models {
+    //     println!("{:#?}", model);
+    // }
 
     // println!("{:#?}", file.transforms);
 
-    // file.write(&mut std::io::BufWriter::new(std::fs::File::create("out.bin").unwrap()))
-    //     .unwrap();
+    file.write(&mut std::io::BufWriter::new(std::fs::File::create(out_path).unwrap()))
+        .unwrap();
 
     // let mut file = std::fs::File::open("out.bin").unwrap();
     // let scene_file = SceneFile::read(&mut file).unwrap();
@@ -229,4 +297,15 @@ fn main() {
     // dbg!(scene_file.mesh_descriptions);
     // dbg!(scene_file.vertex_buffer.len());
     // dbg!(scene_file.triangle_buffer.len());
+}
+
+fn main() {
+    convert(
+        "resources/bistro/Bistro_Exterior.fbx",
+        "resources/bistro/Bistro_Exterior.bin",
+    );
+    convert(
+        "resources/sun_temple/SunTemple.fbx",
+        "resources/sun_temple/SunTemple.bin",
+    );
 }

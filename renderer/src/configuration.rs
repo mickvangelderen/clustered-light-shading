@@ -48,6 +48,7 @@ pub struct GlobalConfiguration {
     pub diffuse_srgb: bool,
     pub rain_drop_max: u32,
     pub mode: ApplicationMode,
+    pub scene_path: PathBuf,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
