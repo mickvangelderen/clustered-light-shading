@@ -61,6 +61,7 @@ pub struct RawMaterial {
     pub emissive_color: [f32; 3],
     pub emissive_texture_index: Option<NonMaxU32>,
     pub ambient_color: [f32; 3],
+    pub ambient_texture_index: Option<NonMaxU32>,
     pub diffuse_color: [f32; 3],
     pub diffuse_texture_index: Option<NonMaxU32>,
     pub specular_color: [f32; 3],
