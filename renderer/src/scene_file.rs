@@ -1,3 +1,20 @@
+use std::num::NonZeroU32;
+use std::path::PathBuf;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct NonMaxU32(NonZeroU32);
+
+impl NonMaxU32 {
+    pub fn new(val: u32) -> Option<Self> {
+        NonZeroU32::new(val.wrapping_add(1)).map(Self)
+    }
+
+    pub fn get(&self) -> u32 {
+        self.0.get().wrapping_sub(1)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[repr(C)]
 pub struct Vertex {
@@ -34,31 +51,34 @@ pub struct TransformRelation {
 pub struct Instance {
     pub mesh_index: u32,
     pub transform_index: u32,
+    pub material_index: Option<NonMaxU32>,
 }
 
 #[derive(Debug)]
 #[repr(C)]
 pub struct RawMaterial {
-    ambient_color: [f32; 3],
-    ambient_texture: Option<NonZeroU32>,
-    diffuse_color: [f32; 3],
-    diffuse_texture: Option<NonZeroU32>,
-    specular_color: [f32; 3],
-    specular_texture: Option<NonZeroU32>,
-    shininess: f32,
-    opacity: f32,
+    pub normal_texture_index: Option<NonMaxU32>,
+    pub emissive_color: [f32; 3],
+    pub emissive_texture_index: Option<NonMaxU32>,
+    pub ambient_color: [f32; 3],
+    pub diffuse_color: [f32; 3],
+    pub diffuse_texture_index: Option<NonMaxU32>,
+    pub specular_color: [f32; 3],
+    pub specular_texture_index: Option<NonMaxU32>,
+    pub shininess: f32,
+    pub opacity: f32,
 }
 
 #[derive(Debug)]
 #[repr(C)]
 pub struct RawTexture {
-    path_byte_offset: u64,
-    path_byte_length: u64,
+    pub path_byte_offset: u64,
+    pub path_byte_length: u64,
 }
 
 #[derive(Debug)]
 pub struct Texture {
-    path: PathBuf,
+    pub file_path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -87,7 +107,7 @@ pub struct SceneFile {
     pub transforms: Vec<Transform>,
     pub transform_relations: Vec<TransformRelation>,
     pub instances: Vec<Instance>,
-    pub materials: Vec<Material>,
+    pub materials: Vec<RawMaterial>,
     pub textures: Vec<Texture>,
 }
 
@@ -115,17 +135,21 @@ impl SceneFile {
         assert_eq!(vertex_count, self.nor_in_obj_buffer.len());
         assert_eq!(vertex_count, self.pos_in_tex_buffer.len());
 
-        let mut string_bytes = Vec::new();
+        let mut string_bytes: Vec<u8> = Vec::new();
 
-        let materials: Vec<RawMaterial> = self.materials.iter().map(|material| {
-            RawMaterial {
-
-            }
-        }).collect();
-
-        let textures: Vec<RawTextures> = self.textures.iter().map(|texture| {
-
-        }).collect();
+        let textures: Vec<RawTexture> = self
+            .textures
+            .iter()
+            .map(|texture| {
+                let path_bytes = texture.file_path.to_str().unwrap().as_bytes();
+                let path_byte_offset = string_bytes.len() as u64;
+                string_bytes.extend_from_slice(path_bytes);
+                RawTexture {
+                    path_byte_offset,
+                    path_byte_length: path_bytes.len() as u64,
+                }
+            })
+            .collect();
 
         let header = FileHeader {
             mesh_count: self.mesh_descriptions.len() as u64,
@@ -136,6 +160,7 @@ impl SceneFile {
             instance_count: self.instances.len() as u64,
             material_count: self.materials.len() as u64,
             texture_count: self.textures.len() as u64,
+            string_byte_count: string_bytes.len() as u64,
         };
 
         unsafe {
@@ -151,6 +176,9 @@ impl SceneFile {
             write_vec(&self.transforms, writer)?;
             write_vec(&self.transform_relations, writer)?;
             write_vec(&self.instances, writer)?;
+            write_vec(&self.materials, writer)?;
+            write_vec(&textures, writer)?;
+            write_vec(&string_bytes, writer)?;
         }
 
         Ok(())
@@ -176,6 +204,20 @@ impl SceneFile {
             let transform_relations =
                 read_vec::<TransformRelation, _>(header.transform_relation_count as usize, reader)?;
             let instances = read_vec::<Instance, _>(header.instance_count as usize, reader)?;
+            let materials = read_vec::<RawMaterial, _>(header.material_count as usize, reader)?;
+            let raw_textures = read_vec::<RawTexture, _>(header.texture_count as usize, reader)?;
+            let string_bytes = read_vec::<u8, _>(header.string_byte_count as usize, reader)?;
+
+            let textures: Vec<Texture> = raw_textures
+                .iter()
+                .map(|raw_texture| Texture {
+                    file_path: {
+                        let o = raw_texture.path_byte_offset as usize;
+                        let l = raw_texture.path_byte_length as usize;
+                        PathBuf::from(std::str::from_utf8(&string_bytes[o..(o + l)]).unwrap())
+                    },
+                })
+                .collect();
 
             Ok(SceneFile {
                 mesh_descriptions,
@@ -186,6 +228,8 @@ impl SceneFile {
                 transforms,
                 transform_relations,
                 instances,
+                materials,
+                textures,
             })
         }
     }

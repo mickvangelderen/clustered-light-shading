@@ -14,6 +14,7 @@ pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
+mod cube_mesh;
 mod basic_renderer;
 mod bmp;
 pub mod cgmath_ext;
