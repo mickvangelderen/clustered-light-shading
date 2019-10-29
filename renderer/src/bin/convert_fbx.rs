@@ -156,6 +156,37 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
         .collect(),
         transform_relations: Vec::new(),
         instances: Vec::new(),
+        materials: root
+            .objects
+            .materials
+            .iter()
+            .map(|material| {
+                fn cast_f64_3(a: [f64; 3]) -> [f32; 3] {
+                    [a[0] as f32, a[1] as f32, a[2] as f32]
+                }
+
+                RawMaterial {
+                    normal_texture_index: None,
+                    emissive_color: cast_f64_3(material.properties.emissive_color),
+                    emissive_texture_index: None,
+                    ambient_color: cast_f64_3(material.properties.ambient_color),
+                    diffuse_color: cast_f64_3(material.properties.diffuse_color),
+                    diffuse_texture_index: None,
+                    specular_color: cast_f64_3(material.properties.specular_color),
+                    specular_texture_index: None,
+                    shininess: material.properties.shininess as f32,
+                    opacity: material.properties.opacity as f32,
+                }
+            })
+            .collect(),
+        textures: root
+            .objects
+            .textures
+            .iter()
+            .map(|texture| Texture {
+                file_path: texture.file_path.clone(),
+            })
+            .collect(),
     };
 
     for geometry in root.objects.geometries.iter() {
@@ -284,9 +315,9 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
         file.triangle_buffer.extend(triangles);
     }
 
-    for oo in root.connections.oo {
-        use fbx::dom::TypedIndex;
+    use fbx::dom::TypedIndex;
 
+    for oo in root.connections.oo.iter() {
         match oo.0 {
             TypedIndex::Model(child_index) => {
                 let parent_index = match oo.1 {
@@ -306,37 +337,80 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                     file.instances.push(Instance {
                         mesh_index: geometry_index as u32,
                         transform_index: model_index as u32 + 1,
+                        material_index: None,
                     });
                 }
                 _ => {
                     panic!("Didn't expect this relation {:?}", oo);
                 }
             },
+            TypedIndex::Material(_) => match oo.1 {
+                TypedIndex::Model(_) => {
+                    // Will handle later.
+                }
+                _ => {
+                    panic!("Didn't expect this relation {:?}", oo);
+                }
+            }
             _ => {
                 println!("Unhandled connection {:?}", oo);
             }
         }
     }
 
-    // for op in root.connections.op {
-    //     println!("{:?} {:?} {:?}", op.0, op.1, op.2);
-    // }
+    for oo in root.connections.oo.iter() {
+        if let (TypedIndex::Material(material_index), TypedIndex::Model(model_index)) = *oo {
+            let instance = file
+                .instances
+                .iter_mut()
+                .find(|instance| instance.transform_index == model_index as u32 + 1)
+                .unwrap();
+            // FIXME: Handle multiple materials.
+            // assert!(instance.material_index.is_none());
+            instance.material_index = Some(NonMaxU32::new(material_index as u32).unwrap());
+        }
+    }
 
-    // for model in root.objects.models {
-    //     println!("{:#?}", model);
-    // }
+    for op in root.connections.op.iter() {
+        match (op.0, op.1) {
+            (TypedIndex::Texture(texture_index), TypedIndex::Material(material_index)) => {
+                let material = &mut file.materials[material_index as usize];
+                let texture_index = Some(NonMaxU32::new(texture_index as u32).unwrap());
+                match op.2.as_ref() {
+                    "DiffuseColor" => {
+                        material.diffuse_texture_index = texture_index;
+                    }
+                    "NormalMap" => {
+                        material.normal_texture_index = texture_index;
+                    }
+                    "SpecularColor" => {
+                        material.specular_texture_index = texture_index;
+                    }
+                    "EmissiveColor" => {
+                        material.emissive_texture_index = texture_index;
+                    }
+                    _ => {
+                        eprintln!("Unhandled connection property {:?}", op);
+                    }
+                }
+            }
+            _ => {
+                eprintln!("Unhandled connection {:?}", op);
+            }
+        }
+    }
 
-    // println!("{:#?}", file.transforms);
-
-    file.write(&mut std::io::BufWriter::new(std::fs::File::create(out_path).unwrap()))
+    file.write(&mut std::io::BufWriter::new(std::fs::File::create(&out_path).unwrap()))
         .unwrap();
 
-    // let mut file = std::fs::File::open("out.bin").unwrap();
+    // let mut file = std::fs::File::open(&out_path).unwrap();
     // let scene_file = SceneFile::read(&mut file).unwrap();
 
     // dbg!(scene_file.mesh_descriptions);
     // dbg!(scene_file.vertex_buffer.len());
     // dbg!(scene_file.triangle_buffer.len());
+    // dbg!(scene_file.materials);
+    // dbg!(scene_file.textures);
 }
 
 fn main() {

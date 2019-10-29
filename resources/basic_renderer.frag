@@ -1,3 +1,9 @@
+layout(location = OBJ_TO_WLD_LOC) uniform mat4 obj_to_wld;
+layout(location = AMBIENT_COLOR_LOC) uniform vec3 ambient_color;
+layout(location = DIFFUSE_COLOR_LOC) uniform vec3 diffuse_color;
+layout(location = SPECULAR_COLOR_LOC) uniform vec3 specular_color;
+layout(location = SHININESS_LOC) uniform float shininess;
+
 in vec4 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
 in vec2 fs_pos_in_tex;
@@ -14,10 +20,13 @@ void main() {
   vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
 
   float d = max(0.0, dot(frag_to_light_nor, frag_nor_in_lgt));
-  float s = pow(max(0.0, dot(frag_reflect_nor, frag_to_cam_nor)), 16.0);
+  float s = pow(max(0.0, dot(frag_reflect_nor, frag_to_cam_nor)), shininess);
 
-  vec3 kd = frag_nor_in_lgt * 0.5 + 0.5;
-  frag_color = vec4(vec3(0.02) + d * kd + s * vec3(0.2), 1.0);
+  vec3 ambi = ambient_color;
+  vec3 diff = d * diffuse_color;
+  vec3 spec = s * specular_color;
+
+  frag_color = vec4(ambi + diff + spec, 1.0);
 
   // Normals
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);

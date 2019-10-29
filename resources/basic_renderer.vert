@@ -1,4 +1,8 @@
-uniform mat4 obj_to_wld;
+layout(location = OBJ_TO_WLD_LOC) uniform mat4 obj_to_wld;
+layout(location = AMBIENT_COLOR_LOC) uniform vec3 ambient_color;
+layout(location = DIFFUSE_COLOR_LOC) uniform vec3 diffuse_color;
+layout(location = SPECULAR_COLOR_LOC) uniform vec3 specular_color;
+layout(location = SHININESS_LOC) uniform float shininess;
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
 layout(location = VS_NOR_IN_OBJ_LOC) in vec3 vs_nor_in_obj;
