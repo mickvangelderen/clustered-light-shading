@@ -170,6 +170,7 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                     emissive_color: cast_f64_3(material.properties.emissive_color),
                     emissive_texture_index: None,
                     ambient_color: cast_f64_3(material.properties.ambient_color),
+                    ambient_texture_index: None,
                     diffuse_color: cast_f64_3(material.properties.diffuse_color),
                     diffuse_texture_index: None,
                     specular_color: cast_f64_3(material.properties.specular_color),

@@ -1,7 +1,7 @@
 use crate::light::*;
 use crate::*;
 use cgmath::*;
-// use std::collections::HashMap;
+use std::collections::HashMap;
 // use std::convert::TryFrom;
 // use std::convert::TryInto;
 use std::path::Path;
@@ -11,13 +11,22 @@ use std::path::Path;
 pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
 pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
+pub struct Material {
+    normal_texture_index: usize,
+    ambient_texture_index: usize,
+    diffuse_texture_index: usize,
+    specular_texture_index: usize,
+    shininess: f64,
+}
+
+pub struct Texture {
+    name: gl::TextureName,
+}
+
 #[allow(unused)]
 pub struct Resources {
-    // pub meshes: Vec<Mesh>,
-    // pub materials: Vec<Material>,
-    // pub textures: Vec<Texture>,
-    // pub path_to_texture_index: HashMap<PathBuf, TextureIndex>,
-    // pub color_to_texture_index: HashMap<[u8; 4], TextureIndex>,
+    pub materials: Vec<Material>,
+    pub textures: Vec<Texture>,
 
     pub scene_vao: gl::VertexArrayName,
     pub scene_vb: gl::BufferName,
@@ -184,16 +193,33 @@ pub struct Resources {
 //     pub material_index: Option<MaterialIndex>,
 // }
 
-// pub struct Material {
-//     pub diffuse: TextureIndex,
-//     pub normal: TextureIndex,
-//     pub specular: TextureIndex,
-//     pub shininess: f32,
-// }
-
 pub const BBI_00: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(0);
 pub const BBI_01: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(1);
 pub const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(2);
+
+fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
+    let file = std::fs::File::open(file_path).unwrap();
+    let mut reader = std::io::BufReader::new(file);
+    let dds = dds::File::parse(&mut reader).unwrap();
+
+    unsafe {
+        let name = gl.create_texture(gl::TEXTURE_2D);
+        // NOTE(mickvangelderen): No dsa for compressed textures??
+        gl.bind_texture(gl::TEXTURE_2D, name);
+        for (layer_index, layer) in dds.layers.iter().enumerate() {
+            gl.compressed_tex_image_2d(
+                gl::TEXTURE_2D,
+                layer_index as i32,
+                dds.header.pixel_format.to_gl_internal_format(),
+                layer.width as i32,
+                layer.height as i32,
+                &dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],
+            );
+        }
+
+        Ok(name)
+    }
+}
 
 impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
@@ -203,6 +229,37 @@ impl Resources {
             let mut file = std::fs::File::open(&resource_dir.join(&configuration.global.scene_path)).unwrap();
             renderer::scene_file::SceneFile::read(&mut file).unwrap()
         };
+
+        let (textures, materials) = {
+            let mut textures = Vec::new();
+            let mut materials = Vec::new();
+
+            let mut file_texture_index_to_texture_index: HashMap<usize, usize> = HashMap::new();
+            let mut color_to_texture_index: HashMap<[u8; 4], usize> = HashMap::new();
+
+            let mut color_texture_index = |color: [u8; 4]| {
+                color_to_texture_index.get(&color).unwrap_or_else(|| {
+                    let texture = Texture {
+                        name: gl::create_texture()
+                    };
+                    textures.push
+                    color_to_texture_index.insert(color)
+                })
+            };
+
+            let materials: Vec<Material> = scene_file.materials.iter().map(|material| {
+                let normal_texture_index = match material.normal_texture_index {
+
+                }
+                Material {
+                    normal_texture_index: m
+                    ambient_texture_index:
+                    diffuse_texture_index:
+                    specular_texture_index:
+                    shininess: material.shininess,
+                }
+            }).collect();
+        }
 
         let (scene_vao, scene_vb, scene_eb) = unsafe {
             let vao = gl.create_vertex_array();
