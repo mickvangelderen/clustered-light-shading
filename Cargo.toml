@@ -7,7 +7,7 @@ members = [
     "renderer",
     "kernel-generator",
     "fbx",
-    "zdds",
+    "dds",
 ]
 exclude = [
     "polygen/profiling",
