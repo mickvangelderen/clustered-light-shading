@@ -1,7 +1,8 @@
 layout(location = OBJ_TO_WLD_LOC) uniform mat4 obj_to_wld;
-layout(location = AMBIENT_COLOR_LOC) uniform vec3 ambient_color;
-layout(location = DIFFUSE_COLOR_LOC) uniform vec3 diffuse_color;
-layout(location = SPECULAR_COLOR_LOC) uniform vec3 specular_color;
+layout(location = NORMAL_SAMPLER_LOC) uniform sampler2D normal_sampler;
+layout(location = AMBIENT_SAMPLER_LOC) uniform sampler2D ambient_sampler;
+layout(location = DIFFUSE_SAMPLER_LOC) uniform sampler2D diffuse_sampler;
+layout(location = SPECULAR_SAMPLER_LOC) uniform sampler2D specular_sampler;
 layout(location = SHININESS_LOC) uniform float shininess;
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
@@ -21,5 +22,6 @@ void main() {
 
   fs_pos_in_lgt = pos_in_wld;
   fs_nor_in_lgt = transpose(inverse(mat3(obj_to_wld))) * vs_nor_in_obj;
-  fs_pos_in_tex = vs_pos_in_tex;
+  // NOTE(mickvangelderen): TOO LAZY TO CHANGE IMAGE ORIGIN.
+  fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
 }
