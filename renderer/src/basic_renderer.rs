@@ -2,14 +2,6 @@ use crate::*;
 
 pub struct Renderer {
     pub program: rendering::Program,
-
-    pub diffuse_sampler_loc: gl::OptionUniformLocation,
-    pub normal_sampler_loc: gl::OptionUniformLocation,
-    pub specular_sampler_loc: gl::OptionUniformLocation,
-
-    pub diffuse_dimensions_loc: gl::OptionUniformLocation,
-    pub normal_dimensions_loc: gl::OptionUniformLocation,
-    pub specular_dimensions_loc: gl::OptionUniformLocation,
 }
 
 pub struct Parameters {
@@ -29,9 +21,10 @@ glsl_defines!(fixed_header {
     },
     uniforms: {
         OBJ_TO_WLD_LOC = 0;
-        AMBIENT_COLOR_LOC = 2;
-        DIFFUSE_COLOR_LOC = 3;
-        SPECULAR_COLOR_LOC = 4;
+        NORMAL_SAMPLER_LOC = 1;
+        AMBIENT_SAMPLER_LOC = 2;
+        DIFFUSE_SAMPLER_LOC = 3;
+        SPECULAR_SAMPLER_LOC = 4;
         SHININESS_LOC = 5;
     },
 });
@@ -87,17 +80,10 @@ impl Context<'_> {
                     );
                 }
 
-                if let Some(loc) = basic_renderer.diffuse_sampler_loc.into() {
-                    gl.uniform_1i(loc, 1);
-                }
-
-                if let Some(loc) = basic_renderer.normal_sampler_loc.into() {
-                    gl.uniform_1i(loc, 2);
-                }
-
-                if let Some(loc) = basic_renderer.specular_sampler_loc.into() {
-                    gl.uniform_1i(loc, 3);
-                }
+                gl.uniform_1i(NORMAL_SAMPLER_LOC, 1);
+                gl.uniform_1i(AMBIENT_SAMPLER_LOC, 2);
+                gl.uniform_1i(DIFFUSE_SAMPLER_LOC, 3);
+                gl.uniform_1i(SPECULAR_SAMPLER_LOC, 4);
 
                 // Cache texture binding.
                 let mut bound_material = None;
@@ -110,37 +96,17 @@ impl Context<'_> {
                     let transform = &scene_file.transforms[instance.transform_index as usize];
                     let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
                     let material_index = instance.material_index.map(|n| n.get()).unwrap_or_default() as usize;
-                    let material = &scene_file.materials[material_index];
+                    let material = &self.resources.materials[material_index];
 
                     if bound_material != Some(material_index) {
                         bound_material = Some(material_index);
 
-                        gl.uniform_3f(AMBIENT_COLOR_LOC, material.ambient_color);
-                        gl.uniform_3f(DIFFUSE_COLOR_LOC, material.diffuse_color);
-                        gl.uniform_3f(SPECULAR_COLOR_LOC, material.specular_color);
                         gl.uniform_1f(SHININESS_LOC, material.shininess);
-
-                        // let diffuse_texture = &self.resources.textures[material.diffuse as usize];
-                        // let normal_texture = &self.resources.textures[material.normal as usize];
-                        // let specular_texture = &self.resources.textures[material.specular as usize];
-
-                        // gl.bind_texture_unit(1, diffuse_texture.name);
-                        // gl.bind_texture_unit(2, normal_texture.name);
-                        // gl.bind_texture_unit(3, specular_texture.name);
-
-                        // if let Some(loc) = basic_renderer.diffuse_dimensions_loc.into() {
-                        //     gl.uniform_2f(loc, diffuse_texture.dimensions);
-                        // }
-
-                        // if let Some(loc) = basic_renderer.normal_dimensions_loc.into() {
-                        //     gl.uniform_2f(loc, normal_texture.dimensions);
-                        // }
-
-                        // if let Some(loc) = basic_renderer.specular_dimensions_loc.into() {
-                        //     gl.uniform_2f(loc, specular_texture.dimensions);
-                        // }
-
-                        // params.material_resources.bind_index(gl, material_index as usize);
+                        let textures = &self.resources.textures;
+                        gl.bind_texture_unit(1, textures[material.normal_texture_index].name);
+                        gl.bind_texture_unit(2, textures[material.ambient_texture_index].name);
+                        gl.bind_texture_unit(3, textures[material.diffuse_texture_index].name);
+                        gl.bind_texture_unit(4, textures[material.specular_texture_index].name);
                     }
 
                     {
@@ -183,16 +149,8 @@ impl Renderer {
         if self.program.update(context) {
             let gl = &context.gl;
 
-            if let ProgramName::Linked(name) = self.program.name {
-                unsafe {
-                    self.diffuse_sampler_loc = get_uniform_location!(gl, name, "diffuse_sampler");
-                    self.normal_sampler_loc = get_uniform_location!(gl, name, "normal_sampler");
-                    self.specular_sampler_loc = get_uniform_location!(gl, name, "specular_sampler");
-
-                    self.diffuse_dimensions_loc = get_uniform_location!(gl, name, "diffuse_dimensions");
-                    self.normal_dimensions_loc = get_uniform_location!(gl, name, "normal_dimensions");
-                    self.specular_dimensions_loc = get_uniform_location!(gl, name, "specular_dimensions");
-                }
+            if let ProgramName::Linked(_name) = self.program.name {
+                // Nothing to do anymore.
             }
         }
     }
@@ -200,14 +158,6 @@ impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
             program: vs_fs_program(context, "basic_renderer.vert", "basic_renderer.frag", fixed_header()),
-
-            diffuse_sampler_loc: gl::OptionUniformLocation::NONE,
-            normal_sampler_loc: gl::OptionUniformLocation::NONE,
-            specular_sampler_loc: gl::OptionUniformLocation::NONE,
-
-            diffuse_dimensions_loc: gl::OptionUniformLocation::NONE,
-            normal_dimensions_loc: gl::OptionUniformLocation::NONE,
-            specular_dimensions_loc: gl::OptionUniformLocation::NONE,
         }
     }
 }
