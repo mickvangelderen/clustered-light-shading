@@ -142,7 +142,8 @@ impl SceneFile {
             .textures
             .iter()
             .map(|texture| {
-                let path_bytes = texture.file_path.to_str().unwrap().as_bytes();
+                let path = texture.file_path.to_str().unwrap().replace("\\", "/");
+                let path_bytes = path.as_bytes();
                 let path_byte_offset = string_bytes.len() as u64;
                 string_bytes.extend_from_slice(path_bytes);
                 RawTexture {
