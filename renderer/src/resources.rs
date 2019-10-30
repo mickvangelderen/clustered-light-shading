@@ -12,15 +12,15 @@ pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 
 pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
 pub struct Material {
-    normal_texture_index: usize,
-    ambient_texture_index: usize,
-    diffuse_texture_index: usize,
-    specular_texture_index: usize,
-    shininess: f64,
+    pub normal_texture_index: usize,
+    pub ambient_texture_index: usize,
+    pub diffuse_texture_index: usize,
+    pub specular_texture_index: usize,
+    pub shininess: f32,
 }
 
 pub struct Texture {
-    name: gl::TextureName,
+    pub name: gl::TextureName,
 }
 
 #[allow(unused)]
@@ -46,158 +46,71 @@ pub struct Resources {
     pub cluster_element_count: u32,
 }
 
-// #[inline]
-// fn clamp_f32(input: f32, min: f32, max: f32) -> f32 {
-//     if input < min {
-//         min
-//     } else if input > max {
-//         max
-//     } else {
-//         input
-//     }
-// }
+fn rgba_f32_to_u8(rgba: [f32; 4]) -> [u8; 4] {
+    fn conv(mut val: f32) -> u8 {
+        assert!(val.is_finite());
+        val *= 255.0;
+        if val < 0.0 {
+            0
+        } else if val > 255.0 {
+            255
+        } else {
+            val as u8
+        }
+    }
 
-// #[inline]
-// fn rgba_f32_to_rgba_u8(input: [f32; 4]) -> [u8; 4] {
-//     let mut output = [0; 4];
-//     for i in 0..4 {
-//         output[i] = clamp_f32(input[i] * 256.0, 0.0, 255.0) as u8
-//     }
-//     output
-// }
+    [
+        conv(rgba[0]),
+        conv(rgba[1]),
+        conv(rgba[2]),
+        conv(rgba[3]),
+    ]
+}
 
-// impl Resources {
-//     fn load_or_create_texture(&mut self, gl: &gl::Gl, path: impl AsRef<Path>, srgb: bool) {
-//         self.path_to_texture_index
-//             .entry(file_path.clone())
-//             .or_insert_with(|| match file_path.extension().unwrap() {
-//                 x if x == "dds" => {
-//                     let file = std::fs::File::open(Path::new(&file_path)).unwrap();
-//                     let mut reader = std::io::BufReader::new(file);
-//                     let dds = dds::DDS::decode(&mut reader).unwrap();
+#[inline]
+fn create_1x1_rgba_texture(gl: &gl::Gl, rgba: [u8; 4]) -> Texture {
+    unsafe {
+        let name = gl.create_texture(gl::TEXTURE_2D);
 
-//                     let internal_format = match dds.header.compression {
-//                         dds::Compression::DXT1 => {
+        let width = 1;
+        let height = 1;
+        let xoffset = 0;
+        let yoffset = 0;
 
-//                         },
-//                         dds::Compression::DXT3 => {
+        gl.texture_storage_2d(
+            name,
+            1,
+            gl::RGBA8,
+            width,
+            height
+        );
 
-//                         }
-//                         dds::Compression::DXT5 => {
+        gl.texture_sub_image_2d(
+            name,
+            0,
+            xoffset,
+            yoffset,
+            width,
+            height,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            rgba.as_ptr() as *const _,
+        );
 
-//                         }
-//                         other => {
-//                             panic!("Compression {:?} not supported.", other);
-//                         }
-//                     };
+        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
 
-//                     unsafe {
-//                         let name = gl.create_texture(gl::TEXTURE_2D);
-
-//                         gl.bind_texture(gl::TEXTURE_2D, name);
-
-//                         for level in
-//                         gl.compressed_tex_image_2d(
-//                             gl::TEXTURE_2D,
-//                             0,
-//                             match srgb {
-//                                 true => gl::SRGB8_ALPHA8,
-//                                 false => gl::RGBA8,
-//                             },
-//                             img.width() as i32,
-//                             img.height() as i32,
-//                             gl::RGBA,
-//                             gl::UNSIGNED_BYTE,
-//                             img.as_ptr() as *const std::os::raw::c_void,
-//                         );
-//                         gl.generate_texture_mipmap(name);
-//                         gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-//                         gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
-
-//                         Texture {
-//                             name,
-//                             dimensions: [img.width() as f32, img.height() as f32],
-//                         }
-//                     }
-//                     let components =
-//                     println!("{:?}", &dds.header);
-//                 }
-//                 _ => {
-//                     let img = image::open(&file_path)
-//                         .expect("Failed to load image.")
-//                         .flipv()
-//                         .to_rgba();
-//                     total_bytes += std::mem::size_of_val(&*img);
-
-//                     let texture = create_texture(gl, img, srgb);
-
-//                     let index = self.textures.len() as TextureIndex;
-//                     self.textures.push(texture);
-//                     index
-//                 }
-//             })
-//     }
-// }
-
-// #[inline]
-// fn create_texture(gl: &gl::Gl, img: image::RgbaImage, srgb: bool) -> Texture {
-//     unsafe {
-//         let name = gl.create_texture(gl::TEXTURE_2D);
-
-//         gl.bind_texture(gl::TEXTURE_2D, name);
-//         gl.tex_image_2d(
-//             gl::TEXTURE_2D,
-//             0,
-//             match srgb {
-//                 true => gl::InternalFormat::from(gl::SRGB8_ALPHA8),
-//                 false => gl::InternalFormat::from(gl::RGBA8),
-//             },
-//             img.width() as i32,
-//             img.height() as i32,
-//             gl::RGBA,
-//             gl::UNSIGNED_BYTE,
-//             img.as_ptr() as *const std::os::raw::c_void,
-//         );
-//         gl.generate_texture_mipmap(name);
-//         gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-//         gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
-
-//         Texture {
-//             name,
-//             dimensions: [img.width() as f32, img.height() as f32],
-//         }
-//     }
-// }
-
-// pub struct Mesh {
-//     pub name: String,
-//     /// Triangle indices.
-//     pub triangles: Vec<[u32; 3]>,
-
-//     /// Position in object space.
-//     pub pos_in_obj: Vec<[f32; 3]>,
-
-//     /// Position in texture space.
-//     pub pos_in_tex: Vec<[f32; 2]>,
-
-//     /// Normal in object space.
-//     pub nor_in_obj: Vec<[f32; 3]>,
-
-//     /// Tangent in object space.
-//     pub tan_in_obj: Vec<[f32; 3]>,
-
-//     /// Derpiederp.
-//     pub translate: Vector3<f32>,
-
-//     /// Material id.
-//     pub material_index: Option<MaterialIndex>,
-// }
+        Texture {
+            name,
+        }
+    }
+}
 
 pub const BBI_00: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(0);
 pub const BBI_01: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(1);
 pub const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(2);
 
-fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
+fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
     let file = std::fs::File::open(file_path).unwrap();
     let mut reader = std::io::BufReader::new(file);
     let dds = dds::File::parse(&mut reader).unwrap();
@@ -225,41 +138,71 @@ impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
         let resource_dir = resource_dir.as_ref();
 
+        let scene_file_path = std::fs::canonicalize(resource_dir.join(&configuration.global.scene_path)).unwrap();
+        let scene_dir = scene_file_path.parent().unwrap();
+
         let scene_file = {
-            let mut file = std::fs::File::open(&resource_dir.join(&configuration.global.scene_path)).unwrap();
+            let mut file = std::fs::File::open(&scene_file_path).unwrap();
             renderer::scene_file::SceneFile::read(&mut file).unwrap()
         };
 
         let (textures, materials) = {
-            let mut textures = Vec::new();
-            let mut materials = Vec::new();
+            let mut textures: Vec<Texture> = scene_file.textures.iter().map(|texture| {
+                Texture {
+                    name: load_dds_texture(gl, &scene_dir.join(&texture.file_path)).unwrap(),
+                }
+            }).collect();
 
-            let mut file_texture_index_to_texture_index: HashMap<usize, usize> = HashMap::new();
             let mut color_to_texture_index: HashMap<[u8; 4], usize> = HashMap::new();
 
             let mut color_texture_index = |color: [u8; 4]| {
-                color_to_texture_index.get(&color).unwrap_or_else(|| {
-                    let texture = Texture {
-                        name: gl::create_texture()
-                    };
-                    textures.push
-                    color_to_texture_index.insert(color)
-                })
+                match color_to_texture_index.get(&color) {
+                    Some(&index) => index,
+                    None => {
+                        let texture = create_1x1_rgba_texture(gl, color);
+                        let index = textures.len();
+                        textures.push(texture);
+                        color_to_texture_index.insert(color, index);
+                        index
+                    }
+                }
             };
 
             let materials: Vec<Material> = scene_file.materials.iter().map(|material| {
-                let normal_texture_index = match material.normal_texture_index {
-
-                }
                 Material {
-                    normal_texture_index: m
-                    ambient_texture_index:
-                    diffuse_texture_index:
-                    specular_texture_index:
+                    normal_texture_index: match material.normal_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            color_texture_index([0, 255, 0, 1])
+                        }
+                    },
+                    ambient_texture_index: match material.ambient_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.ambient_color;
+                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                        }
+                    },
+                    diffuse_texture_index: match material.diffuse_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.diffuse_color;
+                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                        }
+                    },
+                    specular_texture_index: match material.specular_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.specular_color;
+                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                        }
+                    },
                     shininess: material.shininess,
                 }
             }).collect();
-        }
+
+            (textures, materials)
+        };
 
         let (scene_vao, scene_vb, scene_eb) = unsafe {
             let vao = gl.create_vertex_array();
@@ -376,6 +319,8 @@ impl Resources {
             scene_vb,
             scene_eb,
             scene_file,
+            materials,
+            textures,
             full_screen_vao,
             full_screen_vb,
             full_screen_eb,
