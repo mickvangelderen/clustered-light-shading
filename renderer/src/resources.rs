@@ -173,7 +173,7 @@ impl Resources {
                     normal_texture_index: match material.normal_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => {
-                            color_texture_index([0, 255, 0, 1])
+                            color_texture_index([0, 0, 255, 255])
                         }
                     },
                     ambient_texture_index: match material.ambient_texture_index {

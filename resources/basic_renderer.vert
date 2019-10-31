@@ -12,7 +12,7 @@ layout(location = VS_POS_IN_TEX_LOC) in vec2 vs_pos_in_tex;
 invariant gl_Position;
 
 out vec4 fs_pos_in_lgt;
-out vec3 fs_nor_in_lgt;
+out vec3 fs_nor_in_obj;
 out vec2 fs_pos_in_tex;
 
 void main() {
@@ -21,7 +21,8 @@ void main() {
   gl_Position = cam_to_clp * wld_to_cam * pos_in_wld;
 
   fs_pos_in_lgt = pos_in_wld;
-  fs_nor_in_lgt = transpose(inverse(mat3(obj_to_wld))) * vs_nor_in_obj;
+  fs_nor_in_obj = vs_nor_in_obj;
+  // fs_nor_in_lgt = transpose(inverse(mat3(obj_to_wld))) * vs_nor_in_obj;
   // NOTE(mickvangelderen): TOO LAZY TO CHANGE IMAGE ORIGIN.
   fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
 }
