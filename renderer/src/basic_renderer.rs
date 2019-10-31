@@ -22,10 +22,11 @@ glsl_defines!(fixed_header {
     uniforms: {
         OBJ_TO_WLD_LOC = 0;
         NORMAL_SAMPLER_LOC = 1;
-        AMBIENT_SAMPLER_LOC = 2;
-        DIFFUSE_SAMPLER_LOC = 3;
-        SPECULAR_SAMPLER_LOC = 4;
-        SHININESS_LOC = 5;
+        EMISSIVE_SAMPLER_LOC = 2;
+        AMBIENT_SAMPLER_LOC = 3;
+        DIFFUSE_SAMPLER_LOC = 4;
+        SPECULAR_SAMPLER_LOC = 5;
+        SHININESS_LOC = 6;
     },
 });
 
@@ -81,9 +82,10 @@ impl Context<'_> {
                 }
 
                 gl.uniform_1i(NORMAL_SAMPLER_LOC, 1);
-                gl.uniform_1i(AMBIENT_SAMPLER_LOC, 2);
-                gl.uniform_1i(DIFFUSE_SAMPLER_LOC, 3);
-                gl.uniform_1i(SPECULAR_SAMPLER_LOC, 4);
+                gl.uniform_1i(EMISSIVE_SAMPLER_LOC, 2);
+                gl.uniform_1i(AMBIENT_SAMPLER_LOC, 3);
+                gl.uniform_1i(DIFFUSE_SAMPLER_LOC, 4);
+                gl.uniform_1i(SPECULAR_SAMPLER_LOC, 5);
 
                 // Cache texture binding.
                 let mut bound_material = None;
@@ -104,9 +106,10 @@ impl Context<'_> {
                         gl.uniform_1f(SHININESS_LOC, material.shininess);
                         let textures = &self.resources.textures;
                         gl.bind_texture_unit(1, textures[material.normal_texture_index].name);
-                        gl.bind_texture_unit(2, textures[material.ambient_texture_index].name);
-                        gl.bind_texture_unit(3, textures[material.diffuse_texture_index].name);
-                        gl.bind_texture_unit(4, textures[material.specular_texture_index].name);
+                        gl.bind_texture_unit(2, textures[material.emissive_texture_index].name);
+                        gl.bind_texture_unit(3, textures[material.ambient_texture_index].name);
+                        gl.bind_texture_unit(4, textures[material.diffuse_texture_index].name);
+                        gl.bind_texture_unit(5, textures[material.specular_texture_index].name);
                     }
 
                     {

@@ -3,6 +3,7 @@
 
 layout(location = OBJ_TO_WLD_LOC) uniform mat4 obj_to_wld;
 layout(location = NORMAL_SAMPLER_LOC) uniform sampler2D normal_sampler;
+layout(location = EMISSIVE_SAMPLER_LOC) uniform sampler2D emissive_sampler;
 layout(location = AMBIENT_SAMPLER_LOC) uniform sampler2D ambient_sampler;
 layout(location = DIFFUSE_SAMPLER_LOC) uniform sampler2D diffuse_sampler;
 layout(location = SPECULAR_SAMPLER_LOC) uniform sampler2D specular_sampler;
@@ -24,6 +25,7 @@ void main() {
   vec3 frag_nor_in_tan = vec3(nxy, nz);
 
   vec4 ka = texture(ambient_sampler, frag_pos_in_tex);
+  vec4 ke = texture(emissive_sampler, frag_pos_in_tex);
   vec4 kd = pow(texture(diffuse_sampler, frag_pos_in_tex), vec4(2.2));
   vec4 ks = texture(specular_sampler, frag_pos_in_tex);
 
@@ -52,7 +54,7 @@ void main() {
   // float distance = length(lightPositions[i] - WorldPos);
   // float attenuation = 1.0 / (distance * distance);
   // vec3 radiance = lightColors[i] * attenuation;
-  vec3 radiance = vec3(5.0);
+  vec3 radiance = vec3(3.0);
 
   // Cook-Torrance BRDF
   float roughness = ks.y;
@@ -79,24 +81,19 @@ void main() {
   float NdotL = max(dot(N, L), 0.0);
 
   // add to outgoing radiance Lo
-  vec3 Lo = vec3(0.0);
+  vec3 Lo = vec3(ke.xyz);
   Lo += (kD * kd.xyz / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
 
   // Hacky tone-map
-  frag_color = vec4(Lo / (Lo + vec3(1.0)), 1.0);
+  frag_color = vec4(Lo, 1.0);
 
-  // frag_color = vec4(vec3(roughness), 1.0);
-  // frag_color = vec4(frag_nor_in_obj, 1.0);
+  frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_pos_in_tex, 0.0, 1.0);
 
-  // float d = max(0.0, dot(frag_to_light_nor, frag_nor_in_lgt));
-  // float s = pow(max(0.0, dot(frag_reflect_nor, frag_to_cam_nor)), shininess);
-
-  // frag_color = vec4(tbn * frag_nor_in_lgt, 1.0);
-  // frag_color = vec4(d * kd.rgb + s * vec3(ks.y), 1.0);
-  // frag_color = vec4(pow(ks.yyy, vec3(2.2)), 1.0);
-  // frag_color = vec4(ka.rgb + d * kd.rgb + s * ks.rgb, 1.0);
-  // frag_color = vec4(vec3(ks.y), 1.0);
+  // frag_color = vec4(ke.xyz, 1.0);
+  // frag_color = vec4(ka.xyz, 1.0);
+  // frag_color = vec4(kd.xyz, 1.0);
+  // frag_color = vec4(ks.xyz, 1.0);
 
   // Normals
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
