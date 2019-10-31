@@ -11,9 +11,57 @@ pub trait ModelExt {
 
 impl ModelExt for fbx::dom::Model {
     fn transform_to_parent(&self) -> Matrix4<f64> {
-        let t = Matrix4::from_translation(Vector3::from(self.properties.lcl_translation));
+        // NOTE(mickvangelderen): Others unsupported.
+        assert_eq!(fbx::types::RotationOrder::XYZ, self.properties.rotation_order);
 
-        t
+        // NOTE(mickvangelderen): Geometric transformations unsupported.
+        assert_eq!([0.0; 3], self.properties.geometric_translation);
+        assert_eq!([0.0; 3], self.properties.geometric_rotation);
+        assert_eq!([1.0; 3], self.properties.geometric_scaling);
+
+        fn rotation_matrix(xyz_deg: [f64; 3]) -> Matrix4<f64> {
+            Matrix4::from(Euler {
+                x: Deg(xyz_deg[0]),
+                y: Deg(xyz_deg[1]),
+                z: Deg(xyz_deg[2]),
+            })
+        }
+
+        fn translation_matrix(xyz: [f64; 3]) -> Matrix4<f64> {
+            Matrix4::from_translation(xyz.into())
+        }
+
+        fn scaling_matrix(xyz: [f64; 3]) -> Matrix4<f64> {
+            Matrix4::from_nonuniform_scale(xyz[0], xyz[1], xyz[2])
+        }
+
+        let p = &self.properties;
+
+        let translation = translation_matrix(p.lcl_translation);
+        let rotation = rotation_matrix(p.lcl_rotation);
+        let scaling = scaling_matrix(p.lcl_scaling);
+
+        let roff = translation_matrix(p.rotation_offset);
+        let rpiv = translation_matrix(p.rotation_pivot);
+        let rpre = rotation_matrix(p.pre_rotation);
+        let rpost = rotation_matrix(p.post_rotation);
+
+        let soff = translation_matrix(p.scaling_offset);
+        let spiv = translation_matrix(p.scaling_pivot);
+
+        let to_parent = translation
+            * roff
+            * rpiv
+            * rpre
+            * rotation
+            * rpost.invert().unwrap()
+            * rpiv.invert().unwrap()
+            * soff
+            * spiv
+            * scaling
+            * spiv.invert().unwrap();
+
+        to_parent
     }
 }
 
@@ -82,52 +130,7 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             scaling: [1.0; 3],
         })
         .chain(root.objects.models.iter().map(|model| {
-            assert_eq!(fbx::types::RotationOrder::XYZ, model.properties.rotation_order);
-            assert_eq!([0.0; 3], model.properties.geometric_translation);
-            assert_eq!([0.0; 3], model.properties.geometric_rotation);
-            assert_eq!([1.0; 3], model.properties.geometric_scaling);
-
-            fn rotation_matrix(xyz_deg: [f64; 3]) -> Matrix4<f64> {
-                Matrix4::from(Euler {
-                    x: Deg(xyz_deg[0]),
-                    y: Deg(xyz_deg[1]),
-                    z: Deg(xyz_deg[2]),
-                })
-            }
-
-            fn translation_matrix(xyz: [f64; 3]) -> Matrix4<f64> {
-                Matrix4::from_translation(xyz.into())
-            }
-
-            fn scaling_matrix(xyz: [f64; 3]) -> Matrix4<f64> {
-                Matrix4::from_nonuniform_scale(xyz[0], xyz[1], xyz[2])
-            }
-
-            let p = &model.properties;
-
-            let translation = translation_matrix(p.lcl_translation);
-            let rotation = rotation_matrix(p.lcl_rotation);
-            let scaling = scaling_matrix(p.lcl_scaling);
-
-            let roff = translation_matrix(p.rotation_offset);
-            let rpiv = translation_matrix(p.rotation_pivot);
-            let rpre = rotation_matrix(p.pre_rotation);
-            let rpost = rotation_matrix(p.post_rotation);
-
-            let soff = translation_matrix(p.scaling_offset);
-            let spiv = translation_matrix(p.scaling_pivot);
-
-            let to_parent = translation
-                * roff
-                * rpiv
-                * rpre
-                * rotation
-                * rpost.invert().unwrap()
-                * rpiv.invert().unwrap()
-                * soff
-                * spiv
-                * scaling
-                * spiv.invert().unwrap();
+            let to_parent = model.transform_to_parent();
 
             let t = to_parent.w.truncate();
 
@@ -352,7 +355,7 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 _ => {
                     panic!("Didn't expect this relation {:?}", oo);
                 }
-            }
+            },
             _ => {
                 println!("Unhandled connection {:?}", oo);
             }
