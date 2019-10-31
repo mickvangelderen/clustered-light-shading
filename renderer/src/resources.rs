@@ -13,6 +13,7 @@ pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
 pub struct Material {
     pub normal_texture_index: usize,
+    pub emissive_texture_index: usize,
     pub ambient_texture_index: usize,
     pub diffuse_texture_index: usize,
     pub specular_texture_index: usize,
@@ -174,6 +175,13 @@ impl Resources {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => {
                             color_texture_index([0, 0, 255, 255])
+                        }
+                    },
+                    emissive_texture_index: match material.emissive_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.emissive_color;
+                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
                         }
                     },
                     ambient_texture_index: match material.ambient_texture_index {
