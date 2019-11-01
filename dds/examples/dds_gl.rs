@@ -3,7 +3,7 @@ extern crate log;
 
 use gl_typed as gl;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub trait FormatExt {
     fn to_gl_internal_format(&self) -> gl::InternalFormat;
@@ -13,9 +13,7 @@ macro_rules! impl_format {
     ($(
         ($Variant: ident, $gl_internal_format: expr),
     )*) => {
-        impl FormatExt for dds::Format {
-            #[inline]
-            fn to_gl_internal_format(&self) -> gl::InternalFormat {
+        impl FormatExt for dds::Format {#[inline] fn to_gl_internal_format(&self) -> gl::InternalFormat {
                 match *self {
                     $(
                         Self::$Variant => $gl_internal_format.into(),
@@ -51,7 +49,12 @@ fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::Text
         // NOTE(mickvangelderen): No dsa for compressed textures??
         gl.bind_texture(gl::TEXTURE_2D, name);
         for (layer_index, layer) in dds.layers.iter().enumerate() {
-            info!("Uploading {:?} layer {}/{}...", &file_path, layer_index + 1, dds.layers.len());
+            info!(
+                "Uploading {:?} layer {}/{}...",
+                &file_path,
+                layer_index + 1,
+                dds.layers.len()
+            );
             gl.compressed_tex_image_2d(
                 gl::TEXTURE_2D,
                 layer_index as i32,
@@ -80,8 +83,116 @@ fn load_textures(gl: &gl::Gl, dir_path: impl AsRef<Path>) -> io::Result<Vec<gl::
         .collect())
 }
 
+fn find_dxt1_texture(dir_path: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
+    Ok(std::fs::read_dir(dir_path)?
+        .into_iter()
+        .flat_map(|entry| {
+            let file_path = entry.unwrap().path();
+            match file_path.extension().and_then(std::ffi::OsStr::to_str) {
+                Some("dds") => {
+                    let file = std::fs::File::open(&file_path).unwrap();
+                    let mut reader = std::io::BufReader::new(file);
+                    let dds = dds::File::parse(&mut reader).unwrap();
+                    if let dds::Format::BC1_UNORM_RGB = dds.header.pixel_format {
+                        Some(PathBuf::from(&file_path))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        })
+        .collect())
+}
+
 fn main() {
     env_logger::init();
+
+    for file_path in find_dxt1_texture("resources/bistro/Textures").unwrap().iter() {
+        let file = std::fs::File::open(&file_path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        let dds = dds::File::parse(&mut reader).unwrap();
+
+        assert_eq!(dds::Format::BC1_UNORM_RGB, dds.header.pixel_format);
+
+        for (layer_index, layer) in dds.layers.iter().enumerate().skip(1).take(1) {
+            let w = layer.width as usize;
+            let h = layer.height as usize;
+
+            let block_counts = ((w + 3) / 4, (h + 3) / 4);
+
+            let blocks = unsafe {
+                assert_eq!(
+                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::dxt1::Block>(),
+                    layer.byte_count
+                );
+
+                std::slice::from_raw_parts(
+                    dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr()
+                        as *const dds::dxt1::Block,
+                    block_counts.0 * block_counts.1,
+                )
+            };
+
+            let mut pixels: Vec<[f32; 3]> = (0..(w * h)).into_iter().map(|_| [0.0; 3]).collect();
+
+            for by in 0..block_counts.1 {
+                for bx in 0..block_counts.0 {
+                    let block_rgb_f32 = blocks[by * block_counts.0 + bx].to_rgb_f32();
+                    for ly in 0..4 {
+                        let gy = by * 4 + ly;
+                        if gy >= h {
+                            continue;
+                        }
+                        for lx in 0..4 {
+                            let gx = bx * 4 + lx;
+                            if gx >= w {
+                                continue;
+                            }
+
+                            pixels[gy * w + gx] = block_rgb_f32[ly][lx];
+                        }
+                    }
+                }
+            }
+
+            let out_file_path: PathBuf = [
+                file_path.parent().unwrap(),
+                Path::new(&format!(
+                    "{}.{}.ppm",
+                    file_path.file_stem().unwrap().to_str().unwrap(),
+                    layer_index
+                )),
+            ]
+            .iter()
+            .collect();
+
+            dbg!(&out_file_path);
+            use std::io::Write;
+            let out_file = std::fs::File::create(&out_file_path).unwrap();
+            let mut writer = std::io::BufWriter::new(out_file);
+            write!(&mut writer, "P6 {} {} 255\n", w, h).unwrap();
+
+            for gy in 0..h {
+                for gx in 0..w {
+                    let pixel = &pixels[gy * w + gx];
+                    writer
+                        .write_all(&[
+                            (pixel[0] * 255.0 + 0.5) as u8,
+                            (pixel[1] * 255.0 + 0.5) as u8,
+                            (pixel[2] * 255.0 + 0.5) as u8,
+                        ])
+                        .unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[allow(unused)]
+fn old_main() {
+    env_logger::init();
+
     let mut event_loop = glutin::EventsLoop::new();
 
     let mut window = create_window(

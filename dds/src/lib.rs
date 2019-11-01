@@ -1,6 +1,8 @@
 use belene::*;
 use std::io;
 
+pub mod dxt1;
+
 /// Pixel information as represented in the DDS file
 ///
 /// Direct translation of struct found here:
