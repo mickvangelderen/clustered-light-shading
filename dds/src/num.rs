@@ -1,6 +1,7 @@
-#![allow(non_camel_case_types)]
+use std::fmt;
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[allow(non_camel_case_types)]
 #[repr(transparent)]
 pub struct u32le(u32);
 
@@ -15,8 +16,6 @@ impl u32le {
         u32::from_le(self.0)
     }
 }
-
-use std::fmt;
 
 impl fmt::Debug for u32le {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
