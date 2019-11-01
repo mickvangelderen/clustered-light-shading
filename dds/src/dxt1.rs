@@ -36,7 +36,7 @@ impl Block {
 
         for y in 0..4 {
             for x in 0..4 {
-                let index = (indices >> ((3 - y) * 8 + x * 2)) & 0b11;
+                let index = (indices >> (y * 8 + x * 2)) & 0b11;
                 pixels[y][x] = table[index as usize];
             }
         }
