@@ -1,7 +1,11 @@
+// Somewhat helpful: https://docs.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-resources-block-compression
+
 use belene::*;
 use std::io;
 
+pub mod common;
 pub mod dxt1;
+pub mod dxt3;
 
 /// Pixel information as represented in the DDS file
 ///

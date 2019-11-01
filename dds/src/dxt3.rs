@@ -3,14 +3,16 @@ use belene::*;
 
 #[repr(C, packed)]
 pub struct Block {
+    pub alpha: u64le,
     pub colors: [u16le; 2],
     pub table: u32le,
 }
 
 impl Block {
-    pub fn to_rgb_f32(&self) -> [[[f32; 3]; 4]; 4] {
-        let mut pixels = [[[0f32; 3]; 4]; 4];
+    pub fn to_rgba_f32(&self) -> [[[f32; 4]; 4]; 4] {
+        let mut pixels = [[[0f32; 4]; 4]; 4];
 
+        let alpha = self.alpha.to_ne();
         let indices = self.table.to_ne();
 
         let table = {
@@ -36,8 +38,9 @@ impl Block {
 
         for y in 0..4 {
             for x in 0..4 {
-                let index = (indices >> ((3 - y) * 8 + x * 2)) & 0b11;
-                pixels[y][x] = table[index as usize];
+                let [r, g, b] = table[((indices >> ((3 - y) * 8 + x * 2)) & 0b11) as usize];
+                let a = ((alpha >> ((3 - y) * 16 + x * 4)) & 0b1111) as f32 / 15.0;
+                pixels[y][x] = [r, g, b, a];
             }
         }
 

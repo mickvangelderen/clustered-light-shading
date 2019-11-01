@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate log;
 
+mod bmp;
+
 use gl_typed as gl;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -83,39 +85,112 @@ fn load_textures(gl: &gl::Gl, dir_path: impl AsRef<Path>) -> io::Result<Vec<gl::
         .collect())
 }
 
-fn find_dxt1_texture(dir_path: impl AsRef<Path>) -> io::Result<Vec<PathBuf>> {
-    Ok(std::fs::read_dir(dir_path)?
-        .into_iter()
-        .flat_map(|entry| {
-            let file_path = entry.unwrap().path();
-            match file_path.extension().and_then(std::ffi::OsStr::to_str) {
-                Some("dds") => {
-                    let file = std::fs::File::open(&file_path).unwrap();
-                    let mut reader = std::io::BufReader::new(file);
-                    let dds = dds::File::parse(&mut reader).unwrap();
-                    if let dds::Format::BC1_UNORM_RGB = dds.header.pixel_format {
-                        Some(PathBuf::from(&file_path))
-                    } else {
-                        None
+fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
+    for entry in std::fs::read_dir(dir_path)?.into_iter() {
+        let file_path = entry.unwrap().path();
+        match file_path.extension().and_then(std::ffi::OsStr::to_str) {
+            Some("dds") => {
+                let file = std::fs::File::open(&file_path).unwrap();
+                let mut reader = std::io::BufReader::new(file);
+                let dds = dds::File::parse(&mut reader).unwrap();
+                match dds.header.pixel_format {
+                    // dds::Format::BC1_UNORM_RGB => {
+                    //     println!(
+                    //         "Decompressing {:?} which has format {:?}",
+                    //         &file_path, dds.header.pixel_format
+                    //     );
+                    //     let layers = decompress_dxt1(&dds);
+                    //     for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
+                    //         let out_file_path = file_path.parent().unwrap().join(format!(
+                    //             "{}.{}.ppm",
+                    //             file_path.file_stem().unwrap().to_str().unwrap(),
+                    //             layer_index
+                    //         ));
+                    //         layer.write_ppm(&out_file_path);
+                    //     }
+                    // }
+                    dds::Format::BC3_UNORM_RGBA => {
+                        println!(
+                            "Decompressing {:?} which has format {:?}",
+                            &file_path, dds.header.pixel_format
+                        );
+                        let layers = decompress_dxt3(&dds);
+                        for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
+                            let out_file_path = file_path.parent().unwrap().join(format!(
+                                "{}.{}.bmp",
+                                file_path.file_stem().unwrap().to_str().unwrap(),
+                                layer_index
+                            ));
+                            layer.write_bmp(&out_file_path);
+                        }
+                    }
+                    other => {
+                        println!("Ignoring format {:?}", other);
                     }
                 }
-                _ => None,
             }
-        })
-        .collect())
+            other => {
+                println!("Ignoring file {:?}", &file_path);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn main() {
     env_logger::init();
 
-    for file_path in find_dxt1_texture("resources/bistro/Textures").unwrap().iter() {
-        let file = std::fs::File::open(&file_path).unwrap();
-        let mut reader = std::io::BufReader::new(file);
-        let dds = dds::File::parse(&mut reader).unwrap();
+    decompress_textures("resources/bistro/Textures").unwrap();
+}
 
-        assert_eq!(dds::Format::BC1_UNORM_RGB, dds.header.pixel_format);
+pub struct Image<P> {
+    pub dimensions: (usize, usize),
+    pub pixels: Vec<P>,
+}
 
-        for (layer_index, layer) in dds.layers.iter().enumerate().skip(1).take(1) {
+impl Image<[u8; 3]> {
+    pub fn write_ppm(&self, file_path: impl AsRef<Path>) {
+        use std::io::Write;
+        let file = std::fs::File::create(&file_path).unwrap();
+        let mut writer = std::io::BufWriter::new(file);
+        write!(&mut writer, "P6 {} {} 255\n", self.dimensions.0, self.dimensions.1).unwrap();
+
+        // PPM origin is bottom left.
+        for gy in (0..self.dimensions.1).into_iter().rev() {
+            for gx in 0..self.dimensions.0 {
+                let pixel = self.pixels[gy * self.dimensions.0 + gx];
+                writer.write_all(&pixel[..]).unwrap();
+            }
+        }
+    }
+}
+
+impl Image<[u8; 4]> {
+    pub fn write_bmp(&self, file_path: impl AsRef<Path>) {
+        use std::io::Write;
+        let file = std::fs::File::create(&file_path).unwrap();
+        let mut writer = std::io::BufWriter::new(file);
+        let header = bmp::rgba_header(self.dimensions.0 as u32, self.dimensions.1 as u32);
+        writer.write_all(&header).unwrap();
+
+        // BMP image is stored bottom up.
+        for gy in (0..self.dimensions.1).into_iter().rev() {
+            for gx in 0..self.dimensions.0 {
+                let pixel = self.pixels[gy * self.dimensions.0 + gx];
+                writer.write_all(&pixel[..]).unwrap();
+            }
+        }
+    }
+}
+
+fn decompress_dxt1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
+    assert_eq!(dds::Format::BC1_UNORM_RGB, dds.header.pixel_format);
+
+    dds.layers
+        .iter()
+        .enumerate()
+        .map(|(layer_index, layer)| {
             let w = layer.width as usize;
             let h = layer.height as usize;
 
@@ -134,7 +209,7 @@ fn main() {
                 )
             };
 
-            let mut pixels: Vec<[f32; 3]> = (0..(w * h)).into_iter().map(|_| [0.0; 3]).collect();
+            let mut pixels: Vec<[u8; 3]> = (0..(w * h)).into_iter().map(|_| [0; 3]).collect();
 
             for by in 0..block_counts.1 {
                 for bx in 0..block_counts.0 {
@@ -150,43 +225,84 @@ fn main() {
                                 continue;
                             }
 
-                            pixels[gy * w + gx] = block_rgb_f32[ly][lx];
+                            let [r, g, b] = block_rgb_f32[ly][lx];
+                            pixels[gy * w + gx] = [
+                                (r * 255.0 + 0.5) as u8,
+                                (g * 255.0 + 0.5) as u8,
+                                (b * 255.0 + 0.5) as u8,
+                            ];
                         }
                     }
                 }
             }
 
-            let out_file_path: PathBuf = [
-                file_path.parent().unwrap(),
-                Path::new(&format!(
-                    "{}.{}.ppm",
-                    file_path.file_stem().unwrap().to_str().unwrap(),
-                    layer_index
-                )),
-            ]
-            .iter()
-            .collect();
+            Image {
+                dimensions: (w, h),
+                pixels,
+            }
+        })
+        .collect()
+}
 
-            dbg!(&out_file_path);
-            use std::io::Write;
-            let out_file = std::fs::File::create(&out_file_path).unwrap();
-            let mut writer = std::io::BufWriter::new(out_file);
-            write!(&mut writer, "P6 {} {} 255\n", w, h).unwrap();
+fn decompress_dxt3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
+    assert_eq!(dds::Format::BC3_UNORM_RGBA, dds.header.pixel_format);
 
-            for gy in 0..h {
-                for gx in 0..w {
-                    let pixel = &pixels[gy * w + gx];
-                    writer
-                        .write_all(&[
-                            (pixel[0] * 255.0 + 0.5) as u8,
-                            (pixel[1] * 255.0 + 0.5) as u8,
-                            (pixel[2] * 255.0 + 0.5) as u8,
-                        ])
-                        .unwrap();
+    dds.layers
+        .iter()
+        .enumerate()
+        .map(|(layer_index, layer)| {
+            let w = layer.width as usize;
+            let h = layer.height as usize;
+
+            let block_counts = ((w + 3) / 4, (h + 3) / 4);
+
+            let blocks = unsafe {
+                assert_eq!(
+                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::dxt3::Block>(),
+                    layer.byte_count
+                );
+
+                std::slice::from_raw_parts(
+                    dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr()
+                        as *const dds::dxt3::Block,
+                    block_counts.0 * block_counts.1,
+                )
+            };
+
+            let mut pixels: Vec<[u8; 4]> = (0..(w * h)).into_iter().map(|_| [0; 4]).collect();
+
+            for by in 0..block_counts.1 {
+                for bx in 0..block_counts.0 {
+                    let block_rgba_f32 = blocks[by * block_counts.0 + bx].to_rgba_f32();
+                    for ly in 0..4 {
+                        let gy = by * 4 + ly;
+                        if gy >= h {
+                            continue;
+                        }
+                        for lx in 0..4 {
+                            let gx = bx * 4 + lx;
+                            if gx >= w {
+                                continue;
+                            }
+
+                            let [r, g, b, a] = block_rgba_f32[ly][lx];
+                            pixels[gy * w + gx] = [
+                                (r * 255.0 + 0.5) as u8,
+                                (g * 255.0 + 0.5) as u8,
+                                (b * 255.0 + 0.5) as u8,
+                                (a * 255.0 + 0.5) as u8,
+                            ];
+                        }
+                    }
                 }
             }
-        }
-    }
+
+            Image {
+                dimensions: (w, h),
+                pixels,
+            }
+        })
+        .collect()
 }
 
 #[allow(unused)]
