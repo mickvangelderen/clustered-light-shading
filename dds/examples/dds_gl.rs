@@ -1,18 +1,57 @@
+#[macro_use]
+extern crate log;
+
+use gl_typed as gl;
 use std::io;
 use std::path::Path;
 
-use gl_typed as gl;
+pub trait FormatExt {
+    fn to_gl_internal_format(&self) -> gl::InternalFormat;
+}
+
+macro_rules! impl_format {
+    ($(
+        ($Variant: ident, $gl_internal_format: expr),
+    )*) => {
+        impl FormatExt for dds::Format {
+            #[inline]
+            fn to_gl_internal_format(&self) -> gl::InternalFormat {
+                match *self {
+                    $(
+                        Self::$Variant => $gl_internal_format.into(),
+                    )*
+                }
+            }
+        }
+    }
+}
+
+impl_format! {
+    (BC1_UNORM_RGB,  gl::COMPRESSED_RGB_S3TC_DXT1_EXT ),
+    (BC1_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT),
+    (BC2_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT),
+    (BC3_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT),
+    (BC4_UNORM_R,    gl::COMPRESSED_RED_RGTC1         ),
+    (BC4_SNORM_R,    gl::COMPRESSED_SIGNED_RED_RGTC1  ),
+    (BC5_UNORM_RG,   gl::COMPRESSED_RG_RGTC2          ),
+    (BC5_SNORM_RG,   gl::COMPRESSED_SIGNED_RG_RGTC2   ),
+}
 
 fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
+    let file_path = file_path.as_ref();
+
+    info!("Reading {:?}...", &file_path);
     let file = std::fs::File::open(file_path).unwrap();
     let mut reader = std::io::BufReader::new(file);
     let dds = dds::File::parse(&mut reader).unwrap();
+    info!("Reading {:?} done.", &file_path);
 
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
         // NOTE(mickvangelderen): No dsa for compressed textures??
         gl.bind_texture(gl::TEXTURE_2D, name);
         for (layer_index, layer) in dds.layers.iter().enumerate() {
+            info!("Uploading {:?} layer {}/{}...", &file_path, layer_index + 1, dds.layers.len());
             gl.compressed_tex_image_2d(
                 gl::TEXTURE_2D,
                 layer_index as i32,
@@ -22,22 +61,27 @@ fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::Text
                 &dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],
             );
         }
+        info!("Uploading {:?} done.", &file_path);
 
         Ok(name)
     }
 }
 
 fn load_textures(gl: &gl::Gl, dir_path: impl AsRef<Path>) -> io::Result<Vec<gl::TextureName>> {
-    Ok(std::fs::read_dir(dir_path)?.into_iter().filter_map(|entry| {
-        let file_path = entry.unwrap().path();
-        match file_path.extension().and_then(std::ffi::OsStr::to_str) {
-            Some("dds") => Some(load_texture(gl, file_path).unwrap()),
-            _ => None,
-        }
-    }).collect())
+    Ok(std::fs::read_dir(dir_path)?
+        .into_iter()
+        .filter_map(|entry| {
+            let file_path = entry.unwrap().path();
+            match file_path.extension().and_then(std::ffi::OsStr::to_str) {
+                Some("dds") => Some(load_texture(gl, file_path).unwrap()),
+                _ => None,
+            }
+        })
+        .collect())
 }
 
 fn main() {
+    env_logger::init();
     let mut event_loop = glutin::EventsLoop::new();
 
     let mut window = create_window(

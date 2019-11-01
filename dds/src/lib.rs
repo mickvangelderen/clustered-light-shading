@@ -1,5 +1,4 @@
 use belene::*;
-use gl_typed as gl;
 use std::io;
 
 /// Pixel information as represented in the DDS file
@@ -187,9 +186,17 @@ impl PixelFormatFlags {
 // static const uint32_t kCaps2CubeMapNegZMask = 0x8000;
 // static const uint32_t kCaps2VolumeMask = 0x200000;
 
+pub enum ComponentType {
+    FLOAT,
+    UNORM,
+    SNORM,
+    UINT,
+    SINT,
+}
+
 macro_rules! impl_format {
     ($(
-        ($Variant: ident, $bytes_per_block: expr, $component_count: expr, $component_type: expr, $depth: expr, $stencil: expr, $compression_x: expr, $compression_y: expr, $gl_internal_format: expr, $gl_format: expr, $gl_component_type: expr),
+        ($Variant: ident, $bytes_per_block: expr, $component_count: expr, $component_type: expr, $depth: expr, $stencil: expr, $compression_x: expr, $compression_y: expr),
     )*) => {
         #[derive(Debug, Copy, Clone, Eq, PartialEq)]
         #[allow(non_camel_case_types)]
@@ -224,54 +231,19 @@ macro_rules! impl_format {
             pub fn compute_byte_count(&self, width: u32, height: u32) -> usize {
                 self.bytes_per_block() * self.compute_block_count(width, height)
             }
-
-            // #[inline]
-            // pub fn component_count(&self) -> u8 {
-            //     match *self {
-            //         $(
-            //             Self::$Variant => $component_count,
-            //         )*
-            //     }
-            // }
-
-            // #[inline]
-            // pub fn component_type(&self) -> ComponentType {
-            //     match *self {
-            //         $(
-            //             Self::$Variant => $component_type,
-            //         )*
-            //     }
-            // }
-
-            #[inline]
-            pub fn to_gl_internal_format(&self) -> gl::InternalFormat {
-                match *self {
-                    $(
-                        Self::$Variant => $gl_internal_format.into(),
-                    )*
-                }
-            }
         }
     }
 }
 
-pub enum ComponentType {
-    FLOAT,
-    UNORM,
-    SNORM,
-    UINT,
-    SINT,
-}
-
 impl_format! {
-    (BC1_UNORM_RGB,           8,           3,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGB_S3TC_DXT1_EXT,  gl::RGB,  gl::NONE),
-    (BC1_UNORM_RGBA,          8,           4,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT, gl::RGBA, gl::NONE),
-    (BC2_UNORM_RGBA,         16,           4,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT, gl::RGBA, gl::NONE),
-    (BC3_UNORM_RGBA,         16,           4,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT, gl::RGBA, gl::NONE),
-    (BC4_UNORM_R,             8,           1,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RED_RGTC1,          gl::RED,  gl::NONE),
-    (BC4_SNORM_R,             8,           1,  ComponentType::SNORM,      false,  false,        4, 4, gl::COMPRESSED_SIGNED_RED_RGTC1,   gl::RED,  gl::NONE),
-    (BC5_UNORM_RG,           16,           2,  ComponentType::UNORM,      false,  false,        4, 4, gl::COMPRESSED_RG_RGTC2,           gl::RG,   gl::NONE),
-    (BC5_SNORM_RG,           16,           2,  ComponentType::SNORM,      false,  false,        4, 4, gl::COMPRESSED_SIGNED_RG_RGTC2,    gl::RG,   gl::NONE),
+    (BC1_UNORM_RGB,   8, 3, ComponentType::UNORM, false, false, 4, 4),
+    (BC1_UNORM_RGBA,  8, 4, ComponentType::UNORM, false, false, 4, 4),
+    (BC2_UNORM_RGBA, 16, 4, ComponentType::UNORM, false, false, 4, 4),
+    (BC3_UNORM_RGBA, 16, 4, ComponentType::UNORM, false, false, 4, 4),
+    (BC4_UNORM_R,     8, 1, ComponentType::UNORM, false, false, 4, 4),
+    (BC4_SNORM_R,     8, 1, ComponentType::SNORM, false, false, 4, 4),
+    (BC5_UNORM_RG,   16, 2, ComponentType::UNORM, false, false, 4, 4),
+    (BC5_SNORM_RG,   16, 2, ComponentType::SNORM, false, false, 4, 4),
 }
 
 impl File {
