@@ -5,7 +5,7 @@ mod bmp;
 
 use gl_typed as gl;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub trait FormatExt {
     fn to_gl_internal_format(&self) -> gl::InternalFormat;
@@ -48,6 +48,7 @@ fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::Text
 
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
+        gl.texture_label(name, file_path.file_stem().unwrap().to_str().unwrap());
         // NOTE(mickvangelderen): No dsa for compressed textures??
         gl.bind_texture(gl::TEXTURE_2D, name);
         for (layer_index, layer) in dds.layers.iter().enumerate() {
@@ -110,6 +111,9 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
                     //     }
                     // }
                     dds::Format::BC3_UNORM_RGBA => {
+                        if file_path.file_stem().unwrap().to_str().unwrap() != "Foliage_Ivy_leaf_a_BaseColor" {
+                            continue;
+                        }
                         println!(
                             "Decompressing {:?} which has format {:?}",
                             &file_path, dds.header.pixel_format
@@ -129,7 +133,7 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
                     }
                 }
             }
-            other => {
+            _ => {
                 println!("Ignoring file {:?}", &file_path);
             }
         }
@@ -139,8 +143,8 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
 }
 
 fn main() {
+    // old_main();
     env_logger::init();
-
     decompress_textures("resources/bistro/Textures").unwrap();
 }
 
@@ -213,7 +217,7 @@ fn decompress_dxt1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
 
             for by in 0..block_counts.1 {
                 for bx in 0..block_counts.0 {
-                    let block_rgb_f32 = blocks[by * block_counts.0 + bx].to_rgb_f32();
+                    let block = blocks[by * block_counts.0 + bx].to_rgba_8880();
                     for ly in 0..4 {
                         let gy = by * 4 + ly;
                         if gy >= h {
@@ -225,12 +229,7 @@ fn decompress_dxt1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
                                 continue;
                             }
 
-                            let [r, g, b] = block_rgb_f32[ly][lx];
-                            pixels[gy * w + gx] = [
-                                (r * 255.0 + 0.5) as u8,
-                                (g * 255.0 + 0.5) as u8,
-                                (b * 255.0 + 0.5) as u8,
-                            ];
+                            pixels[gy * w + gx] = block[ly][lx].to_bytes();
                         }
                     }
                 }
@@ -262,6 +261,12 @@ fn decompress_dxt3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
                     layer.byte_count
                 );
 
+                assert_eq!(
+                    0,
+                    dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr() as usize
+                        % std::mem::align_of::<dds::dxt3::Block>(),
+                );
+
                 std::slice::from_raw_parts(
                     dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr()
                         as *const dds::dxt3::Block,
@@ -273,7 +278,7 @@ fn decompress_dxt3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
 
             for by in 0..block_counts.1 {
                 for bx in 0..block_counts.0 {
-                    let block_rgba_f32 = blocks[by * block_counts.0 + bx].to_rgba_f32();
+                    let block = blocks[by * block_counts.0 + bx].to_rgba_8888();
                     for ly in 0..4 {
                         let gy = by * 4 + ly;
                         if gy >= h {
@@ -285,13 +290,7 @@ fn decompress_dxt3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
                                 continue;
                             }
 
-                            let [r, g, b, a] = block_rgba_f32[ly][lx];
-                            pixels[gy * w + gx] = [
-                                (r * 255.0 + 0.5) as u8,
-                                (g * 255.0 + 0.5) as u8,
-                                (b * 255.0 + 0.5) as u8,
-                                (a * 255.0 + 0.5) as u8,
-                            ];
+                            pixels[gy * w + gx] = block[ly][lx].to_bytes();
                         }
                     }
                 }

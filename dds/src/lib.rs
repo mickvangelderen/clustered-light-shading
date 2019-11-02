@@ -77,13 +77,13 @@ impl From<RawFileHeader> for FileHeader {
 
         let pixel_format: Format = if pixel_format_flags & PixelFormatFlags::FOURCC == PixelFormatFlags::FOURCC {
             match header.pixel_format.four_cc {
-                FOURCC_DXT1 => Format::BC1_UNORM_RGB,
-                FOURCC_DXT2 | FOURCC_DXT3 => Format::BC2_UNORM_RGBA,
-                FOURCC_DXT4 | FOURCC_DXT5 => Format::BC3_UNORM_RGBA,
-                FOURCC_ATI1 | FOURCC_BC4U => Format::BC4_UNORM_R,
-                FOURCC_BC4S => Format::BC4_SNORM_R,
-                FOURCC_ATI2 | FOURCC_BC5U => Format::BC5_UNORM_RG,
-                FOURCC_BC5S => Format::BC5_SNORM_RG,
+                fourcc::DXT1 => Format::BC1_UNORM_RGB,
+                fourcc::DXT2 | fourcc::DXT3 => Format::BC2_UNORM_RGBA,
+                fourcc::DXT4 | fourcc::DXT5 => Format::BC3_UNORM_RGBA,
+                fourcc::ATI1 | fourcc::BC4U => Format::BC4_UNORM_R,
+                fourcc::BC4S => Format::BC4_SNORM_R,
+                fourcc::ATI2 | fourcc::BC5U => Format::BC5_UNORM_RG,
+                fourcc::BC5S => Format::BC5_SNORM_RG,
                 other => {
                     panic!(
                         "Unsupported four_cc: {:?} in header {:#?}.",
@@ -124,20 +124,22 @@ pub struct File {
     pub bytes: Vec<u8>,
 }
 
-pub const FOURCC_DXT1: [u8; 4] = *b"DXT1";
-pub const FOURCC_DXT2: [u8; 4] = *b"DXT2";
-pub const FOURCC_DXT3: [u8; 4] = *b"DXT3";
-pub const FOURCC_DXT4: [u8; 4] = *b"DXT4";
-pub const FOURCC_DXT5: [u8; 4] = *b"DXT5";
-pub const FOURCC_ATI1: [u8; 4] = *b"ATI1";
-pub const FOURCC_BC4U: [u8; 4] = *b"BC4U";
-pub const FOURCC_BC4S: [u8; 4] = *b"BC4S";
-pub const FOURCC_ATI2: [u8; 4] = *b"ATI2";
-pub const FOURCC_BC5U: [u8; 4] = *b"BC5U";
-pub const FOURCC_BC5S: [u8; 4] = *b"BC5S";
-pub const FOURCC_RGBG: [u8; 4] = *b"RGBG";
-pub const FOURCC_GRGB: [u8; 4] = *b"GRGB";
-pub const FOURCC_YUY2: [u8; 4] = *b"YUY2";
+pub mod fourcc {
+    pub const DXT1: [u8; 4] = *b"DXT1";
+    pub const DXT2: [u8; 4] = *b"DXT2";
+    pub const DXT3: [u8; 4] = *b"DXT3";
+    pub const DXT4: [u8; 4] = *b"DXT4";
+    pub const DXT5: [u8; 4] = *b"DXT5";
+    pub const ATI1: [u8; 4] = *b"ATI1";
+    pub const BC4U: [u8; 4] = *b"BC4U";
+    pub const BC4S: [u8; 4] = *b"BC4S";
+    pub const ATI2: [u8; 4] = *b"ATI2";
+    pub const BC5U: [u8; 4] = *b"BC5U";
+    pub const BC5S: [u8; 4] = *b"BC5S";
+    pub const RGBG: [u8; 4] = *b"RGBG";
+    pub const GRGB: [u8; 4] = *b"GRGB";
+    pub const YUY2: [u8; 4] = *b"YUY2";
+}
 
 // CompressedRed = COMPRESSED_RED,
 // CompressedRg = COMPRESSED_RG,
@@ -269,7 +271,6 @@ impl File {
         };
 
         let layers: Vec<Layer> = (0..header.mipmap_count)
-            .into_iter()
             .map({
                 let state = &mut state;
                 let pixel_format = &header.pixel_format;
