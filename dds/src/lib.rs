@@ -4,8 +4,9 @@ use belene::*;
 use std::io;
 
 pub mod common;
-pub mod dxt1;
-pub mod dxt3;
+pub mod bc1;
+pub mod bc2;
+pub mod bc3;
 
 /// Pixel information as represented in the DDS file
 ///

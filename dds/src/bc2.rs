@@ -3,20 +3,20 @@ use belene::*;
 
 #[repr(C, packed(1))]
 pub struct Block {
-    pub alpha: [u8; 8],
-    pub colors: [[u8; 2]; 2],
-    pub indices: [u8; 4],
+    pub alpha: u64le,
+    pub colors: [u16le; 2],
+    pub indices: u32le,
 }
 
 impl Block {
     pub fn to_rgba_8888(&self) -> [[RGBA_8888; 4]; 4] {
         let mut pixels: [[RGBA_8888; 4]; 4] = Default::default();
 
-        let alpha = u64::from_le_bytes(self.alpha);
-        let indices = u32::from_le_bytes(self.indices);
+        let alpha = self.alpha.to_ne();
+        let indices = self.indices.to_ne();
 
         let table: [RGBA_8880; 4] = {
-            let colors_u16 = [u16::from_le_bytes(self.colors[0]), u16::from_le_bytes(self.colors[1])];
+            let colors_u16 = [self.colors[0].to_ne(), self.colors[1].to_ne()];
             let colors: [RGBA_8880; 2] = [RGBA_5650(colors_u16[0]).into(), RGBA_5650(colors_u16[1]).into()];
 
             [
@@ -32,12 +32,7 @@ impl Block {
                 let pi = y * 4 + x;
                 let RGBA_8880 { r, g, b } = table[((indices >> (pi * 2)) & 0b11) as usize];
                 let a = ((((alpha >> (pi * 4)) & 0b1111) as u32 * 255) / 31) as u8;
-                pixels[y][x] = RGBA_8888 {
-                    r,
-                    g,
-                    b,
-                    a: 255,
-                };
+                pixels[y][x] = RGBA_8888 { r, g, b, a };
             }
         }
 

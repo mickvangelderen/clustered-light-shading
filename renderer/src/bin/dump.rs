@@ -1,8 +1,19 @@
 use std::path::PathBuf;
+use std::io::Read;
 
 fn main() {
     let file_path = PathBuf::from(std::env::args().skip(1).next().unwrap());
-    let bytes = std::fs::read(&file_path).unwrap();
+    let file = std::fs::File::open(&file_path).unwrap();
+    let mut reader = std::io::BufReader::new(file);
+
+    let header: dds::FileHeader = dds::RawFileHeader::parse(&mut reader).unwrap().into();
+
+    dbg!(header);
+
+    return;
+
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).unwrap();
 
     let remainder = bytes.len() % 4;
 

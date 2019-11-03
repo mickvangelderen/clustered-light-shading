@@ -100,7 +100,7 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
                     //         "Decompressing {:?} which has format {:?}",
                     //         &file_path, dds.header.pixel_format
                     //     );
-                    //     let layers = decompress_dxt1(&dds);
+                    //     let layers = decompress_bc1(&dds);
                     //     for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
                     //         let out_file_path = file_path.parent().unwrap().join(format!(
                     //             "{}.{}.ppm",
@@ -110,15 +110,27 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
                     //         layer.write_ppm(&out_file_path);
                     //     }
                     // }
+                    // dds::Format::BC2_UNORM_RGBA => {
+                    //     println!(
+                    //         "Decompressing {:?} which has format {:?}",
+                    //         &file_path, dds.header.pixel_format
+                    //     );
+                    //     let layers = decompress_bc2(&dds);
+                    //     for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
+                    //         let out_file_path = file_path.parent().unwrap().join(format!(
+                    //             "{}.{}.bmp",
+                    //             file_path.file_stem().unwrap().to_str().unwrap(),
+                    //             layer_index
+                    //         ));
+                    //         layer.write_bmp(&out_file_path);
+                    //     }
+                    // }
                     dds::Format::BC3_UNORM_RGBA => {
-                        if file_path.file_stem().unwrap().to_str().unwrap() != "Foliage_Ivy_leaf_a_BaseColor" {
-                            continue;
-                        }
                         println!(
                             "Decompressing {:?} which has format {:?}",
                             &file_path, dds.header.pixel_format
                         );
-                        let layers = decompress_dxt3(&dds);
+                        let layers = decompress_bc3(&dds);
                         for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
                             let out_file_path = file_path.parent().unwrap().join(format!(
                                 "{}.{}.bmp",
@@ -161,7 +173,7 @@ impl Image<[u8; 3]> {
         write!(&mut writer, "P6 {} {} 255\n", self.dimensions.0, self.dimensions.1).unwrap();
 
         // PPM origin is bottom left.
-        for gy in (0..self.dimensions.1).into_iter().rev() {
+        for gy in (0..self.dimensions.1).rev() {
             for gx in 0..self.dimensions.0 {
                 let pixel = self.pixels[gy * self.dimensions.0 + gx];
                 writer.write_all(&pixel[..]).unwrap();
@@ -188,7 +200,7 @@ impl Image<[u8; 4]> {
     }
 }
 
-fn decompress_dxt1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
+fn decompress_bc1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
     assert_eq!(dds::Format::BC1_UNORM_RGB, dds.header.pixel_format);
 
     dds.layers
@@ -202,13 +214,13 @@ fn decompress_dxt1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
 
             let blocks = unsafe {
                 assert_eq!(
-                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::dxt1::Block>(),
+                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::bc1::Block>(),
                     layer.byte_count
                 );
 
                 std::slice::from_raw_parts(
                     dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr()
-                        as *const dds::dxt1::Block,
+                        as *const dds::bc1::Block,
                     block_counts.0 * block_counts.1,
                 )
             };
@@ -243,7 +255,68 @@ fn decompress_dxt1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
         .collect()
 }
 
-fn decompress_dxt3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
+fn decompress_bc2(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
+    assert_eq!(dds::Format::BC2_UNORM_RGBA, dds.header.pixel_format);
+
+    dds.layers
+        .iter()
+        .enumerate()
+        .map(|(layer_index, layer)| {
+            let w = layer.width as usize;
+            let h = layer.height as usize;
+
+            let block_counts = ((w + 3) / 4, (h + 3) / 4);
+
+            let blocks = unsafe {
+                assert_eq!(
+                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::bc2::Block>(),
+                    layer.byte_count
+                );
+
+                assert_eq!(
+                    0,
+                    dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr() as usize
+                        % std::mem::align_of::<dds::bc2::Block>(),
+                );
+
+                std::slice::from_raw_parts(
+                    dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr()
+                        as *const dds::bc2::Block,
+                    block_counts.0 * block_counts.1,
+                )
+            };
+
+            let mut pixels: Vec<[u8; 4]> = (0..(w * h)).into_iter().map(|_| [0; 4]).collect();
+
+            for by in 0..block_counts.1 {
+                for bx in 0..block_counts.0 {
+                    let block = blocks[by * block_counts.0 + bx].to_rgba_8888();
+                    for ly in 0..4 {
+                        let gy = by * 4 + ly;
+                        if gy >= h {
+                            continue;
+                        }
+                        for lx in 0..4 {
+                            let gx = bx * 4 + lx;
+                            if gx >= w {
+                                continue;
+                            }
+
+                            pixels[gy * w + gx] = block[ly][lx].to_bytes();
+                        }
+                    }
+                }
+            }
+
+            Image {
+                dimensions: (w, h),
+                pixels,
+            }
+        })
+        .collect()
+}
+
+fn decompress_bc3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
     assert_eq!(dds::Format::BC3_UNORM_RGBA, dds.header.pixel_format);
 
     dds.layers
@@ -257,19 +330,19 @@ fn decompress_dxt3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
 
             let blocks = unsafe {
                 assert_eq!(
-                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::dxt3::Block>(),
+                    block_counts.0 * block_counts.1 * std::mem::size_of::<dds::bc3::Block>(),
                     layer.byte_count
                 );
 
                 assert_eq!(
                     0,
                     dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr() as usize
-                        % std::mem::align_of::<dds::dxt3::Block>(),
+                        % std::mem::align_of::<dds::bc3::Block>(),
                 );
 
                 std::slice::from_raw_parts(
                     dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)].as_ptr()
-                        as *const dds::dxt3::Block,
+                        as *const dds::bc3::Block,
                     block_counts.0 * block_counts.1,
                 )
             };
