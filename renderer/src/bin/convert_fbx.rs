@@ -1,5 +1,6 @@
 use cgmath::*;
 use renderer::scene_file::*;
+use std::convert::TryFrom;
 use std::fs;
 use std::io;
 use std::path;
@@ -193,12 +194,17 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             .collect(),
     };
 
+    let mut geometry_to_mesh_indices: Vec<Vec<u32>> = Vec::new();
+
     for geometry in root.objects.geometries.iter() {
         assert_eq!(0, geometry.vertices.len() % 3);
 
         // Initialize with best-guess capacity.
         let mut vertices = Vec::<Vertex>::with_capacity(geometry.vertices.len() / 3);
-        let mut triangles = Vec::<[u32; 3]>::with_capacity(geometry.polygon_vertex_index.len() / 3);
+
+        // NOTE(mickvangelderen): Support up to 4 material layers.
+        let mut triangles_vec = Vec::new();
+
         let mut vertex_map = HashMap::<Vertex, u32>::new();
 
         let mut count = 0;
@@ -271,6 +277,28 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 None => [FiniteF32::new(0.0).unwrap(), FiniteF32::new(0.0).unwrap()],
             };
 
+            let mtl = match geometry.layers[0].materials.as_ref() {
+                Some(attribute) => {
+                    let index = match attribute.mapping {
+                        AttributeMapping::ByPolygon => polygon_index as usize,
+                        AttributeMapping::ByVertex => vertex_index as usize,
+                        AttributeMapping::ByPolygonVertex => polygon_vertex_index as usize,
+                        AttributeMapping::AllSame => 0,
+                        _ => unimplemented!(),
+                    };
+
+                    let index = match attribute.indices.as_ref() {
+                        Some(indices) => indices[index] as usize,
+                        None => index,
+                    };
+
+                    attribute.elements[index]
+                }
+                None => panic!("No material assigned"),
+            };
+
+            let mtl = u32::try_from(mtl).unwrap();
+
             let vertex = Vertex {
                 pos_in_obj,
                 nor_in_obj,
@@ -297,7 +325,10 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             }
 
             if count == 3 {
-                triangles.push(triangle);
+                while mtl + 1 < triangles_map.len() {
+                    triangles_map.push(Vec::<[u32; 3]>::with_capacity(geometry.polygon_vertex_index.len() / 3));
+                }
+                triangles_map[mtl].push(triangle);
             }
 
             if should_reset {
@@ -307,16 +338,27 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             }
         }
 
-        file.mesh_descriptions.push(MeshDescription {
-            index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
-            vertex_offset: file.pos_in_obj_buffer.len() as u32,
-            element_count: (triangles.len() * 3) as u32,
-        });
+        let mut mesh_indices = Vec::new();
+        for (&mtl, triangles) in triangles_map.iter() {
+            let mesh_index = file.mesh_descriptions.len() as u32;
+
+            mesh_indices.push(mesh_index);
+
+            file.mesh_descriptions.push(MeshDescription {
+                index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
+                vertex_offset: file.pos_in_obj_buffer.len() as u32,
+                element_count: (triangles.len() * 3) as u32,
+                material_layer: mtl,
+            });
+
+            file.triangle_buffer.extend(triangles);
+        }
+
+        geometry_to_mesh_indices.push(mesh_indices);
 
         file.pos_in_obj_buffer.extend(vertices.iter().map(|v| v.pos_in_obj));
         file.nor_in_obj_buffer.extend(vertices.iter().map(|v| v.nor_in_obj));
         file.pos_in_tex_buffer.extend(vertices.iter().map(|v| v.pos_in_tex));
-        file.triangle_buffer.extend(triangles);
     }
 
     use fbx::dom::TypedIndex;
