@@ -1,21 +1,37 @@
+//! let M_a = 2^a - 1
+//! Mapping [0, M_a] to [0.0, 1.0] we get f_a(n_a) = n_a / M_a
+//! n_a / M_a = n_b / M_b
+//! n_b = n_a * M_b / M_a
+//!
+//! Now to round the computation of n_b rather than floor.
+//! n_b = floor(n_a * M_b / M_a + 1/2)
+//! n_b = floor((n_a * 2 * M_b + M_a) / (2 * M_a))
+
+/// Mersenne prime: 2^bits - 1.
+macro_rules! M {
+    ($bits: expr) => {
+        ((1 << $bits) - 1)
+    };
+}
+
 #[inline]
 pub fn u5_to_u8(n5: u8) -> u8 {
-    ((n5 as u16 * 255) / 31) as u8
+    ((n5 as u16 * 2 * M!(8) + M!(5)) / (2 * M!(5))) as u8
 }
 
 #[inline]
 pub fn u8_to_u5(n8: u8) -> u8 {
-    ((n8 as u16 * 31 + 30) / 255) as u8
+    ((n8 as u16 * 2 * M!(5) + M!(8)) / (2 * M!(8))) as u8
 }
 
 #[inline]
 pub fn u6_to_u8(n6: u8) -> u8 {
-    ((n6 as u16 * 255) / 63) as u8
+    ((n6 as u16 * 2 * M!(8) + M!(6)) / (2 * M!(6))) as u8
 }
 
 #[inline]
 pub fn u8_to_u6(n8: u8) -> u8 {
-    ((n8 as u16 * 63 + 62) / 255) as u8
+    ((n8 as u16 * 2 * M!(6) + M!(8)) / (2 * M!(8))) as u8
 }
 
 #[inline]
@@ -77,7 +93,7 @@ impl RGB_888 {
 
     #[inline]
     pub fn from_bytes(bytes: [u8; 3]) -> Self {
-        let [ r, g, b ] = bytes;
+        let [r, g, b] = bytes;
         Self { r, g, b }
     }
 
@@ -105,7 +121,7 @@ impl RGBA_8888 {
 
     #[inline]
     pub fn from_bytes(bytes: [u8; 4]) {
-        let [ r, g, b, a ] = bytes;
+        let [r, g, b, a] = bytes;
         Self { r, g, b, a };
     }
 
