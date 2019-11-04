@@ -95,36 +95,36 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
                 let mut reader = std::io::BufReader::new(file);
                 let dds = dds::File::parse(&mut reader).unwrap();
                 match dds.header.pixel_format {
-                    // dds::Format::BC1_UNORM_RGB => {
-                    //     println!(
-                    //         "Decompressing {:?} which has format {:?}",
-                    //         &file_path, dds.header.pixel_format
-                    //     );
-                    //     let layers = decompress_bc1(&dds);
-                    //     for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
-                    //         let out_file_path = file_path.parent().unwrap().join(format!(
-                    //             "{}.{}.ppm",
-                    //             file_path.file_stem().unwrap().to_str().unwrap(),
-                    //             layer_index
-                    //         ));
-                    //         layer.write_ppm(&out_file_path);
-                    //     }
-                    // }
-                    // dds::Format::BC2_UNORM_RGBA => {
-                    //     println!(
-                    //         "Decompressing {:?} which has format {:?}",
-                    //         &file_path, dds.header.pixel_format
-                    //     );
-                    //     let layers = decompress_bc2(&dds);
-                    //     for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
-                    //         let out_file_path = file_path.parent().unwrap().join(format!(
-                    //             "{}.{}.bmp",
-                    //             file_path.file_stem().unwrap().to_str().unwrap(),
-                    //             layer_index
-                    //         ));
-                    //         layer.write_bmp(&out_file_path);
-                    //     }
-                    // }
+                    dds::Format::BC1_UNORM_RGB => {
+                        println!(
+                            "Decompressing {:?} which has format {:?}",
+                            &file_path, dds.header.pixel_format
+                        );
+                        let layers = decompress_bc1(&dds);
+                        for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
+                            let out_file_path = file_path.parent().unwrap().join(format!(
+                                "{}.{}.ppm",
+                                file_path.file_stem().unwrap().to_str().unwrap(),
+                                layer_index
+                            ));
+                            layer.write_ppm(&out_file_path);
+                        }
+                    }
+                    dds::Format::BC2_UNORM_RGBA => {
+                        println!(
+                            "Decompressing {:?} which has format {:?}",
+                            &file_path, dds.header.pixel_format
+                        );
+                        let layers = decompress_bc2(&dds);
+                        for (layer_index, layer) in layers.iter().enumerate().skip(1).take(1) {
+                            let out_file_path = file_path.parent().unwrap().join(format!(
+                                "{}.{}.bmp",
+                                file_path.file_stem().unwrap().to_str().unwrap(),
+                                layer_index
+                            ));
+                            layer.write_bmp(&out_file_path);
+                        }
+                    }
                     dds::Format::BC3_UNORM_RGBA => {
                         println!(
                             "Decompressing {:?} which has format {:?}",
@@ -173,7 +173,7 @@ impl Image<[u8; 3]> {
         write!(&mut writer, "P6 {} {} 255\n", self.dimensions.0, self.dimensions.1).unwrap();
 
         // PPM origin is bottom left.
-        for gy in (0..self.dimensions.1).rev() {
+        for gy in 0..self.dimensions.1 {
             for gx in 0..self.dimensions.0 {
                 let pixel = self.pixels[gy * self.dimensions.0 + gx];
                 writer.write_all(&pixel[..]).unwrap();
