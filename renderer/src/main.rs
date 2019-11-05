@@ -4,6 +4,9 @@
 #[macro_use]
 mod macros;
 
+#[macro_use]
+extern crate dds;
+
 pub(crate) use gl_typed as gl;
 pub(crate) use log::*;
 pub(crate) use rand::prelude::*;
@@ -14,12 +17,13 @@ pub(crate) use std::convert::{TryFrom, TryInto};
 pub(crate) use std::num::{NonZeroU32, NonZeroU64};
 pub(crate) use std::time::Instant;
 
-mod cube_mesh;
 mod basic_renderer;
 mod bmp;
 pub mod cgmath_ext;
 mod cls;
 pub mod color;
+mod cube_mesh;
+mod dds_ext;
 mod depth_renderer;
 mod filters;
 mod frame_downloader;
@@ -45,6 +49,7 @@ mod window_mode;
 
 use self::cgmath_ext::*;
 use self::cls::*;
+use self::dds_ext::*;
 use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
