@@ -18,7 +18,7 @@ in vec2 fs_pos_in_tex;
 layout(location = 0) out vec4 frag_color;
 
 vec3 sample_nor_in_tan(vec2 pos_in_tex) {
-  vec2 xy = texture(normal_sampler, pos_in_tex).xy;
+  vec2 xy = texture(normal_sampler, pos_in_tex).xy * 2.0 - vec2(1.0);
   float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));
   return vec3(xy, z);
 }
@@ -96,10 +96,10 @@ void main() {
   // Hacky tone-map
   frag_color = vec4(Lo, 1.0);
 
-  frag_color = vec4(frag_nor_in_obj * 0.5 + 0.5, 1.0);
-  frag_color = vec4(frag_bin_in_obj * 0.5 + 0.5, 1.0);
-  frag_color = vec4(frag_tan_in_obj * 0.5 + 0.5, 1.0);
-  frag_color = vec4(frag_nor_in_tan, 1.0);
+  // frag_color = vec4(frag_nor_in_obj * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_bin_in_obj * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_tan_in_obj * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_nor_in_tan * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_pos_in_tex, 0.0, 1.0);
 
