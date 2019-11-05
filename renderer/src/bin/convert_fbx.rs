@@ -322,7 +322,10 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 None => panic!("No material assigned"),
             };
 
-            assert!(material_layer < 16, "Hit artificial limit of 16 material layers per geometry");
+            assert!(
+                material_layer < 16,
+                "Hit artificial limit of 16 material layers per geometry"
+            );
 
             while mesh_builders.len() <= material_layer as usize {
                 mesh_builders.push(MeshBuilder::default());
@@ -352,6 +355,13 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             }
         }
 
+        println!(
+            "Geometry {} has {} material layers and {} geometry layers",
+            geometry.id,
+            mesh_builders.len(),
+            geometry.layers.len()
+        );
+
         let mut mesh_indices = Vec::new();
 
         for mesh_builder in mesh_builders {
@@ -378,7 +388,7 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 
     use fbx::dom::TypedIndex;
 
-    let mut model_index_to_instance_indices: Vec<Vec<usize>> = Vec::new();
+    let mut model_index_to_instance_indices: Vec<(Vec<usize>, usize)> = Vec::new();
 
     for &oo in root.connections.oo.iter() {
         match oo {
@@ -397,9 +407,9 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             }
             (TypedIndex::Geometry(geometry_index), TypedIndex::Model(model_index)) => {
                 while model_index_to_instance_indices.len() <= model_index as usize {
-                    model_index_to_instance_indices.push(Default::default());
+                    model_index_to_instance_indices.push((Default::default(), 0));
                 }
-                let instances = &mut model_index_to_instance_indices[model_index];
+                let (ref mut instances, _) = model_index_to_instance_indices[model_index];
 
                 for &mesh_index in geometry_index_to_mesh_indices[usize::try_from(geometry_index).unwrap()].iter() {
                     instances.push(file.instances.len());
@@ -422,11 +432,11 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
     for &oo in root.connections.oo.iter() {
         match oo {
             (TypedIndex::Material(material_index), TypedIndex::Model(model_index)) => {
-                let instances = &model_index_to_instance_indices[model_index as usize];
-                for &instance_index in instances {
-                    file.instances[instance_index].material_index =
-                        Some(NonMaxU32::new(u32::try_from(material_index).unwrap()).unwrap());
-                }
+                let (ref instance_indices, ref mut counter) = model_index_to_instance_indices[model_index as usize];
+                let instance_index = instance_indices[*counter];
+                *counter += 1;
+                file.instances[instance_index].material_index =
+                    Some(NonMaxU32::new(u32::try_from(material_index).unwrap()).unwrap());
             }
             _ => {
                 // Don't care.
