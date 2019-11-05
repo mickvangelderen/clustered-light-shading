@@ -1,9 +1,9 @@
 use cgmath::*;
 use renderer::scene_file::*;
-use std::convert::TryFrom;
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 use std::fs;
 use std::io;
-use std::path;
 use std::path::Path;
 
 pub trait ModelExt {
@@ -66,9 +66,34 @@ impl ModelExt for fbx::dom::Model {
     }
 }
 
-use std::collections::HashMap;
+pub type Triangle = [u32; 3];
 
-fn read(path: impl AsRef<path::Path>) -> io::Result<fbx::tree::File> {
+#[derive(Default)]
+pub struct MeshBuilder {
+    vertices: Vec<Vertex>,
+    vertex_to_index: HashMap<Vertex, u32>,
+    triangles: Vec<Triangle>,
+}
+
+impl MeshBuilder {
+    pub fn insert_vertex(&mut self, vertex: Vertex) -> u32 {
+        match self.vertex_to_index.get(&vertex) {
+            Some(&index) => index,
+            None => {
+                let index = u32::try_from(self.vertices.len()).unwrap();
+                self.vertices.push(vertex);
+                self.vertex_to_index.insert(vertex, index);
+                index
+            }
+        }
+    }
+
+    pub fn push_triangle(&mut self, triangle: Triangle) {
+        self.triangles.push(triangle);
+    }
+}
+
+fn read(path: impl AsRef<Path>) -> io::Result<fbx::tree::File> {
     let mut reader = io::BufReader::new(fs::File::open(path)?);
     fbx::tree::File::parse(&mut reader)
 }
@@ -194,18 +219,12 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             .collect(),
     };
 
-    let mut geometry_to_mesh_indices: Vec<Vec<u32>> = Vec::new();
+    let mut geometry_index_to_mesh_indices: Vec<Vec<u32>> = Vec::new();
 
     for geometry in root.objects.geometries.iter() {
         assert_eq!(0, geometry.vertices.len() % 3);
 
-        // Initialize with best-guess capacity.
-        let mut vertices = Vec::<Vertex>::with_capacity(geometry.vertices.len() / 3);
-
-        // NOTE(mickvangelderen): Support up to 4 material layers.
-        let mut triangles_vec = Vec::new();
-
-        let mut vertex_map = HashMap::<Vertex, u32>::new();
+        let mut mesh_builders: Vec<MeshBuilder> = Vec::new();
 
         let mut count = 0;
         let mut triangle = [0u32; 3];
@@ -277,7 +296,13 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 None => [FiniteF32::new(0.0).unwrap(), FiniteF32::new(0.0).unwrap()],
             };
 
-            let mtl = match geometry.layers[0].materials.as_ref() {
+            let vertex = Vertex {
+                pos_in_obj,
+                nor_in_obj,
+                pos_in_tex,
+            };
+
+            let material_layer: u32 = match geometry.layers[0].materials.as_ref() {
                 Some(attribute) => {
                     let index = match attribute.mapping {
                         AttributeMapping::ByPolygon => polygon_index as usize,
@@ -292,43 +317,32 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                         None => index,
                     };
 
-                    attribute.elements[index]
+                    attribute.elements[index].try_into().unwrap()
                 }
                 None => panic!("No material assigned"),
             };
 
-            let mtl = u32::try_from(mtl).unwrap();
+            assert!(material_layer < 16, "Hit artificial limit of 16 material layers per geometry");
 
-            let vertex = Vertex {
-                pos_in_obj,
-                nor_in_obj,
-                pos_in_tex,
-            };
+            while mesh_builders.len() <= material_layer as usize {
+                mesh_builders.push(MeshBuilder::default());
+            }
 
-            let deduplicated_vertex_index = match vertex_map.get(&vertex) {
-                Some(&index) => index,
-                None => {
-                    let index = vertices.len() as u32;
-                    vertices.push(vertex);
-                    vertex_map.insert(vertex, index);
-                    index
-                }
-            };
+            let mesh_builder = &mut mesh_builders[material_layer as usize];
+
+            let vertex_index = mesh_builder.insert_vertex(vertex);
 
             // Triangulate.
             if count < 3 {
-                triangle[count] = deduplicated_vertex_index;
+                triangle[count] = vertex_index;
                 count += 1;
             } else {
                 triangle[1] = triangle[2];
-                triangle[2] = deduplicated_vertex_index;
+                triangle[2] = vertex_index;
             }
 
             if count == 3 {
-                while mtl + 1 < triangles_map.len() {
-                    triangles_map.push(Vec::<[u32; 3]>::with_capacity(geometry.polygon_vertex_index.len() / 3));
-                }
-                triangles_map[mtl].push(triangle);
+                mesh_builder.push_triangle(triangle);
             }
 
             if should_reset {
@@ -339,36 +353,39 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
         }
 
         let mut mesh_indices = Vec::new();
-        for (&mtl, triangles) in triangles_map.iter() {
-            let mesh_index = file.mesh_descriptions.len() as u32;
 
+        for mesh_builder in mesh_builders {
+            let mesh_index = file.mesh_descriptions.len() as u32;
             mesh_indices.push(mesh_index);
 
             file.mesh_descriptions.push(MeshDescription {
                 index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
                 vertex_offset: file.pos_in_obj_buffer.len() as u32,
-                element_count: (triangles.len() * 3) as u32,
-                material_layer: mtl,
+                element_count: (mesh_builder.triangles.len() * 3) as u32,
             });
 
-            file.triangle_buffer.extend(triangles);
+            file.pos_in_obj_buffer
+                .extend(mesh_builder.vertices.iter().map(|v| v.pos_in_obj));
+            file.nor_in_obj_buffer
+                .extend(mesh_builder.vertices.iter().map(|v| v.nor_in_obj));
+            file.pos_in_tex_buffer
+                .extend(mesh_builder.vertices.iter().map(|v| v.pos_in_tex));
+            file.triangle_buffer.extend(mesh_builder.triangles);
         }
 
-        geometry_to_mesh_indices.push(mesh_indices);
-
-        file.pos_in_obj_buffer.extend(vertices.iter().map(|v| v.pos_in_obj));
-        file.nor_in_obj_buffer.extend(vertices.iter().map(|v| v.nor_in_obj));
-        file.pos_in_tex_buffer.extend(vertices.iter().map(|v| v.pos_in_tex));
+        geometry_index_to_mesh_indices.push(mesh_indices);
     }
 
     use fbx::dom::TypedIndex;
 
-    for oo in root.connections.oo.iter() {
-        match oo.0 {
-            TypedIndex::Model(child_index) => {
-                let parent_index = match oo.1 {
+    let mut model_index_to_instance_indices: Vec<Vec<usize>> = Vec::new();
+
+    for &oo in root.connections.oo.iter() {
+        match oo {
+            (TypedIndex::Model(child_index), parent) => {
+                let parent_index = match parent {
                     TypedIndex::Root => 0,
-                    TypedIndex::Model(index) => index as u32 + 1,
+                    TypedIndex::Model(index) => u32::try_from(index + 1).unwrap(),
                     _ => {
                         panic!("Didn't expect this relation {:?}", oo);
                     }
@@ -378,42 +395,42 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                     child_index: child_index as u32,
                 });
             }
-            TypedIndex::Geometry(geometry_index) => match oo.1 {
-                TypedIndex::Model(model_index) => {
+            (TypedIndex::Geometry(geometry_index), TypedIndex::Model(model_index)) => {
+                while model_index_to_instance_indices.len() <= model_index as usize {
+                    model_index_to_instance_indices.push(Default::default());
+                }
+                let instances = &mut model_index_to_instance_indices[model_index];
+
+                for &mesh_index in geometry_index_to_mesh_indices[usize::try_from(geometry_index).unwrap()].iter() {
+                    instances.push(file.instances.len());
                     file.instances.push(Instance {
-                        mesh_index: geometry_index as u32,
+                        mesh_index,
                         transform_index: model_index as u32 + 1,
                         material_index: None,
                     });
                 }
-                _ => {
-                    panic!("Didn't expect this relation {:?}", oo);
-                }
-            },
-            TypedIndex::Material(_) => match oo.1 {
-                TypedIndex::Model(_) => {
-                    // Will handle later.
-                }
-                _ => {
-                    panic!("Didn't expect this relation {:?}", oo);
-                }
-            },
+            }
+            (TypedIndex::Material(_), TypedIndex::Model(_)) => {
+                // Will handle later.
+            }
             _ => {
                 println!("Unhandled connection {:?}", oo);
             }
         }
     }
 
-    for oo in root.connections.oo.iter() {
-        if let (TypedIndex::Material(material_index), TypedIndex::Model(model_index)) = *oo {
-            let instance = file
-                .instances
-                .iter_mut()
-                .find(|instance| instance.transform_index == model_index as u32 + 1)
-                .unwrap();
-            // FIXME: Handle multiple materials.
-            // assert!(instance.material_index.is_none());
-            instance.material_index = Some(NonMaxU32::new(material_index as u32).unwrap());
+    for &oo in root.connections.oo.iter() {
+        match oo {
+            (TypedIndex::Material(material_index), TypedIndex::Model(model_index)) => {
+                let instances = &model_index_to_instance_indices[model_index as usize];
+                for &instance_index in instances {
+                    file.instances[instance_index].material_index =
+                        Some(NonMaxU32::new(u32::try_from(material_index).unwrap()).unwrap());
+                }
+            }
+            _ => {
+                // Don't care.
+            }
         }
     }
 

@@ -29,7 +29,6 @@ pub struct MeshDescription {
     pub index_byte_offset: u64,
     pub vertex_offset: u32,
     pub element_count: u32,
-    pub material_layer: u32,
 }
 
 #[derive(Debug)]
