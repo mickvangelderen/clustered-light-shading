@@ -20,6 +20,8 @@ impl NonMaxU32 {
 pub struct Vertex {
     pub pos_in_obj: [FiniteF32; 3],
     pub nor_in_obj: [FiniteF32; 3],
+    pub bin_in_obj: [FiniteF32; 3],
+    pub tan_in_obj: [FiniteF32; 3],
     pub pos_in_tex: [FiniteF32; 2],
 }
 
@@ -103,6 +105,8 @@ pub struct SceneFile {
     pub mesh_descriptions: Vec<MeshDescription>,
     pub pos_in_obj_buffer: Vec<[FiniteF32; 3]>,
     pub nor_in_obj_buffer: Vec<[FiniteF32; 3]>,
+    pub bin_in_obj_buffer: Vec<[FiniteF32; 3]>,
+    pub tan_in_obj_buffer: Vec<[FiniteF32; 3]>,
     pub pos_in_tex_buffer: Vec<[FiniteF32; 2]>,
     pub triangle_buffer: Vec<Triangle>,
     pub transforms: Vec<Transform>,
@@ -134,6 +138,8 @@ impl SceneFile {
 
         assert_eq!(vertex_count, self.pos_in_obj_buffer.len());
         assert_eq!(vertex_count, self.nor_in_obj_buffer.len());
+        assert_eq!(vertex_count, self.bin_in_obj_buffer.len());
+        assert_eq!(vertex_count, self.tan_in_obj_buffer.len());
         assert_eq!(vertex_count, self.pos_in_tex_buffer.len());
 
         let mut string_bytes: Vec<u8> = Vec::new();
@@ -173,6 +179,8 @@ impl SceneFile {
             write_vec(&self.mesh_descriptions, writer)?;
             write_vec(&self.pos_in_obj_buffer, writer)?;
             write_vec(&self.nor_in_obj_buffer, writer)?;
+            write_vec(&self.bin_in_obj_buffer, writer)?;
+            write_vec(&self.tan_in_obj_buffer, writer)?;
             write_vec(&self.pos_in_tex_buffer, writer)?;
             write_vec(&self.triangle_buffer, writer)?;
             write_vec(&self.transforms, writer)?;
@@ -200,6 +208,8 @@ impl SceneFile {
             let mesh_descriptions = read_vec::<MeshDescription, _>(header.mesh_count as usize, reader)?;
             let pos_in_obj_buffer = read_vec::<[FiniteF32; 3], _>(header.vertex_count as usize, reader)?;
             let nor_in_obj_buffer = read_vec::<[FiniteF32; 3], _>(header.vertex_count as usize, reader)?;
+            let bin_in_obj_buffer = read_vec::<[FiniteF32; 3], _>(header.vertex_count as usize, reader)?;
+            let tan_in_obj_buffer = read_vec::<[FiniteF32; 3], _>(header.vertex_count as usize, reader)?;
             let pos_in_tex_buffer = read_vec::<[FiniteF32; 2], _>(header.vertex_count as usize, reader)?;
             let triangle_buffer = read_vec::<Triangle, _>(header.triangle_count as usize, reader)?;
             let transforms = read_vec::<Transform, _>(header.transform_count as usize, reader)?;
@@ -225,6 +235,8 @@ impl SceneFile {
                 mesh_descriptions,
                 pos_in_obj_buffer,
                 nor_in_obj_buffer,
+                bin_in_obj_buffer,
+                tan_in_obj_buffer,
                 pos_in_tex_buffer,
                 triangle_buffer,
                 transforms,
@@ -237,7 +249,7 @@ impl SceneFile {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 #[repr(transparent)]
 pub struct FiniteF32(f32);
 
@@ -264,21 +276,3 @@ impl std::cmp::PartialEq for FiniteF32 {
 }
 
 impl std::cmp::Eq for FiniteF32 {}
-
-// #[repr(C)]
-// pub struct OpaqueDepthVertex {
-//     pub pos_in_obj: [f32; 3],
-// }
-
-// #[repr(C)]
-// pub struct MaskedDepthVertex {
-//     pub pos_in_obj: [f32; 3],
-//     pub pos_in_tex: [f32; 2],
-// }
-
-// #[repr(C)]
-// pub struct FullVertex {
-//     pub pos_in_obj: [f32; 3],
-//     pub nor_in_obj: [f32; 3],
-//     pub pos_in_tex: [f32; 2],
-// }
