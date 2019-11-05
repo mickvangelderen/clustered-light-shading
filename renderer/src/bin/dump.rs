@@ -2,16 +2,34 @@ use std::path::PathBuf;
 use std::io::Read;
 
 fn main() {
-    let file_path = PathBuf::from(std::env::args().skip(1).next().unwrap());
-    let file = std::fs::File::open(&file_path).unwrap();
-    let mut reader = std::io::BufReader::new(file);
+    let dir_path = PathBuf::from(std::env::args().skip(1).next().unwrap());
+    for entry in std::fs::read_dir(dir_path).unwrap() {
+        let file_path = entry.unwrap().path();
+        match file_path.extension().and_then(std::ffi::OsStr::to_str) {
+            Some("dds") => {
+                let file = std::fs::File::open(&file_path).unwrap();
+                let mut reader = std::io::BufReader::new(file);
+                let header = dds::RawFileHeader::parse(&mut reader).unwrap();
+                if header.mipmap_count.to_ne() == 0 {
+                    println!("{:?}", &file_path);
+                    println!("flags {:32b}", header.flags.to_ne());
+                    println!("caps0 {:32b}", header.caps0.0.to_ne());
+                    println!("caps1 {:32b}", header.caps1.0.to_ne());
 
-    let header: dds::FileHeader = dds::RawFileHeader::parse(&mut reader).unwrap().into();
-
-    dbg!(header);
+                    dbg!(&file_path, &header);
+                }
+            },
+            _ => {
+                // Ignore.
+            }
+        }
+    }
 
     return;
 
+}
+
+fn dump_bytes(mut reader: impl Read) {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).unwrap();
 

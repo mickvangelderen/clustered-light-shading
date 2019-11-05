@@ -27,15 +27,19 @@ macro_rules! buffer_binding_declaration {
 // Attribute locations.
 
 pub const VS_POS_IN_OBJ_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(0) };
-pub const VS_POS_IN_TEX_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(1) };
-pub const VS_NOR_IN_OBJ_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(2) };
+pub const VS_NOR_IN_OBJ_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(1) };
+pub const VS_BIN_IN_OBJ_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(2) };
+pub const VS_TAN_IN_OBJ_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(3) };
+pub const VS_POS_IN_TEX_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(4) };
 
 macro_rules! attribute_location_declaration {
     () => {
         r"
 #define VS_POS_IN_OBJ_LOC 0
-#define VS_POS_IN_TEX_LOC 1
-#define VS_NOR_IN_OBJ_LOC 2
+#define VS_NOR_IN_OBJ_LOC 1
+#define VS_BIN_IN_OBJ_LOC 2
+#define VS_TAN_IN_OBJ_LOC 3
+#define VS_POS_IN_TEX_LOC 4
 "
     };
 }

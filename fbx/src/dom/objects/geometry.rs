@@ -66,6 +66,33 @@ pub struct Attribute<E, I> {
     pub mapping: AttributeMapping,
 }
 
+impl<E, I> Attribute<E, I>
+where
+    I: std::convert::TryInto<usize> + Copy,
+    <I as std::convert::TryInto<usize>>::Error: std::fmt::Debug,
+{
+    pub fn select_polygon_vertex_index(&self, indices: &PolygonVertexIndices) -> usize {
+        let indirect_index = match self.mapping {
+            AttributeMapping::ByPolygon => indices.polygon_index,
+            AttributeMapping::ByVertex => indices.vertex_index,
+            AttributeMapping::ByPolygonVertex => indices.polygon_vertex_index,
+            AttributeMapping::ByEdge => panic!("Don't have edge index here"),
+            AttributeMapping::AllSame => 0,
+        };
+
+        match self.indices {
+            Some(ref indices) => indices[indirect_index].try_into().unwrap(),
+            None => indirect_index,
+        }
+    }
+}
+
+pub struct PolygonVertexIndices {
+    pub polygon_index: usize,
+    pub vertex_index: usize,
+    pub polygon_vertex_index: usize,
+}
+
 impl Geometry {
     pub fn from_fbx(node: &Node, stack: &mut Vec<String>) -> Self {
         stack.push(node.name.clone());

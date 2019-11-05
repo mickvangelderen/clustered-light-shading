@@ -42,8 +42,60 @@ pub struct RawFileHeader {
     pub mipmap_count: u32le,
     pub _reserved_0: [u32le; 11],
     pub pixel_format: RawPixelFormat,
-    pub caps: [u32le; 4],
+    pub caps0: Caps0,
+    pub caps1: Caps1,
+    pub caps2: u32le,
+    pub caps3: u32le,
     pub _reserved_1: u32le,
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Caps0(pub u32le);
+
+impl Caps0 {
+    const COMPLEX: u32le = u32le([0x08, 0x00, 0x00, 0x00]);
+    const TEXTURE: u32le = u32le([0x00, 0x10, 0x00, 0x00]);
+    const MIPMAP: u32le = u32le([0x00, 0x00, 0x40, 0x00]);
+
+    pub fn is_complex(&self) -> bool {
+        let v = self.0.to_ne();
+        let m = Self::COMPLEX.to_ne();
+        v & m == m
+    }
+
+    pub fn is_texture(&self) -> bool {
+        let v = self.0.to_ne();
+        let m = Self::TEXTURE.to_ne();
+        v & m == m
+    }
+
+    pub fn is_mipmap(&self) -> bool {
+        let v = self.0.to_ne();
+        let m = Self::MIPMAP.to_ne();
+        v & m == m
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Caps1(pub u32le);
+
+impl Caps1 {
+    const CUBEMAP: u32le = u32le([0x00, 0x02, 0x00, 0x00]);
+    // static const uint32_t kCaps2CubeMapPosXMask = 0x400;
+    // static const uint32_t kCaps2CubeMapNegXMask = 0x800;
+    // static const uint32_t kCaps2CubeMapPosYMask = 0x1000;
+    // static const uint32_t kCaps2CubeMapNegYMask = 0x2000;
+    // static const uint32_t kCaps2CubeMapPosZMask = 0x4000;
+    // static const uint32_t kCaps2CubeMapNegZMask = 0x8000;
+    // static const uint32_t kCaps2VolumeMask = 0x200000;
+
+    pub fn is_cubemap(&self) -> bool {
+        let v = self.0.to_ne();
+        let m = Self::CUBEMAP.to_ne();
+        v & m == m
+    }
 }
 
 impl RawFileHeader {
@@ -65,6 +117,7 @@ pub struct FileHeader {
     pub height: u32,
     pub depth: u32,
     pub mipmap_count: u32,
+    pub is_cubemap: bool,
     pub pixel_format: Format,
 }
 
@@ -74,6 +127,7 @@ impl From<RawFileHeader> for FileHeader {
         let width = header.width.to_ne();
         let height = header.height.to_ne();
         let depth = header.depth.to_ne();
+        let is_cubemap = header.caps1.is_cubemap();
         let pixel_format_flags = header.pixel_format.flags.to_ne();
 
         let pixel_format: Format = if pixel_format_flags & PixelFormatFlags::FOURCC == PixelFormatFlags::FOURCC {
@@ -105,6 +159,7 @@ impl From<RawFileHeader> for FileHeader {
             height,
             depth,
             mipmap_count,
+            is_cubemap,
             pixel_format,
         }
     }
@@ -142,21 +197,6 @@ pub mod fourcc {
     pub const YUY2: [u8; 4] = *b"YUY2";
 }
 
-// CompressedRed = COMPRESSED_RED,
-// CompressedRg = COMPRESSED_RG,
-// CompressedRgb = COMPRESSED_RGB,
-// CompressedRgba = COMPRESSED_RGBA,
-// CompressedSrgb = COMPRESSED_SRGB,
-// CompressedSrgbAlpha = COMPRESSED_SRGB_ALPHA,
-// CompressedRedRgtc1 = COMPRESSED_RED_RGTC1,
-// CompressedSignedRedRgtc1 = COMPRESSED_SIGNED_RED_RGTC1,
-// CompressedRgRgtc2 = COMPRESSED_RG_RGTC2,
-// CompressedSignedRgRgtc2 = COMPRESSED_SIGNED_RG_RGTC2,
-// CompressedRgbaBptcUnorm = COMPRESSED_RGBA_BPTC_UNORM,
-// CompressedSrgbAlphaBptcUnorm = COMPRESSED_SRGB_ALPHA_BPTC_UNORM,
-// CompressedRgbBptcSignedFloat = COMPRESSED_RGB_BPTC_SIGNED_FLOAT,
-// CompressedRgbBptcUnsignedFloat = COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT,
-
 pub struct PixelFormatFlags;
 
 impl PixelFormatFlags {
@@ -168,32 +208,6 @@ impl PixelFormatFlags {
     pub const LUMINANCE: u32 = 0x20000;
     pub const BUMP: u32 = 0x80000; // From falcor.
 }
-
-// from falcor
-// // Flags
-// static const uint32_t kCapsMask = 0x1;
-// static const uint32_t kHeightMask = 0x2;
-// static const uint32_t kWidthMask = 0x4;
-// static const uint32_t kPitchMask = 0x8;
-// static const uint32_t kPixelFormatMask = 0x1000;
-// static const uint32_t kMipCountMask = 0x20000;
-// static const uint32_t kLinearSizeMask = 0x80000;
-// static const uint32_t kDepthMask = 0x800000;
-
-// // Caps[0]
-// static const uint32_t kCapsComplexMask = 0x8;
-// static const uint32_t kCapsMipMapMask = 0x400000;
-// static const uint32_t kCapsTextureMask = 0x1000;
-
-// // Caps[1]
-// static const uint32_t kCaps2CubeMapMask = 0x200;
-// static const uint32_t kCaps2CubeMapPosXMask = 0x400;
-// static const uint32_t kCaps2CubeMapNegXMask = 0x800;
-// static const uint32_t kCaps2CubeMapPosYMask = 0x1000;
-// static const uint32_t kCaps2CubeMapNegYMask = 0x2000;
-// static const uint32_t kCaps2CubeMapPosZMask = 0x4000;
-// static const uint32_t kCaps2CubeMapNegZMask = 0x8000;
-// static const uint32_t kCaps2VolumeMask = 0x200000;
 
 pub enum ComponentType {
     FLOAT,
@@ -271,7 +285,7 @@ impl File {
             height: header.height,
         };
 
-        let layers: Vec<Layer> = (0..header.mipmap_count)
+        let layers: Vec<Layer> = (0..header.mipmap_count.max(1))
             .map({
                 let state = &mut state;
                 let pixel_format = &header.pixel_format;

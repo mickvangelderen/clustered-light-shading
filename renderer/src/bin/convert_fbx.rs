@@ -148,6 +148,8 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
         mesh_descriptions: Vec::new(),
         pos_in_obj_buffer: Vec::new(),
         nor_in_obj_buffer: Vec::new(),
+        bin_in_obj_buffer: Vec::new(),
+        tan_in_obj_buffer: Vec::new(),
         pos_in_tex_buffer: Vec::new(),
         triangle_buffer: Vec::new(),
         transforms: std::iter::once(renderer::scene_file::Transform {
@@ -247,19 +249,15 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 
             use fbx::dom::AttributeMapping;
 
+            let polygon_vertex_indices = fbx::dom::PolygonVertexIndices {
+                polygon_index,
+                vertex_index: vertex_index as usize,
+                polygon_vertex_index,
+            };
+
             let nor_in_obj = match geometry.layers[0].normals.as_ref() {
                 Some(attribute) => {
-                    let index = match attribute.mapping {
-                        AttributeMapping::ByPolygon => polygon_index as usize,
-                        AttributeMapping::ByVertex => vertex_index as usize,
-                        AttributeMapping::ByPolygonVertex => polygon_vertex_index as usize,
-                        _ => unimplemented!(),
-                    };
-
-                    let index = match attribute.indices.as_ref() {
-                        Some(indices) => indices[index] as usize,
-                        None => index,
-                    };
+                    let index = attribute.select_polygon_vertex_index(&polygon_vertex_indices);
 
                     [
                         FiniteF32::new(attribute.elements[index * 3 + 0] as f32).unwrap(),
@@ -267,38 +265,52 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                         FiniteF32::new(attribute.elements[index * 3 + 2] as f32).unwrap(),
                     ]
                 }
-                None => [
-                    FiniteF32::new(0.0).unwrap(),
-                    FiniteF32::new(0.0).unwrap(),
-                    FiniteF32::new(0.0).unwrap(),
-                ],
+                None => Default::default(),
+            };
+
+            let bin_in_obj = match geometry.layers[0].binormals.as_ref() {
+                Some(attribute) => {
+                    let index = attribute.select_polygon_vertex_index(&polygon_vertex_indices);
+
+                    [
+                        FiniteF32::new(attribute.elements[index * 3 + 0] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 3 + 1] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 3 + 2] as f32).unwrap(),
+                    ]
+                }
+                None => Default::default(),
+            };
+
+            let tan_in_obj = match geometry.layers[0].tangents.as_ref() {
+                Some(attribute) => {
+                    let index = attribute.select_polygon_vertex_index(&polygon_vertex_indices);
+
+                    [
+                        FiniteF32::new(attribute.elements[index * 3 + 0] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 3 + 1] as f32).unwrap(),
+                        FiniteF32::new(attribute.elements[index * 3 + 2] as f32).unwrap(),
+                    ]
+                }
+                None => Default::default(),
             };
 
             let pos_in_tex = match geometry.layers[0].uvs.as_ref() {
                 Some(attribute) => {
-                    let index = match attribute.mapping {
-                        AttributeMapping::ByPolygon => polygon_index as usize,
-                        AttributeMapping::ByVertex => vertex_index as usize,
-                        AttributeMapping::ByPolygonVertex => polygon_vertex_index as usize,
-                        _ => unimplemented!(),
-                    };
-
-                    let index = match attribute.indices.as_ref() {
-                        Some(indices) => indices[index] as usize,
-                        None => index,
-                    };
+                    let index = attribute.select_polygon_vertex_index(&polygon_vertex_indices);
 
                     [
                         FiniteF32::new(attribute.elements[index * 2 + 0] as f32).unwrap(),
                         FiniteF32::new(attribute.elements[index * 2 + 1] as f32).unwrap(),
                     ]
                 }
-                None => [FiniteF32::new(0.0).unwrap(), FiniteF32::new(0.0).unwrap()],
+                None => Default::default(),
             };
 
             let vertex = Vertex {
                 pos_in_obj,
                 nor_in_obj,
+                bin_in_obj,
+                tan_in_obj,
                 pos_in_tex,
             };
 
@@ -378,6 +390,10 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 .extend(mesh_builder.vertices.iter().map(|v| v.pos_in_obj));
             file.nor_in_obj_buffer
                 .extend(mesh_builder.vertices.iter().map(|v| v.nor_in_obj));
+            file.bin_in_obj_buffer
+                .extend(mesh_builder.vertices.iter().map(|v| v.bin_in_obj));
+            file.tan_in_obj_buffer
+                .extend(mesh_builder.vertices.iter().map(|v| v.tan_in_obj));
             file.pos_in_tex_buffer
                 .extend(mesh_builder.vertices.iter().map(|v| v.pos_in_tex));
             file.triangle_buffer.extend(mesh_builder.triangles);
