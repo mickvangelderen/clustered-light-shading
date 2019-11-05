@@ -4,8 +4,8 @@ rain_drop_max = 10000
 mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
-# scene_path = "bistro/Bistro_Exterior.bin"
-scene_path = "sun_temple/SunTemple.bin"
+scene_path = "bistro/Bistro_Exterior.bin"
+# scene_path = "sun_temple/SunTemple.bin"
 
 [record]
 path = "recording.bin"

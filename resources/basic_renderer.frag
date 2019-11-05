@@ -15,14 +15,17 @@ in vec2 fs_pos_in_tex;
 
 layout(location = 0) out vec4 frag_color;
 
+vec3 sample_nor_in_tan(vec2 pos_in_tex) {
+  vec2 xy = texture(normal_sampler, pos_in_tex).xy;
+  float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));
+  return vec3(xy, z);
+}
+
 void main() {
   vec3 frag_pos_in_lgt = fs_pos_in_lgt.xyz/fs_pos_in_lgt.w;
   vec3 frag_nor_in_obj = normalize(fs_nor_in_obj);
   vec2 frag_pos_in_tex = fs_pos_in_tex;
-
-  vec2 nxy = texture(normal_sampler, frag_pos_in_tex).xy;
-  float nz = sqrt(max(0.0, 1.0 - dot(nxy, nxy)));
-  vec3 frag_nor_in_tan = vec3(nxy, nz);
+  vec3 frag_nor_in_tan = sample_nor_in_tan(frag_pos_in_tex);
 
   vec4 ka = texture(ambient_sampler, frag_pos_in_tex);
   vec4 ke = texture(emissive_sampler, frag_pos_in_tex);
@@ -38,8 +41,10 @@ void main() {
   mat3 nor_from_obj_to_lgt = transpose(inverse(mat3(obj_to_wld)));
   mat3 tbn = cotangent_frame(frag_nor_in_obj, frag_pos_in_lgt, frag_pos_in_tex);
   vec3 frag_nor_in_lgt = normalize(nor_from_obj_to_lgt * tbn * frag_nor_in_tan);
+  frag_nor_in_lgt = normalize(nor_from_obj_to_lgt * frag_nor_in_obj);
 
-  vec3 frag_to_light_nor = normalize(vec3(0.1, 1.0, 0.2));
+  vec3 light_pos_in_lgt = (cam_to_wld * vec4(0.0, 0.5, -1.5, 1.0)).xyz;
+  vec3 frag_to_light_nor = normalize(light_pos_in_lgt - frag_pos_in_lgt);
   vec3 frag_reflect_nor = reflect(-frag_to_light_nor, frag_nor_in_lgt);
   vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
 
@@ -87,18 +92,12 @@ void main() {
   // Hacky tone-map
   frag_color = vec4(Lo, 1.0);
 
-  frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_nor_in_obj * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_pos_in_tex, 0.0, 1.0);
 
   // frag_color = vec4(ke.xyz, 1.0);
   // frag_color = vec4(ka.xyz, 1.0);
   // frag_color = vec4(kd.xyz, 1.0);
   // frag_color = vec4(ks.xyz, 1.0);
-
-  // Normals
-  // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
-
-  // Texture coordinates
-  // frag_color = vec4(frag_pos_in_tex * 0.5 + 0.5, 0.0, 1.0);
 }
 
