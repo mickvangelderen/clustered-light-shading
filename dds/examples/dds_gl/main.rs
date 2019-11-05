@@ -1,41 +1,16 @@
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate dds;
+
 mod bmp;
 
 use gl_typed as gl;
 use std::io;
 use std::path::Path;
 
-pub trait FormatExt {
-    fn to_gl_internal_format(&self) -> gl::InternalFormat;
-}
-
-macro_rules! impl_format {
-    ($(
-        ($Variant: ident, $gl_internal_format: expr),
-    )*) => {
-        impl FormatExt for dds::Format {#[inline] fn to_gl_internal_format(&self) -> gl::InternalFormat {
-                match *self {
-                    $(
-                        Self::$Variant => $gl_internal_format.into(),
-                    )*
-                }
-            }
-        }
-    }
-}
-
-impl_format! {
-    (BC1_UNORM_RGB,  gl::COMPRESSED_RGB_S3TC_DXT1_EXT ),
-    (BC1_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT),
-    (BC2_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT),
-    (BC3_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT),
-    (BC4_UNORM_R,    gl::COMPRESSED_RED_RGTC1         ),
-    (BC4_SNORM_R,    gl::COMPRESSED_SIGNED_RED_RGTC1  ),
-    (BC5_UNORM_RG,   gl::COMPRESSED_RG_RGTC2          ),
-    (BC5_SNORM_RG,   gl::COMPRESSED_SIGNED_RG_RGTC2   ),
-}
+dds_impl_gl_ext!();
 
 fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
     let file_path = file_path.as_ref();

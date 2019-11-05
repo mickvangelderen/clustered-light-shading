@@ -3,10 +3,10 @@
 use belene::*;
 use std::io;
 
-pub mod color;
 pub mod bc1;
 pub mod bc2;
 pub mod bc3;
+pub mod color;
 
 /// Pixel information as represented in the DDS file
 ///
@@ -303,4 +303,38 @@ impl File {
 
         Ok(Self { header, layers, bytes })
     }
+}
+
+#[macro_export]
+macro_rules! dds_impl_gl_ext {
+    () => {
+        pub trait FormatExt {
+            fn to_gl_internal_format(&self) -> gl::InternalFormat;
+        }
+
+        $crate::dds_impl_gl_ext!(@format {
+            (BC1_UNORM_RGB,  gl::COMPRESSED_RGB_S3TC_DXT1_EXT ),
+            (BC1_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT),
+            (BC2_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT),
+            (BC3_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT),
+            (BC4_UNORM_R,    gl::COMPRESSED_RED_RGTC1         ),
+            (BC4_SNORM_R,    gl::COMPRESSED_SIGNED_RED_RGTC1  ),
+            (BC5_UNORM_RG,   gl::COMPRESSED_RG_RGTC2          ),
+            (BC5_SNORM_RG,   gl::COMPRESSED_SIGNED_RG_RGTC2   ),
+        });
+    };
+    (@format {$(
+         ($Variant: ident, $gl_internal_format: expr),
+    )*}) => {
+        impl FormatExt for $crate::Format {
+            #[inline]
+            fn to_gl_internal_format(&self) -> gl::InternalFormat {
+                match *self {
+                    $(
+                        Self::$Variant => $gl_internal_format.into(),
+                    )*
+                }
+            }
+        }
+    };
 }
