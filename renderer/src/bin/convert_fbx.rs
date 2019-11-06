@@ -381,9 +381,10 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             mesh_indices.push(mesh_index);
 
             file.mesh_descriptions.push(MeshDescription {
-                index_byte_offset: std::mem::size_of_val(&file.triangle_buffer[..]) as u64,
+                triangle_offset: file.triangle_buffer.len() as u32,
+                triangle_count: mesh_builder.triangles.len() as u32,
                 vertex_offset: file.pos_in_obj_buffer.len() as u32,
-                element_count: (mesh_builder.triangles.len() * 3) as u32,
+                vertex_count: mesh_builder.vertices.len() as u32,
             });
 
             file.pos_in_obj_buffer

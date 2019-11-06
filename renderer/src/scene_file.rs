@@ -28,9 +28,20 @@ pub struct Vertex {
 #[derive(Debug)]
 #[repr(C)]
 pub struct MeshDescription {
-    pub index_byte_offset: u64,
+    pub triangle_offset: u32,
+    pub triangle_count: u32,
     pub vertex_offset: u32,
-    pub element_count: u32,
+    pub vertex_count: u32,
+}
+
+impl MeshDescription {
+    pub fn element_byte_offset(&self) -> usize {
+        self.triangle_offset as usize * std::mem::size_of::<Triangle>()
+    }
+
+    pub fn element_count(&self) -> u32 {
+        self.triangle_count * 3
+    }
 }
 
 #[derive(Debug)]
@@ -254,12 +265,18 @@ impl SceneFile {
 pub struct FiniteF32(f32);
 
 impl FiniteF32 {
+    #[inline]
     pub fn new(val: f32) -> Option<Self> {
         if val.is_finite() {
             Some(Self(val))
         } else {
             None
         }
+    }
+
+    #[inline]
+    pub fn get(&self) -> f32 {
+        self.0
     }
 }
 

@@ -133,9 +133,9 @@ impl Context<'_> {
 
                     gl.draw_elements_base_vertex(
                         gl::TRIANGLES,
-                        mesh_description.element_count,
+                        mesh_description.element_count(),
                         gl::UNSIGNED_INT,
-                        mesh_description.index_byte_offset as usize,
+                        mesh_description.element_byte_offset(),
                         mesh_description.vertex_offset,
                     );
                 }
