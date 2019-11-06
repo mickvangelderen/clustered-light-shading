@@ -10,10 +10,11 @@ layout(location = SPECULAR_SAMPLER_LOC) uniform sampler2D specular_sampler;
 layout(location = SHININESS_LOC) uniform float shininess;
 
 in vec4 fs_pos_in_lgt;
-in vec3 fs_nor_in_obj;
-in vec3 fs_bin_in_obj;
-in vec3 fs_tan_in_obj;
+in vec3 fs_nor_in_lgt;
+in vec3 fs_bin_in_lgt;
+in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
+flat in uint fs_instance_index;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -25,9 +26,9 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
 
 void main() {
   vec3 frag_pos_in_lgt = fs_pos_in_lgt.xyz/fs_pos_in_lgt.w;
-  vec3 frag_nor_in_obj = normalize(fs_nor_in_obj);
-  vec3 frag_bin_in_obj = normalize(fs_bin_in_obj);
-  vec3 frag_tan_in_obj = normalize(fs_tan_in_obj);
+  vec3 frag_nor_in_lgt = normalize(fs_nor_in_lgt);
+  vec3 frag_bin_in_lgt = normalize(fs_bin_in_lgt);
+  vec3 frag_tan_in_lgt = normalize(fs_tan_in_lgt);
   vec2 frag_pos_in_tex = fs_pos_in_tex;
   vec3 frag_nor_in_tan = sample_nor_in_tan(frag_pos_in_tex);
 
@@ -36,16 +37,14 @@ void main() {
   vec4 kd = pow(texture(diffuse_sampler, frag_pos_in_tex), vec4(2.2));
   vec4 ks = texture(specular_sampler, frag_pos_in_tex);
 
-  if (kd.a < 0.1) {
+  if (kd.a < 0.5) {
     discard;
   }
 
   // n = vec2(0.0);
 
-  mat3 nor_from_obj_to_lgt = transpose(inverse(mat3(obj_to_wld)));
   mat3 tbn = mat3(frag_tan_in_obj, frag_bin_in_obj, frag_nor_in_obj);
-  vec3 frag_nor_in_lgt = normalize(nor_from_obj_to_lgt * tbn * frag_nor_in_tan);
-  // frag_nor_in_lgt = normalize(nor_from_obj_to_lgt * frag_nor_in_obj);
+  vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
 
   vec3 light_pos_in_lgt = (cam_to_wld * vec4(0.0, 0.5, -1.5, 1.0)).xyz;
   vec3 frag_to_light_nor = normalize(light_pos_in_lgt - frag_pos_in_lgt);
@@ -96,9 +95,9 @@ void main() {
   // Hacky tone-map
   frag_color = vec4(Lo, 1.0);
 
-  // frag_color = vec4(frag_nor_in_obj * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_bin_in_obj * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_tan_in_obj * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_bin_in_lgt * 0.5 + 0.5, 1.0);
+  // frag_color = vec4(frag_tan_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_nor_in_tan * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_pos_in_tex, 0.0, 1.0);
