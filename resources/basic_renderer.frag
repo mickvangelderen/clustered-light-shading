@@ -14,7 +14,6 @@ in vec3 fs_nor_in_lgt;
 in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
-// flat in uint fs_instance_index;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -95,7 +94,6 @@ void main() {
   // Hacky tone-map
   frag_color = vec4(Lo, 1.0);
 
-  frag_color = vec4(1.0);
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_bin_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_tan_in_lgt * 0.5 + 0.5, 1.0);
