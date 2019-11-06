@@ -94,11 +94,59 @@ impl Context<'_> {
 
                 let scene_file = &self.resources.scene_file;
 
+                // let mut instance_matrices_buffer = Vec::new();
+                let mut opaque_draw_commands = HashMap::new();
+                let mut masked_draw_commands = HashMap::new();
+
+                #[derive(Debug)]
+                #[repr(C)]
+                pub struct InstanceMatrices {
+                    pub pos_from_obj_to_wld: Matrix4<f32>,
+                    pub pos_from_obj_to_lgt: Matrix4<f32>,
+                    pub nor_from_obj_to_lgt: Matrix4<f32>,
+                }
+
+                let instance_matrices_buffer = scene_file
+                    .instances
+                    .iter()
+                    .map(|instance| {
+                        let transform = &scene_file.transforms[instance.transform_index as usize];
+
+                        let pos_from_obj_to_wld = {
+                            Matrix4::from_translation(transform.translation.into())
+                                * Matrix4::from(Euler {
+                                    x: Deg(transform.rotation[0]),
+                                    y: Deg(transform.rotation[1]),
+                                    z: Deg(transform.rotation[2]),
+                                })
+                                * Matrix4::from_nonuniform_scale(
+                                    transform.scaling[0],
+                                    transform.scaling[1],
+                                    transform.scaling[2],
+                                );
+                        };
+
+                        let pos_from_obj_to_lgt = obj_to_wld;
+
+                        let nor_from_obj_to_lgt = pos_from_obj_to_lgt.invert().unwrap().transpose();
+
+                        InstanceMatrices {
+                            pos_from_obj_to_wld,
+                            pos_from_obj_to_lgt,
+                            nor_from_obj_to_lgt,
+                        }
+                    })
+                    .collect();
+
                 for instance in scene_file.instances.iter() {
-                    let transform = &scene_file.transforms[instance.transform_index as usize];
-                    let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
                     let material_index = instance.material_index.map(|n| n.get()).unwrap_or_default() as usize;
                     let material = &self.resources.materials[material_index];
+
+                    let draw_commands = if textures[material.diffuse_texture_index].has_alpha {
+                        &mut masked_draw_commands
+                    } else {
+                        &mut opaque_draw_commands
+                    };
 
                     if bound_material != Some(material_index) {
                         bound_material = Some(material_index);
@@ -131,6 +179,7 @@ impl Context<'_> {
                         );
                     }
 
+                    let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
                     gl.draw_elements_base_vertex(
                         gl::TRIANGLES,
                         mesh_description.element_count(),

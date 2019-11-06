@@ -22,6 +22,7 @@ pub struct Material {
 
 pub struct Texture {
     pub name: gl::TextureName,
+    pub has_alpha: bool,
 }
 
 #[allow(unused)]
@@ -47,29 +48,24 @@ pub struct Resources {
     pub cluster_element_count: u32,
 }
 
-fn rgba_f32_to_u8(rgba: [f32; 4]) -> [u8; 4] {
-    fn conv(mut val: f32) -> u8 {
-        assert!(val.is_finite());
-        val *= 255.0;
-        if val < 0.0 {
-            0
-        } else if val > 255.0 {
-            255
-        } else {
-            val as u8
-        }
+fn f32_to_unorm(val: f32) -> u8 {
+    assert!(val.is_finite());
+    let val = val * 255.0;
+    if val < 0.0 {
+        0
+    } else if val > 255.0 {
+        255
+    } else {
+        val as u8
     }
+}
 
-    [
-        conv(rgba[0]),
-        conv(rgba[1]),
-        conv(rgba[2]),
-        conv(rgba[3]),
-    ]
+fn f32_3_to_unorm(a: [f32; 3]) -> [u8; 3] {
+    [f32_to_unorm(a[0]), f32_to_unorm(a[1]), f32_to_unorm(a[2])]
 }
 
 #[inline]
-fn create_1x1_rgba_texture(gl: &gl::Gl, rgba: [u8; 4]) -> Texture {
+fn create_1x1_rgb_texture(gl: &gl::Gl, rgb: [u8; 3]) -> Texture {
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
 
@@ -78,13 +74,7 @@ fn create_1x1_rgba_texture(gl: &gl::Gl, rgba: [u8; 4]) -> Texture {
         let xoffset = 0;
         let yoffset = 0;
 
-        gl.texture_storage_2d(
-            name,
-            1,
-            gl::RGBA8,
-            width,
-            height
-        );
+        gl.texture_storage_2d(name, 1, gl::RGB8, width, height);
 
         gl.texture_sub_image_2d(
             name,
@@ -93,17 +83,15 @@ fn create_1x1_rgba_texture(gl: &gl::Gl, rgba: [u8; 4]) -> Texture {
             yoffset,
             width,
             height,
-            gl::RGBA,
+            gl::RGB,
             gl::UNSIGNED_BYTE,
-            rgba.as_ptr() as *const _,
+            rgb.as_ptr() as *const _,
         );
 
         gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
         gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
 
-        Texture {
-            name,
-        }
+        Texture { name, has_alpha: false }
     }
 }
 
@@ -113,7 +101,7 @@ pub const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindi
 pub const BBI_03: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(3);
 pub const BBI_04: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(4);
 
-fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::TextureName> {
+fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<Texture> {
     let file = std::fs::File::open(file_path).unwrap();
     let mut reader = std::io::BufReader::new(file);
     let dds = dds::File::parse(&mut reader).unwrap();
@@ -134,7 +122,12 @@ fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::
             );
         }
 
-        Ok(name)
+        let has_alpha = match dds.header.pixel_format {
+            dds::Format::BC1_UNORM_RGBA | dds::Format::BC2_UNORM_RGBA | dds::Format::BC3_UNORM_RGBA => true,
+            _ => false,
+        };
+
+        Ok(Texture { name, has_alpha })
     }
 }
 
@@ -191,17 +184,15 @@ impl Resources {
             let mut textures: Vec<Texture> = scene_file
                 .textures
                 .iter()
-                .map(|texture| Texture {
-                    name: load_dds_texture(gl, &scene_dir.join(&texture.file_path)).unwrap(),
-                })
+                .map(|texture| load_dds_texture(gl, &scene_dir.join(&texture.file_path)).unwrap())
                 .collect();
 
-            let mut color_to_texture_index: HashMap<[u8; 4], usize> = HashMap::new();
+            let mut color_to_texture_index: HashMap<[u8; 3], usize> = HashMap::new();
 
-            let mut color_texture_index = |color: [u8; 4]| match color_to_texture_index.get(&color) {
+            let mut color_texture_index = |color: [u8; 3]| match color_to_texture_index.get(&color) {
                 Some(&index) => index,
                 None => {
-                    let texture = create_1x1_rgba_texture(gl, color);
+                    let texture = create_1x1_rgb_texture(gl, color);
                     let index = textures.len();
                     textures.push(texture);
                     color_to_texture_index.insert(color, index);
@@ -215,34 +206,34 @@ impl Resources {
                 .map(|material| Material {
                     normal_texture_index: match material.normal_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
-                        None => color_texture_index([127, 127, 255, 255]),
+                        None => color_texture_index([127, 127, 255]),
                     },
                     emissive_texture_index: match material.emissive_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => {
                             let [r, g, b] = material.emissive_color;
-                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
                         }
                     },
                     ambient_texture_index: match material.ambient_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => {
                             let [r, g, b] = material.ambient_color;
-                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
                         }
                     },
                     diffuse_texture_index: match material.diffuse_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => {
                             let [r, g, b] = material.diffuse_color;
-                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
                         }
                     },
                     specular_texture_index: match material.specular_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => {
                             let [r, g, b] = material.specular_color;
-                            color_texture_index(rgba_f32_to_u8([r, g, b, 1.0]))
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
                         }
                     },
                     shininess: material.shininess,
