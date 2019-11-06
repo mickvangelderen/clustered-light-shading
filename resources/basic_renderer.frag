@@ -14,7 +14,7 @@ in vec3 fs_nor_in_lgt;
 in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
-flat in uint fs_instance_index;
+// flat in uint fs_instance_index;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -26,9 +26,9 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
 
 void main() {
   vec3 frag_pos_in_lgt = fs_pos_in_lgt.xyz/fs_pos_in_lgt.w;
-  vec3 frag_nor_in_lgt = normalize(fs_nor_in_lgt);
-  vec3 frag_bin_in_lgt = normalize(fs_bin_in_lgt);
-  vec3 frag_tan_in_lgt = normalize(fs_tan_in_lgt);
+  vec3 frag_geo_nor_in_lgt = normalize(fs_nor_in_lgt);
+  vec3 frag_geo_bin_in_lgt = normalize(fs_bin_in_lgt);
+  vec3 frag_geo_tan_in_lgt = normalize(fs_tan_in_lgt);
   vec2 frag_pos_in_tex = fs_pos_in_tex;
   vec3 frag_nor_in_tan = sample_nor_in_tan(frag_pos_in_tex);
 
@@ -43,7 +43,7 @@ void main() {
 
   // n = vec2(0.0);
 
-  mat3 tbn = mat3(frag_tan_in_obj, frag_bin_in_obj, frag_nor_in_obj);
+  mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
 
   vec3 light_pos_in_lgt = (cam_to_wld * vec4(0.0, 0.5, -1.5, 1.0)).xyz;
@@ -95,6 +95,7 @@ void main() {
   // Hacky tone-map
   frag_color = vec4(Lo, 1.0);
 
+  frag_color = vec4(1.0);
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_bin_in_lgt * 0.5 + 0.5, 1.0);
   // frag_color = vec4(frag_tan_in_lgt * 0.5 + 0.5, 1.0);
