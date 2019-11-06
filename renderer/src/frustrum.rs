@@ -506,6 +506,16 @@ where
     }
 
     #[inline]
+    pub fn center(&self) -> Point3<T> {
+        let two: T = cast(2.0).unwrap();
+        Point3::new(
+            (self.x0 + self.x1) / two,
+            (self.y0 + self.y1) / two,
+            (self.z0 + self.z1) / two,
+        )
+    }
+
+    #[inline]
     pub fn delta(&self) -> Vector3<T> {
         // NOTE: Would use `self.max() - self.min()` but cgmath uses BaseNum
         // and it will affect everything depending on it so we just write
