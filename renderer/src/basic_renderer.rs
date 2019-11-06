@@ -95,7 +95,7 @@ impl Context<'_> {
 
                     draw_commands.push(DrawCommand {
                         count: mesh_description.element_count(),
-                        prim_count: 0,
+                        prim_count: 1,
                         first_index: mesh_description.element_offset(),
                         base_vertex: mesh_description.vertex_offset,
                         base_instance: instance_index as u32,

@@ -303,7 +303,7 @@ impl Resources {
             gl.vertex_array_attrib_format(vao, rendering::VS_BIN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
             gl.vertex_array_attrib_format(vao, rendering::VS_TAN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
             gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
-            gl.vertex_array_attrib_format(vao, rendering::VS_INSTANCE_INDEX_LOC, 1, gl::UNSIGNED_INT, false, 0);
+            gl.vertex_array_attrib_i_format(vao, rendering::VS_INSTANCE_INDEX_LOC, 1, gl::UNSIGNED_INT, 0);
 
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
             gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
