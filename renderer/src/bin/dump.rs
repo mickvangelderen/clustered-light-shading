@@ -29,6 +29,7 @@ fn main() {
 
 }
 
+#[allow(unused)]
 fn dump_bytes(mut reader: impl Read) {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).unwrap();
