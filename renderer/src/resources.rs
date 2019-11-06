@@ -100,6 +100,7 @@ pub const BBI_01: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindi
 pub const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(2);
 pub const BBI_03: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(3);
 pub const BBI_04: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(4);
+pub const BBI_05: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(5);
 
 fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<Texture> {
     let file = std::fs::File::open(file_path).unwrap();
@@ -280,6 +281,12 @@ impl Resources {
             let pos_in_tex_byte_offset = total_byte_length;
             total_byte_length = align_16(total_byte_length + pos_in_tex_byte_length);
 
+            let instance_index_buffer: Vec<u32> = scene_file.instances.iter().enumerate().map(|(index, _)|  index as u32).collect();
+            let instance_index_bytes = instance_index_buffer.vec_as_bytes();
+            let instance_index_byte_length = instance_index_bytes.len();
+            let instance_index_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + instance_index_byte_length);
+
             // Upload data.
             gl.named_buffer_reserve(vb, total_byte_length, gl::STATIC_DRAW);
             gl.named_buffer_sub_data(vb, pos_in_obj_byte_offset, pos_in_obj_bytes);
@@ -287,6 +294,7 @@ impl Resources {
             gl.named_buffer_sub_data(vb, bin_in_obj_byte_offset, bin_in_obj_bytes);
             gl.named_buffer_sub_data(vb, tan_in_obj_byte_offset, tan_in_obj_bytes);
             gl.named_buffer_sub_data(vb, pos_in_tex_byte_offset, pos_in_tex_bytes);
+            gl.named_buffer_sub_data(vb, instance_index_byte_offset, instance_index_bytes);
             gl.named_buffer_data(eb, scene_file.triangle_buffer.vec_as_bytes(), gl::STATIC_DRAW);
 
             // Attribute layout specification.
@@ -295,12 +303,14 @@ impl Resources {
             gl.vertex_array_attrib_format(vao, rendering::VS_BIN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
             gl.vertex_array_attrib_format(vao, rendering::VS_TAN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
             gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_INSTANCE_INDEX_LOC, 1, gl::UNSIGNED_INT, false, 0);
 
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
             gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
             gl.enable_vertex_array_attrib(vao, rendering::VS_BIN_IN_OBJ_LOC);
             gl.enable_vertex_array_attrib(vao, rendering::VS_TAN_IN_OBJ_LOC);
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_INSTANCE_INDEX_LOC);
 
             // Attribute source specification.
             gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, BBI_00);
@@ -308,6 +318,9 @@ impl Resources {
             gl.vertex_array_attrib_binding(vao, rendering::VS_BIN_IN_OBJ_LOC, BBI_02);
             gl.vertex_array_attrib_binding(vao, rendering::VS_TAN_IN_OBJ_LOC, BBI_03);
             gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_04);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_INSTANCE_INDEX_LOC, BBI_05);
+
+            gl.vertex_array_binding_divisor(vao, BBI_05, 1);
 
             gl.vertex_array_vertex_buffer(
                 vao,
@@ -347,6 +360,14 @@ impl Resources {
                 vb,
                 pos_in_tex_byte_offset,
                 std::mem::size_of::<[f32; 2]>() as u32,
+            );
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_05,
+                vb,
+                instance_index_byte_offset,
+                std::mem::size_of::<u32>() as u32,
             );
 
             // Element buffer.

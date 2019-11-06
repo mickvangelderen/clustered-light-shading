@@ -35,6 +35,9 @@ pub struct MeshDescription {
 }
 
 impl MeshDescription {
+    pub fn element_offset(&self) -> u32 {
+        self.triangle_offset * 3
+    }
     pub fn element_byte_offset(&self) -> usize {
         self.triangle_offset as usize * std::mem::size_of::<Triangle>()
     }
