@@ -143,29 +143,30 @@ impl Resources {
             renderer::scene_file::SceneFile::read(&mut file).unwrap()
         };
 
-        let bounding_boxes: Vec<Range3<f32>> = scene_file.mesh_descriptions.iter().map(|mesh_description| {
-            let vertex_offset = mesh_description.vertex_offset as usize;
-            let vertex_count = mesh_description.vertex_count as usize;
-            let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
-                Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
-            });
-            Range3::from_points(vertex_iter).unwrap()
-        }).collect();
+        // TODO(mickvangelderen): Use these for culling?
+        // let bounding_boxes: Vec<Range3<f32>> = scene_file.mesh_descriptions.iter().map(|mesh_description| {
+        //     let vertex_offset = mesh_description.vertex_offset as usize;
+        //     let vertex_count = mesh_description.vertex_count as usize;
+        //     let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
+        //         Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
+        //     });
+        //     Range3::from_points(vertex_iter).unwrap()
+        // }).collect();
 
-        let bounding_spheres: Vec<(Point3<f32>, f32)> = scene_file.mesh_descriptions.iter().enumerate().map(|(mesh_index, mesh_description)| {
-            let center = bounding_boxes[mesh_index].center();
-            let vertex_offset = mesh_description.vertex_offset as usize;
-            let vertex_count = mesh_description.vertex_count as usize;
-            let mut max_squared_distance = 0.0;
-            for &pos_in_obj in scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter() {
-                let pos_in_obj = Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get());
-                let squared_distance = (pos_in_obj - center).magnitude2();
-                if squared_distance > max_squared_distance {
-                    max_squared_distance = squared_distance;
-                }
-            }
-            (center, max_squared_distance.sqrt())
-        }).collect();
+        // let bounding_spheres: Vec<(Point3<f32>, f32)> = scene_file.mesh_descriptions.iter().enumerate().map(|(mesh_index, mesh_description)| {
+        //     let center = bounding_boxes[mesh_index].center();
+        //     let vertex_offset = mesh_description.vertex_offset as usize;
+        //     let vertex_count = mesh_description.vertex_count as usize;
+        //     let mut max_squared_distance = 0.0;
+        //     for &pos_in_obj in scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter() {
+        //         let pos_in_obj = Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get());
+        //         let squared_distance = (pos_in_obj - center).magnitude2();
+        //         if squared_distance > max_squared_distance {
+        //             max_squared_distance = squared_distance;
+        //         }
+        //     }
+        //     (center, max_squared_distance.sqrt())
+        // }).collect();
 
         {
             let mut total_triangles = 0;
