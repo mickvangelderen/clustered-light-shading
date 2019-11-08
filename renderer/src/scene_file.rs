@@ -64,10 +64,18 @@ pub struct TransformRelation {
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct Instance {
+pub struct IncompleteInstance {
     pub mesh_index: u32,
     pub transform_index: u32,
     pub material_index: Option<NonMaxU32>,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Instance {
+    pub mesh_index: u32,
+    pub transform_index: u32,
+    pub material_index: u32,
 }
 
 #[derive(Debug)]
