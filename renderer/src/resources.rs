@@ -179,7 +179,10 @@ impl Resources {
                 total_vertices += mesh_description.vertex_count as u64;
             }
 
-            info!("Loaded {:?} with {} triangles and {} vertices", scene_file_path, total_triangles, total_vertices);
+            info!(
+                "Loaded {:?} with {} triangles and {} vertices",
+                scene_file_path, total_triangles, total_vertices
+            );
         }
 
         let (textures, materials) = {
@@ -281,7 +284,12 @@ impl Resources {
             let pos_in_tex_byte_offset = total_byte_length;
             total_byte_length = align_16(total_byte_length + pos_in_tex_byte_length);
 
-            let instance_index_buffer: Vec<u32> = scene_file.instances.iter().enumerate().map(|(index, _)|  index as u32).collect();
+            let instance_index_buffer: Vec<u32> = scene_file
+                .instances
+                .iter()
+                .enumerate()
+                .map(|(index, _)| index as u32)
+                .collect();
             let instance_index_bytes = instance_index_buffer.vec_as_bytes();
             let instance_index_byte_length = instance_index_bytes.len();
             let instance_index_byte_offset = total_byte_length;
@@ -527,5 +535,111 @@ impl Resources {
                 },
             ],
         }
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct InstanceMatrices {
+    pub pos_from_obj_to_wld: Matrix4<f32>,
+    pub pos_from_obj_to_lgt: Matrix4<f32>,
+    pub nor_from_obj_to_lgt: Matrix4<f32>,
+}
+
+pub fn compute_instance_matrices(resources: &Resources) -> Vec<InstanceMatrices> {
+    let scene_file = &resources.scene_file;
+
+    scene_file
+        .instances
+        .iter()
+        .map(|instance| {
+            let transform = &scene_file.transforms[instance.transform_index as usize];
+
+            let pos_from_obj_to_wld = {
+                Matrix4::from_translation(transform.translation.into())
+                    * Matrix4::from(Euler {
+                        x: Deg(transform.rotation[0]),
+                        y: Deg(transform.rotation[1]),
+                        z: Deg(transform.rotation[2]),
+                    })
+                    * Matrix4::from_nonuniform_scale(transform.scaling[0], transform.scaling[1], transform.scaling[2])
+            };
+
+            let pos_from_obj_to_lgt = pos_from_obj_to_wld;
+
+            let nor_from_obj_to_lgt = pos_from_obj_to_lgt.invert().unwrap().transpose();
+
+            InstanceMatrices {
+                pos_from_obj_to_wld,
+                pos_from_obj_to_lgt,
+                nor_from_obj_to_lgt,
+            }
+        })
+        .collect()
+}
+
+pub struct DrawCommandResources {
+    pub counts: Vec<usize>,
+    pub offsets: Vec<usize>,
+    pub buffer: Vec<DrawCommand>,
+}
+
+pub fn compute_draw_commands(resources: &Resources) -> DrawCommandResources {
+    let scene_file = &resources.scene_file;
+
+    // Prefix sum draw counts per material.
+    let mut counts: Vec<usize> = scene_file.instances.iter().fold(
+        resources.materials.iter().map(|_| 0).collect(),
+        |mut counts, instance| {
+            counts[instance.material_index as usize] += 1;
+            counts
+        },
+    );
+
+    let offsets: Vec<usize> = counts
+        .iter()
+        .scan(0, |offset, &count| {
+            let result = Some(*offset);
+            *offset += count;
+            result
+        })
+        .collect();
+
+    // Clear counts and initialize buffer.
+
+    for draw_count in counts.iter_mut() {
+        *draw_count = 0;
+    }
+
+    let mut buffer: Vec<DrawCommand> = std::iter::repeat(DrawCommand {
+        count: 0,
+        prim_count: 0,
+        first_index: 0,
+        base_vertex: 0,
+        base_instance: 0,
+    })
+    .take(scene_file.instances.len())
+    .collect();
+
+    // Fill out the buffer.
+
+    for (instance_index, instance) in scene_file.instances.iter().enumerate() {
+        let material_index = instance.material_index as usize;
+        let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
+        let command_index = offsets[material_index] + counts[material_index];
+        buffer[command_index] = DrawCommand {
+            count: mesh_description.element_count(),
+            prim_count: 1,
+            first_index: mesh_description.element_offset(),
+            base_vertex: mesh_description.vertex_offset,
+            base_instance: instance_index as u32,
+        };
+        counts[material_index] += 1;
+    }
+
+    DrawCommandResources {
+        counts,
+        offsets,
+        buffer,
     }
 }
