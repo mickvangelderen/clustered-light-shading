@@ -8,7 +8,6 @@ pub struct MainResources {
     pub framebuffer_name: gl::NonDefaultFramebufferName,
     pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
     pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
-    pub nor_in_cam_texture: Texture<gl::TEXTURE_2D, gl::R11F_G11F_B10F>,
     // Profiling
     pub depth_pass_profiler: SampleIndex,
     pub basic_pass_profiler: SampleIndex,
@@ -29,9 +28,6 @@ impl MainResources {
             let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
             color_texture.update(gl, texture_update);
 
-            let nor_in_cam_texture = Texture::new(gl, gl::TEXTURE_2D, gl::R11F_G11F_B10F);
-            nor_in_cam_texture.update(gl, texture_update);
-
             let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
             depth_texture.update(gl, texture_update);
 
@@ -41,7 +37,6 @@ impl MainResources {
                 gl,
                 (gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name()),
                 (gl::COLOR_ATTACHMENT0, color_texture.name()),
-                (gl::COLOR_ATTACHMENT1, nor_in_cam_texture.name()),
             );
 
             // Uniform block buffers,
@@ -51,7 +46,6 @@ impl MainResources {
                 framebuffer_name,
                 color_texture,
                 depth_texture,
-                nor_in_cam_texture,
                 depth_pass_profiler: profiling_context.add_sample("main_depth"),
                 basic_pass_profiler: profiling_context.add_sample("main_basic"),
             }
@@ -65,7 +59,6 @@ impl MainResources {
             let texture_update = TextureUpdate::new().data(dims.x, dims.y, None);
             self.color_texture.update(gl, texture_update);
             self.depth_texture.update(gl, texture_update);
-            self.nor_in_cam_texture.update(gl, texture_update);
         }
     }
 
@@ -74,7 +67,6 @@ impl MainResources {
             gl.delete_framebuffer(self.framebuffer_name);
             self.color_texture.drop(gl);
             self.depth_texture.drop(gl);
-            self.nor_in_cam_texture.drop(gl);
         }
     }
 }
