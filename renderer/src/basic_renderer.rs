@@ -86,21 +86,55 @@ impl Context<'_> {
             })
             .collect();
 
-        let mut material_index_to_draw_commands: Vec<Vec<DrawCommand>> =
-            scene_file.materials.iter().map(|_| Vec::new()).collect();
+        // Compute prefix sum for draw commands.
+
+        let mut draw_counts: Vec<usize> = scene_file.instances.iter().fold(
+            self.resources.materials.iter().map(|_| 0).collect(),
+            |mut counts, instance| {
+                counts[instance.material_index as usize] += 1;
+                counts
+            },
+        );
+
+        let draw_offsets: Vec<usize> = draw_counts
+            .iter()
+            .scan(0, |offset, &count| {
+                let result = Some(*offset);
+                *offset += count;
+                result
+            })
+            .collect();
+
+        // Clear counts and initialize draw command buffer.
+
+        for draw_count in draw_counts.iter_mut() {
+            *draw_count = 0;
+        }
+
+        let mut draw_commands: Vec<DrawCommand> = std::iter::repeat(DrawCommand {
+            count: 0,
+            prim_count: 0,
+            first_index: 0,
+            base_vertex: 0,
+            base_instance: 0,
+        })
+        .take(scene_file.instances.len())
+        .collect();
+
+        // Write draw commands using the offsets.
 
         for (instance_index, instance) in scene_file.instances.iter().enumerate() {
-            let material_index = instance.material_index.map(|n| n.get()).unwrap_or_default() as usize;
-            let draw_commands: &mut Vec<DrawCommand> = &mut material_index_to_draw_commands[material_index];
+            let material_index = instance.material_index as usize;
             let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
-
-            draw_commands.push(DrawCommand {
+            let command_index = draw_offsets[material_index] + draw_counts[material_index];
+            draw_commands[command_index] = DrawCommand {
                 count: mesh_description.element_count(),
                 prim_count: 1,
                 first_index: mesh_description.element_offset(),
                 base_vertex: mesh_description.vertex_offset,
                 base_instance: instance_index as u32,
-            });
+            };
+            draw_counts[material_index] += 1;
         }
 
         unsafe {
@@ -148,13 +182,11 @@ impl Context<'_> {
                     );
                 }
 
-                gl.bind_vertex_array(self.resources.scene_vao);
-
                 {
-                    let data = instance_matrices_buffer;
                     let buffer = &mut basic_renderer.instance_matrices_buffer;
-                    buffer.ensure_capacity(gl, data.vec_as_bytes().len());
-                    buffer.write(gl, data.vec_as_bytes());
+                    let bytes = instance_matrices_buffer.vec_as_bytes();
+                    buffer.ensure_capacity(gl, bytes.len());
+                    buffer.write(gl, bytes);
 
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
@@ -163,14 +195,22 @@ impl Context<'_> {
                     );
                 }
 
-                gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, basic_renderer.draw_commands_buffer.name());
+                {
+                    let buffer = &mut basic_renderer.draw_commands_buffer;
+                    let bytes = draw_commands.vec_as_bytes();
+                    buffer.ensure_capacity(gl, bytes.len());
+                    buffer.write(gl, bytes);
+                    gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, buffer.name());
+                }
+
+                gl.bind_vertex_array(self.resources.scene_vao);
 
                 for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
                     gl.use_program(program);
-                    for (material_index, draw_commands) in material_index_to_draw_commands.iter().enumerate() {
-                        let material = &self.resources.materials[material_index];
-
-                        if self.resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha {
+                    for (material_index, material) in self.resources.materials.iter().enumerate() {
+                        if self.resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
+                            || draw_counts[material_index] == 0
+                        {
                             continue;
                         }
 
@@ -183,21 +223,13 @@ impl Context<'_> {
                         gl.bind_texture_unit(DIFFUSE_SAMPLER_BINDING, textures[material.diffuse_texture_index].name);
                         gl.bind_texture_unit(SPECULAR_SAMPLER_BINDING, textures[material.specular_texture_index].name);
 
-                        // Update draw commands buffer.
-                        {
-                            let data = draw_commands;
-                            let buffer = &mut basic_renderer.draw_commands_buffer;
-                            buffer.ensure_capacity(gl, data.vec_as_bytes().len());
-                            buffer.write(gl, data.vec_as_bytes());
-                        }
-
                         // Execute draw.
                         gl.multi_draw_elements_indirect(
                             gl::TRIANGLES,
                             gl::UNSIGNED_INT,
-                            0,
-                            draw_commands.len() as i32,
-                            0,
+                            draw_offsets[material_index] as usize * std::mem::size_of::<DrawCommand>(),
+                            draw_counts[material_index] as i32,
+                            std::mem::size_of::<DrawCommand>() as i32,
                         );
                     }
                 }

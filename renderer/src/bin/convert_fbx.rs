@@ -405,7 +405,7 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 
     use fbx::dom::TypedIndex;
 
-    let mut model_index_to_instance_indices: Vec<(Vec<usize>, usize)> = Vec::new();
+    let mut model_index_to_incomplete_instances: Vec<(Vec<IncompleteInstance>, usize)> = Vec::new();
 
     for &oo in root.connections.oo.iter() {
         match oo {
@@ -423,14 +423,13 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 });
             }
             (TypedIndex::Geometry(geometry_index), TypedIndex::Model(model_index)) => {
-                while model_index_to_instance_indices.len() <= model_index as usize {
-                    model_index_to_instance_indices.push((Default::default(), 0));
+                while model_index_to_incomplete_instances.len() <= model_index as usize {
+                    model_index_to_incomplete_instances.push((Default::default(), 0));
                 }
-                let (ref mut instances, _) = model_index_to_instance_indices[model_index];
+                let (ref mut instances, _) = model_index_to_incomplete_instances[model_index];
 
                 for &mesh_index in geometry_index_to_mesh_indices[usize::try_from(geometry_index).unwrap()].iter() {
-                    instances.push(file.instances.len());
-                    file.instances.push(Instance {
+                    instances.push(IncompleteInstance {
                         mesh_index,
                         transform_index: model_index as u32 + 1,
                         material_index: None,
@@ -449,11 +448,10 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
     for &oo in root.connections.oo.iter() {
         match oo {
             (TypedIndex::Material(material_index), TypedIndex::Model(model_index)) => {
-                let (ref instance_indices, ref mut counter) = model_index_to_instance_indices[model_index as usize];
-                let instance_index = instance_indices[*counter];
-                *counter += 1;
-                file.instances[instance_index].material_index =
+                let (ref mut instances, ref mut counter) = model_index_to_incomplete_instances[model_index as usize];
+                instances[*counter].material_index =
                     Some(NonMaxU32::new(u32::try_from(material_index).unwrap()).unwrap());
+                *counter += 1;
             }
             _ => {
                 // Don't care.
@@ -489,6 +487,18 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             }
         }
     }
+
+    file.instances.extend(
+        model_index_to_incomplete_instances
+            .into_iter()
+            .flat_map(|(instances, _)| {
+                instances.into_iter().map(|instance| Instance {
+                    mesh_index: instance.mesh_index,
+                    transform_index: instance.transform_index,
+                    material_index: instance.material_index.unwrap().get(),
+                })
+            }),
+    );
 
     file.write(&mut std::io::BufWriter::new(std::fs::File::create(&out_path).unwrap()))
         .unwrap();

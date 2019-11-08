@@ -1,12 +1,4 @@
-struct InstanceMatrices {
-  mat4 pos_from_obj_to_wld;
-  mat4 pos_from_obj_to_lgt;
-  mat4 nor_from_obj_to_lgt;
-};
-
-layout(std430, binding = INSTANCE_MATRICES_BUFFER_BINDING) buffer InstanceMatricesBuffer {
-  InstanceMatrices instance_matrices_buffer[];
-};
+#include "instance_matrices_buffer.glsl"
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
 layout(location = VS_NOR_IN_OBJ_LOC) in vec3 vs_nor_in_obj;
