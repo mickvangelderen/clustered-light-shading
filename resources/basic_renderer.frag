@@ -2,12 +2,13 @@
 #include "pbr.glsl"
 
 layout(location = OBJ_TO_WLD_LOC) uniform mat4 obj_to_wld;
-layout(location = NORMAL_SAMPLER_LOC) uniform sampler2D normal_sampler;
-layout(location = EMISSIVE_SAMPLER_LOC) uniform sampler2D emissive_sampler;
-layout(location = AMBIENT_SAMPLER_LOC) uniform sampler2D ambient_sampler;
-layout(location = DIFFUSE_SAMPLER_LOC) uniform sampler2D diffuse_sampler;
-layout(location = SPECULAR_SAMPLER_LOC) uniform sampler2D specular_sampler;
 layout(location = SHININESS_LOC) uniform float shininess;
+
+layout(binding = NORMAL_SAMPLER_BINDING) uniform sampler2D normal_sampler;
+layout(binding = EMISSIVE_SAMPLER_BINDING) uniform sampler2D emissive_sampler;
+layout(binding = AMBIENT_SAMPLER_BINDING) uniform sampler2D ambient_sampler;
+layout(binding = DIFFUSE_SAMPLER_BINDING) uniform sampler2D diffuse_sampler;
+layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
 
 in vec4 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
@@ -23,6 +24,31 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   return vec3(xy, z);
 }
 
+vec3 cook_torrance(vec3 kd, float roughness, float metalness, vec3 N, vec3 V, vec3 L) {
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, kd, metalness);
+
+  // calculate per-light radiance
+  vec3 H = normalize(V + L);
+  // float distance = length(lightPositions[i] - WorldPos);
+  // float attenuation = 1.0 / (distance * distance);
+  // vec3 radiance = lightColors[i] * attenuation;
+  vec3 radiance = vec3(3.0);
+
+  // Cook-Torrance BRDF
+  float NDF = DistributionGGX(N, H, roughness);
+  float G   = GeometrySmith(N, V, L, roughness);
+  vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
+
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotL = max(dot(N, L), 0.0);
+  vec3 specular = NDF * G * F / max(4 * NdotV * NdotL, 0.001); // prevent divide by zero for NdotV=0.0 or NdotL=0.0
+
+  vec3 kD = (vec3(1.0) - F) * (1.0 - metalness);
+
+  return (kD * kd / PI + specular) * radiance * NdotL;
+}
+
 void main() {
   vec3 frag_pos_in_lgt = fs_pos_in_lgt.xyz/fs_pos_in_lgt.w;
   vec3 frag_geo_nor_in_lgt = normalize(fs_nor_in_lgt);
@@ -36,62 +62,26 @@ void main() {
   vec4 kd = pow(texture(diffuse_sampler, frag_pos_in_tex), vec4(2.2));
   vec4 ks = texture(specular_sampler, frag_pos_in_tex);
 
+  #if defined(BASIC_PASS)
+  #if BASIC_PASS == BASIC_PASS_MASKED
   if (kd.a < 0.5) {
     discard;
   }
-
-  // n = vec2(0.0);
+  #endif
+  #else
+  #error BASIC_PASS is undefined.
+  #endif
 
   mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
+  vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
 
   vec3 light_pos_in_lgt = (cam_to_wld * vec4(0.0, 0.5, -1.5, 1.0)).xyz;
   vec3 frag_to_light_nor = normalize(light_pos_in_lgt - frag_pos_in_lgt);
-  vec3 frag_reflect_nor = reflect(-frag_to_light_nor, frag_nor_in_lgt);
-  vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
 
-  vec3 F0 = vec3(0.04);
-  F0 = mix(F0, kd.xyz, ks.z);
-
-  // calculate per-light radiance
-  vec3 N = frag_nor_in_lgt;
-  vec3 V = frag_to_cam_nor;
-  vec3 L = frag_to_light_nor;
-  vec3 H = normalize(V + L);
-  // float distance = length(lightPositions[i] - WorldPos);
-  // float attenuation = 1.0 / (distance * distance);
-  // vec3 radiance = lightColors[i] * attenuation;
-  vec3 radiance = vec3(3.0);
-
-  // Cook-Torrance BRDF
-  float roughness = ks.y;
-  float NDF = DistributionGGX(N, H, roughness);
-  float G   = GeometrySmith(N, V, L, roughness);
-  vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
-
-  vec3 nominator    = NDF * G * F;
-  float denominator = 4 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
-  vec3 specular = nominator / max(denominator, 0.001); // prevent divide by zero for NdotV=0.0 or NdotL=0.0
-
-  // kS is equal to Fresnel
-  vec3 kS = F;
-  // for energy conservation, the diffuse and specular light can't
-  // be above 1.0 (unless the surface emits light); to preserve this
-  // relationship the diffuse component (kD) should equal 1.0 - kS.
-  vec3 kD = vec3(1.0) - kS;
-  // multiply kD by the inverse metalness such that only non-metals 
-  // have diffuse lighting, or a linear blend if partly metal (pure metals
-  // have no diffuse light).
-  kD *= 1.0 - ks.z;
-
-  // scale light by NdotL
-  float NdotL = max(dot(N, L), 0.0);
-
-  // add to outgoing radiance Lo
   vec3 Lo = vec3(ke.xyz);
-  Lo += (kD * kd.xyz / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+  Lo += cook_torrance(kd.xyz, ks.y, ks.z, frag_nor_in_lgt, frag_to_cam_nor, frag_to_light_nor);
 
-  // Hacky tone-map
   frag_color = vec4(Lo, 1.0);
 
   // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);

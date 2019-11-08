@@ -8,12 +8,6 @@ layout(std430, binding = INSTANCE_MATRICES_BUFFER_BINDING) buffer InstanceMatric
   InstanceMatrices instance_matrices_buffer[];
 };
 
-layout(location = NORMAL_SAMPLER_LOC) uniform sampler2D normal_sampler;
-layout(location = AMBIENT_SAMPLER_LOC) uniform sampler2D ambient_sampler;
-layout(location = DIFFUSE_SAMPLER_LOC) uniform sampler2D diffuse_sampler;
-layout(location = SPECULAR_SAMPLER_LOC) uniform sampler2D specular_sampler;
-layout(location = SHININESS_LOC) uniform float shininess;
-
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
 layout(location = VS_NOR_IN_OBJ_LOC) in vec3 vs_nor_in_obj;
 layout(location = VS_BIN_IN_OBJ_LOC) in vec3 vs_bin_in_obj;
