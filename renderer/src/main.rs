@@ -1535,8 +1535,7 @@ impl<'s> Context<'s> {
                                 cluster_resources.cluster_fragment_counts_buffer.name(),
                             );
 
-                            // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
-                            gl.bind_texture_unit(0, main_resources.depth_texture.name());
+                            gl.bind_texture_unit(0, main_resources.depth_texture);
 
                             gl.uniform_2f(
                                 cls_renderer::FB_DIMS_LOC,

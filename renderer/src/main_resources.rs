@@ -6,8 +6,8 @@ pub struct MainResources {
     pub dims: Vector2<i32>,
     // Main frame resources.
     pub framebuffer_name: gl::NonDefaultFramebufferName,
-    pub color_texture: Texture<gl::TEXTURE_2D, gl::RGBA16F>,
-    pub depth_texture: Texture<gl::TEXTURE_2D, gl::DEPTH24_STENCIL8>,
+    pub color_texture: gl::TextureName,
+    pub depth_texture: gl::TextureName,
     // Profiling
     pub depth_pass_profiler: SampleIndex,
     pub basic_pass_profiler: SampleIndex,
@@ -25,21 +25,21 @@ impl MainResources {
                 .wrap_s(gl::CLAMP_TO_EDGE.into())
                 .wrap_t(gl::CLAMP_TO_EDGE.into());
 
-            let color_texture = Texture::new(gl, gl::TEXTURE_2D, gl::RGBA16F);
-            color_texture.update(gl, texture_update);
+            let color_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
+            gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, color_texture);
+            gl.tex_image_2d_multisample(gl::TEXTURE_2D_MULTISAMPLE, 16, gl::RGBA16F, dims.x, dims.y, false);
 
-            let depth_texture = Texture::new(gl, gl::TEXTURE_2D, gl::DEPTH24_STENCIL8);
-            depth_texture.update(gl, texture_update);
+            let depth_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
+            gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, depth_texture);
+            gl.tex_image_2d_multisample(gl::TEXTURE_2D_MULTISAMPLE, 16, gl::DEPTH24_STENCIL8, dims.x, dims.y, false);
 
             // Framebuffers.
 
             let framebuffer_name = create_framebuffer!(
                 gl,
-                (gl::DEPTH_STENCIL_ATTACHMENT, depth_texture.name()),
-                (gl::COLOR_ATTACHMENT0, color_texture.name()),
+                (gl::DEPTH_STENCIL_ATTACHMENT, depth_texture),
+                (gl::COLOR_ATTACHMENT0, color_texture),
             );
-
-            // Uniform block buffers,
 
             MainResources {
                 dims,
@@ -56,17 +56,21 @@ impl MainResources {
         if self.dims != dims {
             self.dims = dims;
 
-            let texture_update = TextureUpdate::new().data(dims.x, dims.y, None);
-            self.color_texture.update(gl, texture_update);
-            self.depth_texture.update(gl, texture_update);
+            unsafe {
+                gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, self.color_texture);
+                gl.tex_image_2d_multisample(gl::TEXTURE_2D_MULTISAMPLE, 16, gl::RGBA16F, dims.x, dims.y, false);
+
+                gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, self.depth_texture);
+                gl.tex_image_2d_multisample(gl::TEXTURE_2D_MULTISAMPLE, 16, gl::DEPTH24_STENCIL8, dims.x, dims.y, false);
+            }
         }
     }
 
     pub fn drop(self, gl: &gl::Gl) {
         unsafe {
             gl.delete_framebuffer(self.framebuffer_name);
-            self.color_texture.drop(gl);
-            self.depth_texture.drop(gl);
+            gl.delete_texture(self.color_texture);
+            gl.delete_texture(self.depth_texture);
         }
     }
 }
