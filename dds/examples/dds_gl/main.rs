@@ -36,7 +36,7 @@ fn load_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<gl::Text
             gl.compressed_tex_image_2d(
                 gl::TEXTURE_2D,
                 layer_index as i32,
-                dds.header.pixel_format.to_gl_internal_format(),
+                dds.header.pixel_format.to_gl_internal_format(false),
                 layer.width as i32,
                 layer.height as i32,
                 &dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],

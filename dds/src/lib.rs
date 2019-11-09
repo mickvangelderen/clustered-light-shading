@@ -323,29 +323,29 @@ impl File {
 macro_rules! dds_impl_gl_ext {
     () => {
         pub trait FormatExt {
-            fn to_gl_internal_format(&self) -> gl::InternalFormat;
+            fn to_gl_internal_format(&self, srgb: bool) -> gl::InternalFormat;
         }
 
         $crate::dds_impl_gl_ext!(@format {
-            (BC1_UNORM_RGB,  gl::COMPRESSED_RGB_S3TC_DXT1_EXT ),
-            (BC1_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT),
-            (BC2_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT),
-            (BC3_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT),
-            (BC4_UNORM_R,    gl::COMPRESSED_RED_RGTC1         ),
-            (BC4_SNORM_R,    gl::COMPRESSED_SIGNED_RED_RGTC1  ),
-            (BC5_UNORM_RG,   gl::COMPRESSED_RG_RGTC2          ),
-            (BC5_SNORM_RG,   gl::COMPRESSED_SIGNED_RG_RGTC2   ),
+            (BC1_UNORM_RGB,  gl::COMPRESSED_RGB_S3TC_DXT1_EXT .into(), gl::COMPRESSED_SRGB_S3TC_DXT1_EXT.into()      ),
+            (BC1_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT1_EXT.into(), gl::COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT.into()),
+            (BC2_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT3_EXT.into(), gl::COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT.into()),
+            (BC3_UNORM_RGBA, gl::COMPRESSED_RGBA_S3TC_DXT5_EXT.into(), gl::COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT.into()),
+            (BC4_UNORM_R,    gl::COMPRESSED_RED_RGTC1         .into(), panic!("Format doesn't support srgb")         ),
+            (BC4_SNORM_R,    gl::COMPRESSED_SIGNED_RED_RGTC1  .into(), panic!("Format doesn't support srgb")         ),
+            (BC5_UNORM_RG,   gl::COMPRESSED_RG_RGTC2          .into(), panic!("Format doesn't support srgb")         ),
+            (BC5_SNORM_RG,   gl::COMPRESSED_SIGNED_RG_RGTC2   .into(), panic!("Format doesn't support srgb")         ),
         });
     };
     (@format {$(
-         ($Variant: ident, $gl_internal_format: expr),
+         ($Variant: ident, $linear: expr, $gamma: expr),
     )*}) => {
         impl FormatExt for $crate::Format {
             #[inline]
-            fn to_gl_internal_format(&self) -> gl::InternalFormat {
+            fn to_gl_internal_format(&self, srgb: bool) -> gl::InternalFormat {
                 match *self {
                     $(
-                        Self::$Variant => $gl_internal_format.into(),
+                        Self::$Variant => if srgb { $gamma } else { $linear },
                     )*
                 }
             }
