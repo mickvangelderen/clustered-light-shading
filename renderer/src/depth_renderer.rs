@@ -51,18 +51,18 @@ impl Context<'_> {
 
                 gl.bind_buffer(
                     gl::DRAW_INDIRECT_BUFFER,
-                    self.resources.draw_resources.draw_command_buffer,
+                    resources.draw_resources.draw_command_buffer,
                 );
 
-                gl.bind_vertex_array(self.resources.scene_vao);
+                gl.bind_vertex_array(resources.scene_vao);
 
                 let draw_counts = &resources.draw_resources.draw_counts;
                 let draw_offsets = &resources.draw_resources.draw_offsets;
 
                 for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
                     gl.use_program(program);
-                    for (material_index, material) in self.resources.materials.iter().enumerate() {
-                        if self.resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
+                    for (material_index, material) in resources.materials.iter().enumerate() {
+                        if resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
                             || draw_counts[material_index] == 0
                         {
                             continue;
@@ -70,7 +70,7 @@ impl Context<'_> {
 
                         if has_alpha {
                             // Update material.
-                            let textures = &self.resources.textures;
+                            let textures = &resources.textures;
                             gl.bind_texture_unit(
                                 DIFFUSE_SAMPLER_BINDING,
                                 textures[material.diffuse_texture_index].name,
