@@ -547,9 +547,11 @@ pub struct InstanceMatrices {
 }
 
 pub fn compute_instance_matrices(resources: &Resources) -> Vec<InstanceMatrices> {
+    let start = std::time::Instant::now();
+
     let scene_file = &resources.scene_file;
 
-    scene_file
+    let instance_matrices: Vec<InstanceMatrices> = scene_file
         .instances
         .iter()
         .map(|instance| {
@@ -575,7 +577,11 @@ pub fn compute_instance_matrices(resources: &Resources) -> Vec<InstanceMatrices>
                 nor_from_obj_to_lgt,
             }
         })
-        .collect()
+        .collect();
+
+    info!("compute instance matrices elapsed {:?}", start.elapsed());
+
+    instance_matrices
 }
 
 pub struct DrawCommandResources {
@@ -585,6 +591,8 @@ pub struct DrawCommandResources {
 }
 
 pub fn compute_draw_commands(resources: &Resources) -> DrawCommandResources {
+    let start = std::time::Instant::now();
+
     let scene_file = &resources.scene_file;
 
     // Prefix sum draw counts per material.
@@ -636,6 +644,8 @@ pub fn compute_draw_commands(resources: &Resources) -> DrawCommandResources {
         };
         counts[material_index] += 1;
     }
+
+    info!("compute draw commands elapsed {:?}", start.elapsed());
 
     DrawCommandResources {
         counts,
