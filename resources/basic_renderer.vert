@@ -1,4 +1,10 @@
+#include "native/RENDER_TECHNIQUE"
+
+#include "light_buffer.glsl"
 #include "instance_matrices_buffer.glsl"
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+#include "cls/cluster_space_buffer.glsl"
+#endif
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
 layout(location = VS_NOR_IN_OBJ_LOC) in vec3 vs_nor_in_obj;
@@ -14,6 +20,9 @@ out vec3 fs_nor_in_lgt;
 out vec3 fs_bin_in_lgt;
 out vec3 fs_tan_in_lgt;
 out vec2 fs_pos_in_tex;
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+out vec3 fs_pos_in_ccam;
+#endif
 
 void main() {
   InstanceMatrices instance_matrices = instance_matrices_buffer[vs_instance_index];
@@ -28,4 +37,7 @@ void main() {
   fs_tan_in_lgt = normalize(mat3(pos_from_obj_to_lgt) * vs_tan_in_obj);
   // NOTE(mickvangelderen): TOO LAZY TO CHANGE IMAGE ORIGIN.
   fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+  fs_pos_in_ccam = mat4x3(cluster_space.wld_to_cam) * pos_from_obj_to_wld * vec4(vs_pos_in_obj, 1.0);
+#endif
 }

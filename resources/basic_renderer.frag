@@ -1,7 +1,30 @@
-#include "cotangent_frame.glsl"
+#include "native/ATTENUATION_MODE"
+#include "native/RENDER_TECHNIQUE"
+#include "native/PROFILING"
+
+#include "common.glsl"
+#include "heatmap.glsl"
+#include "light_buffer.glsl"
 #include "pbr.glsl"
 
-layout(location = OBJ_TO_WLD_LOC) uniform mat4 obj_to_wld;
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+#include "cls/cluster_space_buffer.glsl"
+#include "cls/cluster_maybe_active_cluster_indices_buffer.glsl"
+#include "cls/active_cluster_light_counts_buffer.glsl"
+#include "cls/active_cluster_light_offsets_buffer.glsl"
+#include "cls/light_indices_buffer.glsl"
+#endif
+
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+layout(early_fragment_tests) in;
+layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_ops;
+layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
+
 layout(location = SHININESS_LOC) uniform float shininess;
 
 layout(binding = NORMAL_SAMPLER_BINDING) uniform sampler2D normal_sampler;
@@ -15,6 +38,9 @@ in vec3 fs_nor_in_lgt;
 in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+in vec3 fs_pos_in_ccam;
+#endif
 
 layout(location = 0) out vec4 frag_color;
 
@@ -24,16 +50,16 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   return vec3(xy, z);
 }
 
-vec3 cook_torrance(vec3 kd, float roughness, float metalness, vec3 N, vec3 V, vec3 L) {
+vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
+  vec3 frag_to_light = point_light.pos_in_lgt.xyz - P;
+  vec3 L = normalize(frag_to_light);
+
   vec3 F0 = vec3(0.04);
   F0 = mix(F0, kd, metalness);
 
   // calculate per-light radiance
   vec3 H = normalize(V + L);
-  // float distance = length(lightPositions[i] - WorldPos);
-  // float attenuation = 1.0 / (distance * distance);
-  // vec3 radiance = lightColors[i] * attenuation;
-  vec3 radiance = vec3(3.0);
+  vec3 radiance = point_light.diffuse.xyz / dot(frag_to_light, frag_to_light);
 
   // Cook-Torrance BRDF
   float NDF = DistributionGGX(N, H, roughness);
@@ -76,24 +102,93 @@ void main() {
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
   vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
 
-  vec3 light_pos_in_lgt = (cam_to_wld * vec4(0.0, 0.5, -1.5, 1.0)).xyz;
-  vec3 frag_to_light_nor = normalize(light_pos_in_lgt - frag_pos_in_lgt);
+#if defined(RENDER_TECHNIQUE_NAIVE)
+    vec3 color_accumulator = vec3(ke.xyz);
+    for (uint i = 0; i < light_buffer.light_count.x; i++) {
+      color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    }
+    frag_color = vec4(color_accumulator, 1.0);
+#elif defined(RENDER_TECHNIQUE_CLUSTERED)
+    vec3 pos_in_cls = cluster_cam_to_cls(fs_pos_in_ccam);
+    uvec3 idx_in_cls = uvec3(pos_in_cls);
+    // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 
-  vec3 Lo = vec3(ke.xyz);
-  Lo += cook_torrance(kd.xyz, ks.y, ks.z, frag_nor_in_lgt, frag_to_cam_nor, frag_to_light_nor);
+    // CLUSTER INDICES X, Y, Z
+    // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
 
-  frag_color = vec4(Lo, 1.0);
+    // CLUSTER INDICES X, Y, Z mod 3
+    // vec3 cluster_index_colors = vec3((idx_in_cls % 3) + 1)/4.0;
+    // frag_color = vec4(cluster_index_colors.xyz, 1.0);
 
-  // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_bin_in_lgt * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_tan_in_lgt * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_nor_in_tan * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_nor_in_lgt * 0.5 + 0.5, 1.0);
-  // frag_color = vec4(frag_pos_in_tex, 0.0, 1.0);
+    // CLUSTER MORTON INDEX
+    // uint cluster_morton_index = to_morton_3(idx_in_cls);
+    // frag_color = vec4(                              //
+    //     float((cluster_morton_index >> 16) & 0xff) / 255.0, //
+    //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
+    //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
 
-  // frag_color = vec4(ke.xyz, 1.0);
-  // frag_color = vec4(ka.xyz, 1.0);
-  // frag_color = vec4(kd.xyz, 1.0);
-  // frag_color = vec4(ks.xyz, 1.0);
+    uint cluster_index = index_3_to_1(idx_in_cls, cluster_space.dimensions);
+    uint maybe_active_cluster_index =
+        cluster_maybe_active_cluster_indices[cluster_index];
+
+    if (maybe_active_cluster_index == 0) {
+      // We generally shouldn't see clusters that don't have any fragments.
+      frag_color = vec4(1.0, 0.0, 1.0, 1.0);
+    } else {
+      uint active_cluster_index = maybe_active_cluster_index - 1;
+      uint cluster_light_count = active_cluster_light_counts[active_cluster_index];
+      uint cluster_light_offset = active_cluster_light_offsets[active_cluster_index];
+
+      // ACTIVE CLUSTERINDEX
+      // frag_color = vec4(vec3(float(active_cluster_index) / 100.0), 1.0);
+
+      // CLUSTER LENGHTS
+      // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
+      // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
+
+      // COLORED CLUSTER LENGTHS
+      // if (cluster_light_count == 0) {
+      //   discard;
+      // }
+      // frag_color = vec4(vec3(float(cluster_light_count)/2.0) *
+      // cluster_index_colors, 1.0);
+
+      // HASH LIGHT INDICES
+      // uint hash = 0;
+      // uint p_pow = 1;
+      // for (uint i = 0; i < cluster_light_count; i++) {
+      //   uint light_index = light_indices[cluster_light_offset + i];
+      //   hash = (hash + light_index * p_pow) % 0xffff;
+      //   p_pow = (p_pow * 31) % 0xffff;
+      // }
+      // hash = cluster_light_offset;
+      // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
+
+      // ACTUAL SHADING
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+      atomicCounterIncrement(shading_ops);
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
+
+      vec3 color_accumulator = ke.xyz;
+      for (uint i = 0; i < cluster_light_count; i++) {
+        uint light_index = light_indices[cluster_light_offset + i];
+
+        color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+#if defined(PROFILING_TIME_SENSITIVE)
+#if PROFILING_TIME_SENSITIVE == false
+        atomicCounterIncrement(lighting_ops);
+#endif
+#else
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
+      }
+      frag_color = vec4(color_accumulator, 1.0);
+    }
+#else
+#error Unimplemented render technique!
+#endif
 }
-
