@@ -1,9 +1,33 @@
 use crate::*;
 
 pub struct Renderer {
-    pub program: rendering::Program,
-    pub obj_to_wld_loc: gl::OptionUniformLocation,
+    pub opaque_program: rendering::Program,
+    pub masked_program: rendering::Program,
 }
+
+glsl_defines!(fixed_header {
+    bindings: {
+        // CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
+        // ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 2;
+        // ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 3;
+        // LIGHT_BUFFER_BINDING = 4;
+        // LIGHT_INDICES_BUFFER_BINDING = 8;
+        // CLUSTER_SPACE_BUFFER_BINDING = 9;
+        INSTANCE_MATRICES_BUFFER_BINDING = 10;
+
+        // BASIC_ATOMIC_BINDING = 0;
+
+        // NORMAL_SAMPLER_BINDING = 1;
+        // EMISSIVE_SAMPLER_BINDING = 2;
+        // AMBIENT_SAMPLER_BINDING = 3;
+        DIFFUSE_SAMPLER_BINDING = 4;
+        // SPECULAR_SAMPLER_BINDING = 5;
+    },
+    uniforms: {
+        // OBJ_TO_WLD_LOC = 0;
+        // SHININESS_LOC = 6;
+    },
+});
 
 impl Context<'_> {
     pub fn render_depth(&mut self) {
@@ -14,64 +38,92 @@ impl Context<'_> {
             ..
         } = *self;
         unsafe {
-            depth_renderer.update(&mut rendering_context!(self));
-            if let ProgramName::Linked(name) = depth_renderer.program.name {
-                gl.use_program(name);
-                gl.bind_vertex_array(resources.scene_vao);
+            depth_renderer.opaque_program.update(&mut rendering_context!(self));
+            depth_renderer.masked_program.update(&mut rendering_context!(self));
+            if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
+                (&depth_renderer.opaque_program.name, &depth_renderer.masked_program.name)
+            {
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    INSTANCE_MATRICES_BUFFER_BINDING,
+                    resources.draw_resources.instance_matrices_buffer,
+                );
 
-                let scene_file = &self.resources.scene_file;
+                gl.bind_buffer(
+                    gl::DRAW_INDIRECT_BUFFER,
+                    self.resources.draw_resources.draw_command_buffer,
+                );
 
-                for instance in scene_file.instances.iter() {
-                    let transform = &scene_file.transforms[instance.transform_index as usize];
-                    let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
+                gl.bind_vertex_array(self.resources.scene_vao);
 
-                    if let Some(loc) = depth_renderer.obj_to_wld_loc.into() {
-                        let obj_to_wld = Matrix4::from_translation(transform.translation.into())
-                            * Matrix4::from(Euler {
-                                x: Deg(transform.rotation[0]),
-                                y: Deg(transform.rotation[1]),
-                                z: Deg(transform.rotation[2]),
-                            })
-                            * Matrix4::from_nonuniform_scale(
-                                transform.scaling[0],
-                                transform.scaling[1],
-                                transform.scaling[2],
+                let draw_counts = &resources.draw_resources.draw_counts;
+                let draw_offsets = &resources.draw_resources.draw_offsets;
+
+                for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
+                    gl.use_program(program);
+                    for (material_index, material) in self.resources.materials.iter().enumerate() {
+                        if self.resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
+                            || draw_counts[material_index] == 0
+                        {
+                            continue;
+                        }
+
+                        if has_alpha {
+                            // Update material.
+                            let textures = &self.resources.textures;
+                            gl.bind_texture_unit(
+                                DIFFUSE_SAMPLER_BINDING,
+                                textures[material.diffuse_texture_index].name,
                             );
-                        gl.uniform_matrix4f(loc, gl::MajorAxis::Column, obj_to_wld.cast().unwrap().as_ref());
-                    }
+                        }
 
-                    gl.draw_elements_base_vertex(
-                        gl::TRIANGLES,
-                        mesh_description.element_count(),
-                        gl::UNSIGNED_INT,
-                        mesh_description.element_byte_offset(),
-                        mesh_description.vertex_offset,
-                    );
+                        // Execute draw.
+                        gl.multi_draw_elements_indirect(
+                            gl::TRIANGLES,
+                            gl::UNSIGNED_INT,
+                            draw_offsets[material_index] as usize * std::mem::size_of::<DrawCommand>(),
+                            draw_counts[material_index] as i32,
+                            std::mem::size_of::<DrawCommand>() as i32,
+                        );
+                    }
                 }
+                gl.unuse_program();
 
                 gl.unbind_vertex_array();
-                gl.unuse_program();
             }
         }
     }
 }
 
 impl Renderer {
-    pub fn update(&mut self, context: &mut RenderingContext) {
-        if self.program.update(context) {
-            let gl = &context.gl;
-            if let ProgramName::Linked(name) = self.program.name {
-                unsafe {
-                    self.obj_to_wld_loc = get_uniform_location!(gl, name, "obj_to_wld");
-                }
-            }
-        }
-    }
-
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "depth_renderer.vert", "depth_renderer.frag", String::from("// TODO: Pass locations and bindings")),
-            obj_to_wld_loc: gl::OptionUniformLocation::NONE,
+            opaque_program: vs_fs_program(
+                context,
+                "depth_renderer.vert",
+                "depth_renderer.frag",
+                format!(
+                    "{}\
+                     #define BASIC_PASS_OPAQUE 1\n\
+                     #define BASIC_PASS_MASKED 2\n\
+                     #define BASIC_PASS BASIC_PASS_OPAQUE\n\
+                     ",
+                    fixed_header()
+                ),
+            ),
+            masked_program: vs_fs_program(
+                context,
+                "depth_renderer.vert",
+                "depth_renderer.frag",
+                format!(
+                    "{}\
+                     #define BASIC_PASS_OPAQUE 1\n\
+                     #define BASIC_PASS_MASKED 2\n\
+                     #define BASIC_PASS BASIC_PASS_MASKED\n\
+                     ",
+                    fixed_header()
+                ),
+            ),
         }
     }
 }

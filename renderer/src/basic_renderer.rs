@@ -3,8 +3,6 @@ use crate::*;
 pub struct Renderer {
     pub opaque_program: rendering::Program,
     pub masked_program: rendering::Program,
-    pub draw_commands_buffer: DynamicBuffer,
-    pub instance_matrices_buffer: DynamicBuffer,
 }
 
 pub struct Parameters {
@@ -87,37 +85,23 @@ impl Context<'_> {
                         CLUSTER_SPACE_BUFFER_BINDING,
                         cluster_resources.cluster_space_buffer.name(),
                     );
-                }
-
-                {
-                    let buffer = &mut basic_renderer.instance_matrices_buffer;
-                    let data = resources::compute_instance_matrices(&self.resources);
-                    let bytes = data.vec_as_bytes();
-                    buffer.ensure_capacity(gl, bytes.len());
-                    buffer.write(gl, bytes);
 
                     gl.bind_buffer_base(
                         gl::SHADER_STORAGE_BUFFER,
                         INSTANCE_MATRICES_BUFFER_BINDING,
-                        buffer.name(),
+                        self.resources.draw_resources.instance_matrices_buffer,
+                    );
+
+                    gl.bind_buffer(
+                        gl::DRAW_INDIRECT_BUFFER,
+                        self.resources.draw_resources.draw_command_buffer,
                     );
                 }
 
-                let resources::DrawCommandResources {
-                    counts: draw_counts,
-                    offsets: draw_offsets,
-                    buffer: draw_commands,
-                } = resources::compute_draw_commands(&self.resources);
-
-                {
-                    let buffer = &mut basic_renderer.draw_commands_buffer;
-                    let bytes = draw_commands.vec_as_bytes();
-                    buffer.ensure_capacity(gl, bytes.len());
-                    buffer.write(gl, bytes);
-                    gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, buffer.name());
-                }
-
                 gl.bind_vertex_array(self.resources.scene_vao);
+
+                let draw_counts = &self.resources.draw_resources.draw_counts;
+                let draw_offsets = &self.resources.draw_resources.draw_offsets;
 
                 for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
                     gl.use_program(program);
@@ -184,16 +168,6 @@ impl Renderer {
                     fixed_header()
                 ),
             ),
-            draw_commands_buffer: unsafe {
-                let buffer = Buffer::new(&context.gl);
-                context.gl.buffer_label(&buffer, "basic_renderer.draw_comands");
-                buffer
-            },
-            instance_matrices_buffer: unsafe {
-                let buffer = Buffer::new(&context.gl);
-                context.gl.buffer_label(&buffer, "basic_renderer.instance_matrices");
-                buffer
-            },
         }
     }
 }

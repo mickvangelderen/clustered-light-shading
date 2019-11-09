@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use cgmath::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
@@ -53,6 +54,40 @@ pub struct Transform {
     pub translation: [f32; 3],
     pub rotation: [f32; 3],
     pub scaling: [f32; 3],
+}
+
+impl Transform {
+    #[inline]
+    pub fn to_parent(&self) -> Matrix4<f32> {
+        let (sx, cx) = Deg(self.rotation[0]).sin_cos();
+        let (sy, cy) = Deg(self.rotation[1]).sin_cos();
+        let (sz, cz) = Deg(self.rotation[2]).sin_cos();
+        let [mx, my, mz] = self.scaling;
+        let [tx, ty, tz] = self.translation;
+
+        Matrix4::new(
+            // c0
+            mx * (cy * cz),
+            my * (cx * sz + sx * sy * cz),
+            mz * (sx * sz - cx * sy * cz),
+            0.0,
+            // c1
+            mx * (-cy * sz),
+            my * (cx * cz - sx * sy * sz),
+            mz * (sx * cz + cx * sy * sz),
+            0.0,
+            // c2
+            mx * (sy),
+            my * (-sx * cy),
+            mz * (cx * cy),
+            0.0,
+            // c3
+            tx,
+            ty,
+            tz,
+            1.0,
+        )
+    }
 }
 
 #[derive(Debug)]

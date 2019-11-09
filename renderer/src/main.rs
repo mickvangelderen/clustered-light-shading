@@ -949,6 +949,15 @@ impl<'s> Context<'s> {
     }
 
     pub fn render(&mut self) {
+        self.resources.draw_resources.recompute(
+            &self.resources.scene_file.instances,
+            &self.resources.materials,
+            &self.resources.scene_file.transforms,
+            &self.resources.scene_file.mesh_descriptions,
+        );
+
+        self.resources.draw_resources.reupload(&self.gl);
+
         #[derive(Copy, Clone)]
         pub struct EyeData {
             tangents: vr::RawProjection,
