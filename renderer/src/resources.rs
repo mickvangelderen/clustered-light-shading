@@ -557,14 +557,35 @@ pub fn compute_instance_matrices(resources: &Resources) -> Vec<InstanceMatrices>
         .map(|instance| {
             let transform = &scene_file.transforms[instance.transform_index as usize];
 
-            let pos_from_obj_to_wld = {
-                Matrix4::from_translation(transform.translation.into())
-                    * Matrix4::from(Euler {
-                        x: Deg(transform.rotation[0]),
-                        y: Deg(transform.rotation[1]),
-                        z: Deg(transform.rotation[2]),
-                    })
-                    * Matrix4::from_nonuniform_scale(transform.scaling[0], transform.scaling[1], transform.scaling[2])
+            let pos_from_obj_to_wld: Matrix4<f32> = {
+                let (sx, cx) = Deg(transform.rotation[0]).sin_cos();
+                let (sy, cy) = Deg(transform.rotation[1]).sin_cos();
+                let (sz, cz) = Deg(transform.rotation[2]).sin_cos();
+                let [mx, my, mz] = transform.scaling;
+                let [tx, ty, tz] = transform.translation;
+
+                Matrix4::new(
+                    // c0
+                    mx * (cy * cz),
+                    my * (cx * sz + sx * sy * cz),
+                    mz * (sx * sz - cx * sy * cz),
+                    0.0,
+                    // c1
+                    mx * (-cy * sz),
+                    my * (cx * cz - sx * sy * sz),
+                    mz * (sx * cz + cx * sy * sz),
+                    0.0,
+                    // c2
+                    mx * (sy),
+                    my * (-sx * cy),
+                    mz * (cx * cy),
+                    0.0,
+                    // c3
+                    tx,
+                    ty,
+                    tz,
+                    1.0,
+                )
             };
 
             let pos_from_obj_to_lgt = pos_from_obj_to_wld;
