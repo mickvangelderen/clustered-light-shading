@@ -1,11 +1,19 @@
 [global]
 diffuse_srgb = true
 rain_drop_max = 10000
+
 mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
+
 scene_path = "bistro/Bistro_Exterior.bin"
 # scene_path = "sun_temple/SunTemple.bin"
+
+sample_count = 1
+# sample_count = 2
+# sample_count = 4
+# sample_count = 8
+# sample_count = 16
 
 [record]
 path = "recording.bin"

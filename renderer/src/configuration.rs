@@ -49,6 +49,7 @@ pub struct GlobalConfiguration {
     pub rain_drop_max: u32,
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
+    pub sample_count: u32,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]

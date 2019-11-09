@@ -27,7 +27,6 @@ pub fn create_window(
             .with_gl_profile(glutin::GlProfile::Core)
             .with_gl_debug_flag(cfg!(debug_assertions))
             .with_vsync(cfg.vsync)
-            // .with_multisampling(16)
             .with_pixel_format(cfg.rgb_bits, cfg.alpha_bits)
             .with_srgb(cfg.srgb)
             .with_double_buffer(Some(true)),
