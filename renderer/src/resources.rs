@@ -104,7 +104,7 @@ pub const BBI_03: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindi
 pub const BBI_04: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(4);
 pub const BBI_05: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(5);
 
-fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<Texture> {
+fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>, srgb: bool) -> io::Result<Texture> {
     let file = std::fs::File::open(file_path).unwrap();
     let mut reader = std::io::BufReader::new(file);
     let dds = dds::File::parse(&mut reader).unwrap();
@@ -118,7 +118,7 @@ fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<Text
             gl.compressed_tex_image_2d(
                 gl::TEXTURE_2D,
                 layer_index as i32,
-                dds.header.pixel_format.to_gl_internal_format(),
+                dds.header.pixel_format.to_gl_internal_format(srgb),
                 layer.width as i32,
                 layer.height as i32,
                 &dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],
@@ -190,10 +190,20 @@ impl Resources {
         }
 
         let (textures, materials) = {
+            // NOTE(mickvangelderen): This is a bit silly, should determine this in the scene file.
             let mut textures: Vec<Texture> = scene_file
                 .textures
                 .iter()
-                .map(|texture| load_dds_texture(gl, &scene_dir.join(&texture.file_path)).unwrap())
+                .enumerate()
+                .map(|(texture_index, texture)| {
+                    let srgb = scene_file.materials.iter().any(|material| {
+                        material
+                            .diffuse_texture_index
+                            .map(|i| i.get() as usize == texture_index)
+                            .unwrap_or(false)
+                    });
+                    load_dds_texture(gl, &scene_dir.join(&texture.file_path), srgb).unwrap()
+                })
                 .collect();
 
             let mut color_to_texture_index: HashMap<[u8; 3], usize> = HashMap::new();

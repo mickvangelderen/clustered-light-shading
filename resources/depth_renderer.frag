@@ -13,7 +13,7 @@ void main() {
 #if BASIC_PASS == BASIC_PASS_MASKED
   vec2 frag_pos_in_tex = fs_pos_in_tex;
 
-  vec4 kd = pow(texture(diffuse_sampler, frag_pos_in_tex), vec4(2.2));
+  vec4 kd = texture(diffuse_sampler, frag_pos_in_tex);
 
   if (kd.a < 0.5) {
     discard;

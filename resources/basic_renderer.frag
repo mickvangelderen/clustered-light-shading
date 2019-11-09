@@ -59,7 +59,7 @@ void main() {
 
   vec4 ka = texture(ambient_sampler, frag_pos_in_tex);
   vec4 ke = texture(emissive_sampler, frag_pos_in_tex);
-  vec4 kd = pow(texture(diffuse_sampler, frag_pos_in_tex), vec4(2.2));
+  vec4 kd = texture(diffuse_sampler, frag_pos_in_tex);
   vec4 ks = texture(specular_sampler, frag_pos_in_tex);
 
   #if defined(BASIC_PASS)
