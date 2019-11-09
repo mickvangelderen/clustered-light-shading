@@ -46,6 +46,8 @@ pub struct Resources {
     pub cluster_vb: gl::BufferName,
     pub cluster_eb: gl::BufferName,
     pub cluster_element_count: u32,
+
+    pub draw_resources: DrawResources,
 }
 
 fn f32_to_unorm(val: f32) -> u8 {
@@ -436,6 +438,7 @@ impl Resources {
             cluster_vb,
             cluster_eb,
             cluster_element_count,
+            draw_resources: DrawResources::new(gl),
             point_lights: vec![
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -546,50 +549,19 @@ pub struct InstanceMatrices {
     pub nor_from_obj_to_lgt: Matrix4<f32>,
 }
 
-pub fn compute_instance_matrices(resources: &Resources) -> Vec<InstanceMatrices> {
+pub fn compute_instance_matrices(
+    instances: &[scene_file::Instance],
+    transforms: &[scene_file::Transform],
+) -> Vec<InstanceMatrices> {
     let start = std::time::Instant::now();
 
-    let scene_file = &resources.scene_file;
-
-    let instance_matrices: Vec<InstanceMatrices> = scene_file
-        .instances
+    let instance_matrices: Vec<InstanceMatrices> = instances
         .iter()
         .map(|instance| {
-            let transform = &scene_file.transforms[instance.transform_index as usize];
+            let transform = &transforms[instance.transform_index as usize];
 
-            let pos_from_obj_to_wld: Matrix4<f32> = {
-                let (sx, cx) = Deg(transform.rotation[0]).sin_cos();
-                let (sy, cy) = Deg(transform.rotation[1]).sin_cos();
-                let (sz, cz) = Deg(transform.rotation[2]).sin_cos();
-                let [mx, my, mz] = transform.scaling;
-                let [tx, ty, tz] = transform.translation;
-
-                Matrix4::new(
-                    // c0
-                    mx * (cy * cz),
-                    my * (cx * sz + sx * sy * cz),
-                    mz * (sx * sz - cx * sy * cz),
-                    0.0,
-                    // c1
-                    mx * (-cy * sz),
-                    my * (cx * cz - sx * sy * sz),
-                    mz * (sx * cz + cx * sy * sz),
-                    0.0,
-                    // c2
-                    mx * (sy),
-                    my * (-sx * cy),
-                    mz * (cx * cy),
-                    0.0,
-                    // c3
-                    tx,
-                    ty,
-                    tz,
-                    1.0,
-                )
-            };
-
+            let pos_from_obj_to_wld = transform.to_parent();
             let pos_from_obj_to_lgt = pos_from_obj_to_wld;
-
             let nor_from_obj_to_lgt = pos_from_obj_to_lgt.invert().unwrap().transpose();
 
             InstanceMatrices {
@@ -611,19 +583,21 @@ pub struct DrawCommandResources {
     pub buffer: Vec<DrawCommand>,
 }
 
-pub fn compute_draw_commands(resources: &Resources) -> DrawCommandResources {
+pub fn compute_draw_commands(
+    instances: &[scene_file::Instance],
+    materials: &[Material],
+    mesh_descriptions: &[scene_file::MeshDescription],
+) -> DrawCommandResources {
     let start = std::time::Instant::now();
 
-    let scene_file = &resources.scene_file;
-
     // Prefix sum draw counts per material.
-    let mut counts: Vec<usize> = scene_file.instances.iter().fold(
-        resources.materials.iter().map(|_| 0).collect(),
-        |mut counts, instance| {
-            counts[instance.material_index as usize] += 1;
-            counts
-        },
-    );
+    let mut counts: Vec<usize> =
+        instances
+            .iter()
+            .fold(materials.iter().map(|_| 0).collect(), |mut counts, instance| {
+                counts[instance.material_index as usize] += 1;
+                counts
+            });
 
     let offsets: Vec<usize> = counts
         .iter()
@@ -647,14 +621,14 @@ pub fn compute_draw_commands(resources: &Resources) -> DrawCommandResources {
         base_vertex: 0,
         base_instance: 0,
     })
-    .take(scene_file.instances.len())
+    .take(instances.len())
     .collect();
 
     // Fill out the buffer.
 
-    for (instance_index, instance) in scene_file.instances.iter().enumerate() {
+    for (instance_index, instance) in instances.iter().enumerate() {
         let material_index = instance.material_index as usize;
-        let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
+        let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
         let command_index = offsets[material_index] + counts[material_index];
         buffer[command_index] = DrawCommand {
             count: mesh_description.element_count(),
@@ -672,5 +646,64 @@ pub fn compute_draw_commands(resources: &Resources) -> DrawCommandResources {
         counts,
         offsets,
         buffer,
+    }
+}
+
+pub struct DrawResources {
+    // GPU
+    pub instance_matrices_buffer: gl::BufferName,
+    pub draw_command_buffer: gl::BufferName,
+
+    // CPU
+    pub instance_matrices_data: Vec<InstanceMatrices>,
+    pub draw_command_data: Vec<DrawCommand>,
+    pub draw_counts: Vec<usize>,
+    pub draw_offsets: Vec<usize>,
+}
+
+impl DrawResources {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self {
+            instance_matrices_buffer: unsafe { gl.create_buffer() },
+            draw_command_buffer: unsafe { gl.create_buffer() },
+
+            instance_matrices_data: Vec::new(),
+            draw_command_data: Vec::new(),
+            draw_offsets: Vec::new(),
+            draw_counts: Vec::new(),
+        }
+    }
+
+    pub fn recompute(
+        &mut self,
+        instances: &[scene_file::Instance],
+        materials: &[Material],
+        transforms: &[scene_file::Transform],
+        mesh_descriptions: &[scene_file::MeshDescription],
+    ) {
+        self.instance_matrices_data = compute_instance_matrices(instances, transforms);
+        let DrawCommandResources {
+            counts,
+            offsets,
+            buffer,
+        } = compute_draw_commands(instances, materials, mesh_descriptions);
+        self.draw_command_data = buffer;
+        self.draw_counts = counts;
+        self.draw_offsets = offsets;
+    }
+
+    pub fn reupload(&mut self, gl: &gl::Gl) {
+        unsafe {
+            gl.named_buffer_data(
+                self.instance_matrices_buffer,
+                self.instance_matrices_data.vec_as_bytes(),
+                gl::DYNAMIC_DRAW,
+            );
+            gl.named_buffer_data(
+                self.draw_command_buffer,
+                self.draw_command_data.vec_as_bytes(),
+                gl::DYNAMIC_DRAW,
+            );
+        }
     }
 }
