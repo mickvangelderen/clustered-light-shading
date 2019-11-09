@@ -390,6 +390,7 @@ impl MainContext {
                 prefix_sum: configuration.prefix_sum,
                 clustered_light_shading: configuration.clustered_light_shading,
                 profiling: shader_compiler::ProfilingVariables { time_sensitive: false },
+                sample_count: configuration.global.sample_count,
             },
         );
 
@@ -717,6 +718,8 @@ impl<'s> Context<'s> {
                 .replace_prefix_sum(&mut self.current, self.configuration.prefix_sum);
             self.shader_compiler
                 .replace_clustered_light_shading(&mut self.current, self.configuration.clustered_light_shading);
+            self.shader_compiler
+                .replace_sample_count(&mut self.current, self.configuration.global.sample_count);
 
             unsafe {
                 let gl = &self.gl;
@@ -1515,7 +1518,7 @@ impl<'s> Context<'s> {
 
                 let main_resources_index =
                     self.main_resources_pool
-                        .next_unused(gl, &mut self.profiling_context, camera_parameters.frame_dims);
+                        .next_unused(gl, &mut self.profiling_context, camera_parameters.frame_dims, self.configuration.global.sample_count);
 
                 self.clear_and_render_depth(main_resources_index);
 
@@ -2001,7 +2004,7 @@ impl<'s> Context<'s> {
 
             let main_resources_index =
                 self.main_resources_pool
-                    .next_unused(gl, &mut self.profiling_context, dimensions);
+                    .next_unused(gl, &mut self.profiling_context, dimensions, self.configuration.global.sample_count);
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
