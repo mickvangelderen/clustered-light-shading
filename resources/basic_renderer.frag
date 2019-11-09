@@ -15,14 +15,18 @@
 #include "cls/light_indices_buffer.glsl"
 #endif
 
-#if defined(PROFILING_TIME_SENSITIVE)
+#if !defined(PROFILING_TIME_SENSITIVE)
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 #if PROFILING_TIME_SENSITIVE == false
+#if !defined(BASIC_PASS)
+#error BASIC_PASS is not defined.
+#endif
+#if BASIC_PASS == BASIC_PASS_OPAQUE
 layout(early_fragment_tests) in;
+#endif
 layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_ops;
 layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
-#endif
-#else
-#error PROFILING_TIME_SENSITIVE is not defined.
 #endif
 
 layout(location = SHININESS_LOC) uniform float shininess;
@@ -88,15 +92,14 @@ void main() {
   vec4 kd = texture(diffuse_sampler, frag_pos_in_tex);
   vec4 ks = texture(specular_sampler, frag_pos_in_tex);
 
-  #if defined(BASIC_PASS)
-  #if BASIC_PASS == BASIC_PASS_MASKED
+#if !defined(BASIC_PASS)
+#error BASIC_PASS is undefined.
+#endif
+#if BASIC_PASS == BASIC_PASS_MASKED
   if (kd.a < 0.5) {
     discard;
   }
-  #endif
-  #else
-  #error BASIC_PASS is undefined.
-  #endif
+#endif
 
   mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
@@ -165,12 +168,11 @@ void main() {
       // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
       // ACTUAL SHADING
-#if defined(PROFILING_TIME_SENSITIVE)
+#if !defined(PROFILING_TIME_SENSITIVE)
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 #if PROFILING_TIME_SENSITIVE == false
       atomicCounterIncrement(shading_ops);
-#endif
-#else
-#error PROFILING_TIME_SENSITIVE is not defined.
 #endif
 
       vec3 color_accumulator = ke.xyz;
@@ -178,12 +180,12 @@ void main() {
         uint light_index = light_indices[cluster_light_offset + i];
 
         color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
-#if defined(PROFILING_TIME_SENSITIVE)
+
+#if !defined(PROFILING_TIME_SENSITIVE)
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 #if PROFILING_TIME_SENSITIVE == false
         atomicCounterIncrement(lighting_ops);
-#endif
-#else
-#error PROFILING_TIME_SENSITIVE is not defined.
 #endif
       }
       frag_color = vec4(color_accumulator, 1.0);
