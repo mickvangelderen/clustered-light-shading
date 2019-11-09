@@ -125,6 +125,8 @@ fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>) -> io::Result<Text
             );
         }
 
+        gl.texture_parameterf(name, gl::TEXTURE_MAX_ANISOTROPY, 16.0);
+
         let has_alpha = match dds.header.pixel_format {
             dds::Format::BC1_UNORM_RGBA | dds::Format::BC2_UNORM_RGBA | dds::Format::BC3_UNORM_RGBA => true,
             _ => false,
