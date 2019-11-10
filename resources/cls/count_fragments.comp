@@ -10,7 +10,20 @@ layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
 layout(location = FB_DIMS_LOC) uniform vec2 fb_dims;
 layout(location = CLP_TO_WLD_LOC) uniform mat4 clp_to_wld;
 
+#if SAMPLE_COUNT == 1
 layout(local_size_x = 16, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 2
+layout(local_size_x =  8, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 4
+layout(local_size_x =  8, local_size_y =  8, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 8
+layout(local_size_x =  4, local_size_y =  8, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 16
+layout(local_size_x =  4, local_size_y =  4, local_size_z = SAMPLE_COUNT) in;
+#else
+#error Unsupported SAMPLE_COUNT.
+#endif
+
 void main() {
   if (any(greaterThan(gl_GlobalInvocationID.xy, fb_dims))) {
     // Out of texture bounds.

@@ -1568,9 +1568,18 @@ impl<'s> Context<'s> {
                                 gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
                             );
 
+                            let (lx, ly) = match self.configuration.global.sample_count {
+                                1 => (16, 16),
+                                2 => (8, 16),
+                                4 => (8, 8),
+                                8 => (4, 8),
+                                16 => (4, 4),
+                                other => panic!("Unsupported multisampling sample count {}.", other)
+                            };
+
                             gl.dispatch_compute(
-                                main_resources.dims.x.ceiled_div(16) as u32,
-                                main_resources.dims.y.ceiled_div(16) as u32,
+                                main_resources.dims.x.ceiled_div(lx) as u32,
+                                main_resources.dims.y.ceiled_div(ly) as u32,
                                 1,
                             );
                             gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
