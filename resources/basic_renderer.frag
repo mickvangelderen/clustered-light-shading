@@ -54,6 +54,51 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   return vec3(xy, z);
 }
 
+vec2 point_light_attenuate(PointLight point_light, vec3 frag_pos) {
+  vec3 pos_from_frag_to_light = point_light.pos_in_lgt.xyz - frag_pos;
+  vec3 light_dir_norm = normalize(pos_from_frag_to_light);
+
+  float I = point_light.att[0];
+  float C = point_light.att[1];
+  float R0 = point_light.att[2];
+  float R1 = point_light.att[3]; // R1^2 = I/C
+
+  // Attenuation.
+  float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
+  float d_unclipped = sqrt(d_sq_unclipped);
+  float d_sq = max(R0, d_sq_unclipped);
+  float d = max(R0, d_unclipped);
+
+  float diffuse_attenuation;
+  float specular_attenuation;
+
+  if (d_unclipped < R1) {
+#if defined(ATTENUATION_MODE_STEP)
+    diffuse_attenuation = I * (1.0 / R0 + R0 - 1.0 / R1) / R1;
+#elif defined(ATTENUATION_MODE_LINEAR)
+    // Linear doesn't go infinite so we can use the unclipped distance.
+    diffuse_attenuation = I - (I / R1) * d_unclipped;
+#elif defined(ATTENUATION_MODE_PHYSICAL)
+    diffuse_attenuation = I / d_sq;
+#elif defined(ATTENUATION_MODE_INTERPOLATED)
+    diffuse_attenuation = I / d_sq - (C / R1) * d;
+    // diffuse_attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
+#elif defined(ATTENUATION_MODE_REDUCED)
+    diffuse_attenuation = I / d_sq - C;
+#elif defined(ATTENUATION_MODE_SMOOTH)
+    diffuse_attenuation = I / d_sq - 3.0 * C + (2.0 * C / R1) * d;
+#else
+#error invalid attenuation mode!
+#endif
+    specular_attenuation = I * (1.0 - d_sq / (R1 * R1));
+  } else {
+    diffuse_attenuation = 0.0;
+    specular_attenuation = 0.0;
+  }
+
+  return vec2(diffuse_attenuation, specular_attenuation);
+}
+
 vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
   vec3 frag_to_light = point_light.pos_in_lgt.xyz - P;
   vec3 L = normalize(frag_to_light);
@@ -63,7 +108,7 @@ vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, floa
 
   // calculate per-light radiance
   vec3 H = normalize(V + L);
-  vec3 radiance = point_light.diffuse.xyz / dot(frag_to_light, frag_to_light);
+  vec3 radiance = point_light.diffuse.xyz * point_light_attenuate(point_light, P).r;
 
   // Cook-Torrance BRDF
   float NDF = DistributionGGX(N, H, roughness);
