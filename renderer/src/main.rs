@@ -931,7 +931,7 @@ impl<'s> Context<'s> {
                     rain_drop.update(delta_time, rng, p0, p1);
                 }
 
-                for _ in 0..100 {
+                for _ in 0..20 {
                     if self.rain_drops.len() < self.configuration.global.rain_drop_max as usize {
                         self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
