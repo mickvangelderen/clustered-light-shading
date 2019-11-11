@@ -2,326 +2,40 @@ use crate::light::*;
 use crate::*;
 use cgmath::*;
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::convert::TryInto;
+// use std::convert::TryFrom;
+// use std::convert::TryInto;
 use std::path::Path;
-use std::path::PathBuf;
-use std::time::Instant;
-
-pub type TextureIndex = u32;
-pub type MaterialIndex = u32;
-
-pub struct Texture {
-    pub name: gl::TextureName,
-    pub dimensions: [f32; 2],
-}
-
-pub struct MeshMeta {
-    pub element_count: u32,
-    pub element_offset: usize,
-    pub vertex_base: u32,
-    pub vertex_count: u32,
-}
-
-#[repr(C)]
-pub struct Vertex {
-    pub pos_in_obj: [f32; 3],
-    pub pos_in_tex: [f32; 2],
-    pub nor_in_obj: [f32; 3],
-    pub tan_in_obj: [f32; 3],
-}
-
-macro_rules! set_attrib {
-    ($gl: ident, $vao: ident, $loc: expr, $component_count: expr, $component_type: expr, $Vertex: ident, $field: ident, $bbi: expr) => {
-        $gl.vertex_array_attrib_format(
-            $vao,
-            $loc,
-            $component_count,
-            $component_type,
-            false,
-            field_offset!($Vertex, $field) as u32,
-        );
-        $gl.enable_vertex_array_attrib($vao, $loc);
-        $gl.vertex_array_attrib_binding($vao, $loc, $bbi);
-    };
-}
-
-impl Vertex {
-    fn set_format(gl: &gl::Gl, vao: gl::VertexArrayName, vb: gl::BufferName, eb: gl::BufferName) {
-        unsafe {
-            set_attrib!(
-                gl,
-                vao,
-                rendering::VS_POS_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                Vertex,
-                pos_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
-            );
-            set_attrib!(
-                gl,
-                vao,
-                rendering::VS_POS_IN_TEX_LOC,
-                2,
-                gl::FLOAT,
-                Vertex,
-                pos_in_tex,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
-            );
-            set_attrib!(
-                gl,
-                vao,
-                rendering::VS_NOR_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                Vertex,
-                nor_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
-            );
-            set_attrib!(
-                gl,
-                vao,
-                rendering::VS_TAN_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                Vertex,
-                tan_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
-            );
-
-            // Bind buffers to vao.
-            let stride = std::mem::size_of::<Vertex>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
-            gl.vertex_array_element_buffer(vao, eb);
-        }
-    }
-
-    fn set_pos_format(gl: &gl::Gl, vao: gl::VertexArrayName, vb: gl::BufferName, eb: gl::BufferName) {
-        unsafe {
-            set_attrib!(
-                gl,
-                vao,
-                rendering::VS_POS_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                Vertex,
-                pos_in_obj,
-                VERTEX_ARRAY_BUFFER_BINDING_INDEX
-            );
-
-            // Bind buffers to vao.
-            let stride = std::mem::size_of::<Vertex>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
-            gl.vertex_array_element_buffer(vao, eb);
-        }
-    }
-}
-
-pub struct RawMesh<V, I> {
-    pub vertices: V,
-    pub indices: I,
-}
-
-pub type Triangle<T> = [T; 3];
-
-fn generate_cube_mesh(x: (f32, f32), y: (f32, f32), z: (f32, f32)) -> RawMesh<[Vertex; 4 * 6], [Triangle<u32>; 2 * 6]> {
-    let (x0, x1) = x;
-    let (y0, y1) = y;
-    let (z0, z1) = z;
-    let (s0, s1) = (0.0, 1.0);
-    let (t0, t1) = (0.0, 1.0);
-    let nx = [-1.0, 0.0, 0.0];
-    let px = [1.0, 0.0, 0.0];
-    let ny = [0.0, -1.0, 0.0];
-    let py = [0.0, 1.0, 0.0];
-    let nz = [0.0, 0.0, -1.0];
-    let pz = [0.0, 0.0, 1.0];
-    RawMesh {
-        vertices: [
-            // -X
-            Vertex {
-                pos_in_obj: [x0, y0, z0],
-                pos_in_tex: [s0, t0],
-                nor_in_obj: nx,
-                tan_in_obj: pz,
-            },
-            Vertex {
-                pos_in_obj: [x0, y0, z1],
-                pos_in_tex: [s0, t1],
-                nor_in_obj: nx,
-                tan_in_obj: pz,
-            },
-            Vertex {
-                pos_in_obj: [x0, y1, z1],
-                pos_in_tex: [s1, t1],
-                nor_in_obj: nx,
-                tan_in_obj: pz,
-            },
-            Vertex {
-                pos_in_obj: [x0, y1, z0],
-                pos_in_tex: [s1, t0],
-                nor_in_obj: nx,
-                tan_in_obj: pz,
-            },
-            // -Y
-            Vertex {
-                pos_in_obj: [x0, y0, z0],
-                pos_in_tex: [s0, t0],
-                nor_in_obj: ny,
-                tan_in_obj: px,
-            },
-            Vertex {
-                pos_in_obj: [x1, y0, z0],
-                pos_in_tex: [s0, t1],
-                nor_in_obj: ny,
-                tan_in_obj: px,
-            },
-            Vertex {
-                pos_in_obj: [x1, y0, z1],
-                pos_in_tex: [s1, t1],
-                nor_in_obj: ny,
-                tan_in_obj: px,
-            },
-            Vertex {
-                pos_in_obj: [x0, y0, z1],
-                pos_in_tex: [s1, t0],
-                nor_in_obj: ny,
-                tan_in_obj: px,
-            },
-            // -Z
-            Vertex {
-                pos_in_obj: [x0, y0, z0],
-                pos_in_tex: [s0, t0],
-                nor_in_obj: nz,
-                tan_in_obj: py,
-            },
-            Vertex {
-                pos_in_obj: [x0, y1, z0],
-                pos_in_tex: [s0, t1],
-                nor_in_obj: nz,
-                tan_in_obj: py,
-            },
-            Vertex {
-                pos_in_obj: [x1, y1, z0],
-                pos_in_tex: [s1, t1],
-                nor_in_obj: nz,
-                tan_in_obj: py,
-            },
-            Vertex {
-                pos_in_obj: [x1, y0, z0],
-                pos_in_tex: [s1, t0],
-                nor_in_obj: nz,
-                tan_in_obj: py,
-            },
-            // +X
-            Vertex {
-                pos_in_obj: [x1, y1, z1],
-                pos_in_tex: [s0, t0],
-                nor_in_obj: px,
-                tan_in_obj: ny,
-            },
-            Vertex {
-                pos_in_obj: [x1, y0, z1],
-                pos_in_tex: [s0, t1],
-                nor_in_obj: px,
-                tan_in_obj: ny,
-            },
-            Vertex {
-                pos_in_obj: [x1, y0, z0],
-                pos_in_tex: [s1, t1],
-                nor_in_obj: px,
-                tan_in_obj: ny,
-            },
-            Vertex {
-                pos_in_obj: [x1, y1, z0],
-                pos_in_tex: [s1, t0],
-                nor_in_obj: px,
-                tan_in_obj: ny,
-            },
-            // +Y
-            Vertex {
-                pos_in_obj: [x1, y1, z1],
-                pos_in_tex: [s0, t0],
-                nor_in_obj: py,
-                tan_in_obj: nx,
-            },
-            Vertex {
-                pos_in_obj: [x1, y1, z0],
-                pos_in_tex: [s0, t1],
-                nor_in_obj: py,
-                tan_in_obj: nx,
-            },
-            Vertex {
-                pos_in_obj: [x0, y1, z0],
-                pos_in_tex: [s1, t1],
-                nor_in_obj: py,
-                tan_in_obj: nx,
-            },
-            Vertex {
-                pos_in_obj: [x0, y1, z1],
-                pos_in_tex: [s1, t0],
-                nor_in_obj: py,
-                tan_in_obj: nx,
-            },
-            // +Z
-            Vertex {
-                pos_in_obj: [x1, y1, z1],
-                pos_in_tex: [s0, t0],
-                nor_in_obj: pz,
-                tan_in_obj: nx,
-            },
-            Vertex {
-                pos_in_obj: [x0, y1, z1],
-                pos_in_tex: [s0, t1],
-                nor_in_obj: pz,
-                tan_in_obj: nx,
-            },
-            Vertex {
-                pos_in_obj: [x0, y0, z1],
-                pos_in_tex: [s1, t1],
-                nor_in_obj: pz,
-                tan_in_obj: nx,
-            },
-            Vertex {
-                pos_in_obj: [x1, y0, z1],
-                pos_in_tex: [s1, t0],
-                nor_in_obj: pz,
-                tan_in_obj: nx,
-            },
-        ],
-        indices: [
-            [0, 1, 2],
-            [2, 3, 0],
-            [4, 5, 6],
-            [6, 7, 4],
-            [8, 9, 10],
-            [10, 11, 8],
-            [12, 13, 14],
-            [14, 15, 12],
-            [16, 17, 18],
-            [18, 19, 16],
-            [20, 21, 22],
-            [22, 23, 20],
-        ],
-    }
-}
+// use std::path::PathBuf;
+// use std::time::Instant;
 
 pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
 pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
+pub struct Material {
+    pub normal_texture_index: usize,
+    pub emissive_texture_index: usize,
+    pub ambient_texture_index: usize,
+    pub diffuse_texture_index: usize,
+    pub specular_texture_index: usize,
+    pub shininess: f32,
+}
+
+pub struct Texture {
+    pub name: gl::TextureName,
+    pub has_alpha: bool,
+}
+
 #[allow(unused)]
 pub struct Resources {
-    pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
     pub textures: Vec<Texture>,
-    pub path_to_texture_index: HashMap<PathBuf, TextureIndex>,
-    pub color_to_texture_index: HashMap<[u8; 4], TextureIndex>,
+
     pub scene_vao: gl::VertexArrayName,
-    pub scene_pos_vao: gl::VertexArrayName,
     pub scene_vb: gl::BufferName,
     pub scene_eb: gl::BufferName,
-    pub mesh_metas: Vec<MeshMeta>,
+
+    pub scene_file: renderer::scene_file::SceneFile,
+
     pub point_lights: Vec<PointLight>,
 
     pub full_screen_vao: gl::VertexArrayName,
@@ -332,375 +46,372 @@ pub struct Resources {
     pub cluster_vb: gl::BufferName,
     pub cluster_eb: gl::BufferName,
     pub cluster_element_count: u32,
+
+    pub draw_resources: DrawResources,
 }
 
-#[inline]
-fn clamp_f32(input: f32, min: f32, max: f32) -> f32 {
-    if input < min {
-        min
-    } else if input > max {
-        max
+fn f32_to_unorm(val: f32) -> u8 {
+    assert!(val.is_finite());
+    let val = val * 255.0;
+    if val < 0.0 {
+        0
+    } else if val > 255.0 {
+        255
     } else {
-        input
+        val as u8
     }
 }
 
-#[inline]
-fn rgba_f32_to_rgba_u8(input: [f32; 4]) -> [u8; 4] {
-    let mut output = [0; 4];
-    for i in 0..4 {
-        output[i] = clamp_f32(input[i] * 256.0, 0.0, 255.0) as u8
-    }
-    output
+fn f32_3_to_unorm(a: [f32; 3]) -> [u8; 3] {
+    [f32_to_unorm(a[0]), f32_to_unorm(a[1]), f32_to_unorm(a[2])]
 }
 
 #[inline]
-fn create_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
+fn create_1x1_rgb_texture(gl: &gl::Gl, rgb: [u8; 3]) -> Texture {
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
 
-        gl.bind_texture(gl::TEXTURE_2D, name);
-        gl.tex_image_2d(
-            gl::TEXTURE_2D,
-            0,
-            gl::RGBA8,
-            img.width() as i32,
-            img.height() as i32,
-            gl::RGBA,
-            gl::UNSIGNED_BYTE,
-            img.as_ptr() as *const std::os::raw::c_void,
-        );
-        gl.generate_texture_mipmap(name);
-        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
+        let width = 1;
+        let height = 1;
+        let xoffset = 0;
+        let yoffset = 0;
 
-        Texture {
+        gl.texture_storage_2d(name, 1, gl::RGB8, width, height);
+
+        gl.texture_sub_image_2d(
             name,
-            dimensions: [img.width() as f32, img.height() as f32],
-        }
+            0,
+            xoffset,
+            yoffset,
+            width,
+            height,
+            gl::RGB,
+            gl::UNSIGNED_BYTE,
+            rgb.as_ptr() as *const _,
+        );
+
+        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+
+        Texture { name, has_alpha: false }
     }
 }
 
-#[inline]
-fn create_srgb_texture(gl: &gl::Gl, img: image::RgbaImage) -> Texture {
+pub const BBI_00: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(0);
+pub const BBI_01: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(1);
+pub const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(2);
+pub const BBI_03: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(3);
+pub const BBI_04: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(4);
+pub const BBI_05: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(5);
+
+fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>, srgb: bool) -> io::Result<Texture> {
+    let file = std::fs::File::open(file_path).unwrap();
+    let mut reader = std::io::BufReader::new(file);
+    let dds = dds::File::parse(&mut reader).unwrap();
+
     unsafe {
         let name = gl.create_texture(gl::TEXTURE_2D);
-
+        // NOTE(mickvangelderen): No dsa for compressed textures??
         gl.bind_texture(gl::TEXTURE_2D, name);
-        gl.tex_image_2d(
-            gl::TEXTURE_2D,
-            0,
-            gl::SRGB8_ALPHA8,
-            img.width() as i32,
-            img.height() as i32,
-            gl::RGBA,
-            gl::UNSIGNED_BYTE,
-            img.as_ptr() as *const std::os::raw::c_void,
-        );
-        gl.generate_texture_mipmap(name);
-        gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR);
-        gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::LINEAR);
-
-        Texture {
-            name,
-            dimensions: [img.width() as f32, img.height() as f32],
+        assert!(dds.layers.len() > 0);
+        for (layer_index, layer) in dds.layers.iter().enumerate() {
+            gl.compressed_tex_image_2d(
+                gl::TEXTURE_2D,
+                layer_index as i32,
+                dds.header.pixel_format.to_gl_internal_format(srgb),
+                layer.width as i32,
+                layer.height as i32,
+                &dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)],
+            );
         }
+
+        gl.texture_parameterf(name, gl::TEXTURE_MAX_ANISOTROPY, 16.0);
+
+        let has_alpha = match dds.header.pixel_format {
+            dds::Format::BC1_UNORM_RGBA | dds::Format::BC2_UNORM_RGBA | dds::Format::BC3_UNORM_RGBA => true,
+            _ => false,
+        };
+
+        Ok(Texture { name, has_alpha })
     }
 }
-
-pub struct Mesh {
-    pub name: String,
-    /// Triangle indices.
-    pub triangles: Vec<[u32; 3]>,
-
-    /// Position in object space.
-    pub pos_in_obj: Vec<[f32; 3]>,
-
-    /// Position in texture space.
-    pub pos_in_tex: Vec<[f32; 2]>,
-
-    /// Normal in object space.
-    pub nor_in_obj: Vec<[f32; 3]>,
-
-    /// Tangent in object space.
-    pub tan_in_obj: Vec<[f32; 3]>,
-
-    /// Derpiederp.
-    pub translate: Vector3<f32>,
-
-    /// Material id.
-    pub material_index: Option<MaterialIndex>,
-}
-
-pub struct Material {
-    pub diffuse: TextureIndex,
-    pub normal: TextureIndex,
-    pub specular: TextureIndex,
-    pub shininess: f32,
-}
-
-const VERTEX_ARRAY_BUFFER_BINDING_INDEX: gl::VertexArrayBufferBindingIndex =
-    gl::VertexArrayBufferBindingIndex::from_u32(0);
 
 impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        // ["two_planes.obj", "bunny.obj"]
-        // ["shadow_test.obj"]
-        let objs: Vec<(PathBuf, Vec<tobj::Model>, Vec<tobj::Material>)> = ["sponza/sponza.obj", "keyboard.obj"]
-            .into_iter()
-            .map(PathBuf::from)
-            .map(|rel_file_path| {
-                let file_path = resource_dir.join(&rel_file_path);
-                info!("Loading {:?}...", file_path.display());
-                let now = Instant::now();
-                let obj = tobj::load_obj(&file_path).unwrap();
-                let vertex_count: usize = obj.0.iter().map(|model| model.mesh.indices.len()).sum();
-                let elapsed = now.elapsed();
-                info!(
-                    "Loaded {:?} with {} vertices in {}µs.",
-                    file_path.display(),
-                    vertex_count,
-                    elapsed.as_micros()
-                );
-                (rel_file_path, obj.0, obj.1)
-            })
-            .collect();
+        let scene_file_path = std::fs::canonicalize(resource_dir.join(&configuration.global.scene_path)).unwrap();
+        let scene_dir = scene_file_path.parent().unwrap();
 
-        let material_offsets: Vec<u32> = objs
-            .iter()
-            .scan(0, |sum, (_, _, ref materials)| {
-                let offset = *sum;
-                *sum += materials.len() as u32;
-                Some(offset)
-            })
-            .collect();
+        let scene_file = {
+            let mut file = std::fs::File::open(&scene_file_path).unwrap();
+            renderer::scene_file::SceneFile::read(&mut file).unwrap()
+        };
 
-        let mut meshes: Vec<Mesh> = Vec::with_capacity(objs.iter().map(|(_, ref models, _)| models.len()).sum());
-        let mut materials: Vec<Material> =
-            Vec::with_capacity(objs.iter().map(|(_, _, ref materials)| materials.len()).sum());
+        // TODO(mickvangelderen): Use these for culling?
+        // let bounding_boxes: Vec<Range3<f32>> = scene_file.mesh_descriptions.iter().map(|mesh_description| {
+        //     let vertex_offset = mesh_description.vertex_offset as usize;
+        //     let vertex_count = mesh_description.vertex_count as usize;
+        //     let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
+        //         Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
+        //     });
+        //     Range3::from_points(vertex_iter).unwrap()
+        // }).collect();
 
-        let mut textures = Vec::new();
-        let mut path_to_texture_index = HashMap::new();
-        let mut color_to_texture_index = HashMap::new();
+        // let bounding_spheres: Vec<(Point3<f32>, f32)> = scene_file.mesh_descriptions.iter().enumerate().map(|(mesh_index, mesh_description)| {
+        //     let center = bounding_boxes[mesh_index].center();
+        //     let vertex_offset = mesh_description.vertex_offset as usize;
+        //     let vertex_count = mesh_description.vertex_count as usize;
+        //     let mut max_squared_distance = 0.0;
+        //     for &pos_in_obj in scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter() {
+        //         let pos_in_obj = Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get());
+        //         let squared_distance = (pos_in_obj - center).magnitude2();
+        //         if squared_distance > max_squared_distance {
+        //             max_squared_distance = squared_distance;
+        //         }
+        //     }
+        //     (center, max_squared_distance.sqrt())
+        // }).collect();
 
-        for (i, (rel_file_path, obj_models, obj_materials)) in objs.into_iter().enumerate() {
-            let material_offset = material_offsets[i];
+        {
+            let mut total_triangles = 0;
+            let mut total_vertices = 0;
 
-            meshes.extend(obj_models.into_iter().map(|model| {
-                let tobj::Model { mesh, name } = model;
-                let tobj::Mesh {
-                    positions,
-                    normals: _normals,
-                    texcoords,
-                    indices,
-                    material_id,
-                } = mesh;
+            for instance in scene_file.instances.iter() {
+                let mesh_description = &scene_file.mesh_descriptions[instance.mesh_index as usize];
+                total_triangles += mesh_description.triangle_count as u64;
+                total_vertices += mesh_description.vertex_count as u64;
+            }
 
-                let triangles: Vec<[u32; 3]> = indices.unflatten();
-                let pos_in_obj: Vec<[f32; 3]> = positions.unflatten();
+            info!(
+                "Loaded {:?} with {} triangles and {} vertices",
+                scene_file_path, total_triangles, total_vertices
+            );
+        }
 
-                let pos_in_tex: Vec<[f32; 2]> = texcoords.unflatten();
-                let nor_in_obj = polygen::compute_normals(&triangles, &pos_in_obj);
-                let tan_in_obj = if pos_in_tex.is_empty() {
-                    Vec::new()
-                } else {
-                    polygen::compute_tangents(&triangles, &pos_in_obj, &pos_in_tex)
-                };
-                let material_index = material_id.map(|id| id as MaterialIndex + material_offset);
+        let (textures, materials) = {
+            // NOTE(mickvangelderen): This is a bit silly, should determine this in the scene file.
+            let mut textures: Vec<Texture> = scene_file
+                .textures
+                .iter()
+                .enumerate()
+                .map(|(texture_index, texture)| {
+                    let srgb = scene_file.materials.iter().any(|material| {
+                        material
+                            .diffuse_texture_index
+                            .map(|i| i.get() as usize == texture_index)
+                            .unwrap_or(false)
+                    });
+                    load_dds_texture(gl, &scene_dir.join(&texture.file_path), srgb).unwrap()
+                })
+                .collect();
 
-                Mesh {
-                    name,
-                    triangles,
-                    pos_in_obj: if rel_file_path == Path::new("sponza/sponza.obj") {
-                        pos_in_obj
-                            .into_iter()
-                            .map(|p| (Vector3::from(p) * 0.01).into())
-                            .collect()
-                    } else {
-                        pos_in_obj
-                    },
-                    pos_in_tex,
-                    nor_in_obj,
-                    tan_in_obj,
-                    translate: if rel_file_path == Path::new("keyboard.obj") {
-                        Vector3::new(0.0, 0.3, 0.0)
-                    } else {
-                        Vector3::zero()
-                    },
-                    material_index,
+            let mut color_to_texture_index: HashMap<[u8; 3], usize> = HashMap::new();
+
+            let mut color_texture_index = |color: [u8; 3]| match color_to_texture_index.get(&color) {
+                Some(&index) => index,
+                None => {
+                    let texture = create_1x1_rgb_texture(gl, color);
+                    let index = textures.len();
+                    textures.push(texture);
+                    color_to_texture_index.insert(color, index);
+                    index
                 }
-            }));
+            };
 
-            let material_dir = resource_dir.join(rel_file_path.parent().unwrap());
+            let materials: Vec<Material> = scene_file
+                .materials
+                .iter()
+                .map(|material| Material {
+                    normal_texture_index: match material.normal_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => color_texture_index([127, 127, 255]),
+                    },
+                    emissive_texture_index: match material.emissive_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.emissive_color;
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
+                        }
+                    },
+                    ambient_texture_index: match material.ambient_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.ambient_color;
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
+                        }
+                    },
+                    diffuse_texture_index: match material.diffuse_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.diffuse_color;
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
+                        }
+                    },
+                    specular_texture_index: match material.specular_texture_index {
+                        Some(file_texture_index) => file_texture_index.get() as usize,
+                        None => {
+                            let [r, g, b] = material.specular_color;
+                            color_texture_index(f32_3_to_unorm([r, g, b]))
+                        }
+                    },
+                    shininess: material.shininess,
+                })
+                .collect();
 
-            {
-                info!("Loading textures...");
-                let now = Instant::now();
-                let mut total_bytes = 0;
-                materials.extend(obj_materials.into_iter().map(|material| {
-                    // https://github.com/rust-lang/rfcs/pull/1769
-                    let diffuse = *if !material.diffuse_texture.is_empty() {
-                        let file_path = material_dir.join(&material.diffuse_texture);
-                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            let img = image::open(&file_path)
-                                .expect("Failed to load image.")
-                                .flipv()
-                                .to_rgba();
-                            total_bytes += std::mem::size_of_val(&*img);
+            (textures, materials)
+        };
 
-                            let texture = if configuration.global.diffuse_srgb {
-                                create_srgb_texture(gl, img)
-                            } else {
-                                create_texture(gl, img)
-                            };
-
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    } else {
-                        let rgba_u8 =
-                            rgba_f32_to_rgba_u8([material.diffuse[0], material.diffuse[1], material.diffuse[2], 1.0]);
-                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-
-                            let texture = if configuration.global.diffuse_srgb {
-                                create_srgb_texture(gl, img)
-                            } else {
-                                create_texture(gl, img)
-                            };
-
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    };
-
-                    let normal = *if let Some(bump_path) = material.unknown_param.get("map_bump") {
-                        let file_path = material_dir.join(bump_path);
-                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            let img = image::open(&file_path)
-                                .expect("Failed to load image.")
-                                .flipv()
-                                .to_rgba();
-                            total_bytes += std::mem::size_of_val(&*img);
-
-                            let texture = create_texture(gl, img);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    } else {
-                        let rgba_u8 = rgba_f32_to_rgba_u8([0.5, 0.5, 0.5, 1.0]);
-                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-
-                            let texture = create_texture(gl, img);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    };
-
-                    let specular = *if !material.specular_texture.is_empty() {
-                        let file_path = material_dir.join(&material.specular_texture);
-                        path_to_texture_index.entry(file_path.clone()).or_insert_with(|| {
-                            let img = image::open(&file_path)
-                                .expect("Failed to load image.")
-                                .flipv()
-                                .to_rgba();
-                            total_bytes += std::mem::size_of_val(&*img);
-
-                            let texture = create_texture(gl, img);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    } else {
-                        let rgba_u8 = rgba_f32_to_rgba_u8([
-                            material.specular[0],
-                            material.specular[1],
-                            material.specular[2],
-                            1.0,
-                        ]);
-                        color_to_texture_index.entry(rgba_u8).or_insert_with(|| {
-                            let img = image::ImageBuffer::from_pixel(1, 1, image::Rgba(rgba_u8));
-
-                            let texture = create_texture(gl, img);
-                            let index = textures.len() as TextureIndex;
-                            textures.push(texture);
-                            index
-                        })
-                    };
-
-                    Material {
-                        diffuse,
-                        normal,
-                        specular,
-                        shininess: material.shininess,
-                    }
-                }));
-                let elapsed = now.elapsed();
-                info!(
-                    "Loaded {}MB of textures in {}µs.",
-                    total_bytes / 1000_000,
-                    elapsed.as_micros()
-                );
-            }
-        }
-
-        let mut vertex_data: Vec<Vertex> = Vec::new();
-        let mut element_data: Vec<[u32; 3]> = Vec::new();
-        let mut mesh_metas: Vec<MeshMeta> = Vec::new();
-
-        for mesh in meshes.iter() {
-            let vertex_count = mesh.pos_in_obj.len();
-            assert_eq!(vertex_count, mesh.pos_in_obj.len());
-            assert_eq!(vertex_count, mesh.pos_in_tex.len());
-            assert_eq!(vertex_count, mesh.nor_in_obj.len());
-            assert_eq!(vertex_count, mesh.tan_in_obj.len());
-
-            // Get this BEFORE appending.
-            let vertex_base = u32::try_from(vertex_data.len()).unwrap();
-
-            for i in 0..vertex_count {
-                vertex_data.push(Vertex {
-                    pos_in_obj: mesh.pos_in_obj[i],
-                    pos_in_tex: mesh.pos_in_tex[i],
-                    nor_in_obj: mesh.nor_in_obj[i],
-                    tan_in_obj: mesh.tan_in_obj[i],
-                });
-            }
-
-            // Get this BEFORE appending.
-            let element_offset = std::mem::size_of_val(&element_data[..]);
-
-            element_data.extend(mesh.triangles.iter());
-
-            mesh_metas.push(MeshMeta {
-                element_count: (mesh.triangles.len() * 3).try_into().unwrap(),
-                element_offset,
-                vertex_base,
-                vertex_count: vertex_count.try_into().unwrap(),
-            });
-        }
-
-        let (scene_vao, scene_pos_vao, scene_vb, scene_eb) = unsafe {
+        let (scene_vao, scene_vb, scene_eb) = unsafe {
             let vao = gl.create_vertex_array();
-            let pos_vao = gl.create_vertex_array();
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            Vertex::set_format(gl, vao, vb, eb);
-            Vertex::set_pos_format(gl, pos_vao, vb, eb);
+            fn align_16(n: usize) -> usize {
+                ((n + 15) / 16) * 16
+            }
+
+            let mut total_byte_length = 0;
+
+            let pos_in_obj_bytes = scene_file.pos_in_obj_buffer.vec_as_bytes();
+            let pos_in_obj_byte_length = pos_in_obj_bytes.len();
+            let pos_in_obj_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + pos_in_obj_byte_length);
+
+            let nor_in_obj_bytes = scene_file.nor_in_obj_buffer.vec_as_bytes();
+            let nor_in_obj_byte_length = nor_in_obj_bytes.len();
+            let nor_in_obj_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + nor_in_obj_byte_length);
+
+            let bin_in_obj_bytes = scene_file.bin_in_obj_buffer.vec_as_bytes();
+            let bin_in_obj_byte_length = bin_in_obj_bytes.len();
+            let bin_in_obj_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + bin_in_obj_byte_length);
+
+            let tan_in_obj_bytes = scene_file.tan_in_obj_buffer.vec_as_bytes();
+            let tan_in_obj_byte_length = tan_in_obj_bytes.len();
+            let tan_in_obj_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + tan_in_obj_byte_length);
+
+            let pos_in_tex_bytes = scene_file.pos_in_tex_buffer.vec_as_bytes();
+            let pos_in_tex_byte_length = pos_in_tex_bytes.len();
+            let pos_in_tex_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + pos_in_tex_byte_length);
+
+            let instance_index_buffer: Vec<u32> = scene_file
+                .instances
+                .iter()
+                .enumerate()
+                .map(|(index, _)| index as u32)
+                .collect();
+            let instance_index_bytes = instance_index_buffer.vec_as_bytes();
+            let instance_index_byte_length = instance_index_bytes.len();
+            let instance_index_byte_offset = total_byte_length;
+            total_byte_length = align_16(total_byte_length + instance_index_byte_length);
 
             // Upload data.
-            gl.named_buffer_data(vb, vertex_data.vec_as_bytes(), gl::STATIC_DRAW);
-            gl.named_buffer_data(eb, element_data.vec_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_reserve(vb, total_byte_length, gl::STATIC_DRAW);
+            gl.named_buffer_sub_data(vb, pos_in_obj_byte_offset, pos_in_obj_bytes);
+            gl.named_buffer_sub_data(vb, nor_in_obj_byte_offset, nor_in_obj_bytes);
+            gl.named_buffer_sub_data(vb, bin_in_obj_byte_offset, bin_in_obj_bytes);
+            gl.named_buffer_sub_data(vb, tan_in_obj_byte_offset, tan_in_obj_bytes);
+            gl.named_buffer_sub_data(vb, pos_in_tex_byte_offset, pos_in_tex_bytes);
+            gl.named_buffer_sub_data(vb, instance_index_byte_offset, instance_index_bytes);
+            gl.named_buffer_data(eb, scene_file.triangle_buffer.vec_as_bytes(), gl::STATIC_DRAW);
 
-            (vao, pos_vao, vb, eb)
+            // Attribute layout specification.
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_NOR_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_BIN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_TAN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_i_format(vao, rendering::VS_INSTANCE_INDEX_LOC, 1, gl::UNSIGNED_INT, 0);
+
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_BIN_IN_OBJ_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_TAN_IN_OBJ_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_INSTANCE_INDEX_LOC);
+
+            // Attribute source specification.
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, BBI_00);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_NOR_IN_OBJ_LOC, BBI_01);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_BIN_IN_OBJ_LOC, BBI_02);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_TAN_IN_OBJ_LOC, BBI_03);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_04);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_INSTANCE_INDEX_LOC, BBI_05);
+
+            gl.vertex_array_binding_divisor(vao, BBI_05, 1);
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_00,
+                vb,
+                pos_in_obj_byte_offset,
+                std::mem::size_of::<[f32; 3]>() as u32,
+            );
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_01,
+                vb,
+                nor_in_obj_byte_offset,
+                std::mem::size_of::<[f32; 3]>() as u32,
+            );
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_02,
+                vb,
+                bin_in_obj_byte_offset,
+                std::mem::size_of::<[f32; 3]>() as u32,
+            );
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_03,
+                vb,
+                tan_in_obj_byte_offset,
+                std::mem::size_of::<[f32; 3]>() as u32,
+            );
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_04,
+                vb,
+                pos_in_tex_byte_offset,
+                std::mem::size_of::<[f32; 2]>() as u32,
+            );
+
+            gl.vertex_array_vertex_buffer(
+                vao,
+                BBI_05,
+                vb,
+                instance_index_byte_offset,
+                std::mem::size_of::<u32>() as u32,
+            );
+
+            // Element buffer.
+            gl.vertex_array_element_buffer(vao, eb);
+
+            (vao, vb, eb)
+        };
+
+        let (cluster_vao, cluster_vb, cluster_eb, cluster_element_count) = unsafe {
+            let vao = gl.create_vertex_array();
+            let vb = gl.create_buffer();
+            let eb = gl.create_buffer();
+
+            cube_mesh::Vertex::set_format(gl, vao, vb, eb);
+
+            // Upload data.
+            let r = (0.00001, 0.99999);
+            let (vertices, indices) = cube_mesh::generate(r, r, r);
+            gl.named_buffer_data(vb, vertices.value_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, indices.value_as_bytes(), gl::STATIC_DRAW);
+
+            (vao, vb, eb, (indices.len() * 3) as u32)
         };
 
         let (full_screen_vao, full_screen_vb, full_screen_eb) = unsafe {
@@ -711,11 +422,11 @@ impl Resources {
             // Set up attributes.
             gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, VERTEX_ARRAY_BUFFER_BINDING_INDEX);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_00);
 
             // Bind buffers to vao.
             let stride = std::mem::size_of::<[f32; 2]>() as u32;
-            gl.vertex_array_vertex_buffer(vao, VERTEX_ARRAY_BUFFER_BINDING_INDEX, vb, 0, stride);
+            gl.vertex_array_vertex_buffer(vao, BBI_00, vb, 0, stride);
             gl.vertex_array_element_buffer(vao, eb);
 
             // Upload data.
@@ -725,33 +436,13 @@ impl Resources {
             (vao, vb, eb)
         };
 
-        let (cluster_vao, cluster_vb, cluster_eb, cluster_element_count) = unsafe {
-            let vao = gl.create_vertex_array();
-            let vb = gl.create_buffer();
-            let eb = gl.create_buffer();
-
-            Vertex::set_format(gl, vao, vb, eb);
-
-            // Upload data.
-            let r = (0.00001, 0.99999);
-            let mesh = generate_cube_mesh(r, r, r);
-            gl.named_buffer_data(vb, mesh.vertices.value_as_bytes(), gl::STATIC_DRAW);
-            gl.named_buffer_data(eb, mesh.indices.value_as_bytes(), gl::STATIC_DRAW);
-
-            (vao, vb, eb, (mesh.indices.len() * 3) as u32)
-        };
-
         Resources {
-            meshes,
-            materials,
-            textures,
-            path_to_texture_index,
-            color_to_texture_index,
             scene_vao,
-            scene_pos_vao,
             scene_vb,
             scene_eb,
-            mesh_metas,
+            scene_file,
+            materials,
+            textures,
             full_screen_vao,
             full_screen_vb,
             full_screen_eb,
@@ -759,6 +450,7 @@ impl Resources {
             cluster_vb,
             cluster_eb,
             cluster_element_count,
+            draw_resources: DrawResources::new(gl),
             point_lights: vec![
                 PointLight {
                     ambient: RGB::new(0.2000, 0.2000, 0.2000),
@@ -857,6 +549,173 @@ impl Resources {
                     .into(),
                 },
             ],
+        }
+    }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct InstanceMatrices {
+    pub pos_from_obj_to_wld: Matrix4<f32>,
+    pub pos_from_obj_to_lgt: Matrix4<f32>,
+    pub nor_from_obj_to_lgt: Matrix4<f32>,
+}
+
+pub fn compute_instance_matrices(
+    instances: &[scene_file::Instance],
+    transforms: &[scene_file::Transform],
+) -> Vec<InstanceMatrices> {
+    let start = std::time::Instant::now();
+
+    let instance_matrices: Vec<InstanceMatrices> = instances
+        .iter()
+        .map(|instance| {
+            let transform = &transforms[instance.transform_index as usize];
+
+            let pos_from_obj_to_wld = transform.to_parent();
+            let pos_from_obj_to_lgt = pos_from_obj_to_wld;
+            let nor_from_obj_to_lgt = pos_from_obj_to_lgt.invert().unwrap().transpose();
+
+            InstanceMatrices {
+                pos_from_obj_to_wld,
+                pos_from_obj_to_lgt,
+                nor_from_obj_to_lgt,
+            }
+        })
+        .collect();
+
+    info!("compute instance matrices elapsed {:?}", start.elapsed());
+
+    instance_matrices
+}
+
+pub struct DrawCommandResources {
+    pub counts: Vec<usize>,
+    pub offsets: Vec<usize>,
+    pub buffer: Vec<DrawCommand>,
+}
+
+pub fn compute_draw_commands(
+    instances: &[scene_file::Instance],
+    materials: &[Material],
+    mesh_descriptions: &[scene_file::MeshDescription],
+) -> DrawCommandResources {
+    let start = std::time::Instant::now();
+
+    // Prefix sum draw counts per material.
+    let mut counts: Vec<usize> =
+        instances
+            .iter()
+            .fold(materials.iter().map(|_| 0).collect(), |mut counts, instance| {
+                counts[instance.material_index as usize] += 1;
+                counts
+            });
+
+    let offsets: Vec<usize> = counts
+        .iter()
+        .scan(0, |offset, &count| {
+            let result = Some(*offset);
+            *offset += count;
+            result
+        })
+        .collect();
+
+    // Clear counts and initialize buffer.
+
+    for draw_count in counts.iter_mut() {
+        *draw_count = 0;
+    }
+
+    let mut buffer: Vec<DrawCommand> = std::iter::repeat(DrawCommand {
+        count: 0,
+        prim_count: 0,
+        first_index: 0,
+        base_vertex: 0,
+        base_instance: 0,
+    })
+    .take(instances.len())
+    .collect();
+
+    // Fill out the buffer.
+
+    for (instance_index, instance) in instances.iter().enumerate() {
+        let material_index = instance.material_index as usize;
+        let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
+        let command_index = offsets[material_index] + counts[material_index];
+        buffer[command_index] = DrawCommand {
+            count: mesh_description.element_count(),
+            prim_count: 1,
+            first_index: mesh_description.element_offset(),
+            base_vertex: mesh_description.vertex_offset,
+            base_instance: instance_index as u32,
+        };
+        counts[material_index] += 1;
+    }
+
+    info!("compute draw commands elapsed {:?}", start.elapsed());
+
+    DrawCommandResources {
+        counts,
+        offsets,
+        buffer,
+    }
+}
+
+pub struct DrawResources {
+    // GPU
+    pub instance_matrices_buffer: gl::BufferName,
+    pub draw_command_buffer: gl::BufferName,
+
+    // CPU
+    pub instance_matrices_data: Vec<InstanceMatrices>,
+    pub draw_command_data: Vec<DrawCommand>,
+    pub draw_counts: Vec<usize>,
+    pub draw_offsets: Vec<usize>,
+}
+
+impl DrawResources {
+    pub fn new(gl: &gl::Gl) -> Self {
+        Self {
+            instance_matrices_buffer: unsafe { gl.create_buffer() },
+            draw_command_buffer: unsafe { gl.create_buffer() },
+
+            instance_matrices_data: Vec::new(),
+            draw_command_data: Vec::new(),
+            draw_offsets: Vec::new(),
+            draw_counts: Vec::new(),
+        }
+    }
+
+    pub fn recompute(
+        &mut self,
+        instances: &[scene_file::Instance],
+        materials: &[Material],
+        transforms: &[scene_file::Transform],
+        mesh_descriptions: &[scene_file::MeshDescription],
+    ) {
+        self.instance_matrices_data = compute_instance_matrices(instances, transforms);
+        let DrawCommandResources {
+            counts,
+            offsets,
+            buffer,
+        } = compute_draw_commands(instances, materials, mesh_descriptions);
+        self.draw_command_data = buffer;
+        self.draw_counts = counts;
+        self.draw_offsets = offsets;
+    }
+
+    pub fn reupload(&mut self, gl: &gl::Gl) {
+        unsafe {
+            gl.named_buffer_data(
+                self.instance_matrices_buffer,
+                self.instance_matrices_data.vec_as_bytes(),
+                gl::DYNAMIC_DRAW,
+            );
+            gl.named_buffer_data(
+                self.draw_command_buffer,
+                self.draw_command_data.vec_as_bytes(),
+                gl::DYNAMIC_DRAW,
+            );
         }
     }
 }

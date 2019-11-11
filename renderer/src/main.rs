@@ -4,6 +4,9 @@
 #[macro_use]
 mod macros;
 
+#[macro_use]
+extern crate dds;
+
 pub(crate) use gl_typed as gl;
 pub(crate) use log::*;
 pub(crate) use rand::prelude::*;
@@ -19,6 +22,8 @@ mod bmp;
 pub mod cgmath_ext;
 mod cls;
 pub mod color;
+mod cube_mesh;
+mod dds_ext;
 mod depth_renderer;
 mod filters;
 mod frame_downloader;
@@ -44,6 +49,7 @@ mod window_mode;
 
 use self::cgmath_ext::*;
 use self::cls::*;
+use self::dds_ext::*;
 use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
@@ -384,6 +390,7 @@ impl MainContext {
                 prefix_sum: configuration.prefix_sum,
                 clustered_light_shading: configuration.clustered_light_shading,
                 profiling: shader_compiler::ProfilingVariables { time_sensitive: false },
+                sample_count: configuration.global.sample_count,
             },
         );
 
@@ -711,6 +718,8 @@ impl<'s> Context<'s> {
                 .replace_prefix_sum(&mut self.current, self.configuration.prefix_sum);
             self.shader_compiler
                 .replace_clustered_light_shading(&mut self.current, self.configuration.clustered_light_shading);
+            self.shader_compiler
+                .replace_sample_count(&mut self.current, self.configuration.global.sample_count);
 
             unsafe {
                 let gl = &self.gl;
@@ -922,7 +931,7 @@ impl<'s> Context<'s> {
                     rain_drop.update(delta_time, rng, p0, p1);
                 }
 
-                for _ in 0..100 {
+                for _ in 0..20 {
                     if self.rain_drops.len() < self.configuration.global.rain_drop_max as usize {
                         self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
@@ -943,6 +952,15 @@ impl<'s> Context<'s> {
     }
 
     pub fn render(&mut self) {
+        self.resources.draw_resources.recompute(
+            &self.resources.scene_file.instances,
+            &self.resources.materials,
+            &self.resources.scene_file.transforms,
+            &self.resources.scene_file.mesh_descriptions,
+        );
+
+        self.resources.draw_resources.reupload(&self.gl);
+
         #[derive(Copy, Clone)]
         pub struct EyeData {
             tangents: vr::RawProjection,
@@ -1500,7 +1518,7 @@ impl<'s> Context<'s> {
 
                 let main_resources_index =
                     self.main_resources_pool
-                        .next_unused(gl, &mut self.profiling_context, camera_parameters.frame_dims);
+                        .next_unused(gl, &mut self.profiling_context, camera_parameters.frame_dims, self.configuration.global.sample_count);
 
                 self.clear_and_render_depth(main_resources_index);
 
@@ -1529,8 +1547,7 @@ impl<'s> Context<'s> {
                                 cluster_resources.cluster_fragment_counts_buffer.name(),
                             );
 
-                            // gl.uniform_1i(cls_renderer::DEPTH_SAMPLER_LOC, 0);
-                            gl.bind_texture_unit(0, main_resources.depth_texture.name());
+                            gl.bind_texture_unit(0, main_resources.depth_texture);
 
                             gl.uniform_2f(
                                 cls_renderer::FB_DIMS_LOC,
@@ -1551,9 +1568,18 @@ impl<'s> Context<'s> {
                                 gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
                             );
 
+                            let (lx, ly) = match self.configuration.global.sample_count {
+                                1 => (16, 16),
+                                2 => (8, 16),
+                                4 => (8, 8),
+                                8 => (4, 8),
+                                16 => (4, 4),
+                                other => panic!("Unsupported multisampling sample count {}.", other)
+                            };
+
                             gl.dispatch_compute(
-                                main_resources.dims.x.ceiled_div(16) as u32,
-                                main_resources.dims.y.ceiled_div(16) as u32,
+                                main_resources.dims.x.ceiled_div(lx) as u32,
+                                main_resources.dims.y.ceiled_div(ly) as u32,
                                 1,
                             );
                             gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
@@ -1987,7 +2013,7 @@ impl<'s> Context<'s> {
 
             let main_resources_index =
                 self.main_resources_pool
-                    .next_unused(gl, &mut self.profiling_context, dimensions);
+                    .next_unused(gl, &mut self.profiling_context, dimensions, self.configuration.global.sample_count);
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
