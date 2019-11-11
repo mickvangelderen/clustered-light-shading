@@ -184,8 +184,8 @@ impl Resources {
             }
 
             info!(
-                "Loaded {:?} with {} triangles and {} vertices",
-                scene_file_path, total_triangles, total_vertices
+                "Loaded {:?} with {} instances, {} triangles and {} vertices",
+                scene_file_path, scene_file.instances.len(), total_triangles, total_vertices
             );
         }
 
