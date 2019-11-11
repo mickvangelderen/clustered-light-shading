@@ -13,7 +13,9 @@
 
 #define tid gl_LocalInvocationID.x
 #define wid gl_WorkGroupID.x
-#define LOCAL_X 128
+// NOTE(mickvangelderen): For some reason this was the fastest. Maybe the driver
+// is doing something smart. Maybe register pressure?
+#define LOCAL_X 32
 
 layout(location = LIGHT_COUNT_LOC) uniform uint light_count;
 
