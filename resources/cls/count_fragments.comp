@@ -1,15 +1,29 @@
 #include "native/PREFIX_SUM"
 #include "native/CLUSTERED_LIGHT_SHADING"
+#include "native/SAMPLE_COUNT"
 
 #include "../common.glsl"
 #include "cluster_space_buffer.glsl"
 #include "cluster_fragment_counts_buffer.glsl"
 
-layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2D depth_sampler;
+layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
 layout(location = FB_DIMS_LOC) uniform vec2 fb_dims;
 layout(location = CLP_TO_WLD_LOC) uniform mat4 clp_to_wld;
 
-layout(local_size_x = 16, local_size_y = 16) in;
+#if SAMPLE_COUNT == 1
+layout(local_size_x = 16, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 2
+layout(local_size_x =  8, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 4
+layout(local_size_x =  8, local_size_y =  8, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 8
+layout(local_size_x =  4, local_size_y =  8, local_size_z = SAMPLE_COUNT) in;
+#elif SAMPLE_COUNT == 16
+layout(local_size_x =  4, local_size_y =  4, local_size_z = SAMPLE_COUNT) in;
+#else
+#error Unsupported SAMPLE_COUNT.
+#endif
+
 void main() {
   if (any(greaterThan(gl_GlobalInvocationID.xy, fb_dims))) {
     // Out of texture bounds.
@@ -17,8 +31,9 @@ void main() {
   }
 
   // pos_in_ndc is known.
-  vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - ivec2(fb_dims)) / vec2(fb_dims);
-  float z_ndc = texelFetch(depth_sampler, ivec2(gl_GlobalInvocationID.xy), 0).r;
+  ivec2 depth_dims = textureSize(depth_sampler);
+  vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - depth_dims) / vec2(depth_dims);
+  float z_ndc = texelFetch(depth_sampler, ivec2(gl_GlobalInvocationID.xy), int(gl_LocalInvocationID.z)).r;
 
   if (z_ndc == 0) {
     // Infinitely far (reverse z)

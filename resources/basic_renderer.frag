@@ -1,37 +1,11 @@
-#include "common.glsl"
-#include "cotangent_frame.glsl"
 #include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
 #include "native/PROFILING"
+
+#include "common.glsl"
 #include "heatmap.glsl"
 #include "light_buffer.glsl"
-
-// uniform sampler2D shadow_sampler;
-uniform sampler2D diffuse_sampler;
-uniform sampler2D normal_sampler;
-uniform sampler2D specular_sampler;
-
-// uniform vec2 shadow_dimensions;
-// uniform vec2 diffuse_dimensions;
-uniform vec2 normal_dimensions;
-// uniform vec2 specular_dimensions;
-
-uniform uint display_mode;
-
-#if defined(PROFILING_TIME_SENSITIVE)
-#if PROFILING_TIME_SENSITIVE == false
-layout(early_fragment_tests) in;
-layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_ops;
-layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
-#endif
-#else
-#error PROFILING_TIME_SENSITIVE is not defined.
-#endif
-
-in vec2 fs_pos_in_tex;
-in vec3 fs_pos_in_lgt;
-in vec3 fs_nor_in_lgt;
-in vec3 fs_tan_in_lgt;
+#include "pbr.glsl"
 
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
 #include "cls/cluster_space_buffer.glsl"
@@ -39,37 +13,48 @@ in vec3 fs_tan_in_lgt;
 #include "cls/active_cluster_light_counts_buffer.glsl"
 #include "cls/active_cluster_light_offsets_buffer.glsl"
 #include "cls/light_indices_buffer.glsl"
+#endif
 
+#if !defined(PROFILING_TIME_SENSITIVE)
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
+#if PROFILING_TIME_SENSITIVE == false
+#if !defined(BASIC_PASS)
+#error BASIC_PASS is not defined.
+#endif
+#if BASIC_PASS == BASIC_PASS_OPAQUE
+layout(early_fragment_tests) in;
+#endif
+layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_ops;
+layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
+#endif
+
+layout(location = SHININESS_LOC) uniform float shininess;
+
+layout(binding = NORMAL_SAMPLER_BINDING) uniform sampler2D normal_sampler;
+layout(binding = EMISSIVE_SAMPLER_BINDING) uniform sampler2D emissive_sampler;
+layout(binding = AMBIENT_SAMPLER_BINDING) uniform sampler2D ambient_sampler;
+layout(binding = DIFFUSE_SAMPLER_BINDING) uniform sampler2D diffuse_sampler;
+layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
+
+in vec4 fs_pos_in_lgt;
+in vec3 fs_nor_in_lgt;
+in vec3 fs_bin_in_lgt;
+in vec3 fs_tan_in_lgt;
+in vec2 fs_pos_in_tex;
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
 in vec3 fs_pos_in_ccam;
 #endif
 
 layout(location = 0) out vec4 frag_color;
-layout(location = 1) out vec3 frag_nor_in_lgt;
 
-// FIXME
 vec3 sample_nor_in_tan(vec2 pos_in_tex) {
-  float dx = 1.0 / normal_dimensions.x;
-  float dy = 1.0 / normal_dimensions.y;
-
-  float v00 = texture(normal_sampler, pos_in_tex + vec2(-dx, -dy)).x;
-  float v01 = texture(normal_sampler, pos_in_tex + vec2(0.0, -dy)).x;
-  float v02 = texture(normal_sampler, pos_in_tex + vec2(dx, -dy)).x;
-  float v10 = texture(normal_sampler, pos_in_tex + vec2(-dx, 0.0)).x;
-  // v11
-  float v12 = texture(normal_sampler, pos_in_tex + vec2(dx, 0.0)).x;
-  float v20 = texture(normal_sampler, pos_in_tex + vec2(-dx, dy)).x;
-  float v21 = texture(normal_sampler, pos_in_tex + vec2(0.0, dy)).x;
-  float v22 = texture(normal_sampler, pos_in_tex + vec2(dx, dy)).x;
-
-  float x = (v02 - v00) + 2.0 * (v12 - v10) + (v22 - v20);
-  float y = (v20 - v00) + 2.0 * (v21 - v01) + (v22 - v02);
-
-  return normalize(vec3(-x, -y, 1.0));
+  vec2 xy = texture(normal_sampler, pos_in_tex).xy * 2.0 - vec2(1.0);
+  float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));
+  return vec3(xy, z);
 }
 
-// All computations are in lgt space.
-vec3 point_light_contribution(PointLight point_light, vec3 nor, vec3 frag_pos,
-                              vec3 lgt_dir_norm) {
+vec2 point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   vec3 pos_from_frag_to_light = point_light.pos_in_lgt.xyz - frag_pos;
   vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
@@ -111,63 +96,64 @@ vec3 point_light_contribution(PointLight point_light, vec3 nor, vec3 frag_pos,
     specular_attenuation = 0.0;
   }
 
-  // Diffuse.
-  float diffuse_weight = max(0.0, dot(nor, light_dir_norm));
+  return vec2(diffuse_attenuation, specular_attenuation);
+}
 
-  // Specular.
-  float specular_angle =
-      max(0.0, dot(lgt_dir_norm, reflect(-light_dir_norm, nor)));
-  // TODO: Upload shininess
-  float specular_weight = pow(specular_angle, 10.0);
+vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
+  vec3 frag_to_light = point_light.pos_in_lgt.xyz - P;
+  vec3 L = normalize(frag_to_light);
 
-  // LIGHT ATTENUATION.
-  // return vec3(diffuse_attenuation);
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, kd, metalness);
 
-  // LIGHT CONTRIBUTION.
-  return
-      // Diffuse
-      (diffuse_attenuation * diffuse_weight) * point_light.diffuse.rgb *
-          texture(diffuse_sampler, fs_pos_in_tex).rgb +
-      // Specular
-      (specular_attenuation * specular_weight) * point_light.specular.rgb *
-          texture(specular_sampler, fs_pos_in_tex).rgb;
+  // calculate per-light radiance
+  vec3 H = normalize(V + L);
+  vec3 radiance = point_light.diffuse.xyz * point_light_attenuate(point_light, P).r;
+
+  // Cook-Torrance BRDF
+  float NDF = DistributionGGX(N, H, roughness);
+  float G   = GeometrySmith(N, V, L, roughness);
+  vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
+
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotL = max(dot(N, L), 0.0);
+  vec3 specular = NDF * G * F / max(4 * NdotV * NdotL, 0.001); // prevent divide by zero for NdotV=0.0 or NdotL=0.0
+
+  vec3 kD = (vec3(1.0) - F) * (1.0 - metalness);
+
+  return (kD * kd / PI + specular) * radiance * NdotL;
 }
 
 void main() {
-  // Perturbed normal in camera space.
-  // TODO: Consider https://github.com/mickvangelderen/vr-lab/issues/3
-  vec3 fs_nor_in_lgt_norm = normalize(fs_nor_in_lgt);
-#define PER_PIXEL_COTANGENT_FRAME
-#if defined(PER_PIXEL_COTANGENT_FRAME)
-  mat3 tbn = cotangent_frame(fs_nor_in_lgt, fs_pos_in_lgt, fs_pos_in_tex);
-  vec3 nor_in_lgt = tbn * sample_nor_in_tan(fs_pos_in_tex);
-#else
-  vec3 fs_bitan_in_lgt_norm =
-      cross(fs_nor_in_lgt_norm, normalize(fs_tan_in_lgt));
-  vec3 fs_tan_in_lgt_norm = cross(fs_bitan_in_lgt_norm, fs_nor_in_lgt_norm);
-  mat3 dir_from_tan_to_cam =
-      mat3(fs_tan_in_lgt_norm, fs_bitan_in_lgt_norm, fs_nor_in_lgt_norm);
-  vec3 nor_in_lgt = dir_from_tan_to_cam * sample_nor_in_tan(fs_pos_in_tex);
+  vec3 frag_pos_in_lgt = fs_pos_in_lgt.xyz/fs_pos_in_lgt.w;
+  vec3 frag_geo_nor_in_lgt = normalize(fs_nor_in_lgt);
+  vec3 frag_geo_bin_in_lgt = normalize(fs_bin_in_lgt);
+  vec3 frag_geo_tan_in_lgt = normalize(fs_tan_in_lgt);
+  vec2 frag_pos_in_tex = fs_pos_in_tex;
+  vec3 frag_nor_in_tan = sample_nor_in_tan(frag_pos_in_tex);
+
+  vec4 ka = texture(ambient_sampler, frag_pos_in_tex);
+  vec4 ke = texture(emissive_sampler, frag_pos_in_tex);
+  vec4 kd = texture(diffuse_sampler, frag_pos_in_tex);
+  vec4 ks = texture(specular_sampler, frag_pos_in_tex);
+
+#if !defined(BASIC_PASS)
+#error BASIC_PASS is undefined.
 #endif
-  frag_nor_in_lgt = nor_in_lgt * 0.5 + vec3(0.5);
+#if BASIC_PASS == BASIC_PASS_MASKED
+  if (kd.a < 0.5) {
+    discard;
+  }
+#endif
 
-  // TODO: Render unmasked and masked materials separately.
-  // vec4 diffuse_sample = texture(diffuse_sampler, fs_pos_in_tex);
-  // if (diffuse_sample.a < 0.5) {
-  //   discard;
-  // }
-
-  if (display_mode == 0) {
-
-    vec3 cam_dir_in_lgt_norm = normalize(cam_pos_in_lgt.xyz - fs_pos_in_lgt);
+  mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
+  vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
+  vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
 
 #if defined(RENDER_TECHNIQUE_NAIVE)
-    vec3 color_accumulator = vec3(0.0);
+    vec3 color_accumulator = vec3(ke.xyz);
     for (uint i = 0; i < light_buffer.light_count.x; i++) {
-      color_accumulator +=
-          point_light_contribution(light_buffer.point_lights[i], nor_in_lgt,
-                                   fs_pos_in_lgt, cam_dir_in_lgt_norm);
-      // atomicCounterIncrement(shading_ops);
+      color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
@@ -227,27 +213,24 @@ void main() {
       // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
       // ACTUAL SHADING
-#if defined(PROFILING_TIME_SENSITIVE)
+#if !defined(PROFILING_TIME_SENSITIVE)
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 #if PROFILING_TIME_SENSITIVE == false
       atomicCounterIncrement(shading_ops);
 #endif
-#else
-#error PROFILING_TIME_SENSITIVE is not defined.
-#endif
 
-      vec3 color_accumulator = vec3(0.0);
+      vec3 color_accumulator = ke.xyz;
       for (uint i = 0; i < cluster_light_count; i++) {
         uint light_index = light_indices[cluster_light_offset + i];
 
-        color_accumulator += point_light_contribution(
-            light_buffer.point_lights[light_index], nor_in_lgt, fs_pos_in_lgt,
-            cam_dir_in_lgt_norm);
-#if defined(PROFILING_TIME_SENSITIVE)
+        color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+
+#if !defined(PROFILING_TIME_SENSITIVE)
+#error PROFILING_TIME_SENSITIVE is not defined.
+#endif
 #if PROFILING_TIME_SENSITIVE == false
         atomicCounterIncrement(lighting_ops);
-#endif
-#else
-#error PROFILING_TIME_SENSITIVE is not defined.
 #endif
       }
       frag_color = vec4(color_accumulator, 1.0);
@@ -255,25 +238,4 @@ void main() {
 #else
 #error Unimplemented render technique!
 #endif
-  }
-
-  if (display_mode == 1) {
-    // DIFFUSE TEXTURE
-    frag_color = texture(diffuse_sampler, fs_pos_in_tex);
-  }
-
-  if (display_mode == 2) {
-    // NORMAL TEXTURE
-    frag_color = texture(normal_sampler, fs_pos_in_tex);
-  }
-
-  if (display_mode == 2) {
-    // SPECULAR_TEXTURE
-    frag_color = texture(specular_sampler, fs_pos_in_tex);
-  }
-
-  if (display_mode == 3) {
-    // NORMAL
-    frag_color = vec4(nor_in_lgt, 1.0);
-  }
 }

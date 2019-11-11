@@ -34,7 +34,7 @@ impl FixedCapacityBuffer {
         self.try_alloc::<T>(gl, count).unwrap()
     }
 
-    pub fn try_alloc<T>(&mut self, gl: &Gl, count: usize) -> Result<BufferSlice, AllocError> {
+    pub fn try_alloc<T>(&mut self, _gl: &Gl, count: usize) -> Result<BufferSlice, AllocError> {
         let slice = BufferSlice::new::<T>(self.len, count);
 
         if slice.byte_end() <= self.cap {

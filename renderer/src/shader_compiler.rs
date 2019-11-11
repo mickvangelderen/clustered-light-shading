@@ -85,6 +85,7 @@ pub enum SourceReader {
     PrefixSum,
     ClusteredLightShading,
     Profiling,
+    SampleCount,
 }
 
 impl SourceReader {
@@ -205,6 +206,17 @@ impl SourceReader {
                         true => "true",
                         false => "false",
                     }
+                )));
+            }
+            SourceReader::SampleCount => {
+                tokens.push(Token::Literal(format!(
+                    "\
+                    #line {} {}\n\
+                    #define SAMPLE_COUNT {}\n\
+                    ",
+                    line!() - 2,
+                    source_index,
+                    vars.sample_count,
                 )));
             }
         }
@@ -429,6 +441,7 @@ pub struct Variables {
     pub prefix_sum: PrefixSumConfiguration,
     pub clustered_light_shading: ClusteredLightShadingConfiguration,
     pub profiling: ProfilingVariables,
+    pub sample_count: u32,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -443,6 +456,7 @@ pub struct NativeSourceIndices {
     pub prefix_sum: SourceIndex,
     pub clustered_light_shading: SourceIndex,
     pub profiling: SourceIndex,
+    pub sample_count: SourceIndex,
 }
 
 pub struct ShaderCompilationContext<'a> {
@@ -487,6 +501,10 @@ impl ShaderCompiler {
             profiling: memory.add_source(
                 PathBuf::from("native/PROFILING"),
                 Source::new(current, SourceReader::Profiling, PathBuf::from(file!())),
+            ),
+            sample_count: memory.add_source(
+                PathBuf::from("native/SAMPLE_COUNT"),
+                Source::new(current, SourceReader::SampleCount, PathBuf::from(file!())),
             ),
         };
 
@@ -596,5 +614,12 @@ impl ShaderCompiler {
             self.source_mut(self.indices.profiling).last_modified.modify(current);
         }
         std::mem::replace(&mut self.variables.profiling, value)
+    }
+
+    pub fn replace_sample_count(&mut self, current: &mut Current, value: u32) -> u32 {
+        if self.variables.sample_count != value {
+            self.source_mut(self.indices.sample_count).last_modified.modify(current);
+        }
+        std::mem::replace(&mut self.variables.sample_count, value)
     }
 }

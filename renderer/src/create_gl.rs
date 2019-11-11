@@ -29,6 +29,8 @@ pub fn create_gl(gl_window: &glutin::GlWindow, cfg: &GlConfiguration) -> gl::Gl 
             gl.disable(gl::FRAMEBUFFER_SRGB);
         }
 
+        gl.enable(gl::MULTISAMPLE);
+
         gl
     }
 }
