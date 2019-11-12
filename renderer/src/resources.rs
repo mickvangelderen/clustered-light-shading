@@ -565,7 +565,7 @@ pub fn compute_instance_matrices(
     instances: &[scene_file::Instance],
     transforms: &[scene_file::Transform],
 ) -> Vec<InstanceMatrices> {
-    let start = std::time::Instant::now();
+    // let start = std::time::Instant::now();
 
     let instance_matrices: Vec<InstanceMatrices> = instances
         .iter()
@@ -584,7 +584,7 @@ pub fn compute_instance_matrices(
         })
         .collect();
 
-    info!("compute instance matrices elapsed {:?}", start.elapsed());
+    // info!("compute instance matrices elapsed {:?}", start.elapsed());
 
     instance_matrices
 }
@@ -600,7 +600,7 @@ pub fn compute_draw_commands(
     materials: &[Material],
     mesh_descriptions: &[scene_file::MeshDescription],
 ) -> DrawCommandResources {
-    let start = std::time::Instant::now();
+    // let start = std::time::Instant::now();
 
     // Prefix sum draw counts per material.
     let mut counts: Vec<usize> =
@@ -652,7 +652,7 @@ pub fn compute_draw_commands(
         counts[material_index] += 1;
     }
 
-    info!("compute draw commands elapsed {:?}", start.elapsed());
+    // info!("compute draw commands elapsed {:?}", start.elapsed());
 
     DrawCommandResources {
         counts,
