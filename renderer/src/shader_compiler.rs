@@ -341,17 +341,10 @@ impl EntryPoint {
             return false;
         }
 
-        let mut should_recompute = false;
-
-        {
-            for &source_index in self.included.iter() {
-                let source = &context.shader_compiler.memory.sources[source_index];
-                if self.last_computed.should_compute(&source.last_modified) {
-                    should_recompute = true;
-                    break;
-                }
-            }
-        }
+        let should_recompute = self.included.iter().any(|&source_index| {
+            self.last_computed
+                .should_compute(&context.shader_compiler.memory.sources[source_index].last_modified)
+        });
 
         return if should_recompute {
             self.contents.clear();
