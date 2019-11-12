@@ -211,9 +211,9 @@ impl SourceReader {
             SourceReader::SampleCount => {
                 tokens.push(Token::Literal(format!(
                     "\
-                    #line {} {}\n\
-                    #define SAMPLE_COUNT {}\n\
-                    ",
+                     #line {} {}\n\
+                     #define SAMPLE_COUNT {}\n\
+                     ",
                     line!() - 2,
                     source_index,
                     vars.sample_count,
