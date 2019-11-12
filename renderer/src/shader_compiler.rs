@@ -271,10 +271,15 @@ impl Memory {
     }
 
     pub fn add_source(&mut self, source_path: PathBuf, source: Source) -> SourceIndex {
-        let source_index = self.sources.len();
-        self.sources.push(Rc::new(source));
-        self.path_to_source_index.insert(source_path, source_index);
-        source_index
+        match self.path_to_source_index.get(&source_path) {
+            Some(&source_index) => source_index,
+            None => {
+                let source_index = self.sources.len();
+                self.sources.push(Rc::new(source));
+                self.path_to_source_index.insert(source_path, source_index);
+                source_index
+            }
+        }
     }
 }
 
