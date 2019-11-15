@@ -15,6 +15,7 @@ pub enum TypedIndex {
     Material(usize),
     Texture(usize),
     Video(usize),
+    Unknown(i64),
 }
 
 impl TypedConnections {
@@ -44,7 +45,7 @@ impl TypedConnections {
             if let Some(&index) = video_map.get(&id) {
                 return TypedIndex::Video(index);
             }
-            panic!("Can't find id {}", id);
+            return TypedIndex::Unknown(id);
         };
 
         Self {
