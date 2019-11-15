@@ -246,9 +246,9 @@ pub fn quad_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: 
     let mut vertices = Vec::with_capacity((8 + 12 * n + 6 * n * n) as usize);
 
     // Corners vertices.
-    for &zf in FACES.into_iter() {
-        for &yf in FACES.into_iter() {
-            for &xf in FACES.into_iter() {
+    for &zf in FACES.iter() {
+        for &yf in FACES.iter() {
+            for &xf in FACES.iter() {
                 debug_assert_eq!(vertices.len(), corner_index(zf, yf, xf) as usize);
                 vertices.push([xf.select(x), yf.select(y), zf.select(z)]);
             }
@@ -256,10 +256,10 @@ pub fn quad_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: 
     }
 
     // Edge vertices.
-    for &basis in BASES.into_iter() {
+    for &basis in BASES.iter() {
         let [r1, r2, r3] = basis.from_xyz([x, y, z]);
-        for &i3 in FACES.into_iter() {
-            for &i2 in FACES.into_iter() {
+        for &i3 in FACES.iter() {
+            for &i2 in FACES.iter() {
                 for i1 in 1..=n {
                     debug_assert_eq!(vertices.len(), edge_index(n, basis, i3, i2, i1) as usize);
                     vertices.push(basis.to_xyz([lerp_u32_f32(i1, (0, n + 1), r1), i2.select(r2), i3.select(r3)]));
@@ -269,11 +269,11 @@ pub fn quad_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: 
     }
 
     // Face vertices.
-    for &basis in BASES.into_iter() {
+    for &basis in BASES.iter() {
         let [r1, r2, r3] = basis.from_xyz([x, y, z]);
         for i3 in 1..=n {
             for i2 in 1..=n {
-                for &i1 in FACES.into_iter() {
+                for &i1 in FACES.iter() {
                     debug_assert_eq!(vertices.len(), face_index(n, basis, i3, i2, i1) as usize);
                     vertices.push(basis.to_xyz([
                         i1.select(r1),
@@ -295,8 +295,8 @@ fn cube_polygons<P: FromQuad<u32> + Clone>(subdivisions: u32) -> Vec<P> {
 
         let mut faces: Vec<P> = Vec::with_capacity(P::Polygons::LENGTH * (6 * (n + 1) * (n + 1)) as usize);
 
-        for &basis in BASES.into_iter() {
-            for &i1 in FACES.into_iter() {
+        for &basis in BASES.iter() {
+            for &i1 in FACES.iter() {
                 for i3 in 0..=n {
                     for i2 in 0..=n {
                         faces.extend_from_slice(
@@ -339,9 +339,9 @@ pub fn cube_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: 
     let mut vertices = Vec::with_capacity((8 + 12 * n + 6 * n * n) as usize);
 
     // Corners vertices.
-    for &zf in FACES.into_iter() {
-        for &yf in FACES.into_iter() {
-            for &xf in FACES.into_iter() {
+    for &zf in FACES.iter() {
+        for &yf in FACES.iter() {
+            for &xf in FACES.iter() {
                 debug_assert_eq!(vertices.len(), corner_index(zf, yf, xf) as usize);
                 vertices.push([xf.select(x), yf.select(y), zf.select(z)]);
             }
@@ -349,10 +349,10 @@ pub fn cube_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: 
     }
 
     // Edge vertices.
-    for &basis in BASES.into_iter() {
+    for &basis in BASES.iter() {
         let [r1, r2, r3] = basis.from_xyz([x, y, z]);
-        for &i3 in FACES.into_iter() {
-            for &i2 in FACES.into_iter() {
+        for &i3 in FACES.iter() {
+            for &i2 in FACES.iter() {
                 for i1 in 1..=n {
                     debug_assert_eq!(vertices.len(), edge_index(n, basis, i3, i2, i1) as usize);
                     vertices.push(basis.to_xyz([lerp_u32_f32(i1, (0, n + 1), r1), i2.select(r2), i3.select(r3)]));
@@ -362,11 +362,11 @@ pub fn cube_vertices(x: (f32, f32), y: (f32, f32), z: (f32, f32), subdivisions: 
     }
 
     // Face vertices.
-    for &basis in BASES.into_iter() {
+    for &basis in BASES.iter() {
         let [r1, r2, r3] = basis.from_xyz([x, y, z]);
         for i3 in 1..=n {
             for i2 in 1..=n {
-                for &i1 in FACES.into_iter() {
+                for &i1 in FACES.iter() {
                     debug_assert_eq!(vertices.len(), face_index(n, basis, i3, i2, i1) as usize);
                     vertices.push(basis.to_xyz([
                         i1.select(r1),
@@ -389,9 +389,9 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
     let mut vertices = Vec::with_capacity((8 + 12 * n + 6 * n * n) as usize);
 
     // Corners vertices.
-    for &zf in FACES.into_iter() {
-        for &yf in FACES.into_iter() {
-            for &xf in FACES.into_iter() {
+    for &zf in FACES.iter() {
+        for &yf in FACES.iter() {
+            for &xf in FACES.iter() {
                 debug_assert_eq!(vertices.len(), corner_index(zf, yf, xf) as usize);
                 vertices.push([
                     xf.to_f32() * radius * frac_1_sqrt_3,
@@ -403,9 +403,9 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
     }
 
     // Edge vertices.
-    for &basis in BASES.into_iter() {
-        for &i3 in FACES.into_iter() {
-            for &i2 in FACES.into_iter() {
+    for &basis in BASES.iter() {
+        for &i3 in FACES.iter() {
+            for &i2 in FACES.iter() {
                 for i1 in 1..=n {
                     debug_assert_eq!(vertices.len(), edge_index(n, basis, i3, i2, i1) as usize);
                     let a1 = lerp_u32_f32(i1, (0, n + 1), face_range);
@@ -419,10 +419,10 @@ pub fn cubic_sphere_vertices(radius: f32, subdivisions: u32) -> Vec<[f32; 3]> {
     }
 
     // Face vertices.
-    for &basis in BASES.into_iter() {
+    for &basis in BASES.iter() {
         for i3 in 1..=n {
             for i2 in 1..=n {
-                for &i1 in FACES.into_iter() {
+                for &i1 in FACES.iter() {
                     debug_assert_eq!(vertices.len(), face_index(n, basis, i3, i2, i1) as usize);
                     let a2 = lerp_u32_f32(i2, (0, n + 1), face_range);
                     let a3 = lerp_u32_f32(i3, (0, n + 1), face_range);
