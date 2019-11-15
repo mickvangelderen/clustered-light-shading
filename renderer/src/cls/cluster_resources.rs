@@ -225,7 +225,7 @@ impl ClusterResources {
                          }| {
                             let clp_to_hmd = parameters.wld_to_hmd * cam_par.cam_to_wld * cam_par.clp_to_cam;
                             corners_in_clp
-                                .into_iter()
+                                .iter()
                                 .map(move |&p| clp_to_hmd.transform_point(p).cast::<f64>().unwrap())
                         },
                     )
