@@ -436,6 +436,52 @@ impl Resources {
             (vao, vb, eb)
         };
 
+        let point_lights: Vec<PointLight> = scene_file.instances.iter().flat_map(|instance| {
+            let material_index = instance.material_index as usize;
+            let emissive_color = scene_file.materials[material_index].emissive_color;
+
+            if emissive_color != [0.0; 3] {
+                let mesh_description_index = instance.mesh_index as usize;
+                let mesh_description = &scene_file.mesh_descriptions[mesh_description_index];
+                let vertex_offset = mesh_description.vertex_offset as usize;
+                let vertex_count = mesh_description.vertex_count as usize;
+                let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
+                    Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
+                });
+                let center = vertex_iter.fold(Point3::origin(), |mut acc, p| {
+                    acc += p.to_vec();
+                    acc
+                }) * (1.0 / vertex_count as f32);
+
+                dbg!(emissive_color);
+                dbg!(center);
+
+                let transform = &scene_file.transforms[instance.transform_index as usize];
+                let pos_from_obj_to_wld = transform.to_parent();
+                let pos_in_wld = pos_from_obj_to_wld.transform_point(center);
+
+                let color = RGB {
+                    r: emissive_color[0],
+                    g: emissive_color[1],
+                    b: emissive_color[2],
+                };
+
+                Some(PointLight {
+                    ambient: color,
+                    diffuse: color,
+                    specular: color,
+                    pos_in_wld,
+                    attenuation: AttenParams {
+                        intensity: 4.0,
+                        clip_near: 0.5,
+                        cutoff: 0.2,
+                    }.into(),
+                })
+            } else {
+                None
+            }
+        }).collect();
+
         Resources {
             scene_vao,
             scene_vb,
@@ -451,104 +497,7 @@ impl Resources {
             cluster_eb,
             cluster_element_count,
             draw_resources: DrawResources::new(gl),
-            point_lights: vec![
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
-                    specular: RGB::new(1.0000, 1.0000, 1.0000),
-                    pos_in_wld: Point3::new(-12.9671, 1.8846, -4.4980),
-                    attenuation: AttenParams {
-                        intensity: 2.0,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
-                    specular: RGB::new(1.0000, 1.0000, 1.0000),
-                    pos_in_wld: Point3::new(-11.9563, 2.6292, 3.8412),
-                    attenuation: AttenParams {
-                        intensity: 3.0,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
-                    specular: RGB::new(1.0000, 1.0000, 1.0000),
-                    pos_in_wld: Point3::new(13.6090, 2.6292, 3.3216),
-                    attenuation: AttenParams {
-                        intensity: 2.0,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
-                    specular: RGB::new(1.0000, 1.0000, 1.0000),
-                    pos_in_wld: Point3::new(12.5982, 1.8846, -5.0176),
-                    attenuation: AttenParams {
-                        intensity: 1.0,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(4.0000, 4.0000, 4.0000),
-                    specular: RGB::new(1.0000, 1.0000, 1.0000),
-                    pos_in_wld: Point3::new(3.3116, 4.3440, 5.1447),
-                    attenuation: AttenParams {
-                        intensity: 1.2,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(0.0367, 4.0000, 0.0000),
-                    specular: RGB::new(0.0092, 1.0000, 0.0000),
-                    pos_in_wld: Point3::new(8.8820, 6.7391, -1.0279),
-                    attenuation: AttenParams {
-                        intensity: 0.5,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(4.0000, 0.1460, 0.1006),
-                    specular: RGB::new(1.0000, 0.0365, 0.0251),
-                    pos_in_wld: Point3::new(-4.6988, 10.0393, 0.8667),
-                    attenuation: AttenParams {
-                        intensity: 1.0,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-                PointLight {
-                    ambient: RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: RGB::new(0.8952, 0.8517, 4.0000),
-                    specular: RGB::new(0.2238, 0.2129, 1.0000),
-                    pos_in_wld: Point3::new(-4.6816, 1.0259, -2.1767),
-                    attenuation: AttenParams {
-                        intensity: 3.0,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
-                    }
-                    .into(),
-                },
-            ],
+            point_lights,
         }
     }
 }
