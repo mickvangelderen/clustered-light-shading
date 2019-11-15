@@ -19,11 +19,12 @@ while we need to render to the HDM at 90Hz.
 
 ## Dependencies
 
-### Sibling repositories.
+### CMake
 
-`git clone git@github.com:mickvangelderen/gl-typed-rust`
-`git clone git@github.com:mickvangelderen/openvr-sys-rust --recursive`
-`git clone git@github.com:mickvangelderen/openvr-rust`
+```
+sudo apt install cmake
+sudo apt install clang-8
+```
 
 ### Steam needs QT5.
 
