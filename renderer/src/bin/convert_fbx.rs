@@ -514,12 +514,38 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 }
 
 fn main() {
-    convert(
-        "resources/bistro/Bistro_Exterior.fbx",
-        "resources/bistro/Bistro_Exterior.bin",
-    );
-    convert(
-        "resources/sun_temple/SunTemple.fbx",
-        "resources/sun_temple/SunTemple.bin",
-    );
+    let resource_dir = std::path::PathBuf::from("resources");
+    for p in &[
+        // "speedtree/Azalea/LowPoly/Azalea_LowPoly.fbx",
+        // "speedtree/Azalea/HighPoly/Azalea.fbx",
+        // "speedtree/Red Maple Young/LowPoly/Red_Maple_Young_LowPoly.fbx",
+        // "speedtree/Red Maple Young/HighPoly/Red_Maple_Young.fbx",
+        // "speedtree/Hedge/LowPoly/Hedge_LowPoly.fbx",
+        // "speedtree/Hedge/HighPoly/Hedge.fbx",
+        // "speedtree/Boston Fern/LowPoly/Boston_Fern_LowPoly.fbx",
+        // "speedtree/Boston Fern/HighPoly/Boston_Fern.fbx",
+        // "speedtree/Backyard Grass/LowPoly/Backyard_Grass_LowPoly.fbx",
+        // "speedtree/Backyard Grass/HighPoly/Backyard_Grass.fbx",
+        // "speedtree/European Linden/LowPoly/European_Linden_LowPoly.fbx",
+        // "speedtree/European Linden/HighPoly/European_Linden.fbx",
+        // "speedtree/Japanese Maple/LowPoly/Japanese_Maple_LowPoly.fbx",
+        // "speedtree/Japanese Maple/HighPoly/Japanese_Maple.fbx",
+        // "speedtree/White Oak/LowPoly/White_Oak_LowPoly.fbx",
+        // "speedtree/White Oak/HighPoly/White_Oak.fbx",
+        "emerald_square/Block_Sheleg_Tower.fbx",
+        "emerald_square/Block_Park.fbx",
+        "emerald_square/Block_Toy_Hotel.fbx",
+        "emerald_square/End_Cap_Corner.fbx",
+        "emerald_square/Block_KWOW_Coffee.fbx",
+        "emerald_square/End_Cap.fbx",
+        "bistro/Bistro_Interior_Binary.fbx",
+        // "bistro/Bistro_Interior.fbx",
+        "bistro/Bistro_Exterior.fbx",
+        "sun_temple/SunTemple.fbx",
+    ] {
+        let i = resource_dir.join(p);
+        let o = i.with_extension("bin");
+        dbg!(&i, &o);
+        convert(i, o);
+    }
 }
