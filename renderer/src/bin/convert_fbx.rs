@@ -139,6 +139,8 @@ fn visit(node: &fbx::tree::Node, depth: usize) {
 }
 
 fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
+    let path = path.as_ref();
+    let file_dir = path.parent().unwrap();
     let file = read(path).unwrap();
     dbg!(&file.header, file.children.len());
 
@@ -216,7 +218,7 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             .textures
             .iter()
             .map(|texture| Texture {
-                file_path: texture.file_path.clone(),
+                file_path: std::path::PathBuf::from(texture.file_path.to_str().unwrap().replace("\\", "/")),
             })
             .collect(),
     };
@@ -463,19 +465,71 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
         match (op.0, op.1) {
             (TypedIndex::Texture(texture_index), TypedIndex::Material(material_index)) => {
                 let material = &mut file.materials[material_index as usize];
-                let texture_index = Some(NonMaxU32::new(texture_index as u32).unwrap());
+                let some_texture_index = Some(NonMaxU32::new(texture_index as u32).unwrap());
                 match op.2.as_ref() {
                     "DiffuseColor" => {
-                        material.diffuse_texture_index = texture_index;
+                        material.diffuse_texture_index = some_texture_index;
                     }
                     "NormalMap" => {
-                        material.normal_texture_index = texture_index;
+                        material.normal_texture_index = some_texture_index;
                     }
                     "SpecularColor" => {
-                        material.specular_texture_index = texture_index;
+                        material.specular_texture_index = some_texture_index;
                     }
                     "EmissiveColor" => {
-                        material.emissive_texture_index = texture_index;
+                        material.emissive_texture_index = some_texture_index;
+                        let file_path = file_dir.join(&file.textures[texture_index].file_path);
+                        match file_path.extension().and_then(std::ffi::OsStr::to_str) {
+                            Some("dds") => {
+                                let file = std::fs::File::open(&file_path).unwrap();
+                                let mut reader = std::io::BufReader::new(file);
+                                let dds = dds::File::parse(&mut reader).unwrap();
+                                match dds.header.pixel_format {
+                                    dds::Format::BC1_UNORM_RGB => {
+                                        let layer = dds.layers.iter().last().unwrap();
+
+                                        let w = layer.width as usize;
+                                        let h = layer.height as usize;
+
+                                        assert_eq!(1, w);
+                                        assert_eq!(1, h);
+
+                                        let block_counts = ((w + 3) / 4, (h + 3) / 4);
+
+                                        let blocks = unsafe {
+                                            assert_eq!(
+                                                block_counts.0
+                                                    * block_counts.1
+                                                    * std::mem::size_of::<dds::bc1::Block>(),
+                                                layer.byte_count
+                                            );
+
+                                            std::slice::from_raw_parts(
+                                                dds.bytes[layer.byte_offset..(layer.byte_offset + layer.byte_count)]
+                                                    .as_ptr()
+                                                    as *const dds::bc1::Block,
+                                                block_counts.0 * block_counts.1,
+                                            )
+                                        };
+
+                                        let block = blocks[0].to_rgba_8880();
+
+                                        let pixel = block[0][0].to_bytes();
+
+                                        material.emissive_color = [
+                                            pixel[0] as f32 / 255.0,
+                                            pixel[1] as f32 / 255.0,
+                                            pixel[2] as f32 / 255.0,
+                                        ];
+                                    }
+                                    _ => eprintln!(
+                                        "Can't read emissive texture file because of encoding {:?}",
+                                        &file_path
+                                    ),
+                                }
+                            }
+                            _ => eprint!("Can't read emissive texture file format {:?}", &file_path),
+                        }
                     }
                     _ => {
                         eprintln!("Unhandled connection property {:?}", op);
@@ -538,8 +592,7 @@ fn main() {
         "emerald_square/End_Cap_Corner.fbx",
         "emerald_square/Block_KWOW_Coffee.fbx",
         "emerald_square/End_Cap.fbx",
-        "bistro/Bistro_Interior_Binary.fbx",
-        // "bistro/Bistro_Interior.fbx",
+        "bistro/Bistro_Interior.fbx",
         "bistro/Bistro_Exterior.fbx",
         "sun_temple/SunTemple.fbx",
     ] {
