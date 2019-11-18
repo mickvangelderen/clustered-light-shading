@@ -453,9 +453,6 @@ impl Resources {
                     acc
                 }) * (1.0 / vertex_count as f32);
 
-                dbg!(emissive_color);
-                dbg!(center);
-
                 let transform = &scene_file.transforms[instance.transform_index as usize];
                 let pos_from_obj_to_wld = transform.to_parent();
                 let pos_in_wld = pos_from_obj_to_wld.transform_point(center);
