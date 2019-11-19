@@ -60,7 +60,7 @@ var poly_4 = function(points) {
     popStyle();
 };
 
-var frustrum = [];
+var frustum = [];
 
 var draw_sections = function(points, r) {
     pushStyle();
@@ -89,10 +89,10 @@ var draw_sections = function(points, r) {
     popStyle();
 };
 
-var test_intersect = function(frustrum, c, r) {
+var test_intersect = function(frustum, c, r) {
     var inside_count = 0;
     
-    var p = frustrum;
+    var p = frustum;
     
     var e = [
         PVector.sub(p[1], p[0]),
@@ -180,7 +180,7 @@ var test_intersect = function(frustrum, c, r) {
 draw = function() {
     background(255, 255, 255);
     
-    if (frustrum.length === 0) {
+    if (frustum.length === 0) {
         pushStyle();
         fill(0, 0, 0);
         text("Click to draw.", 15, 30);
@@ -192,12 +192,12 @@ draw = function() {
     
     var hit = null;
     
-    if (frustrum.length === 4) {
-        hit = test_intersect(frustrum, c, r);
+    if (frustum.length === 4) {
+        hit = test_intersect(frustum, c, r);
     }
 
-    draw_sections(frustrum, r);
-    poly_4(frustrum);
+    draw_sections(frustum, r);
+    poly_4(frustum);
     
     pushStyle();
     noFill();
@@ -219,15 +219,15 @@ draw = function() {
     if (hit !== null && hit.edge !== undefined) {
         pushStyle();
         stroke(255, 0, 0);
-        var p0 = frustrum[hit.edge];
-        var p1 = frustrum[(hit.edge + 1) % 4];
+        var p0 = frustum[hit.edge];
+        var p1 = frustum[(hit.edge + 1) % 4];
         line_vec(p0, p1);
         popStyle();
     } else if (hit !== null && hit.corner !== undefined) {
         pushStyle();
         strokeWeight(7);
         stroke(255, 0, 0);
-        var p = frustrum[hit.corner];
+        var p = frustum[hit.corner];
         point(p.x, p.y);
         strokeWeight(3);
         popStyle();
@@ -235,11 +235,11 @@ draw = function() {
 };
 
 mousePressed = function() {
-    if (frustrum.length === 4) {
-        frustrum = [];
+    if (frustum.length === 4) {
+        frustum = [];
     }
-    var p = new_point(frustrum);
+    var p = new_point(frustum);
     if (p !== null) {
-        frustrum.push(p);
+        frustum.push(p);
     }
 };
