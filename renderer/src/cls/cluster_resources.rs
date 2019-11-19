@@ -1,6 +1,5 @@
 use crate::*;
 use renderer::*;
-use std::cmp::Ordering;
 
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -253,26 +252,27 @@ impl ClusterResources {
                     1 => {
                         let camera = &cameras[0];
 
-                        let d = camera.parameters.frame_dims;
+                        let dims = camera.parameters.frame_dims;
                         let f = camera.parameters.frustum;
 
-                        let x_per_c = f.dx() * 64.0 / d.x as f64;
-                        let y_per_c = f.dy() * 64.0 / d.y as f64;
+                        let px = cfg.perspective_pixels.x;
+                        let py = cfg.perspective_pixels.y;
 
-                        assert!(x_per_c - y_per_c < std::f64::EPSILON);
-
-                        let cls_x = d.x.ceiled_div(64) as u32;
-                        let cls_y = d.y.ceiled_div(64) as u32;
-                        let cls_z = (f.z0 / f.z1).log(1.0 + -f.z1 * x_per_c).ceil() as u32;
+                        let x_per_c = f.dx() * px as f64 / dims.x as f64;
+                        let y_per_c = f.dy() * py as f64 / dims.y as f64;
+                        let d_per_c = (x_per_c + y_per_c) * 0.5;
+                        let cls_x = dims.x.ceiled_div(px as i32) as u32;
+                        let cls_y = dims.y.ceiled_div(py as i32) as u32;
+                        let cls_z = (f.z0 / f.z1).log(1.0 - f.z1 * d_per_c).ceil() as u32;
 
                         // We adjust the frustum to make clusters line up nicely
                         // with pixels in the framebuffer..
                         let frustum = Frustum {
                             x0: f.x0,
-                            x1: cls_x as f64 * x_per_c + f.x0,
+                            x1: f.x0 + cls_x as f64 * x_per_c,
                             y0: f.y0,
-                            y1: cls_y as f64 * y_per_c + f.y0,
-                            z0: f.z1 * (1.0 + -f.z1 * x_per_c).powi(cls_z as i32),
+                            y1: f.y0 + cls_y as f64 * y_per_c,
+                            z0: f.z1 * (1.0 - f.z1 * d_per_c).powi(cls_z as i32),
                             z1: f.z1,
                         };
 
@@ -512,38 +512,41 @@ impl ClusterResources {
                             z1: z1.unwrap() - origin.z,
                         };
 
-                        let d_per_c = {
-                            let mut iter = self.camera_resources_pool.used_slice().iter().map(|camera| {
+                        let avg_x_per_c = {
+                            let sum: f64 = self.camera_resources_pool.used_slice().iter().map(|camera| {
+                            let d = &camera.parameters.frame_dims;
+                            let f = &camera.parameters.frustum;
+                            f.dx() / d.x as f64
+                            }).sum();
+                            sum / self.camera_resources_pool.used_slice().len() as f64
+                        } * cfg.perspective_pixels.x as f64;
+
+                        let avg_y_per_c = {
+                            let sum: f64 = self.camera_resources_pool.used_slice().iter().map(|camera| {
                                 let d = &camera.parameters.frame_dims;
                                 let f = &camera.parameters.frustum;
-                                let x_per_c = f.dx() * 64.0 / d.x as f64;
-                                let y_per_c = f.dy() * 64.0 / d.y as f64;
-                                match x_per_c.partial_cmp(&y_per_c).unwrap() {
-                                    Ordering::Less | Ordering::Equal => x_per_c,
-                                    Ordering::Greater => y_per_c,
-                                }
-                            });
+                                f.dy() / d.y as f64
+                            }).sum();
+                            sum / self.camera_resources_pool.used_slice().len() as f64
+                        } * cfg.perspective_pixels.y as f64;
 
-                            let first = iter.next().unwrap();
+                        let cls_x = (f.dx() / avg_x_per_c).ceil() as u32;
+                        let cls_y = (f.dy() / avg_y_per_c).ceil() as u32;
 
-                            iter.fold(first, |min, val| match min.partial_cmp(&val).unwrap() {
-                                Ordering::Less | Ordering::Equal => min,
-                                Ordering::Greater => val,
-                            })
-                        };
+                        let x_per_c = f.dx() / cls_x as f64;
+                        let y_per_c = f.dy() / cls_y as f64;
+                        let d_per_c = (x_per_c + y_per_c) * 0.5;
 
-                        let cls_x = (f.dx() / d_per_c).ceil() as u32;
-                        let cls_y = (f.dy() / d_per_c).ceil() as u32;
-                        let cls_z = (f.z0 / f.z1).log(1.0 + -f.z1 * d_per_c).ceil() as u32;
+                        let cls_z = (f.z0 / f.z1).log(1.0 - f.z1 * d_per_c).ceil() as u32;
 
                         // We adjust the frustum to make clusters line up nicely
                         // with pixels in the framebuffer..
                         let frustum = Frustum {
                             x0: f.x0,
-                            x1: cls_x as f64 * d_per_c + f.x0,
+                            x1: f.x0 + cls_x as f64 * x_per_c,
                             y0: f.y0,
-                            y1: cls_y as f64 * d_per_c + f.y0,
-                            z0: f.z1 * (1.0 + -f.z1 * d_per_c).powi(cls_z as i32),
+                            y1: f.y0 + cls_y as f64 * y_per_c,
+                            z0: f.z1 * (1.0 - f.z1 * d_per_c).powi(cls_z as i32),
                             z1: f.z1,
                         };
 
