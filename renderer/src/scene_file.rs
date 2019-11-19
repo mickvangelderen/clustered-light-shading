@@ -58,12 +58,16 @@ pub struct Transform {
 
 impl Transform {
     #[inline]
-    pub fn to_parent(&self) -> Matrix4<f32> {
-        let (sx, cx) = Deg(self.rotation[0]).sin_cos();
-        let (sy, cy) = Deg(self.rotation[1]).sin_cos();
-        let (sz, cz) = Deg(self.rotation[2]).sin_cos();
+    pub fn to_parent(&self) -> Matrix4<f64> {
+        let (sx, cx) = Deg(self.rotation[0] as f64).sin_cos();
+        let (sy, cy) = Deg(self.rotation[1] as f64).sin_cos();
+        let (sz, cz) = Deg(self.rotation[2] as f64).sin_cos();
+
         let [mx, my, mz] = self.scaling;
+        let [mx, my, mz] = [mx as f64, my as f64, mz as f64];
+
         let [tx, ty, tz] = self.translation;
+        let [tx, ty, tz] = [tx as f64, ty as f64, tz as f64];
 
         Matrix4::new(
             // c0

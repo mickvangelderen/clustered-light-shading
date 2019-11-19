@@ -436,48 +436,59 @@ impl Resources {
             (vao, vb, eb)
         };
 
-        let point_lights: Vec<PointLight> = scene_file.instances.iter().flat_map(|instance| {
-            let material_index = instance.material_index as usize;
-            let emissive_color = scene_file.materials[material_index].emissive_color;
+        let point_lights: Vec<PointLight> = scene_file
+            .instances
+            .iter()
+            .flat_map(|instance| {
+                let material_index = instance.material_index as usize;
+                let emissive_color = scene_file.materials[material_index].emissive_color;
 
-            if emissive_color != [0.0; 3] {
-                let mesh_description_index = instance.mesh_index as usize;
-                let mesh_description = &scene_file.mesh_descriptions[mesh_description_index];
-                let vertex_offset = mesh_description.vertex_offset as usize;
-                let vertex_count = mesh_description.vertex_count as usize;
-                let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
-                    Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
-                });
-                let center = vertex_iter.fold(Point3::origin(), |mut acc, p| {
-                    acc += p.to_vec();
-                    acc
-                }) * (1.0 / vertex_count as f32);
+                if emissive_color != [0.0; 3] {
+                    let mesh_description_index = instance.mesh_index as usize;
+                    let mesh_description = &scene_file.mesh_descriptions[mesh_description_index];
+                    let vertex_offset = mesh_description.vertex_offset as usize;
+                    let vertex_count = mesh_description.vertex_count as usize;
+                    let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)]
+                        .iter()
+                        .map(|&pos_in_obj| {
+                            Point3::new(
+                                pos_in_obj[0].get() as f64,
+                                pos_in_obj[1].get() as f64,
+                                pos_in_obj[2].get() as f64,
+                            )
+                        });
+                    let center = vertex_iter.fold(Point3::origin(), |mut acc, p| {
+                        acc += p.to_vec();
+                        acc
+                    }) * (1.0 / vertex_count as f64);
 
-                let transform = &scene_file.transforms[instance.transform_index as usize];
-                let pos_from_obj_to_wld = transform.to_parent();
-                let pos_in_wld = pos_from_obj_to_wld.transform_point(center);
+                    let transform = &scene_file.transforms[instance.transform_index as usize];
+                    let pos_from_obj_to_wld = transform.to_parent();
+                    let pos_in_wld = pos_from_obj_to_wld.transform_point(center).cast().unwrap();
 
-                let color = RGB {
-                    r: emissive_color[0],
-                    g: emissive_color[1],
-                    b: emissive_color[2],
-                };
+                    let color = RGB {
+                        r: emissive_color[0],
+                        g: emissive_color[1],
+                        b: emissive_color[2],
+                    };
 
-                Some(PointLight {
-                    ambient: color,
-                    diffuse: color,
-                    specular: color,
-                    pos_in_wld,
-                    attenuation: AttenParams {
-                        intensity: 4.0,
-                        clip_near: 0.5,
-                        cutoff: 0.2,
-                    }.into(),
-                })
-            } else {
-                None
-            }
-        }).collect();
+                    Some(PointLight {
+                        ambient: color,
+                        diffuse: color,
+                        specular: color,
+                        pos_in_wld,
+                        attenuation: AttenParams {
+                            intensity: 4.0,
+                            clip_near: 0.5,
+                            cutoff: 0.2,
+                        }
+                        .into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         Resources {
             scene_vao,
@@ -502,12 +513,15 @@ impl Resources {
 #[derive(Debug)]
 #[repr(C)]
 pub struct InstanceMatrices {
-    pub pos_from_obj_to_wld: Matrix4<f32>,
+    pub pos_from_obj_to_clp: Matrix4<f32>,
+    pub pos_from_obj_to_cls: Matrix4<f32>,
     pub pos_from_obj_to_lgt: Matrix4<f32>,
     pub nor_from_obj_to_lgt: Matrix4<f32>,
 }
 
 pub fn compute_instance_matrices(
+    wld_to_clp: Matrix4<f64>,
+    wld_to_cls: Matrix4<f64>,
     instances: &[scene_file::Instance],
     transforms: &[scene_file::Transform],
 ) -> Vec<InstanceMatrices> {
@@ -518,12 +532,16 @@ pub fn compute_instance_matrices(
         .map(|instance| {
             let transform = &transforms[instance.transform_index as usize];
 
-            let pos_from_obj_to_wld = transform.to_parent();
-            let pos_from_obj_to_lgt = pos_from_obj_to_wld;
+            let obj_to_wld = transform.to_parent();
+
+            let pos_from_obj_to_clp = (wld_to_clp * obj_to_wld).cast().unwrap();
+            let pos_from_obj_to_cls = (wld_to_cls * obj_to_wld).cast().unwrap();
+            let pos_from_obj_to_lgt = obj_to_wld.cast().unwrap();
             let nor_from_obj_to_lgt = pos_from_obj_to_lgt.invert().unwrap().transpose();
 
             InstanceMatrices {
-                pos_from_obj_to_wld,
+                pos_from_obj_to_clp,
+                pos_from_obj_to_cls,
                 pos_from_obj_to_lgt,
                 nor_from_obj_to_lgt,
             }
@@ -634,12 +652,14 @@ impl DrawResources {
 
     pub fn recompute(
         &mut self,
+        wld_to_clp: Matrix4<f64>,
+        wld_to_cls: Matrix4<f64>,
         instances: &[scene_file::Instance],
         materials: &[Material],
         transforms: &[scene_file::Transform],
         mesh_descriptions: &[scene_file::MeshDescription],
     ) {
-        self.instance_matrices_data = compute_instance_matrices(instances, transforms);
+        self.instance_matrices_data = compute_instance_matrices(wld_to_clp, wld_to_cls, instances, transforms);
         let DrawCommandResources {
             counts,
             offsets,
