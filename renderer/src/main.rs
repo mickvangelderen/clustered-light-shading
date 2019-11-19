@@ -27,7 +27,6 @@ mod dds_ext;
 mod depth_renderer;
 mod filters;
 mod frame_downloader;
-pub mod frustrum;
 pub mod gl_ext;
 mod glutin_ext;
 mod keyboard;
@@ -47,10 +46,12 @@ mod toggle;
 mod viewport;
 mod window_mode;
 
+use renderer::frustum::Frustum;
+use renderer::range::Range3;
+
 use self::cgmath_ext::*;
 use self::cls::*;
 use self::dds_ext::*;
-use self::frustrum::*;
 use self::gl_ext::*;
 use self::main_resources::*;
 use self::math::CeiledDiv;
@@ -150,7 +151,15 @@ pub struct MainParameters {
     pub display_viewport: Viewport<i32>,
 }
 
-const DEPTH_RANGE: (f64, f64) = (1.0, 0.0);
+const RENDER_RANGE: Range3<f64> = Range3 {
+    x0: -1.0,
+    x1: 1.0,
+    y0: -1.0,
+    y1: 1.0,
+    z0: 1.0, // NOTE(mickvangelderen): We use reverse-z.
+    z1: 0.0,
+};
+
 const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
 
 #[derive(Debug)]
@@ -1136,16 +1145,15 @@ impl<'s> Context<'s> {
 
         impl C2 {
             #[inline]
-            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustrum: Frustrum<f64>) -> Self {
+            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustum: Frustum<f64>) -> Self {
                 let C1 { hmd_to_wld, .. } = *c1;
                 let cam_to_wld = hmd_to_wld * cam_to_hmd;
-                let cam_to_clp = frustrum.perspective(DEPTH_RANGE).cast::<f64>().unwrap();
                 Self {
                     cam_to_wld,
                     wld_to_cam: cam_to_wld.invert().unwrap(),
 
-                    cam_to_clp,
-                    clp_to_cam: cam_to_clp.invert().unwrap(),
+                    cam_to_clp: frustum.perspective(&RENDER_RANGE),
+                    clp_to_cam: frustum.inverse_perspective(&RENDER_RANGE),
                 }
             }
         }
@@ -1187,12 +1195,12 @@ impl<'s> Context<'s> {
                     let render_c2 = C2::new(
                         &render_c1,
                         cam_to_hmd,
-                        stereo_frustrum(&render_c1.camera.properties, tangents),
+                        stereo_frustum(&render_c1.camera.properties, tangents),
                     );
                     let cluster_c2 = C2::new(
                         &cluster_c1,
                         cam_to_hmd,
-                        stereo_frustrum(&cluster_c1.camera.properties, tangents),
+                        stereo_frustum(&cluster_c1.camera.properties, tangents),
                     );
 
                     if self.shader_compiler.light_space() == LightSpace::Cam {
@@ -1328,13 +1336,13 @@ impl<'s> Context<'s> {
                 let render_c2 = C2::new(
                     &render_c1,
                     Matrix4::identity(),
-                    mono_frustrum(&render_c1.camera, dimensions),
+                    mono_frustum(&render_c1.camera, dimensions),
                 );
 
                 let cluster_c2 = C2::new(
                     &cluster_c1,
                     Matrix4::identity(),
-                    mono_frustrum(&cluster_c1.camera, dimensions),
+                    mono_frustum(&cluster_c1.camera, dimensions),
                 );
 
                 if self.shader_compiler.light_space() == LightSpace::Cam {
@@ -1542,9 +1550,12 @@ impl<'s> Context<'s> {
                 gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
             }
 
-            let main_resources_index =
-                self.main_resources_pool
-                    .next_unused(gl, &mut self.profiling_context, dimensions, self.configuration.global.sample_count);
+            let main_resources_index = self.main_resources_pool.next_unused(
+                gl,
+                &mut self.profiling_context,
+                dimensions,
+                self.configuration.global.sample_count,
+            );
 
             self.clear_and_render_main(main_resources_index, cluster_resources_index);
 
@@ -1555,7 +1566,7 @@ impl<'s> Context<'s> {
             }
 
             if self.target_camera_key == CameraKey::Debug {
-                let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                let corners_in_clp = RENDER_RANGE.vertices();
                 let vertices: Vec<[f32; 3]> = corners_in_clp
                     .iter()
                     .map(|point| point.cast().unwrap().into())
@@ -1568,7 +1579,7 @@ impl<'s> Context<'s> {
                             &mut rendering_context!(self),
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
-                                indices: &FRUSTRUM_LINE_MESH_INDICES[..],
+                                indices: &RENDER_RANGE.line_mesh_indices(),
                                 obj_to_wld: &(camera_resources.parameters.cam_to_wld
                                     * camera_resources.parameters.clp_to_cam)
                                     .cast()
@@ -1578,23 +1589,21 @@ impl<'s> Context<'s> {
                         );
                     }
 
-                    let vertices: Vec<[f32; 3]> = match self.configuration.clustered_light_shading.projection {
-                        ClusteringProjection::Perspective => {
-                            cluster_resources.computed.frustum.corners_in_cam_perspective()
-                        }
+                    let vertices = match self.configuration.clustered_light_shading.projection {
+                        ClusteringProjection::Perspective => cluster_resources.computed.frustum.perspective_vertices(),
                         ClusteringProjection::Orthographic => {
-                            cluster_resources.computed.frustum.corners_in_cam_orthographic()
+                            cluster_resources.computed.frustum.orthographic_vertices()
                         }
-                    }
-                    .iter()
-                    .map(|&p| p.cast().unwrap().into())
-                    .collect();
+                    };
+
+                    let vertices: Vec<[f32; 3]> =
+                        vertices.iter().map(|&p| [p.x as f32, p.y as f32, p.z as f32]).collect();
 
                     self.line_renderer.render(
                         &mut rendering_context!(self),
                         &line_renderer::Parameters {
                             vertices: &vertices,
-                            indices: FRUSTRUM_LINE_MESH_INDICES,
+                            indices: &cluster_resources.computed.frustum.line_mesh_indices(),
                             obj_to_wld: &(cluster_resources.computed.ccam_to_wld.cast().unwrap()),
                             color: color::RED,
                         },
@@ -1978,12 +1987,12 @@ fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
     }
 }
 
-fn mono_frustrum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustrum<f64> {
+fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f64> {
     let z0 = camera.properties.z0 as f64;
     let z1 = camera.properties.z1 as f64;
-    let dy = -z0 * Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
+    let dy = Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
     let dx = dy * dimensions.x as f64 / dimensions.y as f64;
-    Frustrum::<f64> {
+    Frustum {
         x0: -dx,
         x1: dx,
         y0: -dy,
@@ -1993,15 +2002,15 @@ fn mono_frustrum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustrum<
     }
 }
 
-fn stereo_frustrum(camera_properties: &camera::CameraProperties, tangents: vr::RawProjection) -> Frustrum<f64> {
+fn stereo_frustum(camera_properties: &camera::CameraProperties, tangents: vr::RawProjection) -> Frustum<f64> {
     let vr::RawProjection { l, r, b, t } = tangents;
     let z0 = camera_properties.z0 as f64;
     let z1 = camera_properties.z1 as f64;
-    Frustrum::<f64> {
-        x0: -z0 * l as f64,
-        x1: -z0 * r as f64,
-        y0: -z0 * b as f64,
-        y1: -z0 * t as f64,
+    Frustum {
+        x0: l as f64,
+        x1: r as f64,
+        y0: b as f64,
+        y1: t as f64,
         z0,
         z1,
     }

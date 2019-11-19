@@ -216,7 +216,7 @@ impl ClusterResources {
         let mut computed = match cfg.projection {
             ClusteringProjection::Orthographic => {
                 // Compute bounding box of all camera frustum corners.
-                let corners_in_clp = Frustrum::corners_in_clp(DEPTH_RANGE);
+                let corners_in_clp = RENDER_RANGE.vertices();
                 let range = Range3::<f64>::from_points({
                     self.camera_resources_pool.used_slice().iter().flat_map(
                         |&ClusterCameraResources {
@@ -286,19 +286,8 @@ impl ClusterResources {
                         }
                     }
                     2 => {
-                        let far_pos_in_clp = [
-                            Point3::new(-1.0, -1.0, DEPTH_RANGE.1),
-                            Point3::new(-1.0, 1.0, DEPTH_RANGE.1),
-                            Point3::new(1.0, -1.0, DEPTH_RANGE.1),
-                            Point3::new(1.0, 1.0, DEPTH_RANGE.1),
-                        ];
-
-                        let near_pos_in_clp = [
-                            Point3::new(-1.0, -1.0, DEPTH_RANGE.0),
-                            Point3::new(-1.0, 1.0, DEPTH_RANGE.0),
-                            Point3::new(1.0, -1.0, DEPTH_RANGE.0),
-                            Point3::new(1.0, 1.0, DEPTH_RANGE.0),
-                        ];
+                        let far_pos_in_clp = RENDER_RANGE.far_vertices();
+                        let near_pos_in_clp = RENDER_RANGE.near_vertices();
 
                         let far_pos_in_hmd: Vec<Point3<f64>> = self
                             .camera_resources_pool

@@ -1,12 +1,13 @@
 [global]
 diffuse_srgb = true
-rain_drop_max = 5000
+rain_drop_max = 10000
 
 mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
 
 # scene_path = "bistro/Bistro_Exterior.bin"
+# scene_path = "bistro/Bistro_Interior.bin"
 scene_path = "sun_temple/SunTemple.bin"
 
 # sample_count = 1
@@ -43,7 +44,8 @@ projection = "Orthographic"
 # projection = "Perspective"
 # grouping = "Individual"
 grouping = "Enclosed"
-orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
+orthographic_sides = { x = 1.0, y = 1.0, z = 1.0 }
+# orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
 perspective_sides = { x = 8.0, y = 8.0, z = 2.0 }
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)

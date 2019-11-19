@@ -2,16 +2,16 @@
 
 ## Scenario
 
-Let us assume that the lights are at least culled to the view frustrum, so we
+Let us assume that the lights are at least culled to the view frustum, so we
 are trying to be faster than shading every pixel with all lights in the view
-frustrum. Not all lights in the scene because that would be silly.
+frustum. Not all lights in the scene because that would be silly.
 
 ## Realizations
 
 1. Assuming lights are distributed somewhat uniformly over the scene, it makes
    sense to cluster in pre-projective space.
    
-2. The perspective view frustrum divided by the orthographic view frustrum
+2. The perspective view frustum divided by the orthographic view frustum
    approaches 1/3 as z1 - z0 grows large. This means I can reduce the number of
    light assigments and memory usage to 1/3rd.
    
@@ -62,7 +62,7 @@ blended with GL_BLEND_MIN/ max?
 ### Clustering
 
 1. Clustered orthographic
-2. Clustered layered frustrum bounded orthographic
+2. Clustered layered frustum bounded orthographic
 3. Clustered layered fragment bounded orthograhpic
 4. Tiled
 
