@@ -46,7 +46,7 @@ projection = "Orthographic"
 grouping = "Enclosed"
 orthographic_sides = { x = 1.0, y = 1.0, z = 1.0 }
 # orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
-perspective_sides = { x = 8.0, y = 8.0, z = 2.0 }
+perspective_pixels = { x = 16, y = 16 }
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
 max_light_indices = 1048576 # 2^20 u32 4MB * (light index)

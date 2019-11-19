@@ -92,10 +92,22 @@ impl<T> Vector3<T> {
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+pub struct Vector2<T> {
+    pub x: T,
+    pub y: T,
+}
+
+impl<T> Vector2<T> {
+    pub fn to_array(self) -> [T; 2] {
+        [self.x, self.y]
+    }
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShadingConfiguration {
     pub projection: ClusteringProjection,
     pub grouping: ClusteringGrouping,
-    pub perspective_sides: Vector3<f64>,
+    pub perspective_pixels: Vector2<u32>,
     pub orthographic_sides: Vector3<f64>,
     pub max_clusters: u32,
     pub max_active_clusters: u32,
