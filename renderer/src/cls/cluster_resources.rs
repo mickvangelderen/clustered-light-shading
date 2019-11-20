@@ -45,6 +45,7 @@ pub struct ClusterComputed {
     pub frustum: Frustum<f64>, // useful for finding perspective transform frustum planes for intersection tests in shaders.
     pub wld_to_clu_clp: Matrix4<f64>,
     pub clu_clp_to_wld: Matrix4<f64>,
+    pub clu_clp_to_clu_cam: Matrix4<f64>,
 }
 
 impl std::default::Default for ClusterComputed {
@@ -54,6 +55,7 @@ impl std::default::Default for ClusterComputed {
             frustum: Frustum::<f64>::zero(),
             wld_to_clu_clp: Matrix4::identity(),
             clu_clp_to_wld: Matrix4::identity(),
+            clu_clp_to_clu_cam: Matrix4::identity(),
         }
     }
 }
@@ -236,17 +238,19 @@ impl ClusterResources {
                     .div_element_wise(Vector3::from(cfg.orthographic_sides.to_array()))
                     .map(f64::ceil);
 
-                // clu_ori_to_clu_cam = I.
                 let frustum = Frustum::from_range(&range);
                 let projection_range = Range3::from_vector(dimensions);
-                let clu_ori_to_clu_clp = frustum.orthographic(&projection_range);
-                let clu_clp_to_clu_ori = frustum.inverse_orthographic(&projection_range);
+                let clu_cam_to_clu_clp = frustum.orthographic(&projection_range);
+                let clu_clp_to_clu_cam = frustum.inverse_orthographic(&projection_range);
 
                 ClusterComputed {
                     dimensions: dimensions.cast::<u32>().unwrap(),
                     frustum,
-                    wld_to_clu_clp: clu_ori_to_clu_clp * parameters.wld_to_clu_ori,
-                    clu_clp_to_wld: parameters.clu_ori_to_wld * clu_clp_to_clu_ori,
+                    // clu_ori_to_clu_cam = I.
+                    wld_to_clu_clp: clu_cam_to_clu_clp * parameters.wld_to_clu_ori,
+                    // clu_ori_to_clu_cam = I.
+                    clu_clp_to_wld: parameters.clu_ori_to_wld * clu_clp_to_clu_cam,
+                    clu_clp_to_clu_cam,
                 }
             }
             ClusteringProjection::Perspective => {
@@ -282,16 +286,18 @@ impl ClusterResources {
 
                         let dimensions = Vector3::new(cls_x, cls_y, cls_z);
 
-                        // clu_ori_to_clu_cam = I.
                         let projection_range = Range3::from_vector(dimensions);
-                        let clu_ori_to_clu_clp = frustum.orthographic(&projection_range);
-                        let clu_clp_to_clu_ori = frustum.inverse_orthographic(&projection_range);
+                        let clu_cam_to_clu_clp = frustum.orthographic(&projection_range);
+                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&projection_range);
 
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
-                            wld_to_clu_clp: clu_ori_to_clu_clp * parameters.wld_to_clu_ori,
-                            clu_clp_to_wld: parameters.clu_ori_to_wld * clu_clp_to_clu_ori,
+                            // clu_ori_to_clu_cam = I.
+                            wld_to_clu_clp: clu_cam_to_clu_clp * parameters.wld_to_clu_ori,
+                            // clu_cam_to_clu_ori = I.
+                            clu_clp_to_wld: parameters.clu_ori_to_wld * clu_clp_to_clu_cam,
+                            clu_clp_to_clu_cam,
                         }
                     }
                     2 => {
@@ -579,6 +585,7 @@ impl ClusterResources {
                             frustum,
                             wld_to_clu_clp: clu_cam_to_clu_clp * clu_ori_to_clu_cam * parameters.wld_to_clu_ori,
                             clu_clp_to_wld: parameters.clu_ori_to_wld * clu_cam_to_clu_ori * clu_clp_to_clu_cam,
+                            clu_clp_to_clu_cam,
                         }
                     }
                     _ => {

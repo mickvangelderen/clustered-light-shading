@@ -1,5 +1,6 @@
 #include "native/RENDER_TECHNIQUE"
 
+#include "common.glsl"
 #include "light_buffer.glsl"
 #include "instance_matrices_buffer.glsl"
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
@@ -21,23 +22,21 @@ out vec3 fs_bin_in_lgt;
 out vec3 fs_tan_in_lgt;
 out vec2 fs_pos_in_tex;
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-out vec3 fs_pos_in_ccam;
+out vec4 fs_pos_in_clu_clp;
 #endif
 
 void main() {
-  InstanceMatrices instance_matrices = instance_matrices_buffer[vs_instance_index];
-  mat4 pos_from_obj_to_wld = instance_matrices.pos_from_obj_to_wld;
-  mat4 pos_from_obj_to_lgt = instance_matrices.pos_from_obj_to_lgt;
-  mat4 nor_from_obj_to_lgt = instance_matrices.nor_from_obj_to_lgt;
+  InstanceMatrices m = instance_matrices_buffer[vs_instance_index];
 
-  gl_Position = cam_to_clp * wld_to_cam * pos_from_obj_to_wld * vec4(vs_pos_in_obj, 1.0);
-  fs_pos_in_lgt = pos_from_obj_to_lgt * vec4(vs_pos_in_obj, 1.0);
-  fs_nor_in_lgt = normalize(mat3(nor_from_obj_to_lgt) * vs_nor_in_obj);
-  fs_bin_in_lgt = normalize(mat3(pos_from_obj_to_lgt) * vs_bin_in_obj);
-  fs_tan_in_lgt = normalize(mat3(pos_from_obj_to_lgt) * vs_tan_in_obj);
+  vec4 pos_in_obj = to_homogeneous(vs_pos_in_obj);
+  gl_Position = m.obj_to_ren_clp * pos_in_obj;
+  fs_pos_in_lgt = m.obj_to_lgt * pos_in_obj;
+  fs_nor_in_lgt = normalize(mat3(m.obj_to_lgt_inv_tra) * vs_nor_in_obj);
+  fs_bin_in_lgt = normalize(mat3(m.obj_to_lgt) * vs_bin_in_obj);
+  fs_tan_in_lgt = normalize(mat3(m.obj_to_lgt) * vs_tan_in_obj);
   // NOTE(mickvangelderen): TOO LAZY TO CHANGE IMAGE ORIGIN.
   fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-  fs_pos_in_ccam = mat4x3(cluster_space.wld_to_cam) * pos_from_obj_to_wld * vec4(vs_pos_in_obj, 1.0);
+  fs_pos_in_clu_clp = m.obj_to_clu_clp * pos_in_obj;
 #endif
 }

@@ -37,47 +37,17 @@ pub struct ClusterSpaceBuffer {
     cluster_count: u32,
     frustum: Frustum<f32>,
     _pad1: [f32; 2],
-    cam_to_cls_coeffs: [LerpCoeffs<f32>; 3],
-    _pad2: [f32; 2],
-    cls_to_cam_coeffs: [LerpCoeffs<f32>; 3],
-    _pad3: [f32; 2],
-    wld_to_cam: Matrix4<f32>,
-    cam_to_wld: Matrix4<f32>,
+    clu_clp_to_clu_cam: Matrix4<f32>,
 }
 
 impl ClusterSpaceBuffer {
-    pub fn new(dimensions: Vector3<u32>, frustum: Frustum<f64>, wld_to_cam: Matrix4<f64>) -> Self {
+    pub fn new(dimensions: Vector3<u32>, frustum: Frustum<f64>, clu_clp_to_clu_cam: Matrix4<f64>) -> Self {
         Self {
             dimensions,
             cluster_count: dimensions.product(),
             frustum: frustum.cast().unwrap(),
             _pad1: Default::default(),
-            cam_to_cls_coeffs: [
-                LerpCoeffs::new(frustum.x0, frustum.x1, 0.0, dimensions.x as f64)
-                    .cast()
-                    .unwrap(),
-                LerpCoeffs::new(frustum.y0, frustum.y1, 0.0, dimensions.y as f64)
-                    .cast()
-                    .unwrap(),
-                LerpCoeffs::new(frustum.z0, frustum.z1, 0.0, dimensions.z as f64)
-                    .cast()
-                    .unwrap(),
-            ],
-            _pad2: Default::default(),
-            cls_to_cam_coeffs: [
-                LerpCoeffs::new(0.0, dimensions.x as f64, frustum.x0, frustum.x1)
-                    .cast()
-                    .unwrap(),
-                LerpCoeffs::new(0.0, dimensions.y as f64, frustum.y0, frustum.y1)
-                    .cast()
-                    .unwrap(),
-                LerpCoeffs::new(0.0, dimensions.z as f64, frustum.z0, frustum.z1)
-                    .cast()
-                    .unwrap(),
-            ],
-            _pad3: Default::default(),
-            wld_to_cam: wld_to_cam.cast().unwrap(),
-            cam_to_wld: wld_to_cam.invert().unwrap().cast().unwrap(),
+            clu_clp_to_clu_cam: clu_clp_to_clu_cam.cast().unwrap(),
         }
     }
 }

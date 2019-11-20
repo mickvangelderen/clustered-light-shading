@@ -16,10 +16,10 @@ invariant gl_Position;
 out vec2 fs_pos_in_tex;
 
 void main() {
-  InstanceMatrices instance_matrices = instance_matrices_buffer[vs_instance_index];
-  mat4 pos_from_obj_to_wld = instance_matrices.pos_from_obj_to_wld;
+  InstanceMatrices m = instance_matrices_buffer[vs_instance_index];
 
-  gl_Position = cam_to_clp * wld_to_cam * pos_from_obj_to_wld * vec4(vs_pos_in_obj, 1.0);
+  vec4 pos_in_obj = to_homogeneous(vs_pos_in_obj);
+  gl_Position = m.obj_to_ren_clp * pos_in_obj;
 
 #if defined(BASIC_PASS)
 #if BASIC_PASS == BASIC_PASS_MASKED
