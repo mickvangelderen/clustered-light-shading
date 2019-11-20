@@ -1183,8 +1183,8 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_hmd: cluster_c1.wld_to_hmd,
-                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
+                            clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1219,8 +1219,8 @@ impl<'s> Context<'s> {
                             &mut self.profiling_context,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
-                                wld_to_hmd: cluster_c1.wld_to_hmd,
-                                hmd_to_wld: cluster_c1.hmd_to_wld,
+                                wld_to_clu_ori: cluster_c1.wld_to_hmd,
+                                clu_ori_to_wld: cluster_c1.hmd_to_wld,
                             },
                         ));
                     }
@@ -1249,18 +1249,13 @@ impl<'s> Context<'s> {
                                 cam_to_clp,
                                 clp_to_cam,
 
-                                frustum: {
-                                    // NOTE: Reversed!
-                                    let z0 = camera.properties.z1 as f64;
-                                    let z1 = camera.properties.z0 as f64;
-                                    Frustum {
-                                        x0: tangents.l as f64,
-                                        x1: tangents.r as f64,
-                                        y0: tangents.b as f64,
-                                        y1: tangents.t as f64,
-                                        z0,
-                                        z1,
-                                    }
+                                frustum: Frustum {
+                                    x0: tangents.l as f64,
+                                    x1: tangents.r as f64,
+                                    y0: tangents.b as f64,
+                                    y1: tangents.t as f64,
+                                    z0: camera.properties.z0 as f64,
+                                    z1: camera.properties.z1 as f64,
                                 },
                             },
                         );
@@ -1327,8 +1322,8 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_hmd: cluster_c1.wld_to_hmd,
-                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
+                            clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1361,8 +1356,8 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_hmd: cluster_c1.wld_to_hmd,
-                            hmd_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
+                            clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
@@ -1392,9 +1387,6 @@ impl<'s> Context<'s> {
                             clp_to_cam,
 
                             frustum: {
-                                // NOTE: Reversed!
-                                let z0 = camera.properties.z1 as f64;
-                                let z1 = camera.properties.z0 as f64;
                                 let dy = Rad::tan(Rad(Rad::from(cluster_c1.camera.transform.fovy).0 as f64) / 2.0);
                                 let dx = dy * dimensions.x as f64 / dimensions.y as f64;
 
@@ -1403,8 +1395,8 @@ impl<'s> Context<'s> {
                                     x1: dx,
                                     y0: -dy,
                                     y1: dy,
-                                    z0,
-                                    z1,
+                                    z0: camera.properties.z0 as f64,
+                                    z1: camera.properties.z1 as f64,
                                 }
                             },
                         },
