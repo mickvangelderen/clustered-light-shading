@@ -35,7 +35,6 @@ impl ClusterStage {
 #[derive(Debug)]
 pub struct ClusterParameters {
     pub configuration: ClusteredLightShadingConfiguration,
-    pub wld_to_clu_ori: Matrix4<f64>,
     pub clu_ori_to_wld: Matrix4<f64>,
 }
 
@@ -219,17 +218,14 @@ impl ClusterResources {
                 // Compute bounding box of all camera frustum corners.
                 let corners_in_clp = RENDER_RANGE.vertices();
                 let range = Range3::<f64>::from_points({
-                    self.camera_resources_pool.used_slice().iter().flat_map(
-                        |&ClusterCameraResources {
-                             parameters: ref cam_par,
-                             ..
-                         }| {
-                            let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * cam_par.ren_clp_to_wld;
-                            corners_in_clp
-                                .iter()
-                                .map(move |&p| ren_clp_to_clu_ori.transform_point(p))
-                        },
-                    )
+                    self.camera_resources_pool.used_slice().iter().flat_map(|camera| {
+                        let ren_clp_to_clu_ori = (camera.parameters.wld_to_ren_clp * parameters.clu_ori_to_wld)
+                            .invert()
+                            .unwrap();
+                        corners_in_clp
+                            .iter()
+                            .map(move |&p| ren_clp_to_clu_ori.transform_point(p))
+                    })
                 })
                 .unwrap();
 
@@ -239,17 +235,16 @@ impl ClusterResources {
                     .map(f64::ceil);
 
                 let frustum = Frustum::from_range(&range);
-                let projection_range = Range3::from_vector(dimensions);
-                let clu_cam_to_clu_clp = frustum.orthographic(&projection_range);
-                let clu_clp_to_clu_cam = frustum.inverse_orthographic(&projection_range);
+                let clu_clp_to_clu_cam = frustum.inverse_orthographic(&Range3::from_vector(dimensions));
+                // clu_ori_to_clu_cam = I.
+                let clu_clp_to_wld = parameters.clu_ori_to_wld * clu_clp_to_clu_cam;
+                let wld_to_clu_clp = clu_clp_to_wld.invert().unwrap();
 
                 ClusterComputed {
                     dimensions: dimensions.cast::<u32>().unwrap(),
                     frustum,
-                    // clu_ori_to_clu_cam = I.
-                    wld_to_clu_clp: clu_cam_to_clu_clp * parameters.wld_to_clu_ori,
-                    // clu_ori_to_clu_cam = I.
-                    clu_clp_to_wld: parameters.clu_ori_to_wld * clu_clp_to_clu_cam,
+                    wld_to_clu_clp,
+                    clu_clp_to_wld,
                     clu_clp_to_clu_cam,
                 }
             }
@@ -286,17 +281,16 @@ impl ClusterResources {
 
                         let dimensions = Vector3::new(cls_x, cls_y, cls_z);
 
-                        let projection_range = Range3::from_vector(dimensions);
-                        let clu_cam_to_clu_clp = frustum.orthographic(&projection_range);
-                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&projection_range);
+                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&Range3::from_vector(dimensions));
+                        // clu_ori_to_clu_cam = I.
+                        let clu_clp_to_wld = parameters.clu_ori_to_wld * clu_clp_to_clu_cam;
+                        let wld_to_clu_clp = clu_clp_to_wld.invert().unwrap();
 
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
-                            // clu_ori_to_clu_cam = I.
-                            wld_to_clu_clp: clu_cam_to_clu_clp * parameters.wld_to_clu_ori,
-                            // clu_cam_to_clu_ori = I.
-                            clu_clp_to_wld: parameters.clu_ori_to_wld * clu_clp_to_clu_cam,
+                            wld_to_clu_clp,
+                            clu_clp_to_wld,
                             clu_clp_to_clu_cam,
                         }
                     }
@@ -309,8 +303,9 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori: Matrix4<f64> =
-                                    parameters.wld_to_clu_ori * camera.parameters.ren_clp_to_wld;
+                                let ren_clp_to_clu_ori = (camera.parameters.wld_to_ren_clp * parameters.clu_ori_to_wld)
+                                    .invert()
+                                    .unwrap();
                                 far_pos_in_clp
                                     .iter()
                                     .map(move |&pos_in_clp| ren_clp_to_clu_ori.transform_point(pos_in_clp))
@@ -322,8 +317,9 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori: Matrix4<f64> =
-                                    parameters.wld_to_clu_ori * camera.parameters.ren_clp_to_wld;
+                                let ren_clp_to_clu_ori = (camera.parameters.wld_to_ren_clp * parameters.clu_ori_to_wld)
+                                    .invert()
+                                    .unwrap();
                                 near_pos_in_clp
                                     .iter()
                                     .map(move |&pos_in_clp| ren_clp_to_clu_ori.transform_point(pos_in_clp))
@@ -575,16 +571,16 @@ impl ClusterResources {
                             z1: f.z1,
                         };
 
+                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&Range3::from_vector(dimensions));
                         // clu_ori_to_clu_cam = I.
-                        let projection_range = Range3::from_vector(dimensions);
-                        let clu_cam_to_clu_clp = frustum.orthographic(&projection_range);
-                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&projection_range);
+                        let clu_clp_to_wld = parameters.clu_ori_to_wld * clu_clp_to_clu_cam;
+                        let wld_to_clu_clp = clu_clp_to_wld.invert().unwrap();
 
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
-                            wld_to_clu_clp: clu_cam_to_clu_clp * clu_ori_to_clu_cam * parameters.wld_to_clu_ori,
-                            clu_clp_to_wld: parameters.clu_ori_to_wld * clu_cam_to_clu_ori * clu_clp_to_clu_cam,
+                            wld_to_clu_clp,
+                            clu_clp_to_wld,
                             clu_clp_to_clu_cam,
                         }
                     }

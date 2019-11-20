@@ -136,13 +136,10 @@ pub struct CameraParameters {
 }
 
 pub struct MainParameters {
-    pub wld_to_cam: Matrix4<f64>,
-    pub cam_to_wld: Matrix4<f64>,
+    pub wld_to_ren_clp: Matrix4<f64>,
+    pub ren_clp_to_wld: Matrix4<f64>,
 
-    pub cam_to_clp: Matrix4<f64>,
-    pub clp_to_cam: Matrix4<f64>,
-
-    pub cam_pos_in_wld: Point3<f64>,
+    pub cam_pos_in_lgt: Point3<f64>,
 
     pub light_index: usize,
     pub cluster_resources_index: Option<ClusterResourcesIndex>,
@@ -1117,7 +1114,6 @@ impl<'s> Context<'s> {
         struct C1 {
             camera: camera::Camera,
             hmd_to_wld: Matrix4<f64>,
-            wld_to_hmd: Matrix4<f64>,
             cam_pos_in_wld: Point3<f64>,
         }
 
@@ -1129,31 +1125,28 @@ impl<'s> Context<'s> {
                 Self {
                     camera,
                     hmd_to_wld,
-                    wld_to_hmd: hmd_to_wld.invert().unwrap(),
                     cam_pos_in_wld: camera.transform.position.cast::<f64>().unwrap(),
                 }
             }
         }
 
         struct C2 {
-            cam_to_wld: Matrix4<f64>,
-            wld_to_cam: Matrix4<f64>,
-
-            cam_to_clp: Matrix4<f64>,
-            clp_to_cam: Matrix4<f64>,
+            wld_to_ren_clp: Matrix4<f64>,
+            ren_clp_to_wld: Matrix4<f64>,
+            frustum: Frustum<f64>,
         }
 
         impl C2 {
             #[inline]
             pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustum: Frustum<f64>) -> Self {
                 let C1 { hmd_to_wld, .. } = *c1;
-                let cam_to_wld = hmd_to_wld * cam_to_hmd;
-                Self {
-                    cam_to_wld,
-                    wld_to_cam: cam_to_wld.invert().unwrap(),
+                let ren_clp_to_cam = frustum.inverse_perspective(&RENDER_RANGE);
+                let ren_clp_to_wld = hmd_to_wld * cam_to_hmd * clp_to_cam;
 
-                    cam_to_clp: frustum.perspective(&RENDER_RANGE),
-                    clp_to_cam: frustum.inverse_perspective(&RENDER_RANGE),
+                Self {
+                    wld_to_ren_clp: ren_clp_to_wld.invert().unwrap(),
+                    ren_clp_to_wld,
+                    frustum,
                 }
             }
         }
@@ -1167,14 +1160,6 @@ impl<'s> Context<'s> {
                 let render_c1 = C1::new(self.transition_camera.current_camera, hmd_to_bdy);
                 let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), hmd_to_bdy);
 
-                if self.shader_compiler.light_space() == LightSpace::Hmd {
-                    light_index = Some(self.light_params_vec.len());
-                    self.light_params_vec.push(light::LightParameters {
-                        wld_to_lgt: render_c1.wld_to_hmd,
-                        lgt_to_wld: render_c1.hmd_to_wld,
-                    });
-                }
-
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
                 {
@@ -1183,7 +1168,6 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
                             clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
@@ -1203,14 +1187,6 @@ impl<'s> Context<'s> {
                         stereo_frustum(&cluster_c1.camera.properties, tangents),
                     );
 
-                    if self.shader_compiler.light_space() == LightSpace::Cam {
-                        light_index = Some(self.light_params_vec.len());
-                        self.light_params_vec.push(light::LightParameters {
-                            wld_to_lgt: render_c2.wld_to_cam,
-                            lgt_to_wld: render_c2.cam_to_wld,
-                        });
-                    }
-
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                         && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
                     {
@@ -1219,7 +1195,6 @@ impl<'s> Context<'s> {
                             &mut self.profiling_context,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
-                                wld_to_clu_ori: cluster_c1.wld_to_hmd,
                                 clu_ori_to_wld: cluster_c1.hmd_to_wld,
                             },
                         ));
@@ -1230,11 +1205,9 @@ impl<'s> Context<'s> {
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                         let C1 { ref camera, .. } = cluster_c1;
                         let C2 {
-                            wld_to_cam,
-                            cam_to_wld,
-                            cam_to_clp,
-                            clp_to_cam,
-                            ..
+                            wld_to_ren_clp,
+                            ren_clp_to_wld,
+                            frustum,
                         } = cluster_c2;
 
                         let _ = camera_resources_pool.next_unused(
@@ -1242,21 +1215,9 @@ impl<'s> Context<'s> {
                             &mut self.profiling_context,
                             ClusterCameraParameters {
                                 frame_dims: win_size,
-
-                                wld_to_cam,
-                                cam_to_wld,
-
-                                cam_to_clp,
-                                clp_to_cam,
-
-                                frustum: Frustum {
-                                    x0: tangents.l as f64,
-                                    x1: tangents.r as f64,
-                                    y0: tangents.b as f64,
-                                    y1: tangents.t as f64,
-                                    z0: camera.properties.z0 as f64,
-                                    z1: camera.properties.z1 as f64,
-                                },
+                                wld_to_ren_clp,
+                                ren_clp_to_wld,
+                                frustum,
                             },
                         );
                     }
@@ -1264,21 +1225,16 @@ impl<'s> Context<'s> {
                     {
                         let C1 { cam_pos_in_wld, .. } = render_c1;
                         let C2 {
-                            wld_to_cam,
-                            cam_to_wld,
-                            cam_to_clp,
-                            clp_to_cam,
+                            wld_to_ren_clp,
+                            ren_clp_to_wld,
                             ..
                         } = render_c2;
 
                         self.main_parameters_vec.push(MainParameters {
-                            wld_to_cam,
-                            cam_to_wld,
+                            wld_to_ren_clp,
+                            ren_clp_to_wld,
 
-                            cam_to_clp,
-                            clp_to_cam,
-
-                            cam_pos_in_wld,
+                            cam_pos_in_lgt: cam_pos_in_wld,
 
                             light_index: light_index.expect("Programming error: light_index was never set."),
                             cluster_resources_index,
@@ -1306,14 +1262,6 @@ impl<'s> Context<'s> {
                 let render_c1 = C1::new(self.transition_camera.current_camera, Matrix4::identity());
                 let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), Matrix4::identity());
 
-                if self.shader_compiler.light_space() == LightSpace::Hmd {
-                    light_index = Some(self.light_params_vec.len());
-                    self.light_params_vec.push(light::LightParameters {
-                        wld_to_lgt: render_c1.wld_to_hmd,
-                        lgt_to_wld: render_c1.hmd_to_wld,
-                    });
-                }
-
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
                 {
@@ -1322,7 +1270,6 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
                             clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
@@ -1356,7 +1303,6 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
                             clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
@@ -1407,21 +1353,16 @@ impl<'s> Context<'s> {
                     let C1 { cam_pos_in_wld, .. } = render_c1;
 
                     let C2 {
-                        wld_to_cam,
-                        cam_to_wld,
-                        cam_to_clp,
-                        clp_to_cam,
+                        wld_to_ren_clp,
+                        ren_clp_to_wld,
                         ..
                     } = render_c2;
 
                     self.main_parameters_vec.push(MainParameters {
-                        wld_to_cam,
-                        cam_to_wld,
+                        wld_to_ren_clp,
+                        ren_clp_to_wld,
 
-                        cam_to_clp,
-                        clp_to_cam,
-
-                        cam_pos_in_wld,
+                        cam_pos_in_lgt: cam_pos_in_wld,
 
                         light_index: light_index.expect("Programming error: light_index was never set."),
                         cluster_resources_index,
@@ -1444,13 +1385,10 @@ impl<'s> Context<'s> {
             let gl = &self.gl;
 
             let MainParameters {
-                ref wld_to_cam,
-                ref cam_to_wld,
+                ref wld_to_ren_clp,
+                ref ren_clp_to_wld,
 
-                ref cam_to_clp,
-                ref clp_to_cam,
-
-                cam_pos_in_wld,
+                cam_pos_in_lgt,
 
                 light_index,
                 cluster_resources_index,
@@ -1521,26 +1459,6 @@ impl<'s> Context<'s> {
                     Some(view)
                 },
             };
-
-            let cam_pos_in_lgt = light_params.wld_to_lgt * cam_pos_in_wld.to_homogeneous();
-
-            unsafe {
-                let camera_buffer = CameraBuffer {
-                    wld_to_cam: wld_to_cam.cast().unwrap(),
-                    cam_to_wld: cam_to_wld.cast().unwrap(),
-
-                    cam_to_clp: cam_to_clp.cast().unwrap(),
-                    clp_to_cam: clp_to_cam.cast().unwrap(),
-
-                    cam_pos_in_lgt: cam_pos_in_lgt.cast().unwrap(),
-                };
-
-                let buffer_index = self.camera_buffer_pool.unused(gl);
-                let buffer_name = self.camera_buffer_pool[buffer_index];
-
-                gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
-                gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
-            }
 
             let main_resources_index = self.main_resources_pool.next_unused(
                 gl,
@@ -1996,14 +1914,12 @@ fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f6
 
 fn stereo_frustum(camera_properties: &camera::CameraProperties, tangents: vr::RawProjection) -> Frustum<f64> {
     let vr::RawProjection { l, r, b, t } = tangents;
-    let z0 = camera_properties.z0 as f64;
-    let z1 = camera_properties.z1 as f64;
     Frustum {
         x0: l as f64,
         x1: r as f64,
         y0: b as f64,
         y1: t as f64,
-        z0,
-        z1,
+        z0: camera_properties.z0 as f64,
+        z1: camera_properties.z1 as f64,
     }
 }
