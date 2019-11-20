@@ -127,8 +127,8 @@ pub struct GenericCameraConfiguration {
 
 #[derive(serde::Deserialize, Debug, Copy, Clone)]
 pub struct CameraConfiguration {
-    pub z0: f32,
-    pub z1: f32,
+    pub near: f32,
+    pub far: f32,
     pub positional_velocity: f32,
     pub angular_velocity: f32,
     pub zoom_velocity: f32,
@@ -137,15 +137,15 @@ pub struct CameraConfiguration {
 impl Into<camera::CameraProperties> for CameraConfiguration {
     fn into(self) -> camera::CameraProperties {
         let CameraConfiguration {
-            z0,
-            z1,
+            near,
+            far,
             positional_velocity,
             angular_velocity,
             zoom_velocity,
         } = self;
         camera::CameraProperties {
-            z0,
-            z1,
+            z0: -far,
+            z1: -near,
             positional_velocity,
             angular_velocity,
             zoom_velocity,
