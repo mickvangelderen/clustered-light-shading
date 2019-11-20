@@ -185,7 +185,10 @@ impl Resources {
 
             info!(
                 "Loaded {:?} with {} instances, {} triangles and {} vertices",
-                scene_file_path, scene_file.instances.len(), total_triangles, total_vertices
+                scene_file_path,
+                scene_file.instances.len(),
+                total_triangles,
+                total_vertices
             );
         }
 
@@ -513,15 +516,15 @@ impl Resources {
 #[derive(Debug)]
 #[repr(C)]
 pub struct InstanceMatrices {
-    pub pos_from_obj_to_clp: Matrix4<f32>,
-    pub pos_from_obj_to_cls: Matrix4<f32>,
-    pub pos_from_obj_to_lgt: Matrix4<f32>,
-    pub nor_from_obj_to_lgt: Matrix4<f32>,
+    pub obj_to_ren_clp: Matrix4<f32>,
+    pub obj_to_clu_clp: Matrix4<f32>,
+    pub obj_to_lgt: Matrix4<f32>,
+    pub obj_to_lgt_inv_tra: Matrix4<f32>,
 }
 
 pub fn compute_instance_matrices(
-    wld_to_clp: Matrix4<f64>,
-    wld_to_cls: Matrix4<f64>,
+    wld_to_ren_clp: Matrix4<f64>,
+    wld_to_clu_clp: Matrix4<f64>,
     instances: &[scene_file::Instance],
     transforms: &[scene_file::Transform],
 ) -> Vec<InstanceMatrices> {
@@ -534,16 +537,16 @@ pub fn compute_instance_matrices(
 
             let obj_to_wld = transform.to_parent();
 
-            let pos_from_obj_to_clp = (wld_to_clp * obj_to_wld).cast().unwrap();
-            let pos_from_obj_to_cls = (wld_to_cls * obj_to_wld).cast().unwrap();
-            let pos_from_obj_to_lgt = obj_to_wld.cast().unwrap();
-            let nor_from_obj_to_lgt = pos_from_obj_to_lgt.invert().unwrap().transpose();
+            let obj_to_ren_clp = (wld_to_ren_clp * obj_to_wld).cast().unwrap();
+            let obj_to_clu_clp = (wld_to_clu_clp * obj_to_wld).cast().unwrap();
+            let obj_to_lgt = obj_to_wld.cast().unwrap();
+            let obj_to_lgt_inv_tra = (obj_to_wld.invert().unwrap().transpose()).cast().unwrap();
 
             InstanceMatrices {
-                pos_from_obj_to_clp,
-                pos_from_obj_to_cls,
-                pos_from_obj_to_lgt,
-                nor_from_obj_to_lgt,
+                obj_to_ren_clp,
+                obj_to_clu_clp,
+                obj_to_lgt,
+                obj_to_lgt_inv_tra,
             }
         })
         .collect();
