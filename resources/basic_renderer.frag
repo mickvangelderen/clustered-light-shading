@@ -43,7 +43,7 @@ in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-in vec3 fs_pos_in_ccam;
+in vec4 fs_pos_in_clu_clp;
 #endif
 
 layout(location = 0) out vec4 frag_color;
@@ -157,7 +157,7 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_cls = cluster_cam_to_cls(fs_pos_in_ccam);
+    vec3 pos_in_cls = from_homogeneous(fs_pos_in_clu_clp);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
     // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 

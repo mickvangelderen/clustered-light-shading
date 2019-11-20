@@ -190,7 +190,7 @@ impl Context<'_> {
             let data = ClusterSpaceBuffer::new(
                 cluster_resources.computed.dimensions,
                 cluster_resources.computed.frustum,
-                cluster_resources.computed.wld_to_ccam,
+                cluster_resources.computed.clu_clp_to_clu_cam,
             );
 
             buffer.invalidate(gl);
