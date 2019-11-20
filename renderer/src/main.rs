@@ -1141,7 +1141,7 @@ impl<'s> Context<'s> {
             pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustum: Frustum<f64>) -> Self {
                 let C1 { hmd_to_wld, .. } = *c1;
                 let ren_clp_to_cam = frustum.inverse_perspective(&RENDER_RANGE);
-                let ren_clp_to_wld = hmd_to_wld * cam_to_hmd * clp_to_cam;
+                let ren_clp_to_wld = hmd_to_wld * cam_to_hmd * ren_clp_to_cam;
 
                 Self {
                     wld_to_ren_clp: ren_clp_to_wld.invert().unwrap(),
@@ -1287,14 +1287,6 @@ impl<'s> Context<'s> {
                     mono_frustum(&cluster_c1.camera, dimensions),
                 );
 
-                if self.shader_compiler.light_space() == LightSpace::Cam {
-                    light_index = Some(self.light_params_vec.len());
-                    self.light_params_vec.push(light::LightParameters {
-                        wld_to_lgt: render_c2.wld_to_cam,
-                        lgt_to_wld: render_c2.cam_to_wld,
-                    });
-                }
-
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
                 {
@@ -1313,11 +1305,9 @@ impl<'s> Context<'s> {
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                     let C1 { ref camera, .. } = cluster_c1;
                     let C2 {
-                        wld_to_cam,
-                        cam_to_wld,
-                        cam_to_clp,
-                        clp_to_cam,
-                        ..
+                        wld_to_ren_clp,
+                        ren_clp_to_wld,
+                        frustum,
                     } = cluster_c2;
 
                     let _ = camera_resources_pool.next_unused(
@@ -1326,25 +1316,9 @@ impl<'s> Context<'s> {
                         ClusterCameraParameters {
                             frame_dims: dimensions,
 
-                            wld_to_cam,
-                            cam_to_wld,
-
-                            cam_to_clp,
-                            clp_to_cam,
-
-                            frustum: {
-                                let dy = Rad::tan(Rad(Rad::from(cluster_c1.camera.transform.fovy).0 as f64) / 2.0);
-                                let dx = dy * dimensions.x as f64 / dimensions.y as f64;
-
-                                Frustum {
-                                    x0: -dx,
-                                    x1: dx,
-                                    y0: -dy,
-                                    y1: dy,
-                                    z0: camera.properties.z0 as f64,
-                                    z1: camera.properties.z1 as f64,
-                                }
-                            },
+                            wld_to_ren_clp,
+                            ren_clp_to_wld,
+                            frustum,
                         },
                     );
                 }
@@ -1490,10 +1464,7 @@ impl<'s> Context<'s> {
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &RENDER_RANGE.line_mesh_indices(),
-                                obj_to_wld: &(camera_resources.parameters.cam_to_wld
-                                    * camera_resources.parameters.clp_to_cam)
-                                    .cast()
-                                    .unwrap(),
+                                obj_to_wld: &camera_resources.parameters.ren_clp_to_wld.cast().unwrap(),
                                 color: color::MAGENTA,
                             },
                         );
@@ -1514,7 +1485,7 @@ impl<'s> Context<'s> {
                         &line_renderer::Parameters {
                             vertices: &vertices,
                             indices: &cluster_resources.computed.frustum.line_mesh_indices(),
-                            obj_to_wld: &(cluster_resources.computed.ccam_to_wld.cast().unwrap()),
+                            obj_to_wld: &cluster_resources.computed.clu_clp_to_wld.cast().unwrap(),
                             color: color::RED,
                         },
                     );
@@ -1522,10 +1493,9 @@ impl<'s> Context<'s> {
                     {
                         // Reborrow.
                         let main_params = &self.main_parameters_vec[main_parameters_index];
-                        let wld_to_clp = main_params.cam_to_clp * main_params.wld_to_cam;
                         self.render_debug_clusters(&cluster_renderer::Parameters {
                             cluster_resources_index,
-                            wld_to_clp,
+                            wld_to_clp: main_params.wld_to_ren_clp,
                         });
                     }
                 }
@@ -1898,8 +1868,6 @@ fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
 }
 
 fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f64> {
-    let z0 = camera.properties.z0 as f64;
-    let z1 = camera.properties.z1 as f64;
     let dy = Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
     let dx = dy * dimensions.x as f64 / dimensions.y as f64;
     Frustum {
@@ -1907,8 +1875,8 @@ fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f6
         x1: dx,
         y0: -dy,
         y1: dy,
-        z0,
-        z1,
+        z0 : camera.properties.z0 as f64,
+        z1 : camera.properties.z1 as f64,
     }
 }
 
