@@ -32,7 +32,7 @@ glsl_defines!(fixed_header {
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
         FB_DIMS_LOC = 1;
-        CLP_TO_WLD_LOC = 2;
+        REN_CLP_TO_CLU_CLP = 2;
         ITEM_COUNT_LOC = 3;
         LIGHT_COUNT_LOC = 4;
     },
@@ -297,11 +297,14 @@ impl Context<'_> {
                             main_resources.dims.cast::<f32>().unwrap().into(),
                         );
 
-                        let clp_to_wld = (camera_parameters.cam_to_wld * camera_parameters.clp_to_cam)
-                            .cast::<f32>()
-                            .unwrap();
+                        let ren_clp_to_clu_clp =
+                            cluster_resources.computed.wld_to_clu_clp * camera_parameters.ren_clp_to_wld;
 
-                        gl.uniform_matrix4f(cls_renderer::CLP_TO_WLD_LOC, gl::MajorAxis::Column, clp_to_wld.as_ref());
+                        gl.uniform_matrix4f(
+                            cls_renderer::REN_CLP_TO_CLU_CLP,
+                            gl::MajorAxis::Column,
+                            ren_clp_to_clu_clp.cast::<f32>().unwrap().as_ref(),
+                        );
 
                         gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER);
 
@@ -319,6 +322,7 @@ impl Context<'_> {
                             main_resources.dims.y.ceiled_div(ly) as u32,
                             1,
                         );
+
                         gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                     }
                 }
@@ -405,7 +409,11 @@ impl Context<'_> {
                 );
             }
 
-            let renderer::PrefixSumConfiguration { pass_0_threads, pass_1_threads, .. } = self.configuration.prefix_sum;
+            let renderer::PrefixSumConfiguration {
+                pass_0_threads,
+                pass_1_threads,
+                ..
+            } = self.configuration.prefix_sum;
             let items_per_workgroup = cluster_count.ceiled_div(pass_0_threads * pass_1_threads) * pass_0_threads;
             let workgroup_count = cluster_count.ceiled_div(items_per_workgroup);
 
@@ -454,11 +462,11 @@ impl Context<'_> {
                     .point_lights
                     .iter()
                     .map(|&light| {
-                        let pos_in_ccam = cluster_resources
+                        let pos_in_clu_cam = cluster_resources
                             .computed
-                            .wld_to_ccam
+                            .wld_to_clu_cam
                             .transform_point(light.pos_in_wld.cast().unwrap());
-                        let [x, y, z]: [f32; 3] = pos_in_ccam.cast::<f32>().unwrap().into();
+                        let [x, y, z]: [f32; 3] = pos_in_clu_cam.cast::<f32>().unwrap().into();
                         [x, y, z, light.attenuation.clip_far]
                     })
                     .collect();
