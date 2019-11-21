@@ -151,8 +151,8 @@ const RENDER_RANGE: Range3<f64> = Range3 {
     x1: 1.0,
     y0: -1.0,
     y1: 1.0,
-    z0: 1.0, // NOTE(mickvangelderen): We use reverse-z.
-    z1: 0.0,
+    z0: 0.0, // NOTE(mickvangelderen): We use reverse-z.
+    z1: 1.0,
 };
 
 const SEED: [u8; 32] = *b"this is rdm rng seed of 32 bytes";
