@@ -42,11 +42,11 @@ framebuffer_srgb = true
 [clustered_light_shading]
 projection = "Orthographic"
 # projection = "Perspective"
-grouping = "Individual"
-# grouping = "Enclosed"
+# grouping = "Individual"
+grouping = "Enclosed"
 orthographic_sides = { x = 2.0, y = 2.0, z = 2.0 }
 # orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
-perspective_pixels = { x = 16, y = 16 }
+perspective_pixels = { x = 32, y = 32 }
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
 max_light_indices = 1048576 # 2^20 u32 4MB * (light index)

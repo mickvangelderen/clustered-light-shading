@@ -31,7 +31,7 @@ glsl_defines!(fixed_header {
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
-        FB_DIMS_LOC = 1;
+        DEPTH_DIMENSIONS_LOC = 1;
         REN_CLP_TO_CLU_CAM = 2;
         ITEM_COUNT_LOC = 3;
         LIGHT_COUNT_LOC = 4;
@@ -305,9 +305,9 @@ impl Context<'_> {
 
                         gl.bind_texture_unit(0, main_resources.depth_texture);
 
-                        gl.uniform_2f(
-                            cls_renderer::FB_DIMS_LOC,
-                            main_resources.dims.cast::<f32>().unwrap().into(),
+                        gl.uniform_2i(
+                            cls_renderer::DEPTH_DIMENSIONS_LOC,
+                            main_resources.dimensions.cast::<i32>().unwrap().into(),
                         );
 
                         let ren_clp_to_clu_cam =
@@ -331,8 +331,8 @@ impl Context<'_> {
                         };
 
                         gl.dispatch_compute(
-                            main_resources.dims.x.ceiled_div(lx) as u32,
-                            main_resources.dims.y.ceiled_div(ly) as u32,
+                            main_resources.dimensions.x.ceiled_div(lx) as u32,
+                            main_resources.dimensions.y.ceiled_div(ly) as u32,
                             1,
                         );
 

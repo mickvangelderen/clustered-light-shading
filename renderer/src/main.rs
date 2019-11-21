@@ -1748,7 +1748,7 @@ impl<'s> Context<'s> {
         let main_resources = &mut main_resources_pool[main_resources_index];
 
         unsafe {
-            gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
+            gl.viewport(0, 0, main_resources.dimensions.x, main_resources.dimensions.y);
             gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
             gl.clear_color(clear_color[0], clear_color[1], clear_color[2], 1.0);
             // Reverse-Z.
@@ -1772,7 +1772,7 @@ impl<'s> Context<'s> {
         let main_resources = &mut self.main_resources_pool[main_resources_index];
 
         unsafe {
-            gl.viewport(0, 0, main_resources.dims.x, main_resources.dims.y);
+            gl.viewport(0, 0, main_resources.dimensions.x, main_resources.dimensions.y);
             gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
             gl.clear_color(clear_color[0], clear_color[1], clear_color[2], 1.0);
             // Reverse-Z.
