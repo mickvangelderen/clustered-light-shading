@@ -22,7 +22,7 @@ unsafe fn create_texture(
     dimensions: Vector2<i32>,
     sample_count: u32,
 ) -> gl::TextureName {
-    if sample_count == 1 {
+    if sample_count == 0 {
         let color_texture = gl.create_texture(gl::TEXTURE_2D);
         gl.texture_storage_2d(color_texture, 1, format, dimensions.x, dimensions.y);
         color_texture
