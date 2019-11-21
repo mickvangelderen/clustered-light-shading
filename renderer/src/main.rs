@@ -35,6 +35,7 @@ mod line_renderer;
 mod main_resources;
 mod math;
 mod overlay_renderer;
+mod pool;
 mod rain;
 mod rendering;
 mod resources;
@@ -55,6 +56,7 @@ use self::dds_ext::*;
 use self::gl_ext::*;
 use self::main_resources::*;
 use self::math::CeiledDiv;
+use self::pool::Pool;
 use self::rendering::*;
 use self::resources::Resources;
 use self::shader_compiler::{EntryPoint, ShaderCompiler};
@@ -130,17 +132,13 @@ impl_enum_map! {
 
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
-pub struct CameraParameters {
-    pub wld_to_cam: Matrix4<f64>,
-    pub cam_to_clp: Matrix4<f64>,
-}
-
 pub struct MainParameters {
     pub wld_to_ren_clp: Matrix4<f64>,
     pub ren_clp_to_wld: Matrix4<f64>,
 
     pub cam_pos_in_lgt: Point3<f64>,
 
+    pub draw_resources_index: usize,
     pub light_index: usize,
     pub cluster_resources_index: Option<ClusterResourcesIndex>,
 
@@ -958,15 +956,6 @@ impl<'s> Context<'s> {
     }
 
     pub fn render(&mut self) {
-        self.resources.draw_resources.recompute(
-            &self.resources.scene_file.instances,
-            &self.resources.materials,
-            &self.resources.scene_file.transforms,
-            &self.resources.scene_file.mesh_descriptions,
-        );
-
-        self.resources.draw_resources.reupload(&self.gl);
-
         #[derive(Copy, Clone)]
         pub struct EyeData {
             tangents: vr::RawProjection,
@@ -1047,6 +1036,7 @@ impl<'s> Context<'s> {
                     }
                 }
             });
+
         // Space abbreviations:
         //  - self.(wld)
         //  - camera body (bdy)
@@ -1066,6 +1056,7 @@ impl<'s> Context<'s> {
         self.light_params_vec.clear();
         self.cluster_resources_pool.reset();
         self.main_resources_pool.reset();
+        self.resources.draw_resources_pool.reset();
 
         {
             self.point_lights.clear();
@@ -1203,18 +1194,23 @@ impl<'s> Context<'s> {
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                        let C1 { ref camera, .. } = cluster_c1;
                         let C2 {
                             wld_to_ren_clp,
                             ren_clp_to_wld,
                             frustum,
                         } = cluster_c2;
 
+                        let draw_resources_index = self.resources.draw_resources_pool.next({
+                            let gl = &self.gl;
+                            move || resources::DrawResources::new(gl)
+                        });
+
                         let _ = camera_resources_pool.next_unused(
                             gl,
                             &mut self.profiling_context,
                             ClusterCameraParameters {
                                 frame_dims: win_size,
+                                draw_resources_index,
                                 wld_to_ren_clp,
                                 ren_clp_to_wld,
                                 frustum,
@@ -1236,6 +1232,10 @@ impl<'s> Context<'s> {
 
                             cam_pos_in_lgt: cam_pos_in_wld,
 
+                            draw_resources_index: self.resources.draw_resources_pool.next({
+                                let gl = &self.gl;
+                                move || resources::DrawResources::new(gl)
+                            }),
                             light_index: light_index.expect("Programming error: light_index was never set."),
                             cluster_resources_index,
 
@@ -1303,19 +1303,23 @@ impl<'s> Context<'s> {
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                    let C1 { ref camera, .. } = cluster_c1;
                     let C2 {
                         wld_to_ren_clp,
                         ren_clp_to_wld,
                         frustum,
                     } = cluster_c2;
 
+                    let draw_resources_index = self.resources.draw_resources_pool.next({
+                        let gl = &self.gl;
+                        move || resources::DrawResources::new(gl)
+                    });
+
                     let _ = camera_resources_pool.next_unused(
                         gl,
                         &mut self.profiling_context,
                         ClusterCameraParameters {
                             frame_dims: dimensions,
-
+                            draw_resources_index,
                             wld_to_ren_clp,
                             ren_clp_to_wld,
                             frustum,
@@ -1332,12 +1336,18 @@ impl<'s> Context<'s> {
                         ..
                     } = render_c2;
 
+                    let draw_resources_index = self.resources.draw_resources_pool.next({
+                        let gl = &self.gl;
+                        move || resources::DrawResources::new(gl)
+                    });
+
                     self.main_parameters_vec.push(MainParameters {
                         wld_to_ren_clp,
                         ren_clp_to_wld,
 
                         cam_pos_in_lgt: cam_pos_in_wld,
 
+                        draw_resources_index,
                         light_index: light_index.expect("Programming error: light_index was never set."),
                         cluster_resources_index,
 
@@ -1359,17 +1369,35 @@ impl<'s> Context<'s> {
             let gl = &self.gl;
 
             let MainParameters {
-                ref wld_to_ren_clp,
-                ref ren_clp_to_wld,
+                wld_to_ren_clp,
 
-                cam_pos_in_lgt,
-
+                draw_resources_index,
                 light_index,
                 cluster_resources_index,
 
                 dimensions,
                 display_viewport,
+                ..
             } = *main_params;
+
+            let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
+
+            draw_resources.recompute(
+                wld_to_ren_clp,
+                if let Some(cluster_resources_index) = cluster_resources_index {
+                    self.cluster_resources_pool[cluster_resources_index]
+                        .computed
+                        .wld_to_clu_clp
+                } else {
+                    Matrix4::identity()
+                },
+                &self.resources.scene_file.instances,
+                &self.resources.materials,
+                &self.resources.scene_file.transforms,
+                &self.resources.scene_file.mesh_descriptions,
+            );
+
+            draw_resources.reupload(&self.gl);
 
             let light_params = &self.light_params_vec[light_index];
 
@@ -1441,7 +1469,7 @@ impl<'s> Context<'s> {
                 self.configuration.global.sample_count,
             );
 
-            self.clear_and_render_main(main_resources_index, cluster_resources_index);
+            self.clear_and_render_main(main_resources_index, main_parameters_index);
 
             if let Some(view) = profiling_basic_buffer {
                 unsafe {
@@ -1450,8 +1478,8 @@ impl<'s> Context<'s> {
             }
 
             if self.target_camera_key == CameraKey::Debug {
-                let corners_in_clp = RENDER_RANGE.vertices();
-                let vertices: Vec<[f32; 3]> = corners_in_clp
+                let vertices: Vec<[f32; 3]> = RENDER_RANGE
+                    .vertices()
                     .iter()
                     .map(|point| point.cast().unwrap().into())
                     .collect();
@@ -1464,40 +1492,38 @@ impl<'s> Context<'s> {
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &RENDER_RANGE.line_mesh_indices(),
-                                obj_to_wld: &camera_resources.parameters.ren_clp_to_wld.cast().unwrap(),
+                                obj_to_clp: &(wld_to_ren_clp * camera_resources.parameters.ren_clp_to_wld),
                                 color: color::MAGENTA,
                             },
                         );
                     }
 
-                    let vertices = match self.configuration.clustered_light_shading.projection {
-                        ClusteringProjection::Perspective => cluster_resources.computed.frustum.perspective_vertices(),
-                        ClusteringProjection::Orthographic => {
-                            cluster_resources.computed.frustum.orthographic_vertices()
-                        }
-                    };
+                    let cluster_range =
+                        Range3::from_vector(cluster_resources.computed.dimensions.cast::<f64>().unwrap());
 
-                    let vertices: Vec<[f32; 3]> =
-                        vertices.iter().map(|&p| [p.x as f32, p.y as f32, p.z as f32]).collect();
+                    let vertices: Vec<[f32; 3]> = cluster_range
+                        .vertices()
+                        .iter()
+                        .map(|point| point.cast().unwrap().into())
+                        .collect();
 
                     self.line_renderer.render(
                         &mut rendering_context!(self),
                         &line_renderer::Parameters {
                             vertices: &vertices,
-                            indices: &cluster_resources.computed.frustum.line_mesh_indices(),
-                            obj_to_wld: &cluster_resources.computed.clu_clp_to_wld.cast().unwrap(),
+                            indices: &cluster_range.line_mesh_indices(),
+                            obj_to_clp: &(wld_to_ren_clp * cluster_resources.computed.clu_clp_to_wld),
                             color: color::RED,
                         },
                     );
 
-                    {
-                        // Reborrow.
-                        let main_params = &self.main_parameters_vec[main_parameters_index];
-                        self.render_debug_clusters(&cluster_renderer::Parameters {
-                            cluster_resources_index,
-                            wld_to_clp: main_params.wld_to_ren_clp,
-                        });
-                    }
+                    self.render_debug_clusters(&cluster_renderer::Parameters {
+                        cluster_resources_index,
+                        clu_clp_to_ren_clp: &(wld_to_ren_clp
+                            * self.cluster_resources_pool[cluster_resources_index]
+                                .computed
+                                .clu_clp_to_wld),
+                    });
                 }
             }
 
@@ -1709,7 +1735,7 @@ impl<'s> Context<'s> {
         }
     }
 
-    fn clear_and_render_depth(&mut self, main_resources_index: MainResourcesIndex) {
+    fn clear_and_render_depth(&mut self, main_resources_index: MainResourcesIndex, draw_resources_index: usize) {
         let Self {
             ref gl,
             ref clear_color,
@@ -1731,14 +1757,10 @@ impl<'s> Context<'s> {
             gl.cull_face(gl::BACK);
         }
 
-        self.render_depth();
+        self.render_depth(draw_resources_index);
     }
 
-    fn clear_and_render_main(
-        &mut self,
-        main_resources_index: MainResourcesIndex,
-        cluster_resources_index: Option<ClusterResourcesIndex>,
-    ) {
+    fn clear_and_render_main(&mut self, main_resources_index: MainResourcesIndex, main_parameters_index: usize) {
         let Self {
             ref gl,
             ref clear_color,
@@ -1764,7 +1786,7 @@ impl<'s> Context<'s> {
                 .profiling_context
                 .start(gl, self.main_resources_pool[main_resources_index].depth_pass_profiler);
 
-            self.render_depth();
+            self.render_depth(self.main_parameters_vec[main_parameters_index].draw_resources_index);
 
             let Self { ref gl, .. } = *self;
 
@@ -1787,7 +1809,7 @@ impl<'s> Context<'s> {
                     CameraKey::Main => 0,
                     CameraKey::Debug => self.display_mode,
                 },
-                cluster_resources_index,
+                main_parameters_index,
             });
 
             // Reborrow.
@@ -1875,8 +1897,8 @@ fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f6
         x1: dx,
         y0: -dy,
         y1: dy,
-        z0 : camera.properties.z0 as f64,
-        z1 : camera.properties.z1 as f64,
+        z0: camera.properties.z0 as f64,
+        z1: camera.properties.z1 as f64,
     }
 }
 

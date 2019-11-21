@@ -7,7 +7,7 @@ pub struct Renderer {
 
 pub struct Parameters {
     pub mode: u32,
-    pub cluster_resources_index: Option<ClusterResourcesIndex>,
+    pub main_parameters_index: usize,
 }
 
 glsl_defines!(fixed_header {
@@ -29,8 +29,7 @@ glsl_defines!(fixed_header {
         SPECULAR_SAMPLER_BINDING = 5;
     },
     uniforms: {
-        OBJ_TO_WLD_LOC = 0;
-        SHININESS_LOC = 6;
+        CAM_POS_IN_LGT_LOC = 0;
     },
 });
 
@@ -42,13 +41,17 @@ impl Context<'_> {
             ..
         } = *self;
 
+        let main_parameters = &self.main_parameters_vec[params.main_parameters_index];
+        let cam_pos_in_lgt = main_parameters.cam_pos_in_lgt;
+        let cluster_resources_index = main_parameters.cluster_resources_index;
+
         unsafe {
             basic_renderer.opaque_program.update(&mut rendering_context!(self));
             basic_renderer.masked_program.update(&mut rendering_context!(self));
             if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
                 (&basic_renderer.opaque_program.name, &basic_renderer.masked_program.name)
             {
-                if let Some(cluster_resources_index) = params.cluster_resources_index {
+                if let Some(cluster_resources_index) = cluster_resources_index {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
 
                     debug_assert_eq!(
@@ -85,26 +88,31 @@ impl Context<'_> {
                         CLUSTER_SPACE_BUFFER_BINDING,
                         cluster_resources.cluster_space_buffer.name(),
                     );
-
-                    gl.bind_buffer_base(
-                        gl::SHADER_STORAGE_BUFFER,
-                        INSTANCE_MATRICES_BUFFER_BINDING,
-                        self.resources.draw_resources.instance_matrices_buffer,
-                    );
-
-                    gl.bind_buffer(
-                        gl::DRAW_INDIRECT_BUFFER,
-                        self.resources.draw_resources.draw_command_buffer,
-                    );
                 }
+
+                let draw_resources = &self.resources.draw_resources_pool[main_parameters.draw_resources_index];
+
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    INSTANCE_MATRICES_BUFFER_BINDING,
+                    draw_resources.instance_matrices_buffer,
+                );
+
+                gl.bind_buffer(
+                    gl::DRAW_INDIRECT_BUFFER,
+                    draw_resources.draw_command_buffer,
+                );
 
                 gl.bind_vertex_array(self.resources.scene_vao);
 
-                let draw_counts = &self.resources.draw_resources.draw_counts;
-                let draw_offsets = &self.resources.draw_resources.draw_offsets;
+                let draw_counts = &draw_resources.draw_counts;
+                let draw_offsets = &draw_resources.draw_offsets;
 
                 for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
                     gl.use_program(program);
+
+                    gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
+
                     for (material_index, material) in self.resources.materials.iter().enumerate() {
                         if self.resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
                             || draw_counts[material_index] == 0
@@ -113,7 +121,6 @@ impl Context<'_> {
                         }
 
                         // Update material.
-                        gl.uniform_1f(SHININESS_LOC, material.shininess);
                         let textures = &self.resources.textures;
                         gl.bind_texture_unit(NORMAL_SAMPLER_BINDING, textures[material.normal_texture_index].name);
                         gl.bind_texture_unit(EMISSIVE_SAMPLER_BINDING, textures[material.emissive_texture_index].name);

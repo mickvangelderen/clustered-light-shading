@@ -524,7 +524,6 @@ impl ClusterResources {
                             }
                         }
 
-                        let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
 
                         let f = Frustum {
