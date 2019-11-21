@@ -322,7 +322,7 @@ impl Context<'_> {
                         gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER);
 
                         let (lx, ly) = match self.configuration.global.sample_count {
-                            1 => (16, 16),
+                            0 | 1 => (16, 16),
                             2 => (8, 16),
                             4 => (8, 8),
                             8 => (4, 8),

@@ -6,7 +6,7 @@
 #include "cluster_space_buffer.glsl"
 #include "cluster_fragment_counts_buffer.glsl"
 
-#if SAMPLE_COUNT == 1
+#if SAMPLE_COUNT == 0
 layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2D depth_sampler;
 #else
 layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
@@ -14,8 +14,8 @@ layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
 layout(location = DEPTH_DIMENSIONS_LOC) uniform ivec2 depth_dimensions;
 layout(location = REN_CLP_TO_CLU_CAM) uniform mat4 ren_clp_to_clu_cam;
 
-#if SAMPLE_COUNT == 1
-layout(local_size_x = 16, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
+#if SAMPLE_COUNT == 0 || SAMPLE_COUNT == 1
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 #elif SAMPLE_COUNT == 2
 layout(local_size_x =  8, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
 #elif SAMPLE_COUNT == 4

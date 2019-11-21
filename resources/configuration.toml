@@ -10,6 +10,7 @@ mode = "Normal"
 # scene_path = "bistro/Bistro_Interior.bin"
 scene_path = "sun_temple/SunTemple.bin"
 
+# sample_count = 0
 sample_count = 1
 # sample_count = 2
 # sample_count = 4
