@@ -36,15 +36,17 @@ void main() {
   vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - depth_dims) / vec2(depth_dims);
   float z_ndc = texelFetch(depth_sampler, ivec2(gl_GlobalInvocationID.xy), int(gl_LocalInvocationID.z)).r;
 
-  if (z_ndc == 0) {
+  if (z_ndc == 0.0) {
     // Infinitely far (reverse z)
     return;
   }
 
-  vec3 pos_in_cls = cluster_cam_to_clp(from_homogeneous(ren_clp_to_clu_cam * to_homogeneous(vec3(xy_ndc, z_ndc))));
+  vec3 pos_in_cls = cluster_cam_to_clp(from_homogeneous(
+      ren_clp_to_clu_cam * to_homogeneous(vec3(xy_ndc, z_ndc))));
 
-  uvec3 idx_in_cls = uvec3(pos_in_cls);
-  if (all(lessThan(idx_in_cls, cluster_space.dimensions))) {
+  if (all(greaterThanEqual(pos_in_cls, vec3(0.0))) &&
+      all(lessThan(pos_in_cls, vec3(cluster_space.dimensions)))) {
+    uvec3 idx_in_cls = uvec3(pos_in_cls);
     uint cluster_index = index_3_to_1(idx_in_cls, cluster_space.dimensions);
     atomicAdd(cluster_fragment_counts[cluster_index], 1);
   }
