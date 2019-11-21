@@ -16,6 +16,31 @@ pub struct MainResources {
     pub basic_pass_profiler: SampleIndex,
 }
 
+unsafe fn create_texture(
+    gl: &gl::Gl,
+    format: impl Into<gl::InternalFormat>,
+    dimensions: Vector2<i32>,
+    sample_count: u32,
+) -> gl::TextureName {
+    if sample_count == 1 {
+        let color_texture = gl.create_texture(gl::TEXTURE_2D);
+        gl.texture_storage_2d(color_texture, 1, format, dimensions.x, dimensions.y);
+        color_texture
+    } else {
+        let color_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
+        gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, color_texture);
+        gl.tex_image_2d_multisample(
+            gl::TEXTURE_2D_MULTISAMPLE,
+            sample_count as i32,
+            format,
+            dimensions.x,
+            dimensions.y,
+            false,
+        );
+        color_texture
+    }
+}
+
 impl MainResources {
     pub fn new(
         gl: &gl::Gl,
@@ -24,42 +49,8 @@ impl MainResources {
         sample_count: u32,
     ) -> Self {
         unsafe {
-            let color_texture = if sample_count == 1 {
-                let color_texture = gl.create_texture(gl::TEXTURE_2D);
-                gl.texture_storage_2d(color_texture, 1, gl::RGBA16F, dimensions.x, dimensions.y);
-                color_texture
-            } else {
-                let color_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
-                gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, color_texture);
-                gl.tex_image_2d_multisample(
-                    gl::TEXTURE_2D_MULTISAMPLE,
-                    sample_count as i32,
-                    gl::RGBA16F,
-                    dimensions.x,
-                    dimensions.y,
-                    false,
-                );
-
-                color_texture
-            };
-
-            let depth_texture = if sample_count == 1 {
-                let depth_texture = gl.create_texture(gl::TEXTURE_2D);
-                gl.texture_storage_2d(depth_texture, 1, gl::DEPTH24_STENCIL8, dimensions.x, dimensions.y);
-                depth_texture
-            } else {
-                let depth_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
-                gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, depth_texture);
-                gl.tex_image_2d_multisample(
-                    gl::TEXTURE_2D_MULTISAMPLE,
-                    sample_count as i32,
-                    gl::DEPTH24_STENCIL8,
-                    dimensions.x,
-                    dimensions.y,
-                    false,
-                );
-                depth_texture
-            };
+            let color_texture = create_texture(gl, gl::RGBA16F, dimensions, sample_count);
+            let depth_texture = create_texture(gl, gl::DEPTH24_STENCIL8, dimensions, sample_count);
 
             // Framebuffers.
 
@@ -95,50 +86,11 @@ impl MainResources {
             self.sample_count = sample_count;
 
             unsafe {
-                let depth_texture = if sample_count == 1 {
-                    let depth_texture = gl.create_texture(gl::TEXTURE_2D);
-                    gl.texture_storage_2d(depth_texture, 1, gl::DEPTH24_STENCIL8, dimensions.x, dimensions.y);
-                    depth_texture
-                } else {
-                    let depth_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
-                    gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, depth_texture);
-                    gl.tex_image_2d_multisample(
-                        gl::TEXTURE_2D_MULTISAMPLE,
-                        sample_count as i32,
-                        gl::DEPTH24_STENCIL8,
-                        dimensions.x,
-                        dimensions.y,
-                        false,
-                    );
-                    depth_texture
-                };
-
-                let color_texture = if sample_count == 1 {
-                    let color_texture = gl.create_texture(gl::TEXTURE_2D);
-                    gl.texture_storage_2d(color_texture, 1, gl::RGBA16F, dimensions.x, dimensions.y);
-                    color_texture
-                } else {
-                    let color_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
-                    gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, color_texture);
-                    gl.tex_image_2d_multisample(
-                        gl::TEXTURE_2D_MULTISAMPLE,
-                        sample_count as i32,
-                        gl::RGBA16F,
-                        dimensions.x,
-                        dimensions.y,
-                        false,
-                    );
-
-                    color_texture
-                };
+                let color_texture = create_texture(gl, gl::RGBA16F, dimensions, sample_count);
+                let depth_texture = create_texture(gl, gl::DEPTH24_STENCIL8, dimensions, sample_count);
 
                 gl.named_framebuffer_texture(self.framebuffer_name, gl::COLOR_ATTACHMENT0, color_texture, 0);
-                gl.named_framebuffer_texture(
-                    self.framebuffer_name,
-                    gl::DEPTH_STENCIL_ATTACHMENT,
-                    depth_texture,
-                    0,
-                );
+                gl.named_framebuffer_texture(self.framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture, 0);
 
                 gl.delete_texture(self.depth_texture);
                 gl.delete_texture(self.color_texture);
