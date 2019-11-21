@@ -14,14 +14,14 @@ pub struct Renderer {
 pub struct Parameters<'a> {
     pub vertices: &'a [[f32; 3]],
     pub indices: &'a [[u32; 2]],
-    pub obj_to_wld: &'a Matrix4<f32>,
+    pub obj_to_clp: &'a Matrix4<f64>,
     pub color: [f32; 3],
 }
 
 glsl_defines!(fixed_header {
     bindings: {},
     uniforms: {
-        OBJ_TO_WLD_LOC = 0;
+        OBJ_TO_CLP_LOC = 0;
         COLOR_LOC = 1;
     },
 });
@@ -44,7 +44,7 @@ impl Renderer {
             if let ProgramName::Linked(program_name) = self.program.name {
                 gl.use_program(program_name);
 
-                gl.uniform_matrix4f(OBJ_TO_WLD_LOC, gl::MajorAxis::Column, params.obj_to_wld.as_ref());
+                gl.uniform_matrix4f(OBJ_TO_CLP_LOC, gl::MajorAxis::Column, params.obj_to_clp.cast().unwrap().as_ref());
                 gl.uniform_3f(COLOR_LOC, params.color);
 
                 gl.named_buffer_data(

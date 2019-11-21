@@ -29,13 +29,13 @@ layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_o
 layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
 #endif
 
-layout(location = SHININESS_LOC) uniform float shininess;
-
 layout(binding = NORMAL_SAMPLER_BINDING) uniform sampler2D normal_sampler;
 layout(binding = EMISSIVE_SAMPLER_BINDING) uniform sampler2D emissive_sampler;
 layout(binding = AMBIENT_SAMPLER_BINDING) uniform sampler2D ambient_sampler;
 layout(binding = DIFFUSE_SAMPLER_BINDING) uniform sampler2D diffuse_sampler;
 layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
+
+layout(location = CAM_POS_IN_LGT_LOC) uniform vec3 cam_pos_in_lgt;
 
 in vec4 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
@@ -148,7 +148,7 @@ void main() {
 
   mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
-  vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt.xyz - frag_pos_in_lgt);
+  vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt - frag_pos_in_lgt);
 
 #if defined(RENDER_TECHNIQUE_NAIVE)
     vec3 color_accumulator = vec3(ke.xyz);

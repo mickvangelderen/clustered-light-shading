@@ -30,7 +30,7 @@ glsl_defines!(fixed_header {
 });
 
 impl Context<'_> {
-    pub fn render_depth(&mut self) {
+    pub fn render_depth(&mut self, draw_resources_index: usize) {
         let Context {
             ref gl,
             ref resources,
@@ -38,6 +38,8 @@ impl Context<'_> {
             ..
         } = *self;
         unsafe {
+            let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
+
             depth_renderer.opaque_program.update(&mut rendering_context!(self));
             depth_renderer.masked_program.update(&mut rendering_context!(self));
             if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
@@ -46,18 +48,18 @@ impl Context<'_> {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     INSTANCE_MATRICES_BUFFER_BINDING,
-                    resources.draw_resources.instance_matrices_buffer,
+                    draw_resources.instance_matrices_buffer,
                 );
 
                 gl.bind_buffer(
                     gl::DRAW_INDIRECT_BUFFER,
-                    resources.draw_resources.draw_command_buffer,
+                    draw_resources.draw_command_buffer,
                 );
 
                 gl.bind_vertex_array(resources.scene_vao);
 
-                let draw_counts = &resources.draw_resources.draw_counts;
-                let draw_offsets = &resources.draw_resources.draw_offsets;
+                let draw_counts = &draw_resources.draw_counts;
+                let draw_offsets = &draw_resources.draw_offsets;
 
                 for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
                     gl.use_program(program);

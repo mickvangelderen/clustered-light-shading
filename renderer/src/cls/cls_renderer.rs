@@ -226,11 +226,28 @@ impl Context<'_> {
 
         // NOTE: Work around borrow checker.
         for camera_resources_index in cluster_resources.camera_resources_pool.used_index_iter() {
+            let draw_resources_index = self.resources.draw_resources_pool.next({
+                let gl = &self.gl;
+                move || resources::DrawResources::new(gl)
+            });
+
             // Reborrow.
             let gl = &self.gl;
             let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
             let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
             let camera_parameters = &camera_resources.parameters;
+            let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
+
+            draw_resources.recompute(
+                camera_parameters.wld_to_ren_clp,
+                cluster_resources.computed.wld_to_clu_clp,
+                &self.resources.scene_file.instances,
+                &self.resources.materials,
+                &self.resources.scene_file.transforms,
+                &self.resources.scene_file.mesh_descriptions,
+            );
+
+            draw_resources.reupload(&self.gl);
 
             let profiler_index = self
                 .profiling_context
@@ -263,7 +280,7 @@ impl Context<'_> {
                 self.configuration.global.sample_count,
             );
 
-            self.clear_and_render_depth(main_resources_index);
+            self.clear_and_render_depth(main_resources_index, draw_resources_index);
 
             // Reborrow.
             let gl = &self.gl;

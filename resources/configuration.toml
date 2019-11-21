@@ -1,6 +1,6 @@
 [global]
 diffuse_srgb = true
-rain_drop_max = 10000
+rain_drop_max = 5000
 
 mode = "Normal"
 # mode = "Record"
@@ -40,8 +40,8 @@ height = 720
 framebuffer_srgb = true
 
 [clustered_light_shading]
-projection = "Orthographic"
-# projection = "Perspective"
+# projection = "Orthographic"
+projection = "Perspective"
 # grouping = "Individual"
 grouping = "Enclosed"
 orthographic_sides = { x = 1.0, y = 1.0, z = 1.0 }

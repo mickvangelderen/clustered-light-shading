@@ -15,15 +15,15 @@ glsl_defines! {
             CLUSTER_SPACE_BUFFER_BINDING = 5;
         },
         uniforms: {
-            WLD_TO_CLP_LOC = 0;
+            CLU_CLP_TO_REN_CLP_LOC = 0;
             PASS_LOC = 1;
         },
     }
 }
 
-pub struct Parameters {
+pub struct Parameters<'a> {
     pub cluster_resources_index: ClusterResourcesIndex,
-    pub wld_to_clp: Matrix4<f64>,
+    pub clu_clp_to_ren_clp: &'a Matrix4<f64>,
 }
 
 impl Context<'_> {
@@ -83,8 +83,8 @@ impl Context<'_> {
 
                 gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_commands_buffer.name());
 
-                let wld_to_clp = params.wld_to_clp.cast::<f32>().unwrap();
-                gl.uniform_matrix4f(WLD_TO_CLP_LOC, gl::MajorAxis::Column, wld_to_clp.as_ref());
+                let clu_clp_to_ren_clp = params.clu_clp_to_ren_clp.cast::<f32>().unwrap();
+                gl.uniform_matrix4f(CLU_CLP_TO_REN_CLP_LOC, gl::MajorAxis::Column, clu_clp_to_ren_clp.as_ref());
                 gl.uniform_1ui(PASS_LOC, 0);
 
                 gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);

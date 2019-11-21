@@ -47,7 +47,7 @@ pub struct Resources {
     pub cluster_eb: gl::BufferName,
     pub cluster_element_count: u32,
 
-    pub draw_resources: DrawResources,
+    pub draw_resources_pool: Pool<DrawResources>,
 }
 
 fn f32_to_unorm(val: f32) -> u8 {
@@ -507,8 +507,8 @@ impl Resources {
             cluster_vb,
             cluster_eb,
             cluster_element_count,
-            draw_resources: DrawResources::new(gl),
             point_lights,
+            draw_resources_pool: Default::default(),
         }
     }
 }
@@ -534,19 +534,12 @@ pub fn compute_instance_matrices(
         .iter()
         .map(|instance| {
             let transform = &transforms[instance.transform_index as usize];
-
             let obj_to_wld = transform.to_parent();
-
-            let obj_to_ren_clp = (wld_to_ren_clp * obj_to_wld).cast().unwrap();
-            let obj_to_clu_clp = (wld_to_clu_clp * obj_to_wld).cast().unwrap();
-            let obj_to_lgt = obj_to_wld.cast().unwrap();
-            let obj_to_lgt_inv_tra = (obj_to_wld.invert().unwrap().transpose()).cast().unwrap();
-
             InstanceMatrices {
-                obj_to_ren_clp,
-                obj_to_clu_clp,
-                obj_to_lgt,
-                obj_to_lgt_inv_tra,
+                obj_to_ren_clp: (wld_to_ren_clp * obj_to_wld).cast().unwrap(),
+                obj_to_clu_clp: (wld_to_clu_clp * obj_to_wld).cast().unwrap(),
+                obj_to_lgt: obj_to_wld.cast().unwrap(),
+                obj_to_lgt_inv_tra: (obj_to_wld.invert().unwrap().transpose()).cast().unwrap(),
             }
         })
         .collect();
@@ -655,14 +648,14 @@ impl DrawResources {
 
     pub fn recompute(
         &mut self,
-        wld_to_clp: Matrix4<f64>,
-        wld_to_cls: Matrix4<f64>,
+        wld_to_ren_clp: Matrix4<f64>,
+        wld_to_clu_clp: Matrix4<f64>,
         instances: &[scene_file::Instance],
         materials: &[Material],
         transforms: &[scene_file::Transform],
         mesh_descriptions: &[scene_file::MeshDescription],
     ) {
-        self.instance_matrices_data = compute_instance_matrices(wld_to_clp, wld_to_cls, instances, transforms);
+        self.instance_matrices_data = compute_instance_matrices(wld_to_ren_clp, wld_to_clu_clp, instances, transforms);
         let DrawCommandResources {
             counts,
             offsets,

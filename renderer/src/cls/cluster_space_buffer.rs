@@ -1,35 +1,4 @@
 use crate::*;
-use num_traits::{cast, Float};
-
-#[derive(Debug, Copy, Clone)]
-struct LerpCoeffs<T> {
-    a: T,
-    b: T,
-}
-
-impl<T> LerpCoeffs<T>
-where
-    T: Float,
-{
-    #[inline]
-    fn new(x0: T, x1: T, y0: T, y1: T) -> Self {
-        Self {
-            a: (y1 - y0) / (x1 - x0),
-            b: (y0 * x1 - y1 * x0) / (x1 - x0),
-        }
-    }
-
-    #[inline]
-    fn cast<U>(self) -> Option<LerpCoeffs<U>>
-    where
-        U: Float,
-    {
-        Some(LerpCoeffs {
-            a: cast(self.a)?,
-            b: cast(self.b)?,
-        })
-    }
-}
 
 #[repr(C)]
 pub struct ClusterSpaceBuffer {

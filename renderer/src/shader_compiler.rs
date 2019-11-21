@@ -478,31 +478,31 @@ impl ShaderCompiler {
         let indices = NativeSourceIndices {
             light_space: memory.add_source(
                 PathBuf::from("native/LIGHT_SPACE"),
-                Source::new(current, SourceReader::LightSpace, PathBuf::from(file!())),
+                Source::new(current, SourceReader::LightSpace, PathBuf::from(concat!(file!(), "LIGHT_SPACE")))
             ),
             attenuation_mode: memory.add_source(
                 PathBuf::from("native/ATTENUATION_MODE"),
-                Source::new(current, SourceReader::AttenuationMode, PathBuf::from(file!())),
+                Source::new(current, SourceReader::AttenuationMode, PathBuf::from(concat!(file!(), "ATTENUATION_MODE")))
             ),
             render_technique: memory.add_source(
                 PathBuf::from("native/RENDER_TECHNIQUE"),
-                Source::new(current, SourceReader::RenderTechnique, PathBuf::from(file!())),
+                Source::new(current, SourceReader::RenderTechnique, PathBuf::from(concat!(file!(), "RENDER_TECHNIQUE")))
             ),
             prefix_sum: memory.add_source(
                 PathBuf::from("native/PREFIX_SUM"),
-                Source::new(current, SourceReader::PrefixSum, PathBuf::from(file!())),
+                Source::new(current, SourceReader::PrefixSum, PathBuf::from(concat!(file!(), "PREFIX_SUM"))),
             ),
             clustered_light_shading: memory.add_source(
                 PathBuf::from("native/CLUSTERED_LIGHT_SHADING"),
-                Source::new(current, SourceReader::ClusteredLightShading, PathBuf::from(file!())),
+                Source::new(current, SourceReader::ClusteredLightShading, PathBuf::from(concat!(file!(), "CLUSTERED_LIGHT_SHADING"))),
             ),
             profiling: memory.add_source(
                 PathBuf::from("native/PROFILING"),
-                Source::new(current, SourceReader::Profiling, PathBuf::from(file!())),
+                Source::new(current, SourceReader::Profiling, PathBuf::from(concat!(file!(), "PROFILING"))),
             ),
             sample_count: memory.add_source(
                 PathBuf::from("native/SAMPLE_COUNT"),
-                Source::new(current, SourceReader::SampleCount, PathBuf::from(file!())),
+                Source::new(current, SourceReader::SampleCount, PathBuf::from(concat!(file!(), "X"))),
             ),
         };
 

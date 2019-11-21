@@ -1,3 +1,4 @@
+#include "common.glsl"
 #include "instance_matrices_buffer.glsl"
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;

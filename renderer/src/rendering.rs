@@ -12,18 +12,6 @@ macro_rules! capability_declaration {
     };
 }
 
-// Storage buffer bindings.
-
-pub const CAMERA_BUFFER_BINDING: u32 = 1;
-
-macro_rules! buffer_binding_declaration {
-    () => {
-        r"
-#define CAMERA_BUFFER_BINDING 1
-"
-    };
-}
-
 // Attribute locations.
 
 pub const VS_POS_IN_OBJ_LOC: gl::AttributeLocation = unsafe { gl::AttributeLocation::from_i32_unchecked(0) };
@@ -48,7 +36,6 @@ macro_rules! attribute_location_declaration {
 
 pub const COMMON_DECLARATION: &'static str = concat!(
     capability_declaration!(),
-    buffer_binding_declaration!(),
     attribute_location_declaration!(),
 );
 
@@ -63,18 +50,6 @@ pub struct CameraBuffer {
 
     pub cam_pos_in_lgt: Vector4<f32>,
 }
-
-pub const CAMERA_BUFFER_DECLARATION: &'static str = r"
-layout(std140, binding = CAMERA_BUFFER_BINDING) uniform CameraBuffer {
-    mat4 wld_to_cam;
-    mat4 cam_to_wld;
-
-    mat4 cam_to_clp;
-    mat4 clp_to_cam;
-
-    vec4 cam_pos_in_lgt;
-};
-";
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
 #[repr(u32)]
@@ -136,7 +111,6 @@ impl Shader {
                 gl,
                 [
                     COMMON_DECLARATION,
-                    CAMERA_BUFFER_DECLARATION,
                     crate::light::LIGHT_BUFFER_DECLARATION,
                     &self.entry_point.fixed_header,
                     &self.entry_point.contents,
