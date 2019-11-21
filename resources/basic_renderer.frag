@@ -37,13 +37,13 @@ layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
 
 layout(location = CAM_POS_IN_LGT_LOC) uniform vec3 cam_pos_in_lgt;
 
-in vec4 fs_pos_in_lgt;
+in vec3 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
 in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-in vec4 fs_pos_in_clu_clp;
+in vec3 fs_pos_in_clu_cam;
 #endif
 
 layout(location = 0) out vec4 frag_color;
@@ -125,7 +125,7 @@ vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, floa
 }
 
 void main() {
-  vec3 frag_pos_in_lgt = fs_pos_in_lgt.xyz/fs_pos_in_lgt.w;
+  vec3 frag_pos_in_lgt = fs_pos_in_lgt;
   vec3 frag_geo_nor_in_lgt = normalize(fs_nor_in_lgt);
   vec3 frag_geo_bin_in_lgt = normalize(fs_bin_in_lgt);
   vec3 frag_geo_tan_in_lgt = normalize(fs_tan_in_lgt);
@@ -157,7 +157,7 @@ void main() {
     }
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_cls = from_homogeneous(fs_pos_in_clu_clp);
+    vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
     // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 

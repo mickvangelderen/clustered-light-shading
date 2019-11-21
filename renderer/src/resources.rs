@@ -517,14 +517,14 @@ impl Resources {
 #[repr(C)]
 pub struct InstanceMatrices {
     pub obj_to_ren_clp: Matrix4<f32>,
-    pub obj_to_clu_clp: Matrix4<f32>,
+    pub obj_to_clu_cam: Matrix4<f32>,
     pub obj_to_lgt: Matrix4<f32>,
     pub obj_to_lgt_inv_tra: Matrix4<f32>,
 }
 
 pub fn compute_instance_matrices(
     wld_to_ren_clp: Matrix4<f64>,
-    wld_to_clu_clp: Matrix4<f64>,
+    wld_to_clu_cam: Matrix4<f64>,
     instances: &[scene_file::Instance],
     transforms: &[scene_file::Transform],
 ) -> Vec<InstanceMatrices> {
@@ -537,7 +537,7 @@ pub fn compute_instance_matrices(
             let obj_to_wld = transform.to_parent();
             InstanceMatrices {
                 obj_to_ren_clp: (wld_to_ren_clp * obj_to_wld).cast().unwrap(),
-                obj_to_clu_clp: (wld_to_clu_clp * obj_to_wld).cast().unwrap(),
+                obj_to_clu_cam: (wld_to_clu_cam * obj_to_wld).cast().unwrap(),
                 obj_to_lgt: obj_to_wld.cast().unwrap(),
                 obj_to_lgt_inv_tra: (obj_to_wld.invert().unwrap().transpose()).cast().unwrap(),
             }
@@ -649,13 +649,13 @@ impl DrawResources {
     pub fn recompute(
         &mut self,
         wld_to_ren_clp: Matrix4<f64>,
-        wld_to_clu_clp: Matrix4<f64>,
+        wld_to_clu_cam: Matrix4<f64>,
         instances: &[scene_file::Instance],
         materials: &[Material],
         transforms: &[scene_file::Transform],
         mesh_descriptions: &[scene_file::MeshDescription],
     ) {
-        self.instance_matrices_data = compute_instance_matrices(wld_to_ren_clp, wld_to_clu_clp, instances, transforms);
+        self.instance_matrices_data = compute_instance_matrices(wld_to_ren_clp, wld_to_clu_cam, instances, transforms);
         let DrawCommandResources {
             counts,
             offsets,

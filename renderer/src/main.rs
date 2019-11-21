@@ -1387,7 +1387,7 @@ impl<'s> Context<'s> {
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     self.cluster_resources_pool[cluster_resources_index]
                         .computed
-                        .wld_to_clu_clp
+                        .wld_to_clu_cam
                 } else {
                     Matrix4::identity()
                 },
@@ -1507,22 +1507,24 @@ impl<'s> Context<'s> {
                         .map(|point| point.cast().unwrap().into())
                         .collect();
 
-                    self.line_renderer.render(
-                        &mut rendering_context!(self),
-                        &line_renderer::Parameters {
-                            vertices: &vertices,
-                            indices: &cluster_range.line_mesh_indices(),
-                            obj_to_clp: &(wld_to_ren_clp * cluster_resources.computed.clu_clp_to_wld),
-                            color: color::RED,
-                        },
-                    );
+                    if false {
+                        self.line_renderer.render(
+                            &mut rendering_context!(self),
+                            &line_renderer::Parameters {
+                                vertices: &vertices,
+                                indices: &cluster_range.line_mesh_indices(),
+                                obj_to_clp: &(wld_to_ren_clp/* * cluster_resources.computed.clu_clp_to_wld */),
+                                color: color::RED,
+                            },
+                        );
+                    }
 
                     self.render_debug_clusters(&cluster_renderer::Parameters {
                         cluster_resources_index,
-                        clu_clp_to_ren_clp: &(wld_to_ren_clp
+                        clu_cam_to_ren_clp: &(wld_to_ren_clp
                             * self.cluster_resources_pool[cluster_resources_index]
                                 .computed
-                                .clu_clp_to_wld),
+                                .clu_cam_to_wld),
                     });
                 }
             }
