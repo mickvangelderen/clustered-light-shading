@@ -2,7 +2,7 @@
 #include "cluster_space_buffer.glsl"
 #include "active_cluster_cluster_indices_buffer.glsl"
 
-layout(location = CLU_CLP_TO_REN_CLP_LOC) uniform mat4 clu_clp_to_ren_clp;
+layout(location = CLU_CAM_TO_REN_CLP_LOC) uniform mat4 clu_cam_to_ren_clp;
 
 layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
 layout(location = VS_POS_IN_TEX_LOC) in vec2 vs_pos_in_tex;
@@ -16,8 +16,8 @@ void main() {
   uint active_cluster_index = gl_InstanceID;
   uint cluster_index = active_cluster_cluster_indices[active_cluster_index];
   uvec3 idx_in_cls = index_1_to_3(cluster_index, cluster_space.dimensions);
-  vec4 pos_in_clu_clp = to_homogeneous(vec3(idx_in_cls) + vs_pos_in_obj);
-  gl_Position = clu_clp_to_ren_clp * pos_in_clu_clp;
+  vec3 pos_in_clu_cam = cluster_clp_to_cam(vec3(idx_in_cls) + vs_pos_in_obj);
+  gl_Position = clu_cam_to_ren_clp * to_homogeneous(pos_in_clu_cam);
 
   fs_pos_in_tex = vs_pos_in_tex;
   fs_idx_in_cls = idx_in_cls;

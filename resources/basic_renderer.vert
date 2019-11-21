@@ -16,13 +16,13 @@ layout(location = VS_INSTANCE_INDEX_LOC) in uint vs_instance_index;
 
 invariant gl_Position;
 
-out vec4 fs_pos_in_lgt;
+out vec3 fs_pos_in_lgt;
 out vec3 fs_nor_in_lgt;
 out vec3 fs_bin_in_lgt;
 out vec3 fs_tan_in_lgt;
 out vec2 fs_pos_in_tex;
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-out vec4 fs_pos_in_clu_clp;
+out vec3 fs_pos_in_clu_cam;
 #endif
 
 void main() {
@@ -30,13 +30,13 @@ void main() {
 
   vec4 pos_in_obj = to_homogeneous(vs_pos_in_obj);
   gl_Position = m.obj_to_ren_clp * pos_in_obj;
-  fs_pos_in_lgt = m.obj_to_lgt * pos_in_obj;
+  fs_pos_in_lgt = mat4x3(m.obj_to_lgt) * pos_in_obj;
   fs_nor_in_lgt = normalize(mat3(m.obj_to_lgt_inv_tra) * vs_nor_in_obj);
   fs_bin_in_lgt = normalize(mat3(m.obj_to_lgt) * vs_bin_in_obj);
   fs_tan_in_lgt = normalize(mat3(m.obj_to_lgt) * vs_tan_in_obj);
   // NOTE(mickvangelderen): TOO LAZY TO CHANGE IMAGE ORIGIN.
   fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
 #if defined(RENDER_TECHNIQUE_CLUSTERED)
-  fs_pos_in_clu_clp = m.obj_to_clu_clp * pos_in_obj;
+  fs_pos_in_clu_cam = mat4x3(m.obj_to_clu_cam) * pos_in_obj;
 #endif
 }

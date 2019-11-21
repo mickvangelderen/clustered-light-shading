@@ -153,8 +153,8 @@ void main() {
     barrier();
   }
 #elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
-  vec3 p0 = from_homogeneous(cluster_space.clu_clp_to_clu_cam * to_homogeneous(vec3(idx_in_cls)));
-  vec3 p1 = from_homogeneous(cluster_space.clu_clp_to_clu_cam * to_homogeneous(vec3(idx_in_cls) + uvec3(1)));
+  vec3 p0 = cluster_clp_to_cam(vec3(idx_in_cls));
+  vec3 p1 = cluster_clp_to_cam(vec3(idx_in_cls + uvec3(1)));
 
   for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;

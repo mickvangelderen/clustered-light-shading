@@ -10,9 +10,9 @@ mode = "Normal"
 # scene_path = "bistro/Bistro_Interior.bin"
 scene_path = "sun_temple/SunTemple.bin"
 
-# sample_count = 1
+sample_count = 1
 # sample_count = 2
-sample_count = 4
+# sample_count = 4
 # sample_count = 8
 # sample_count = 16
 
@@ -40,11 +40,11 @@ height = 720
 framebuffer_srgb = true
 
 [clustered_light_shading]
-# projection = "Orthographic"
-projection = "Perspective"
-# grouping = "Individual"
-grouping = "Enclosed"
-orthographic_sides = { x = 1.0, y = 1.0, z = 1.0 }
+projection = "Orthographic"
+# projection = "Perspective"
+grouping = "Individual"
+# grouping = "Enclosed"
+orthographic_sides = { x = 2.0, y = 2.0, z = 2.0 }
 # orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
 perspective_pixels = { x = 16, y = 16 }
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)

@@ -8,7 +8,7 @@
 
 layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
 // layout(location = FB_DIMS_LOC) uniform vec2 fb_dims;
-layout(location = REN_CLP_TO_CLU_CLP) uniform mat4 ren_clp_to_clu_clp;
+layout(location = REN_CLP_TO_CLU_CAM) uniform mat4 ren_clp_to_clu_cam;
 
 #if SAMPLE_COUNT == 1
 layout(local_size_x = 16, local_size_y = 16, local_size_z = SAMPLE_COUNT) in;
@@ -41,7 +41,7 @@ void main() {
     return;
   }
 
-  vec3 pos_in_cls = from_homogeneous(ren_clp_to_clu_clp * to_homogeneous(vec3(xy_ndc, z_ndc)));
+  vec3 pos_in_cls = cluster_cam_to_clp(from_homogeneous(ren_clp_to_clu_cam * to_homogeneous(vec3(xy_ndc, z_ndc))));
 
   uvec3 idx_in_cls = uvec3(pos_in_cls);
   if (all(lessThan(idx_in_cls, cluster_space.dimensions))) {

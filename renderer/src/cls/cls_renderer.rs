@@ -32,7 +32,7 @@ glsl_defines!(fixed_header {
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
         FB_DIMS_LOC = 1;
-        REN_CLP_TO_CLU_CLP = 2;
+        REN_CLP_TO_CLU_CAM = 2;
         ITEM_COUNT_LOC = 3;
         LIGHT_COUNT_LOC = 4;
     },
@@ -186,12 +186,8 @@ impl Context<'_> {
         let cluster_count = cluster_resources.computed.cluster_count();
 
         unsafe {
+            let data = ClusterSpaceBuffer::from(cluster_resources);
             let buffer = &mut cluster_resources.cluster_space_buffer;
-            let data = ClusterSpaceBuffer::new(
-                cluster_resources.computed.dimensions,
-                cluster_resources.computed.frustum,
-                cluster_resources.computed.clu_clp_to_clu_cam,
-            );
 
             buffer.invalidate(gl);
             buffer.write(gl, data.value_as_bytes());
@@ -240,7 +236,7 @@ impl Context<'_> {
 
             draw_resources.recompute(
                 camera_parameters.wld_to_ren_clp,
-                cluster_resources.computed.wld_to_clu_clp,
+                cluster_resources.computed.wld_to_clu_cam,
                 &self.resources.scene_file.instances,
                 &self.resources.materials,
                 &self.resources.scene_file.transforms,
@@ -314,13 +310,13 @@ impl Context<'_> {
                             main_resources.dims.cast::<f32>().unwrap().into(),
                         );
 
-                        let ren_clp_to_clu_clp =
-                            cluster_resources.computed.wld_to_clu_clp * camera_parameters.ren_clp_to_wld;
+                        let ren_clp_to_clu_cam =
+                            cluster_resources.computed.wld_to_clu_cam * camera_parameters.ren_clp_to_wld;
 
                         gl.uniform_matrix4f(
-                            cls_renderer::REN_CLP_TO_CLU_CLP,
+                            cls_renderer::REN_CLP_TO_CLU_CAM,
                             gl::MajorAxis::Column,
-                            ren_clp_to_clu_clp.cast::<f32>().unwrap().as_ref(),
+                            ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
                         );
 
                         gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER);
