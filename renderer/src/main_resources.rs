@@ -35,7 +35,7 @@ unsafe fn create_texture(
             format,
             dimensions.x,
             dimensions.y,
-            false,
+            true,
         );
         color_texture
     }
