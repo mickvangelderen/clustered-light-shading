@@ -292,7 +292,7 @@ impl ClusterResources {
 
                         let dimensions = Vector3::new(cls_x, cls_y, cls_z);
 
-                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&Range3::from_vector(dimensions));
+                        let clu_clp_to_clu_cam = frustum.inverse_perspective(&Range3::from_vector(dimensions));
                         // clu_ori_to_clu_cam = I.
                         let clu_clp_to_wld = parameters.clu_ori_to_wld * clu_clp_to_clu_cam;
                         let wld_to_clu_clp = clu_clp_to_wld.invert().unwrap();
@@ -583,7 +583,7 @@ impl ClusterResources {
                             z1: f.z1,
                         };
 
-                        let clu_clp_to_clu_cam = frustum.inverse_orthographic(&Range3::from_vector(dimensions));
+                        let clu_clp_to_clu_cam = frustum.inverse_perspective(&Range3::from_vector(dimensions));
                         let clu_clp_to_wld = parameters.clu_ori_to_wld * clu_cam_to_clu_ori * clu_clp_to_clu_cam;
                         let wld_to_clu_clp = clu_clp_to_wld.invert().unwrap();
                         let wld_to_clu_cam = (parameters.clu_ori_to_wld * clu_cam_to_clu_ori).invert().unwrap();
