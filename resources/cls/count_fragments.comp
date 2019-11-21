@@ -6,8 +6,12 @@
 #include "cluster_space_buffer.glsl"
 #include "cluster_fragment_counts_buffer.glsl"
 
+#if SAMPLE_COUNT == 1
+layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2D depth_sampler;
+#else
 layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
-// layout(location = FB_DIMS_LOC) uniform vec2 fb_dims;
+#endif
+layout(location = DEPTH_DIMENSIONS_LOC) uniform ivec2 depth_dimensions;
 layout(location = REN_CLP_TO_CLU_CAM) uniform mat4 ren_clp_to_clu_cam;
 
 #if SAMPLE_COUNT == 1
@@ -25,15 +29,13 @@ layout(local_size_x =  4, local_size_y =  4, local_size_z = SAMPLE_COUNT) in;
 #endif
 
 void main() {
-  ivec2 depth_dims = textureSize(depth_sampler);
-
-  if (any(greaterThanEqual(gl_GlobalInvocationID.xy, depth_dims))) {
+  if (any(greaterThanEqual(gl_GlobalInvocationID.xy, depth_dimensions))) {
     // Out of texture bounds.
     return;
   }
 
   // pos_in_ndc is known.
-  vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - depth_dims) / vec2(depth_dims);
+  vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - depth_dimensions) / vec2(depth_dimensions);
   float z_ndc = texelFetch(depth_sampler, ivec2(gl_GlobalInvocationID.xy), int(gl_LocalInvocationID.z)).r;
 
   if (z_ndc == 0.0) {
