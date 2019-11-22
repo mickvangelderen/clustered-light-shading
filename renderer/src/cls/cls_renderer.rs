@@ -283,7 +283,7 @@ impl Context<'_> {
                             cluster_resources.cluster_fragment_counts_buffer.name(),
                         );
 
-                        gl.bind_texture_unit(0, main_resources.depth_texture);
+                        gl.bind_texture_unit(0, main_resources.cluster_depth_texture.unwrap_or(main_resources.depth_texture));
 
                         gl.uniform_2i(
                             cls_renderer::DEPTH_DIMENSIONS_LOC,
