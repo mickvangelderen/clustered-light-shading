@@ -249,26 +249,6 @@ impl Context<'_> {
                 .profiling_context
                 .start(gl, camera_resources.profilers.render_depth);
 
-            // FIXME: Should be able to remove because we use instance matrices now.
-            // unsafe {
-            //     let camera_buffer = CameraBuffer {
-            //         wld_to_cam: camera_parameters.wld_to_cam.cast().unwrap(),
-            //         cam_to_wld: camera_parameters.cam_to_wld.cast().unwrap(),
-
-            //         cam_to_clp: camera_parameters.cam_to_clp.cast().unwrap(),
-            //         clp_to_cam: camera_parameters.clp_to_cam.cast().unwrap(),
-
-            //         // NOTE: Doesn't matter for depth pass!
-            //         cam_pos_in_lgt: Vector4::zero(),
-            //     };
-
-            //     let buffer_index = self.camera_buffer_pool.unused(gl);
-            //     let buffer_name = self.camera_buffer_pool[buffer_index];
-
-            //     gl.named_buffer_data(buffer_name, camera_buffer.value_as_bytes(), gl::STREAM_DRAW);
-            //     gl.bind_buffer_base(gl::UNIFORM_BUFFER, rendering::CAMERA_BUFFER_BINDING, buffer_name);
-            // }
-
             let main_resources_index = self.main_resources_pool.next_unused(
                 gl,
                 &mut self.profiling_context,
