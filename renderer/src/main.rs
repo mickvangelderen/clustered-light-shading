@@ -133,6 +133,7 @@ impl_enum_map! {
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
 pub struct MainParameters {
+    pub wld_to_ren_cam: Matrix4<f64>,
     pub wld_to_ren_clp: Matrix4<f64>,
     pub ren_clp_to_wld: Matrix4<f64>,
 
@@ -1122,6 +1123,7 @@ impl<'s> Context<'s> {
         }
 
         struct C2 {
+            wld_to_ren_cam: Matrix4<f64>,
             wld_to_ren_clp: Matrix4<f64>,
             ren_clp_to_wld: Matrix4<f64>,
             frustum: Frustum<f64>,
@@ -1131,12 +1133,16 @@ impl<'s> Context<'s> {
             #[inline]
             pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustum: Frustum<f64>) -> Self {
                 let C1 { hmd_to_wld, .. } = *c1;
-                let ren_clp_to_cam = frustum.inverse_perspective(&RENDER_RANGE);
-                let ren_clp_to_wld = hmd_to_wld * cam_to_hmd * ren_clp_to_cam;
+                let ren_cam_to_wld = hmd_to_wld * cam_to_hmd;
+                let wld_to_ren_cam = ren_cam_to_wld.invert().unwrap();
+
+                let ren_cam_to_ren_clp = frustum.perspective(&RENDER_RANGE);
+                let ren_clp_to_ren_cam = frustum.inverse_perspective(&RENDER_RANGE);
 
                 Self {
-                    wld_to_ren_clp: ren_clp_to_wld.invert().unwrap(),
-                    ren_clp_to_wld,
+                    wld_to_ren_cam,
+                    wld_to_ren_clp: wld_to_ren_cam * ren_cam_to_ren_clp,
+                    ren_clp_to_wld: ren_cam_to_wld * ren_clp_to_ren_cam,
                     frustum,
                 }
             }
@@ -1195,6 +1201,7 @@ impl<'s> Context<'s> {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                         let C2 {
+                            wld_to_ren_cam,
                             wld_to_ren_clp,
                             ren_clp_to_wld,
                             frustum,
@@ -1211,6 +1218,7 @@ impl<'s> Context<'s> {
                             ClusterCameraParameters {
                                 frame_dims: win_size,
                                 draw_resources_index,
+                                wld_to_ren_cam,
                                 wld_to_ren_clp,
                                 ren_clp_to_wld,
                                 frustum,
@@ -1221,12 +1229,14 @@ impl<'s> Context<'s> {
                     {
                         let C1 { cam_pos_in_wld, .. } = render_c1;
                         let C2 {
+                            wld_to_ren_cam,
                             wld_to_ren_clp,
                             ren_clp_to_wld,
                             ..
                         } = render_c2;
 
                         self.main_parameters_vec.push(MainParameters {
+                            wld_to_ren_cam,
                             wld_to_ren_clp,
                             ren_clp_to_wld,
 
@@ -1304,6 +1314,7 @@ impl<'s> Context<'s> {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                     let C2 {
+                        wld_to_ren_cam,
                         wld_to_ren_clp,
                         ren_clp_to_wld,
                         frustum,
@@ -1320,6 +1331,7 @@ impl<'s> Context<'s> {
                         ClusterCameraParameters {
                             frame_dims: dimensions,
                             draw_resources_index,
+                            wld_to_ren_cam,
                             wld_to_ren_clp,
                             ren_clp_to_wld,
                             frustum,
@@ -1331,6 +1343,7 @@ impl<'s> Context<'s> {
                     let C1 { cam_pos_in_wld, .. } = render_c1;
 
                     let C2 {
+                        wld_to_ren_cam,
                         wld_to_ren_clp,
                         ren_clp_to_wld,
                         ..
@@ -1342,6 +1355,7 @@ impl<'s> Context<'s> {
                     });
 
                     self.main_parameters_vec.push(MainParameters {
+                        wld_to_ren_cam,
                         wld_to_ren_clp,
                         ren_clp_to_wld,
 
@@ -1369,6 +1383,7 @@ impl<'s> Context<'s> {
             let gl = &self.gl;
 
             let MainParameters {
+                wld_to_ren_cam,
                 wld_to_ren_clp,
 
                 draw_resources_index,
@@ -1383,6 +1398,7 @@ impl<'s> Context<'s> {
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
             draw_resources.recompute(
+                wld_to_ren_cam,
                 wld_to_ren_clp,
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     self.cluster_resources_pool[cluster_resources_index]
@@ -1392,6 +1408,7 @@ impl<'s> Context<'s> {
                     Matrix4::identity()
                 },
                 &self.resources.scene_file.instances,
+                &self.resources.bounding_spheres,
                 &self.resources.materials,
                 &self.resources.scene_file.transforms,
                 &self.resources.scene_file.mesh_descriptions,

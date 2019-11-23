@@ -36,6 +36,7 @@ pub struct Resources {
 
     pub scene_file: renderer::scene_file::SceneFile,
 
+    pub bounding_spheres: Vec<Sphere<f32>>,
     pub point_lights: Vec<PointLight>,
 
     pub full_screen_vao: gl::VertexArrayName,
@@ -97,6 +98,11 @@ fn create_1x1_rgb_texture(gl: &gl::Gl, rgb: [u8; 3]) -> Texture {
     }
 }
 
+pub struct Sphere<T> {
+    position: Point3<T>,
+    radius: T,
+}
+
 pub const BBI_00: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(0);
 pub const BBI_01: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(1);
 pub const BBI_02: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(2);
@@ -149,29 +155,32 @@ impl Resources {
         };
 
         // TODO(mickvangelderen): Use these for culling?
-        // let bounding_boxes: Vec<Range3<f32>> = scene_file.mesh_descriptions.iter().map(|mesh_description| {
-        //     let vertex_offset = mesh_description.vertex_offset as usize;
-        //     let vertex_count = mesh_description.vertex_count as usize;
-        //     let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
-        //         Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
-        //     });
-        //     Range3::from_points(vertex_iter).unwrap()
-        // }).collect();
+        let bounding_boxes: Vec<Range3<f32>> = scene_file.mesh_descriptions.iter().map(|mesh_description| {
+            let vertex_offset = mesh_description.vertex_offset as usize;
+            let vertex_count = mesh_description.vertex_count as usize;
+            let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
+                Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
+            });
+            Range3::from_points(vertex_iter).unwrap()
+        }).collect();
 
-        // let bounding_spheres: Vec<(Point3<f32>, f32)> = scene_file.mesh_descriptions.iter().enumerate().map(|(mesh_index, mesh_description)| {
-        //     let center = bounding_boxes[mesh_index].center();
-        //     let vertex_offset = mesh_description.vertex_offset as usize;
-        //     let vertex_count = mesh_description.vertex_count as usize;
-        //     let mut max_squared_distance = 0.0;
-        //     for &pos_in_obj in scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter() {
-        //         let pos_in_obj = Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get());
-        //         let squared_distance = (pos_in_obj - center).magnitude2();
-        //         if squared_distance > max_squared_distance {
-        //             max_squared_distance = squared_distance;
-        //         }
-        //     }
-        //     (center, max_squared_distance.sqrt())
-        // }).collect();
+        let bounding_spheres: Vec<Sphere<f32>> = scene_file.mesh_descriptions.iter().enumerate().map(|(mesh_index, mesh_description)| {
+            let center = bounding_boxes[mesh_index].center();
+            let vertex_offset = mesh_description.vertex_offset as usize;
+            let vertex_count = mesh_description.vertex_count as usize;
+            let mut max_squared_distance = 0.0;
+            for &pos_in_obj in scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter() {
+                let pos_in_obj = Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get());
+                let squared_distance = (pos_in_obj - center).magnitude2();
+                if squared_distance > max_squared_distance {
+                    max_squared_distance = squared_distance;
+                }
+            }
+            Sphere {
+                position: center,
+                radius: max_squared_distance.sqrt(),
+            }
+        }).collect();
 
         {
             let mut total_triangles = 0;
@@ -189,7 +198,7 @@ impl Resources {
                 scene_file.instances.len(),
                 total_triangles,
                 total_vertices
-            );
+            )
         }
 
         let (textures, materials) = {
@@ -498,6 +507,7 @@ impl Resources {
             scene_vb,
             scene_eb,
             scene_file,
+            bounding_spheres,
             materials,
             textures,
             full_screen_vao,
@@ -556,7 +566,9 @@ pub struct DrawCommandResources {
 }
 
 pub fn compute_draw_commands(
+    obj_to_ren_cam: Matrix4<f64>,
     instances: &[scene_file::Instance],
+    bounding_spheres: &[Sphere<f32>],
     materials: &[Material],
     mesh_descriptions: &[scene_file::MeshDescription],
 ) -> DrawCommandResources {
@@ -599,6 +611,10 @@ pub fn compute_draw_commands(
     // Fill out the buffer.
 
     for (instance_index, instance) in instances.iter().enumerate() {
+        if {
+            
+        }
+
         let material_index = instance.material_index as usize;
         let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
         let command_index = offsets[material_index] + counts[material_index];
@@ -648,9 +664,11 @@ impl DrawResources {
 
     pub fn recompute(
         &mut self,
+        wld_to_ren_cam: Matrix4<f64>,
         wld_to_ren_clp: Matrix4<f64>,
         wld_to_clu_cam: Matrix4<f64>,
         instances: &[scene_file::Instance],
+        bounding_spheres: &[Sphere<f32>],
         materials: &[Material],
         transforms: &[scene_file::Transform],
         mesh_descriptions: &[scene_file::MeshDescription],
@@ -660,7 +678,7 @@ impl DrawResources {
             counts,
             offsets,
             buffer,
-        } = compute_draw_commands(instances, materials, mesh_descriptions);
+        } = compute_draw_commands(wld_to_ren_cam, instances, bounding_spheres, materials, mesh_descriptions);
         self.draw_command_data = buffer;
         self.draw_counts = counts;
         self.draw_offsets = offsets;

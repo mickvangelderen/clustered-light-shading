@@ -235,9 +235,11 @@ impl Context<'_> {
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
             draw_resources.recompute(
+                camera_parameters.wld_to_ren_cam,
                 camera_parameters.wld_to_ren_clp,
                 cluster_resources.computed.wld_to_clu_cam,
                 &self.resources.scene_file.instances,
+                &self.resources.bounding_spheres,
                 &self.resources.materials,
                 &self.resources.scene_file.transforms,
                 &self.resources.scene_file.mesh_descriptions,
