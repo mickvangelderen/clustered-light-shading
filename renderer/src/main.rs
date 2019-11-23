@@ -1500,7 +1500,9 @@ impl<'s> Context<'s> {
                 }
             }
 
-            self.render_lights(&light_renderer::Parameters { main_parameters_index, light_resources_index: light_index });
+            if self.configuration.global.render_lights {
+                self.render_lights(&light_renderer::Parameters { main_parameters_index, light_resources_index: light_index });
+            }
 
             if self.target_camera_key == CameraKey::Debug {
                 let vertices: Vec<[f32; 3]> = RENDER_RANGE

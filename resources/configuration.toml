@@ -1,6 +1,7 @@
 [global]
 diffuse_srgb = true
 rain_drop_max = 5000
+render_lights = true
 
 mode = "Normal"
 # mode = "Record"
