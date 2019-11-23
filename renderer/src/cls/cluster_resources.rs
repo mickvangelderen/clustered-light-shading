@@ -224,7 +224,7 @@ impl ClusterResources {
                 let corners_in_clp = RENDER_RANGE.vertices();
                 let range = Range3::<f64>::from_points({
                     self.camera_resources_pool.used_slice().iter().flat_map(|camera| {
-                        let ren_clp_to_clu_ori = (camera.parameters.wld_to_ren_clp * parameters.clu_ori_to_wld)
+                        let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp * parameters.clu_ori_to_wld)
                             .invert()
                             .unwrap();
                         corners_in_clp
@@ -258,7 +258,7 @@ impl ClusterResources {
                         let camera = &cameras[0];
 
                         let dims = camera.parameters.frame_dims;
-                        let f = camera.parameters.frustum;
+                        let f = camera.parameters.camera.frustum;
 
                         let px = cfg.perspective_pixels.x;
                         let py = cfg.perspective_pixels.y;
@@ -301,7 +301,7 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori = (camera.parameters.wld_to_ren_clp * parameters.clu_ori_to_wld)
+                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp * parameters.clu_ori_to_wld)
                                     .invert()
                                     .unwrap();
                                 far_pos_in_clp
@@ -315,7 +315,7 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori = (camera.parameters.wld_to_ren_clp * parameters.clu_ori_to_wld)
+                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp * parameters.clu_ori_to_wld)
                                     .invert()
                                     .unwrap();
                                 near_pos_in_clp
@@ -527,7 +527,7 @@ impl ClusterResources {
                                 .iter()
                                 .map(|camera| {
                                     let d = &camera.parameters.frame_dims;
-                                    let f = &camera.parameters.frustum;
+                                    let f = &camera.parameters.camera.frustum;
                                     f.dx() / d.x as f64
                                 })
                                 .sum();
@@ -541,7 +541,7 @@ impl ClusterResources {
                                 .iter()
                                 .map(|camera| {
                                     let d = &camera.parameters.frame_dims;
-                                    let f = &camera.parameters.frustum;
+                                    let f = &camera.parameters.camera.frustum;
                                     f.dy() / d.y as f64
                                 })
                                 .sum();

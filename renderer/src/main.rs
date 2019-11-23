@@ -31,6 +31,7 @@ pub mod gl_ext;
 mod glutin_ext;
 mod keyboard;
 mod light;
+mod light_renderer;
 mod line_renderer;
 mod main_resources;
 mod math;
@@ -132,9 +133,45 @@ impl_enum_map! {
 
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
+#[derive(Debug)]
+pub struct CameraParameters {
+    pub frustum: Frustum<f64>,
+
+    pub range: Range3<f64>,
+
+    pub wld_to_cam: Matrix4<f64>,
+    pub cam_to_wld: Matrix4<f64>,
+
+    pub cam_to_clp: Matrix4<f64>,
+    pub clp_to_cam: Matrix4<f64>,
+
+    pub wld_to_clp: Matrix4<f64>,
+    pub clp_to_wld: Matrix4<f64>,
+}
+
+impl CameraParameters {
+    pub fn new(wld_to_cam: Matrix4<f64>, cam_to_wld: Matrix4<f64>, frustum: Frustum<f64>, range: Range3<f64>) -> Self {
+        let cam_to_clp = frustum.perspective(&range);
+        let clp_to_cam = frustum.inverse_perspective(&range);
+
+        Self {
+            frustum,
+            range,
+
+            wld_to_cam,
+            cam_to_wld,
+
+            cam_to_clp,
+            clp_to_cam,
+
+            wld_to_clp: cam_to_clp * wld_to_cam,
+            clp_to_wld: cam_to_wld * clp_to_cam,
+        }
+    }
+}
+
 pub struct MainParameters {
-    pub wld_to_ren_clp: Matrix4<f64>,
-    pub ren_clp_to_wld: Matrix4<f64>,
+    pub camera: CameraParameters,
 
     pub cam_pos_in_lgt: Point3<f64>,
 
@@ -237,6 +274,7 @@ pub struct MainContext {
     pub depth_renderer: depth_renderer::Renderer,
     pub line_renderer: line_renderer::Renderer,
     pub basic_renderer: basic_renderer::Renderer,
+    pub light_renderer: light_renderer::Renderer,
     pub overlay_renderer: overlay_renderer::Renderer,
     pub cluster_renderer: cluster_renderer::Renderer,
     pub text_renderer: text_renderer::Renderer,
@@ -408,6 +446,7 @@ impl MainContext {
         let depth_renderer = depth_renderer::Renderer::new(&mut rendering_context);
         let line_renderer = line_renderer::Renderer::new(&mut rendering_context);
         let basic_renderer = basic_renderer::Renderer::new(&mut rendering_context);
+        let light_renderer = light_renderer::Renderer::new(&mut rendering_context);
         let overlay_renderer = overlay_renderer::Renderer::new(&mut rendering_context);
         let cluster_renderer = cluster_renderer::Renderer::new(&mut rendering_context);
         let text_renderer = text_renderer::Renderer::new(&mut rendering_context);
@@ -449,6 +488,7 @@ impl MainContext {
             depth_renderer,
             line_renderer,
             basic_renderer,
+            light_renderer,
             overlay_renderer,
             cluster_renderer,
             text_renderer,
@@ -492,6 +532,7 @@ pub struct Context<'s> {
     pub depth_renderer: &'s mut depth_renderer::Renderer,
     pub line_renderer: &'s mut line_renderer::Renderer,
     pub basic_renderer: &'s mut basic_renderer::Renderer,
+    pub light_renderer: &'s mut light_renderer::Renderer,
     pub overlay_renderer: &'s mut overlay_renderer::Renderer,
     pub cluster_renderer: &'s mut cluster_renderer::Renderer,
     pub text_renderer: &'s mut text_renderer::Renderer,
@@ -562,6 +603,7 @@ impl<'s> Context<'s> {
             ref mut depth_renderer,
             ref mut line_renderer,
             ref mut basic_renderer,
+            ref mut light_renderer,
             ref mut overlay_renderer,
             ref mut cluster_renderer,
             ref mut text_renderer,
@@ -619,6 +661,7 @@ impl<'s> Context<'s> {
             depth_renderer,
             line_renderer,
             basic_renderer,
+            light_renderer,
             overlay_renderer,
             cluster_renderer,
             text_renderer,
@@ -1105,7 +1148,6 @@ impl<'s> Context<'s> {
         struct C1 {
             camera: camera::Camera,
             hmd_to_wld: Matrix4<f64>,
-            cam_pos_in_wld: Point3<f64>,
         }
 
         impl C1 {
@@ -1116,28 +1158,22 @@ impl<'s> Context<'s> {
                 Self {
                     camera,
                     hmd_to_wld,
-                    cam_pos_in_wld: camera.transform.position.cast::<f64>().unwrap(),
                 }
             }
         }
 
         struct C2 {
-            wld_to_ren_clp: Matrix4<f64>,
-            ren_clp_to_wld: Matrix4<f64>,
-            frustum: Frustum<f64>,
+            wld_to_cam: Matrix4<f64>,
+            cam_to_wld: Matrix4<f64>,
         }
 
         impl C2 {
             #[inline]
-            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, frustum: Frustum<f64>) -> Self {
-                let C1 { hmd_to_wld, .. } = *c1;
-                let ren_clp_to_cam = frustum.inverse_perspective(&RENDER_RANGE);
-                let ren_clp_to_wld = hmd_to_wld * cam_to_hmd * ren_clp_to_cam;
-
+            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>) -> Self {
+                let cam_to_wld = c1.hmd_to_wld * cam_to_hmd;
                 Self {
-                    wld_to_ren_clp: ren_clp_to_wld.invert().unwrap(),
-                    ren_clp_to_wld,
-                    frustum,
+                    wld_to_cam: cam_to_wld.invert().unwrap(),
+                    cam_to_wld,
                 }
             }
         }
@@ -1167,16 +1203,25 @@ impl<'s> Context<'s> {
                 for &eye_key in EYE_KEYS.iter() {
                     let EyeData { tangents, cam_to_hmd } = eyes[eye_key];
 
-                    let render_c2 = C2::new(
-                        &render_c1,
-                        cam_to_hmd,
-                        stereo_frustum(&render_c1.camera.properties, tangents),
-                    );
-                    let cluster_c2 = C2::new(
-                        &cluster_c1,
-                        cam_to_hmd,
-                        stereo_frustum(&cluster_c1.camera.properties, tangents),
-                    );
+                    let render_c3 = {
+                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, cam_to_hmd);
+                        CameraParameters::new(
+                            wld_to_cam,
+                            cam_to_wld,
+                            stereo_frustum(&render_c1.camera.properties, tangents),
+                            RENDER_RANGE,
+                        )
+                    };
+
+                    let cluster_c3 = {
+                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, cam_to_hmd);
+                        CameraParameters::new(
+                            wld_to_cam,
+                            cam_to_wld,
+                            stereo_frustum(&cluster_c1.camera.properties, tangents),
+                            RENDER_RANGE,
+                        )
+                    };
 
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                         && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
@@ -1194,11 +1239,6 @@ impl<'s> Context<'s> {
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                        let C2 {
-                            wld_to_ren_clp,
-                            ren_clp_to_wld,
-                            frustum,
-                        } = cluster_c2;
 
                         let draw_resources_index = self.resources.draw_resources_pool.next({
                             let gl = &self.gl;
@@ -1211,24 +1251,16 @@ impl<'s> Context<'s> {
                             ClusterCameraParameters {
                                 frame_dims: win_size,
                                 draw_resources_index,
-                                wld_to_ren_clp,
-                                ren_clp_to_wld,
-                                frustum,
+                                camera: cluster_c3,
                             },
                         );
                     }
 
                     {
-                        let C1 { cam_pos_in_wld, .. } = render_c1;
-                        let C2 {
-                            wld_to_ren_clp,
-                            ren_clp_to_wld,
-                            ..
-                        } = render_c2;
+                        let cam_pos_in_wld = Point3::from_vec(render_c3.cam_to_wld[3].truncate());
 
                         self.main_parameters_vec.push(MainParameters {
-                            wld_to_ren_clp,
-                            ren_clp_to_wld,
+                            camera: render_c3,
 
                             cam_pos_in_lgt: cam_pos_in_wld,
 
@@ -1275,17 +1307,25 @@ impl<'s> Context<'s> {
                     ));
                 }
 
-                let render_c2 = C2::new(
-                    &render_c1,
-                    Matrix4::identity(),
-                    mono_frustum(&render_c1.camera, dimensions),
-                );
+                let render_c3 = {
+                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, Matrix4::identity());
+                    CameraParameters::new(
+                        wld_to_cam,
+                        cam_to_wld,
+                        mono_frustum(&render_c1.camera, dimensions),
+                        RENDER_RANGE,
+                    )
+                };
 
-                let cluster_c2 = C2::new(
-                    &cluster_c1,
-                    Matrix4::identity(),
-                    mono_frustum(&cluster_c1.camera, dimensions),
-                );
+                let cluster_c3 = {
+                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, Matrix4::identity());
+                    CameraParameters::new(
+                        wld_to_cam,
+                        cam_to_wld,
+                        mono_frustum(&cluster_c1.camera, dimensions),
+                        RENDER_RANGE,
+                    )
+                };
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
@@ -1303,12 +1343,6 @@ impl<'s> Context<'s> {
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                    let C2 {
-                        wld_to_ren_clp,
-                        ren_clp_to_wld,
-                        frustum,
-                    } = cluster_c2;
-
                     let draw_resources_index = self.resources.draw_resources_pool.next({
                         let gl = &self.gl;
                         move || resources::DrawResources::new(gl)
@@ -1320,21 +1354,13 @@ impl<'s> Context<'s> {
                         ClusterCameraParameters {
                             frame_dims: dimensions,
                             draw_resources_index,
-                            wld_to_ren_clp,
-                            ren_clp_to_wld,
-                            frustum,
+                            camera: cluster_c3,
                         },
                     );
                 }
 
                 {
-                    let C1 { cam_pos_in_wld, .. } = render_c1;
-
-                    let C2 {
-                        wld_to_ren_clp,
-                        ren_clp_to_wld,
-                        ..
-                    } = render_c2;
+                    let cam_pos_in_wld = Point3::from_vec(render_c3.cam_to_wld[3].truncate());
 
                     let draw_resources_index = self.resources.draw_resources_pool.next({
                         let gl = &self.gl;
@@ -1342,8 +1368,7 @@ impl<'s> Context<'s> {
                     });
 
                     self.main_parameters_vec.push(MainParameters {
-                        wld_to_ren_clp,
-                        ren_clp_to_wld,
+                        camera: render_c3,
 
                         cam_pos_in_lgt: cam_pos_in_wld,
 
@@ -1369,8 +1394,6 @@ impl<'s> Context<'s> {
             let gl = &self.gl;
 
             let MainParameters {
-                wld_to_ren_clp,
-
                 draw_resources_index,
                 light_index,
                 cluster_resources_index,
@@ -1383,7 +1406,7 @@ impl<'s> Context<'s> {
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
             draw_resources.recompute(
-                wld_to_ren_clp,
+                main_params.camera.wld_to_clp,
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     self.cluster_resources_pool[cluster_resources_index]
                         .computed
@@ -1477,6 +1500,8 @@ impl<'s> Context<'s> {
                 }
             }
 
+            self.render_lights(&light_renderer::Parameters { main_parameters_index, light_resources_index: light_index });
+
             if self.target_camera_key == CameraKey::Debug {
                 let vertices: Vec<[f32; 3]> = RENDER_RANGE
                     .vertices()
@@ -1485,6 +1510,10 @@ impl<'s> Context<'s> {
                     .collect();
 
                 for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
+                    // Reborrow
+                    let main_params = &self.main_parameters_vec[main_parameters_index];
+                    let camera = &main_params.camera;
+
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
                     for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
                         self.line_renderer.render(
@@ -1492,7 +1521,7 @@ impl<'s> Context<'s> {
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &RENDER_RANGE.line_mesh_indices(),
-                                obj_to_clp: &(wld_to_ren_clp * camera_resources.parameters.ren_clp_to_wld),
+                                obj_to_clp: &(camera.wld_to_clp * camera_resources.parameters.camera.clp_to_wld),
                                 color: color::MAGENTA,
                             },
                         );
@@ -1513,18 +1542,19 @@ impl<'s> Context<'s> {
                             &line_renderer::Parameters {
                                 vertices: &vertices,
                                 indices: &cluster_range.line_mesh_indices(),
-                                obj_to_clp: &(wld_to_ren_clp/* * cluster_resources.computed.clu_clp_to_wld */),
+                                obj_to_clp: &(camera.wld_to_clp/* * cluster_resources.computed.clu_clp_to_wld */),
                                 color: color::RED,
                             },
                         );
                     }
 
+                    let clu_cam_to_ren_clp = &(camera.wld_to_clp
+                        * self.cluster_resources_pool[cluster_resources_index]
+                            .computed
+                            .clu_cam_to_wld);
                     self.render_debug_clusters(&cluster_renderer::Parameters {
                         cluster_resources_index,
-                        clu_cam_to_ren_clp: &(wld_to_ren_clp
-                            * self.cluster_resources_pool[cluster_resources_index]
-                                .computed
-                                .clu_cam_to_wld),
+                        clu_cam_to_ren_clp,
                     });
                 }
             }

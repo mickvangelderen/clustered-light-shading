@@ -37,6 +37,9 @@ pub struct Resources {
     pub scene_file: renderer::scene_file::SceneFile,
 
     pub point_lights: Vec<PointLight>,
+    pub quad_vao: gl::VertexArrayName,
+    pub quad_vb: gl::BufferName,
+    pub quad_eb: gl::BufferName,
 
     pub full_screen_vao: gl::VertexArrayName,
     pub full_screen_vb: gl::BufferName,
@@ -417,6 +420,40 @@ impl Resources {
             (vao, vb, eb, (indices.len() * 3) as u32)
         };
 
+        let (quad_vao, quad_vb, quad_eb) = unsafe {
+            let vao = gl.create_vertex_array();
+            let vb = gl.create_buffer();
+            let eb = gl.create_buffer();
+
+            // Set up attributes.
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
+            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_00);
+
+            let vertices: [Point2<f32>; 4] = [
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(1.0, 1.0),
+                Point2::new(0.0, 1.0),
+            ];
+
+            let indices: [u32; 6] = [
+                0, 1, 2, //
+                2, 3, 0, //
+            ];
+
+            // Bind buffers to vao.
+            let stride = std::mem::size_of::<Point2<f32>>() as u32;
+            gl.vertex_array_vertex_buffer(vao, BBI_00, vb, 0, stride);
+            gl.vertex_array_element_buffer(vao, eb);
+
+            // Upload data.
+            gl.named_buffer_data(vb, vertices.slice_as_bytes(), gl::STATIC_DRAW);
+            gl.named_buffer_data(eb, indices.slice_as_bytes(), gl::STATIC_DRAW);
+
+            (vao, vb, eb)
+        };
+
         let (full_screen_vao, full_screen_vb, full_screen_eb) = unsafe {
             let vao = gl.create_vertex_array();
             let vb = gl.create_buffer();
@@ -500,6 +537,9 @@ impl Resources {
             scene_file,
             materials,
             textures,
+            quad_vao,
+            quad_vb,
+            quad_eb,
             full_screen_vao,
             full_screen_vb,
             full_screen_eb,
