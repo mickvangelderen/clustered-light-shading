@@ -68,7 +68,7 @@ pub struct LightBufferLight {
     pub specular: RGB<f32>,
     pub _pad2: f32,
     pub pos_in_lgt: Point3<f32>,
-    pub _pad3: f32,
+    pub pos_in_lgt_w: f32,
     pub attenuation: AttenCoefs<f32>,
 }
 
@@ -85,7 +85,7 @@ impl LightBufferLight {
                 .transform_point(point_light.pos_in_wld.cast().unwrap())
                 .cast()
                 .unwrap(),
-            _pad3: 0.0,
+            pos_in_lgt_w: 1.0,
             attenuation: point_light.attenuation,
         }
     }

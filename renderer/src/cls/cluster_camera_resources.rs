@@ -25,10 +25,7 @@ pub struct ClusterCameraParameters {
 
     pub frame_dims: Vector2<i32>,
 
-    pub wld_to_ren_clp: Matrix4<f64>,
-    pub ren_clp_to_wld: Matrix4<f64>,
-
-    pub frustum: Frustum<f64>,
+    pub camera: CameraParameters,
 }
 
 pub struct ClusterCameraResources {

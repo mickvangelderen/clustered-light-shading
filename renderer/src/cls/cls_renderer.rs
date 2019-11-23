@@ -235,7 +235,7 @@ impl Context<'_> {
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
             draw_resources.recompute(
-                camera_parameters.wld_to_ren_clp,
+                camera_parameters.camera.wld_to_clp,
                 cluster_resources.computed.wld_to_clu_cam,
                 &self.resources.scene_file.instances,
                 &self.resources.materials,
@@ -291,7 +291,7 @@ impl Context<'_> {
                         );
 
                         let ren_clp_to_clu_cam =
-                            cluster_resources.computed.wld_to_clu_cam * camera_parameters.ren_clp_to_wld;
+                            cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld;
 
                         gl.uniform_matrix4f(
                             cls_renderer::REN_CLP_TO_CLU_CAM,
