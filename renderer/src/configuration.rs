@@ -50,6 +50,7 @@ pub struct GlobalConfiguration {
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
+    pub render_lights: bool,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
