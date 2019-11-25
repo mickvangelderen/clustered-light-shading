@@ -243,4 +243,40 @@ mod tests {
             f.perspective(&RANGE) * f.inverse_perspective(&RANGE)
         );
     }
+
+    #[test]
+    fn z_map() {
+        let f = Frustum {
+            x0: -1.0,
+            x1: 1.0,
+            y0: -1.0,
+            y1: 1.0,
+            z0: -100.0,
+            z1: -1.0,
+        };
+
+        let r = Range3 {
+            x0: -1.0,
+            x1: 1.0,
+            y0: -1.0,
+            y1: 1.0,
+            z0: 0.0,
+            z1: 1.0,
+        };
+
+        let (az, bz) = {
+            let d = 1.0 / f.dz();
+            (
+                (r.dz() * f.z0 * f.z1) * d,
+                (f.z1 * r.z1 - f.z0 * r.z0) * d,
+            )
+        };
+
+        let z = |z| {
+            -az/z + bz
+        };
+
+        assert_eq!(1.0, z(-1.0));
+        assert_eq!(0.0, z(-100.0));
+    }
 }
