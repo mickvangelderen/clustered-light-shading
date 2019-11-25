@@ -96,9 +96,9 @@ impl<T: Float> Frustum<T> {
         let (ax, bx) = lic(self.x0, self.x1, range.x0, range.x1);
         let (ay, by) = lic(self.y0, self.y1, range.y0, range.y1);
         let (az, bz) = {
-            let d = one / (self.z1 - self.z0);
+            let d = one / self.dz();
             (
-                (range.z1 - range.z0) * (self.z0 * self.z1) * d,
+                (range.dz() * self.z0 * self.z1) * d,
                 (self.z1 * range.z1 - self.z0 * range.z0) * d,
             )
         };
@@ -118,8 +118,8 @@ impl<T: Float> Frustum<T> {
         let (ax, bx) = lic(range.x0, range.x1, self.x0, self.x1);
         let (ay, by) = lic(range.y0, range.y1, self.y0, self.y1);
         let (az, bz) = {
-            let d = one / ((range.z1 - range.z0) * self.z0 * self.z1);
-            ((self.z1 - self.z0) * d, (range.z0 * self.z0 - range.z1 * self.z1) * d)
+            let d = one / (range.dz() * self.z0 * self.z1);
+            (self.dz() * d, (range.z0 * self.z0 - range.z1 * self.z1) * d)
         };
 
         Matrix4::new(
