@@ -23,24 +23,33 @@ unsafe fn create_texture(
     dimensions: Vector2<i32>,
     sample_count: u32,
 ) -> gl::TextureName {
-    if sample_count == 0 {
-        let color_texture = gl.create_texture(gl::TEXTURE_2D);
-        gl.texture_storage_2d(color_texture, 1, format, dimensions.x, dimensions.y);
-        color_texture
+    let name = if sample_count == 0 {
+        let name = gl.create_texture(gl::TEXTURE_2D);
+        gl.texture_storage_2d(name, 1, format, dimensions.x, dimensions.y);
+        name
     } else {
-        let color_texture = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
-        gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, color_texture);
+        let name = gl.create_texture(gl::TEXTURE_2D_MULTISAMPLE);
+        gl.bind_texture(gl::TEXTURE_2D_MULTISAMPLE, name);
         gl.tex_image_2d_multisample(
             gl::TEXTURE_2D_MULTISAMPLE,
             sample_count as i32,
             format,
             dimensions.x,
             dimensions.y,
-            true,
+            false,
         );
-        color_texture
-    }
+        name
+    };
+
+    gl.texture_parameteri(name, gl::TEXTURE_MAX_LEVEL, 0u32);
+    gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+    gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+
+    name
 }
+
+const DEPTH_FORMAT: gl::symbols::DEPTH32F_STENCIL8 = gl::DEPTH32F_STENCIL8;
+const COLOR_FORMAT: gl::symbols::RGBA16F = gl::RGBA16F;
 
 impl MainResources {
     pub fn new(
@@ -52,8 +61,8 @@ impl MainResources {
         unsafe {
             let framebuffer_name = gl.create_framebuffer();
 
-            let depth_texture = create_texture(gl, gl::DEPTH_COMPONENT32F, dimensions, sample_count);
-            let color_texture = create_texture(gl, gl::RGBA16F, dimensions, sample_count);
+            let depth_texture = create_texture(gl, DEPTH_FORMAT, dimensions, sample_count);
+            let color_texture = create_texture(gl, COLOR_FORMAT, dimensions, sample_count);
             let cluster_depth_texture = if sample_count > 0 {
                 Some(create_texture(gl, gl::R32F, dimensions, sample_count))
             } else {
@@ -104,8 +113,8 @@ impl MainResources {
 
             unsafe {
                 let framebuffer_name = gl.create_framebuffer();
-                let depth_texture = create_texture(gl, gl::DEPTH_COMPONENT32F, dimensions, sample_count);
-                let color_texture = create_texture(gl, gl::RGBA16F, dimensions, sample_count);
+                let depth_texture = create_texture(gl, DEPTH_FORMAT, dimensions, sample_count);
+                let color_texture = create_texture(gl, COLOR_FORMAT, dimensions, sample_count);
                 let cluster_depth_texture = if sample_count > 0 {
                     Some(create_texture(gl, gl::R32F, dimensions, sample_count))
                 } else {
