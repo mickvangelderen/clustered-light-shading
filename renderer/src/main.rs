@@ -969,22 +969,22 @@ impl<'s> Context<'s> {
         if self.paused == false {
             {
                 // let center = self.transition_camera.current_camera.transform.position;
-                let center = Vector3::zero();
+                let center = Point3::origin();
                 let rng = &mut self.rng;
-                let p0 = Point3::from_value(-30.0) + center;
-                let p1 = Point3::from_value(30.0) + center;
+                let p0 = (center + Vector3::from(self.configuration.rain.bounds_min.to_array())).cast().unwrap();
+                let p1 = (center + Vector3::from(self.configuration.rain.bounds_max.to_array())).cast().unwrap();
 
                 for rain_drop in self.rain_drops.iter_mut() {
                     rain_drop.update(delta_time, rng, p0, p1);
                 }
 
                 for _ in 0..20 {
-                    if self.rain_drops.len() < self.configuration.global.rain_drop_max as usize {
+                    if self.rain_drops.len() < self.configuration.rain.max_count as usize {
                         self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
-                    if self.rain_drops.len() > self.configuration.global.rain_drop_max as usize {
+                    if self.rain_drops.len() > self.configuration.rain.max_count as usize {
                         self.rain_drops
-                            .truncate(self.configuration.global.rain_drop_max as usize);
+                            .truncate(self.configuration.rain.max_count as usize);
                     }
                 }
             }
@@ -1110,14 +1110,17 @@ impl<'s> Context<'s> {
 
             for rain_drop in self.rain_drops.iter() {
                 self.point_lights.push(light::PointLight {
-                    ambient: light::RGB::new(0.2000, 0.2000, 0.2000),
-                    diffuse: light::RGB::new(4.0000, 4.0000, 4.0000),
+                    ambient: light::RGB::new(1.0000, 1.0000, 1.0000),
+                    diffuse: {
+                        let Vector3 { x, y, z } = rain_drop.tint;
+                        light::RGB::new(x, y, z)
+                    },
                     specular: light::RGB::new(1.0000, 1.0000, 1.0000),
                     pos_in_wld: Point3::from_vec(rain_drop.position),
                     attenuation: light::AttenParams {
-                        intensity: 0.3,
-                        clip_near: 0.5,
-                        cutoff: 0.02,
+                        intensity: self.configuration.rain.intensity as f32,
+                        clip_near: self.configuration.rain.clip_near as f32,
+                        cutoff: self.configuration.rain.cut_off as f32,
                     }
                     .into(),
                 });

@@ -1,8 +1,6 @@
 [global]
 diffuse_srgb = true
-rain_drop_max = 5000
 render_lights = true
-
 mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
@@ -17,6 +15,14 @@ sample_count = 1
 # sample_count = 4
 # sample_count = 8
 # sample_count = 16
+
+[rain]
+max_count = 20000
+bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
+bounds_max= { x = +80.0, y = +40.0, z = +60.0 }
+intensity = 20.0
+clip_near = 0.5
+cut_off = 0.8
 
 [record]
 path = "recording.bin"
@@ -46,7 +52,7 @@ projection = "Orthographic"
 # projection = "Perspective"
 # grouping = "Individual"
 grouping = "Enclosed"
-orthographic_sides = { x = 2.0, y = 2.0, z = 2.0 }
+orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
 # orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
 perspective_pixels = { x = 32, y = 32 }
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)

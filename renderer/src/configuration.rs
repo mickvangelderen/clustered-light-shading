@@ -2,9 +2,35 @@ use crate::camera;
 use crate::profiling::ProfilingConfiguration;
 use std::path::PathBuf;
 
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+pub struct Vector3<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
+}
+
+impl<T> Vector3<T> {
+    pub fn to_array(self) -> [T; 3] {
+        [self.x, self.y, self.z]
+    }
+}
+
+#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+pub struct Vector2<T> {
+    pub x: T,
+    pub y: T,
+}
+
+impl<T> Vector2<T> {
+    pub fn to_array(self) -> [T; 2] {
+        [self.x, self.y]
+    }
+}
+
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct Configuration {
     pub global: GlobalConfiguration,
+    pub rain: RainConfiguration,
     pub window: crate::WindowConfiguration,
     pub gl: crate::GlConfiguration,
     pub clustered_light_shading: ClusteredLightShadingConfiguration,
@@ -46,11 +72,20 @@ pub struct ReplayConfiguration {
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct GlobalConfiguration {
     pub diffuse_srgb: bool,
-    pub rain_drop_max: u32,
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
     pub render_lights: bool,
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct RainConfiguration {
+    pub max_count: u32,
+    pub bounds_min: Vector3<f64>,
+    pub bounds_max: Vector3<f64>,
+    pub intensity: f64,
+    pub clip_near: f64,
+    pub cut_off: f64,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -77,31 +112,6 @@ pub enum ClusteringProjection {
 pub enum ClusteringGrouping {
     Individual,
     Enclosed,
-}
-
-#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
-pub struct Vector3<T> {
-    pub x: T,
-    pub y: T,
-    pub z: T,
-}
-
-impl<T> Vector3<T> {
-    pub fn to_array(self) -> [T; 3] {
-        [self.x, self.y, self.z]
-    }
-}
-
-#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
-pub struct Vector2<T> {
-    pub x: T,
-    pub y: T,
-}
-
-impl<T> Vector2<T> {
-    pub fn to_array(self) -> [T; 2] {
-        [self.x, self.y]
-    }
 }
 
 #[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]

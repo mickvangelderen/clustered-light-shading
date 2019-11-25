@@ -3,6 +3,7 @@ use crate::*;
 pub struct Particle {
     pub position: Vector3<f32>,
     pub velocity: Vector3<f32>,
+    pub tint: Vector3<f32>,
 }
 
 impl Particle {
@@ -14,6 +15,11 @@ impl Particle {
                 rng.gen_range(0.2, 1.2),
                 rng.gen_range(-20.0, -14.0),
                 rng.gen_range(1.0, 2.3),
+            ),
+            tint: Vector3::new(
+                rng.gen_range(0.5, 1.0),
+                rng.gen_range(0.5, 1.0),
+                rng.gen_range(0.5, 1.0),
             ),
         }
     }
