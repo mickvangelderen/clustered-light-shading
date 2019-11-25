@@ -52,7 +52,7 @@ impl MainResources {
         unsafe {
             let framebuffer_name = gl.create_framebuffer();
 
-            let depth_texture = create_texture(gl, gl::DEPTH24_STENCIL8, dimensions, sample_count);
+            let depth_texture = create_texture(gl, gl::DEPTH_COMPONENT32F, dimensions, sample_count);
             let color_texture = create_texture(gl, gl::RGBA16F, dimensions, sample_count);
             let cluster_depth_texture = if sample_count > 0 {
                 Some(create_texture(gl, gl::R32F, dimensions, sample_count))
@@ -104,7 +104,7 @@ impl MainResources {
 
             unsafe {
                 let framebuffer_name = gl.create_framebuffer();
-                let depth_texture = create_texture(gl, gl::DEPTH24_STENCIL8, dimensions, sample_count);
+                let depth_texture = create_texture(gl, gl::DEPTH_COMPONENT32F, dimensions, sample_count);
                 let color_texture = create_texture(gl, gl::RGBA16F, dimensions, sample_count);
                 let cluster_depth_texture = if sample_count > 0 {
                     Some(create_texture(gl, gl::R32F, dimensions, sample_count))
