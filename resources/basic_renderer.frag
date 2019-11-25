@@ -54,7 +54,7 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   return vec3(xy, z);
 }
 
-vec2 point_light_attenuate(PointLight point_light, vec3 frag_pos) {
+float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   vec3 pos_from_frag_to_light = point_light.pos_in_lgt.xyz - frag_pos;
   vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
@@ -66,37 +66,33 @@ vec2 point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   // Attenuation.
   float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
   float d_unclipped = sqrt(d_sq_unclipped);
-  float d_sq = max(R0, d_sq_unclipped);
-  float d = max(R0, d_unclipped);
 
-  float diffuse_attenuation;
-  float specular_attenuation;
+  float d_sq = clamp(d_sq_unclipped, R0*R0, R1*R1);
+  float d = clamp(d_unclipped, R0, R1);
 
-  if (d_unclipped < R1) {
 #if defined(ATTENUATION_MODE_STEP)
-    diffuse_attenuation = I * (1.0 / R0 + R0 - 1.0 / R1) / R1;
+  float attenuation = (d_sq_unclipped < R1*R1 ? 1.0 : 0.0) * I * (1.0 / R0 + R0 - 1.0 / R1) / R1;
 #elif defined(ATTENUATION_MODE_LINEAR)
-    // Linear doesn't go infinite so we can use the unclipped distance.
-    diffuse_attenuation = I - (I / R1) * d_unclipped;
+  // Linear doesn't go infinite so we can use the unclipped distance.
+  float attenuation = max(0.0, I - (I / R1) * d_unclipped);
 #elif defined(ATTENUATION_MODE_PHYSICAL)
-    diffuse_attenuation = I / d_sq;
+  #if defined(RENDER_TECHNIQUE_NAIVE)
+    float attenuation = I / max(R0*R0, d_sq_unclipped);
+  #else
+    float attenuation = (d_sq_unclipped < R1*R1 ? 1.0 : 0.0) * I / max(R0*R0, d_sq_unclipped);
+  #endif
 #elif defined(ATTENUATION_MODE_INTERPOLATED)
-    diffuse_attenuation = I / d_sq - (C / R1) * d;
-    // diffuse_attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
+  float attenuation = I / d_sq - (C / R1) * d;
+  // attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
 #elif defined(ATTENUATION_MODE_REDUCED)
-    diffuse_attenuation = I / d_sq - C;
+  float attenuation = I / d_sq - C;
 #elif defined(ATTENUATION_MODE_SMOOTH)
-    diffuse_attenuation = I / d_sq - 3.0 * C + (2.0 * C / R1) * d;
+  float attenuation = I / d_sq - 3.0 * C + (2.0 * C / R1) * d;
 #else
 #error invalid attenuation mode!
 #endif
-    specular_attenuation = I * (1.0 - d_sq / (R1 * R1));
-  } else {
-    diffuse_attenuation = 0.0;
-    specular_attenuation = 0.0;
-  }
 
-  return vec2(diffuse_attenuation, specular_attenuation);
+  return attenuation;
 }
 
 vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
@@ -108,7 +104,7 @@ vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, floa
 
   // calculate per-light radiance
   vec3 H = normalize(V + L);
-  vec3 radiance = point_light.diffuse.xyz * point_light_attenuate(point_light, P).r;
+  vec3 radiance = point_light.diffuse.xyz * point_light_attenuate(point_light, P);
 
   // Cook-Torrance BRDF
   float NDF = DistributionGGX(N, H, roughness);

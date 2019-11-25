@@ -506,11 +506,8 @@ impl Resources {
                     let pos_from_obj_to_wld = transform.to_parent();
                     let pos_in_wld = pos_from_obj_to_wld.transform_point(center).cast().unwrap();
 
-                    let color = RGB {
-                        r: emissive_color[0],
-                        g: emissive_color[1],
-                        b: emissive_color[2],
-                    };
+                    let [r, g, b]: [f32; 3] = Vector3::from(emissive_color).normalize().into();
+                    let color = RGB { r, g, b };
 
                     Some(PointLight {
                         ambient: color,
@@ -518,9 +515,9 @@ impl Resources {
                         specular: color,
                         pos_in_wld,
                         attenuation: AttenParams {
-                            intensity: 4.0,
-                            clip_near: 0.5,
-                            cutoff: 0.2,
+                            intensity: 6.0,
+                            clip_near: 0.4,
+                            cutoff: 0.4,
                         }
                         .into(),
                     })
