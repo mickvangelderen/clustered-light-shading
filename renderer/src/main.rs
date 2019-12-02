@@ -971,21 +971,29 @@ impl<'s> Context<'s> {
                 // let center = self.transition_camera.current_camera.transform.position;
                 let center = Point3::origin();
                 let rng = &mut self.rng;
-                let p0 = (center + Vector3::from(self.configuration.rain.bounds_min.to_array())).cast().unwrap();
-                let p1 = (center + Vector3::from(self.configuration.rain.bounds_max.to_array())).cast().unwrap();
+                let p0 = (center + Vector3::from(self.configuration.rain.bounds_min.to_array()))
+                    .cast()
+                    .unwrap();
+                let p1 = (center + Vector3::from(self.configuration.rain.bounds_max.to_array()))
+                    .cast()
+                    .unwrap();
+
+                let max_count = self.configuration.rain.max_count as usize;
+                let seconds_to_bottom = (p1.y - p0.y) / 17.0; // 17 from rain.rs
+                let frames_to_bottom = DESIRED_UPS as f32 * seconds_to_bottom;
+                let drops_per_update = max_count as f32 / frames_to_bottom;
+                for _ in 0..drops_per_update as usize {
+                    if self.rain_drops.len() < max_count {
+                        self.rain_drops.push(rain::Particle::new(rng, p0, p1));
+                    }
+                    if self.rain_drops.len() > max_count {
+                        self.rain_drops
+                            .truncate(self.rain_drops.len().max(max_count - drops_per_update as usize));
+                    }
+                }
 
                 for rain_drop in self.rain_drops.iter_mut() {
                     rain_drop.update(delta_time, rng, p0, p1);
-                }
-
-                for _ in 0..20 {
-                    if self.rain_drops.len() < self.configuration.rain.max_count as usize {
-                        self.rain_drops.push(rain::Particle::new(rng, p0, p1));
-                    }
-                    if self.rain_drops.len() > self.configuration.rain.max_count as usize {
-                        self.rain_drops
-                            .truncate(self.configuration.rain.max_count as usize);
-                    }
                 }
             }
 
