@@ -20,6 +20,7 @@ in vec2 fs_pos_in_tex;
 
 void main() {
 #if SAMPLE_COUNT > 0
+  // frag_depth = interpolateAtCentroid(gl_FragCoord).z;
   frag_depth = gl_FragCoord.z;
 #endif
 
