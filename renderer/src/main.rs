@@ -1661,29 +1661,30 @@ impl<'s> Context<'s> {
                 );
             }
 
-            for draw_resources in self.resources.draw_resources_pool.iter() {
-                for &(sample_index, sample_name) in &[
-                    (draw_resources.compute_instance_matrices_profiler, "instance matrices"),
-                    (draw_resources.compute_draw_commands_profiler, "draw commands"),
-                ] {
-                    if let Some(stats) = self.profiling_context.stats(sample_index) {
-                        overlay_textbox.write(
-                                &monospace,
-                                &format!(
-                                    "[{:>3}] {:<29} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                    sample_index.to_usize(),
-                                    sample_name,
-                                    stats.cpu_elapsed_min as f64 / 1000.0,
-                                    stats.cpu_elapsed_avg as f64 / 1000.0,
-                                    stats.cpu_elapsed_max as f64 / 1000.0,
-                                    stats.gpu_elapsed_min as f64 / 1000.0,
-                                    stats.gpu_elapsed_avg as f64 / 1000.0,
-                                    stats.gpu_elapsed_max as f64 / 1000.0,
-                                ),
-                            );
-                    }
-                }
-            }
+            // NOTE: Not that useful always.
+            // for draw_resources in self.resources.draw_resources_pool.iter() {
+            //     for &(sample_index, sample_name) in &[
+            //         (draw_resources.compute_instance_matrices_profiler, "instance matrices"),
+            //         (draw_resources.compute_draw_commands_profiler, "draw commands"),
+            //     ] {
+            //         if let Some(stats) = self.profiling_context.stats(sample_index) {
+            //             overlay_textbox.write(
+            //                     &monospace,
+            //                     &format!(
+            //                         "[{:>3}] {:<29} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+            //                         sample_index.to_usize(),
+            //                         sample_name,
+            //                         stats.cpu_elapsed_min as f64 / 1000.0,
+            //                         stats.cpu_elapsed_avg as f64 / 1000.0,
+            //                         stats.cpu_elapsed_max as f64 / 1000.0,
+            //                         stats.gpu_elapsed_min as f64 / 1000.0,
+            //                         stats.gpu_elapsed_avg as f64 / 1000.0,
+            //                         stats.gpu_elapsed_max as f64 / 1000.0,
+            //                     ),
+            //                 );
+            //         }
+            //     }
+            // }
 
             for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
                 let res = &mut self.cluster_resources_pool[cluster_resources_index];
@@ -1745,16 +1746,14 @@ impl<'s> Context<'s> {
                     }
                 }
             }
-        }
 
-        for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
-            for &(name, sample_index) in [
-                ("depth", main_resources.depth_pass_profiler),
-                ("basic", main_resources.basic_pass_profiler),
-            ]
-            .iter()
-            {
-                if self.configuration.profiling.display {
+            for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
+                for &(name, sample_index) in [
+                    ("depth", main_resources.depth_pass_profiler),
+                    ("basic", main_resources.basic_pass_profiler),
+                ]
+                .iter()
+                {
                     if let Some(stats) = self.profiling_context.stats(sample_index) {
                         overlay_textbox.write(
                                 &monospace,
