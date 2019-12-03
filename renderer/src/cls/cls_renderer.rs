@@ -259,7 +259,7 @@ impl Context<'_> {
 
             self.clear_and_render_depth(main_resources_index, draw_resources_index);
 
-            self.profiling_context.stop(gl, profiler_index);
+            self.profiling_context.stop(&self.gl, profiler_index);
 
             // Reborrow.
             let gl = &self.gl;

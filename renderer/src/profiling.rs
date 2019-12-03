@@ -15,9 +15,10 @@ pub struct ProfilingConfiguration {
     pub display: bool,
     pub record_frames: bool,
     pub path: Option<std::path::PathBuf>,
+    pub hide: Vec<String>,
 }
 
-enum FrameEvent {
+pub enum FrameEvent {
     BeginTimeSpan(SampleIndex),
     EndTimeSpan,
     RecordClusterBuffer { byte_offset: usize },
@@ -131,6 +132,7 @@ pub struct ProfilingContext {
     frame_started: bool,
     frame_context_ring: FrameContextRing,
     samples_ring: SamplesRing,
+    pub sample_names: Vec<&'static str>,
     thread: ProfilingThread,
 }
 
@@ -182,6 +184,7 @@ impl Context {
             frame_index: FrameIndex::from_usize(0),
             frame_started: false,
             samples_ring: Default::default(),
+            sample_names: Default::default(),
             thread,
         }
     }
@@ -195,6 +198,7 @@ impl Context {
     #[inline]
     pub fn add_sample(&mut self, sample: &'static str) -> SampleIndex {
         let sample_index = self.samples_ring.add_sample();
+        self.sample_names.push(sample);
         self.thread
             .emit(MeasurementEvent::SampleName(sample_index, sample.to_string()));
         sample_index
@@ -290,6 +294,18 @@ impl Context {
         assert_eq!(self.frame_index, frame_index);
         self.frame_started = false;
         self.frame_index.increment();
+    }
+
+    #[inline]
+    pub fn events(&self, frame_index: FrameIndex) -> Option<&[FrameEvent]> {
+        if frame_index.to_usize() >= 1 {
+            // Most recent complete frame.
+            let frame_index = FrameIndex::from_usize(frame_index.to_usize() - 1);
+            let context = &self.frame_context_ring[frame_index];
+            Some(&context.events)
+        } else {
+            None
+        }
     }
 
     #[inline]

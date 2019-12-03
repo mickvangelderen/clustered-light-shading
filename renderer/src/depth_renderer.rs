@@ -29,17 +29,26 @@ glsl_defines!(fixed_header {
     },
 });
 
+pub struct Parameters {
+    pub main_resources_index: MainResourcesIndex,
+    pub draw_resources_index: usize,
+}
+
 impl Context<'_> {
-    pub fn render_depth(&mut self, draw_resources_index: usize) {
+    pub fn render_depth(&mut self, params: Parameters) {
         let Context {
             ref gl,
             ref resources,
             ref mut depth_renderer,
             ..
         } = *self;
-        unsafe {
-            let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
 
+        let main_resources = &self.main_resources_pool[params.main_resources_index];
+        let draw_resources = &self.resources.draw_resources_pool[params.draw_resources_index];
+
+        let profiler_index = self.profiling_context.start(gl, main_resources.depth_profiler);
+
+        unsafe {
             depth_renderer.opaque_program.update(&mut rendering_context!(self));
             depth_renderer.masked_program.update(&mut rendering_context!(self));
             if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
@@ -51,17 +60,21 @@ impl Context<'_> {
                     draw_resources.instance_matrices_buffer,
                 );
 
-                gl.bind_buffer(
-                    gl::DRAW_INDIRECT_BUFFER,
-                    draw_resources.draw_command_buffer,
-                );
+                gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, draw_resources.draw_command_buffer);
 
                 gl.bind_vertex_array(resources.scene_vao);
 
                 let draw_counts = &draw_resources.draw_counts;
                 let draw_offsets = &draw_resources.draw_offsets;
 
-                for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
+                for &(program, has_alpha, sample_index) in [
+                    (opaque_program, false, main_resources.depth_opaque_profiler),
+                    (masked_program, true, main_resources.depth_masked_profiler),
+                ]
+                .iter()
+                {
+                    let profiler_index = self.profiling_context.start(gl, sample_index);
+
                     gl.use_program(program);
                     for (material_index, material) in resources.materials.iter().enumerate() {
                         if resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
@@ -88,12 +101,16 @@ impl Context<'_> {
                             std::mem::size_of::<DrawCommand>() as i32,
                         );
                     }
+
+                    self.profiling_context.stop(gl, profiler_index);
                 }
                 gl.unuse_program();
 
                 gl.unbind_vertex_array();
             }
         }
+
+        self.profiling_context.stop(gl, profiler_index);
     }
 }
 

@@ -13,8 +13,12 @@ pub struct MainResources {
     pub cluster_depth_texture: Option<gl::TextureName>,
 
     // Profiling
-    pub depth_pass_profiler: SampleIndex,
-    pub basic_pass_profiler: SampleIndex,
+    pub depth_profiler: SampleIndex,
+    pub depth_opaque_profiler: SampleIndex,
+    pub depth_masked_profiler: SampleIndex,
+    pub basic_profiler: SampleIndex,
+    pub basic_opaque_profiler: SampleIndex,
+    pub basic_masked_profiler: SampleIndex,
 }
 
 unsafe fn create_texture(
@@ -94,8 +98,13 @@ impl MainResources {
                 depth_texture,
                 cluster_depth_texture,
 
-                depth_pass_profiler: profiling_context.add_sample("main_depth"),
-                basic_pass_profiler: profiling_context.add_sample("main_basic"),
+                depth_profiler: profiling_context.add_sample("depth"),
+                depth_opaque_profiler: profiling_context.add_sample("opaque"),
+                depth_masked_profiler: profiling_context.add_sample("masked"),
+
+                basic_profiler: profiling_context.add_sample("basic"),
+                basic_opaque_profiler: profiling_context.add_sample("opaque"),
+                basic_masked_profiler: profiling_context.add_sample("masked"),
             }
         }
     }
