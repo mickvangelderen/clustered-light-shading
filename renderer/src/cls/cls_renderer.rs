@@ -224,7 +224,8 @@ impl Context<'_> {
         for camera_resources_index in cluster_resources.camera_resources_pool.used_index_iter() {
             let draw_resources_index = self.resources.draw_resources_pool.next({
                 let gl = &self.gl;
-                move || resources::DrawResources::new(gl)
+                let profiling_context = &mut self.profiling_context;
+                move || resources::DrawResources::new(gl, profiling_context)
             });
 
             // Reborrow.
@@ -235,6 +236,8 @@ impl Context<'_> {
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
             draw_resources.recompute(
+                &self.gl,
+                &mut self.profiling_context,
                 camera_parameters.camera.wld_to_clp,
                 cluster_resources.computed.wld_to_clu_cam,
                 &self.resources.scene_file.instances,
@@ -242,8 +245,6 @@ impl Context<'_> {
                 &self.resources.scene_file.transforms,
                 &self.resources.scene_file.mesh_descriptions,
             );
-
-            draw_resources.reupload(&self.gl);
 
             let profiler_index = self
                 .profiling_context

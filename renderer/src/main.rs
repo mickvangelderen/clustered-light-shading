@@ -1253,7 +1253,8 @@ impl<'s> Context<'s> {
 
                         let draw_resources_index = self.resources.draw_resources_pool.next({
                             let gl = &self.gl;
-                            move || resources::DrawResources::new(gl)
+                            let profiling_context = &mut self.profiling_context;
+                            move || resources::DrawResources::new(gl, profiling_context)
                         });
 
                         let _ = camera_resources_pool.next_unused(
@@ -1277,8 +1278,10 @@ impl<'s> Context<'s> {
 
                             draw_resources_index: self.resources.draw_resources_pool.next({
                                 let gl = &self.gl;
-                                move || resources::DrawResources::new(gl)
+                                let profiling_context = &mut self.profiling_context;
+                                move || resources::DrawResources::new(gl, profiling_context)
                             }),
+
                             light_index: light_index.expect("Programming error: light_index was never set."),
                             cluster_resources_index,
 
@@ -1356,7 +1359,8 @@ impl<'s> Context<'s> {
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
                     let draw_resources_index = self.resources.draw_resources_pool.next({
                         let gl = &self.gl;
-                        move || resources::DrawResources::new(gl)
+                        let profiling_context = &mut self.profiling_context;
+                        move || resources::DrawResources::new(gl, profiling_context)
                     });
 
                     let _ = camera_resources_pool.next_unused(
@@ -1375,7 +1379,8 @@ impl<'s> Context<'s> {
 
                     let draw_resources_index = self.resources.draw_resources_pool.next({
                         let gl = &self.gl;
-                        move || resources::DrawResources::new(gl)
+                        let profiling_context = &mut self.profiling_context;
+                        move || resources::DrawResources::new(gl, profiling_context)
                     });
 
                     self.main_parameters_vec.push(MainParameters {
@@ -1417,6 +1422,8 @@ impl<'s> Context<'s> {
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
             draw_resources.recompute(
+                &self.gl,
+                &mut self.profiling_context,
                 main_params.camera.wld_to_clp,
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     self.cluster_resources_pool[cluster_resources_index]
@@ -1430,8 +1437,6 @@ impl<'s> Context<'s> {
                 &self.resources.scene_file.transforms,
                 &self.resources.scene_file.mesh_descriptions,
             );
-
-            draw_resources.reupload(&self.gl);
 
             let light_params = &self.light_params_vec[light_index];
 
@@ -1512,7 +1517,10 @@ impl<'s> Context<'s> {
             }
 
             if self.configuration.global.render_lights {
-                self.render_lights(&light_renderer::Parameters { main_parameters_index, light_resources_index: light_index });
+                self.render_lights(&light_renderer::Parameters {
+                    main_parameters_index,
+                    light_resources_index: light_index,
+                });
             }
 
             if self.target_camera_key == CameraKey::Debug {
@@ -1635,11 +1643,35 @@ impl<'s> Context<'s> {
             ..
         } = *self;
 
-        for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
-            let res = &mut self.cluster_resources_pool[cluster_resources_index];
-            let dimensions_u32 = res.computed.dimensions;
+        if self.configuration.profiling.display {
+            for draw_resources in self.resources.draw_resources_pool.iter() {
+                for &(sample_index, sample_name) in &[
+                    (draw_resources.compute_instance_matrices_profiler, "instance matrices"),
+                    (draw_resources.compute_draw_commands_profiler, "draw commands"),
+                ] {
+                    if let Some(stats) = self.profiling_context.stats(sample_index) {
+                        overlay_textbox.write(
+                                &monospace,
+                                &format!(
+                                    "[{:>3}] {:<29} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                    sample_index.to_usize(),
+                                    sample_name,
+                                    stats.cpu_elapsed_min as f64 / 1000.0,
+                                    stats.cpu_elapsed_avg as f64 / 1000.0,
+                                    stats.cpu_elapsed_max as f64 / 1000.0,
+                                    stats.gpu_elapsed_min as f64 / 1000.0,
+                                    stats.gpu_elapsed_avg as f64 / 1000.0,
+                                    stats.gpu_elapsed_max as f64 / 1000.0,
+                                ),
+                            );
+                    }
+                }
+            }
 
-            if self.configuration.profiling.display {
+            for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
+                let res = &mut self.cluster_resources_pool[cluster_resources_index];
+                let dimensions_u32 = res.computed.dimensions;
+
                 overlay_textbox.write(
                     &monospace,
                     &format!(
@@ -1650,13 +1682,11 @@ impl<'s> Context<'s> {
                         dimensions_u32.z,
                     ),
                 );
-            }
 
-            for camera_resources_index in res.camera_resources_pool.used_index_iter() {
-                let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
-                for &stage in &CameraStage::VALUES {
-                    let sample_index = camera_resources.profilers[stage];
-                    if self.configuration.profiling.display {
+                for camera_resources_index in res.camera_resources_pool.used_index_iter() {
+                    let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
+                    for &stage in &CameraStage::VALUES {
+                        let sample_index = camera_resources.profilers[stage];
                         if let Some(stats) = self.profiling_context.stats(sample_index) {
                             overlay_textbox.write(
                                     &monospace,
@@ -1676,12 +1706,10 @@ impl<'s> Context<'s> {
                         }
                     }
                 }
-            }
 
-            for &stage in &ClusterStage::VALUES {
-                let sample_index = res.profilers[stage];
+                for &stage in &ClusterStage::VALUES {
+                    let sample_index = res.profilers[stage];
 
-                if self.configuration.profiling.display {
                     if let Some(stats) = self.profiling_context.stats(sample_index) {
                         overlay_textbox.write(
                                 &monospace,
