@@ -183,6 +183,8 @@ impl Context<'_> {
         let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
         cluster_resources.recompute();
 
+        let cluster_profiler_index = self.profiling_context.start(gl, cluster_resources.profilers.cluster);
+
         let cluster_count = cluster_resources.computed.cluster_count();
 
         unsafe {
@@ -235,6 +237,8 @@ impl Context<'_> {
             let camera_parameters = &camera_resources.parameters;
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
+            let camera_profiler_index = self.profiling_context.start(gl, camera_resources.profilers.camera);
+
             draw_resources.recompute(
                 &self.gl,
                 &mut self.profiling_context,
@@ -246,10 +250,6 @@ impl Context<'_> {
                 &self.resources.scene_file.mesh_descriptions,
             );
 
-            let profiler_index = self
-                .profiling_context
-                .start(gl, camera_resources.profilers.render_depth);
-
             let main_resources_index = self.main_resources_pool.next_unused(
                 gl,
                 &mut self.profiling_context,
@@ -258,8 +258,6 @@ impl Context<'_> {
             );
 
             self.clear_and_render_depth(main_resources_index, draw_resources_index);
-
-            self.profiling_context.stop(&self.gl, profiler_index);
 
             // Reborrow.
             let gl = &self.gl;
@@ -273,7 +271,6 @@ impl Context<'_> {
                 let profiler_index = self.profiling_context.start(gl, camera_resources.profilers.count_frags);
 
                 unsafe {
-                    // gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
                     let program = &mut self.cls_renderer.count_fragments_program;
                     program.update(&mut rendering_context!(self));
                     if let ProgramName::Linked(name) = program.name {
@@ -324,6 +321,8 @@ impl Context<'_> {
 
                 self.profiling_context.stop(gl, profiler_index);
             }
+
+            self.profiling_context.stop(gl, camera_profiler_index);
         }
 
         // Reborrow.
@@ -645,5 +644,7 @@ impl Context<'_> {
                     .record_cluster_buffer(gl, &cluster_resources.profiling_cluster_buffer.name(), 0);
             }
         }
+
+        self.profiling_context.stop(gl, cluster_profiler_index);
     }
 }

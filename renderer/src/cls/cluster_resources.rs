@@ -5,6 +5,7 @@ use cluster_space_buffer::ClusterSpaceCoefficients;
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
     enum ClusterStage => struct ClusterStages {
+        Cluster => cluster,
         CompactClusters => compact_clusters,
         UploadLights => upload_lights,
         CountLights => count_lights,
@@ -14,7 +15,8 @@ impl_enum_and_enum_map! {
 }
 
 impl ClusterStage {
-    pub const VALUES: [ClusterStage; 5] = [
+    pub const VALUES: [ClusterStage; 6] = [
+        ClusterStage::Cluster,
         ClusterStage::CompactClusters,
         ClusterStage::UploadLights,
         ClusterStage::CountLights,
@@ -24,11 +26,12 @@ impl ClusterStage {
 
     pub fn title(self) -> &'static str {
         match self {
-            ClusterStage::CompactClusters => "cluster.compact_clusters",
-            ClusterStage::UploadLights => "cluster.upload_lights",
-            ClusterStage::CountLights => "cluster.count_lights",
-            ClusterStage::LightOffsets => "cluster.compact_lights",
-            ClusterStage::AssignLights => "cluster.assign_lights",
+            ClusterStage::Cluster => "cluster",
+            ClusterStage::CompactClusters => "compact_clusters",
+            ClusterStage::UploadLights => "upload_lights",
+            ClusterStage::CountLights => "count_lights",
+            ClusterStage::LightOffsets => "compact_lights",
+            ClusterStage::AssignLights => "assign_lights",
         }
     }
 }
