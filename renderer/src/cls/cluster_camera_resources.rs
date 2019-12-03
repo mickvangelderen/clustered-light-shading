@@ -3,18 +3,18 @@ use crate::*;
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
     enum CameraStage => struct CameraStages {
-        RenderDepth => render_depth,
+        Camera => camera,
         CountFrags => count_frags,
     }
 }
 
 impl CameraStage {
-    pub const VALUES: [CameraStage; 2] = [CameraStage::RenderDepth, CameraStage::CountFrags];
+    pub const VALUES: [CameraStage; 2] = [CameraStage::Camera, CameraStage::CountFrags];
 
     pub fn title(self) -> &'static str {
         match self {
-            CameraStage::RenderDepth => "cluster.camera.depth",
-            CameraStage::CountFrags => "cluster.camera.count_frags",
+            CameraStage::Camera => "camera",
+            CameraStage::CountFrags => "count frags",
         }
     }
 }
