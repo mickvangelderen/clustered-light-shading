@@ -55,13 +55,13 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
 }
 
 float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
-  vec3 pos_from_frag_to_light = point_light.pos_in_lgt.xyz - frag_pos;
+  vec3 pos_from_frag_to_light = point_light.pos_in_lgt - frag_pos;
   vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
-  float I = point_light.att[0];
-  float C = point_light.att[1];
-  float R0 = point_light.att[2];
-  float R1 = point_light.att[3]; // R1^2 = I/C
+  float I = point_light.i;
+  float C = point_light.i0;
+  float R0 = point_light.r0;
+  float R1 = point_light.r1; // sqrt(I/C)
 
   // Attenuation.
   float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
@@ -104,7 +104,7 @@ vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, floa
 
   // calculate per-light radiance
   vec3 H = normalize(V + L);
-  vec3 radiance = point_light.diffuse.xyz * point_light_attenuate(point_light, P);
+  vec3 radiance = point_light.tint * point_light_attenuate(point_light, P);
 
   // Cook-Torrance BRDF
   float NDF = DistributionGGX(N, H, roughness);
