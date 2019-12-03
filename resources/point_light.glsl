@@ -1,7 +1,12 @@
 struct PointLight {
-    vec4 ambient;
-    vec4 diffuse;
-    vec4 specular;
-    vec4 pos_in_lgt;
-    vec4 att;
+  vec3 tint;
+  float _pad0;
+
+  vec3 pos_in_lgt;
+  float _pad1;
+
+  float i;
+  float i0;
+  float r0;
+  float r1;
 };

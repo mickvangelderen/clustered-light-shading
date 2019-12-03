@@ -447,10 +447,6 @@ impl Context<'_> {
         // We have our active clusters.
 
         {
-            let profiler_index = self
-                .profiling_context
-                .start(gl, cluster_resources.profilers.upload_lights);
-
             unsafe {
                 let data: Vec<[f32; 4]> = self
                     .point_lights
@@ -461,11 +457,15 @@ impl Context<'_> {
                             .wld_to_clu_cam
                             .transform_point(light.pos_in_wld.cast().unwrap());
                         let [x, y, z]: [f32; 3] = pos_in_clu_cam.cast::<f32>().unwrap().into();
-                        [x, y, z, light.attenuation.clip_far]
+                        [x, y, z, light.attenuation.r1]
                     })
                     .collect();
                 let bytes = data.vec_as_bytes();
                 let padded_byte_count = bytes.len().ceiled_div(64) * 64;
+
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.upload_lights);
 
                 let buffer = &mut cluster_resources.light_xyzr_buffer;
                 buffer.invalidate(gl);
@@ -476,9 +476,9 @@ impl Context<'_> {
                     cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
                     buffer.name(),
                 );
+                self.profiling_context.stop(gl, profiler_index);
             }
 
-            self.profiling_context.stop(gl, profiler_index);
         }
 
         {

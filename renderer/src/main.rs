@@ -247,6 +247,19 @@ pub struct Paths {
     pub configuration_path: PathBuf,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct MainSampleIndices {
+    frame: profiling::SampleIndex,
+}
+
+impl MainSampleIndices {
+    pub fn new(profiling_context: &mut ProfilingContext) -> Self {
+        Self {
+            frame: profiling_context.add_sample("frame"),
+        }
+    }
+}
+
 pub struct MainContext {
     pub paths: Paths,
     pub configuration: Configuration,
@@ -285,7 +298,8 @@ pub struct MainContext {
     pub frame_downloader: FrameDownloader,
 
     // Per-frame resources
-    pub frame_sample_index: SampleIndex,
+    pub sample_indices: MainSampleIndices,
+
     pub main_parameters_vec: Vec<MainParameters>,
     pub camera_buffer_pool: BufferPool,
     pub light_resources_vec: Vec<light::LightResources>,
@@ -495,7 +509,7 @@ impl MainContext {
             cls_renderer,
             resources,
             frame_downloader,
-            frame_sample_index: profiling_context.add_sample("frame"),
+            sample_indices: MainSampleIndices::new(&mut profiling_context),
             camera_buffer_pool: BufferPool::new(),
             light_resources_vec: Vec::new(),
             light_params_vec: Vec::new(),
@@ -543,7 +557,7 @@ pub struct Context<'s> {
     pub frame_downloader: &'s mut FrameDownloader,
 
     // Per-frame resources
-    pub frame_sample_index: SampleIndex,
+    pub sample_indices: MainSampleIndices,
     pub main_parameters_vec: &'s mut Vec<MainParameters>,
     pub camera_buffer_pool: &'s mut BufferPool,
     pub light_resources_vec: &'s mut Vec<light::LightResources>,
@@ -610,7 +624,7 @@ impl<'s> Context<'s> {
             ref mut cls_renderer,
             ref mut resources,
             ref mut frame_downloader,
-            frame_sample_index,
+            sample_indices,
             ref mut main_parameters_vec,
             ref mut camera_buffer_pool,
             ref mut light_resources_vec,
@@ -672,7 +686,7 @@ impl<'s> Context<'s> {
             frame_downloader,
 
             // Per-frame resources
-            frame_sample_index,
+            sample_indices,
             main_parameters_vec,
             camera_buffer_pool,
             light_resources_vec,
@@ -1117,17 +1131,12 @@ impl<'s> Context<'s> {
 
             for rain_drop in self.rain_drops.iter() {
                 self.point_lights.push(light::PointLight {
-                    ambient: light::RGB::new(1.0000, 1.0000, 1.0000),
-                    diffuse: {
-                        let Vector3 { x, y, z } = rain_drop.tint;
-                        light::RGB::new(x, y, z)
-                    },
-                    specular: light::RGB::new(1.0000, 1.0000, 1.0000),
+                    tint: rain_drop.tint.into(),
                     pos_in_wld: Point3::from_vec(rain_drop.position),
                     attenuation: light::AttenParams {
-                        intensity: self.configuration.rain.intensity as f32,
-                        clip_near: self.configuration.rain.clip_near as f32,
-                        cutoff: self.configuration.rain.cut_off as f32,
+                        i: self.configuration.rain.intensity as f32,
+                        i0: self.configuration.rain.clip_near as f32,
+                        r0: self.configuration.rain.cut_off as f32,
                     }
                     .into(),
                 });
@@ -1140,7 +1149,7 @@ impl<'s> Context<'s> {
 
         self.profiling_context.begin_frame(self.gl, self.frame_index);
 
-        let profiler_index = self.profiling_context.start(self.gl, self.frame_sample_index);
+        let profiler_index = self.profiling_context.start(self.gl, self.sample_indices.frame);
 
         let mut light_index = None;
         let mut cluster_resources_index = None;
@@ -1438,27 +1447,37 @@ impl<'s> Context<'s> {
 
             // Ensure light resources are available.
             while self.light_resources_vec.len() < light_index + 1 {
-                self.light_resources_vec.push(light::LightResources::new(gl));
+                self.light_resources_vec
+                    .push(light::LightResources::new(gl, &mut self.profiling_context));
             }
             let light_resources = &mut self.light_resources_vec[light_index];
 
             // Ensure light resources are uploaded.
             if light_resources.dirty {
-                light_resources.lights.clear();
-                light_resources
-                    .lights
-                    .extend(self.point_lights.iter().map(|&point_light| {
-                        light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)
-                    }));
+                let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.total);
+                let header = {
+                    let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.compute);
+                    light_resources.lights.clear();
+                    light_resources
+                        .lights
+                        .extend(self.point_lights.iter().map(|&point_light| {
+                            light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)
+                        }));
 
-                let header = light::LightBufferHeader {
-                    wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
-                    lgt_to_wld: light_params.lgt_to_wld.cast().unwrap(),
+                    let header = light::LightBufferHeader {
+                        wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
+                        lgt_to_wld: light_params.lgt_to_wld.cast().unwrap(),
 
-                    light_count: Vector4::new(light_resources.lights.len() as u32, 0, 0, 0),
+                        light_count: Vector4::new(light_resources.lights.len() as u32, 0, 0, 0),
+                    };
+
+                    self.profiling_context.stop(gl, profiler_index);
+
+                    header
                 };
 
                 unsafe {
+                    let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.upload);
                     let header_bytes = header.value_as_bytes();
                     let body_bytes = light_resources.lights.vec_as_bytes();
 
@@ -1469,7 +1488,10 @@ impl<'s> Context<'s> {
                     );
                     gl.named_buffer_sub_data(light_resources.buffer_name, 0, header_bytes);
                     gl.named_buffer_sub_data(light_resources.buffer_name, header_bytes.len(), body_bytes);
+                    self.profiling_context.stop(gl, profiler_index);
                 }
+
+                self.profiling_context.stop(gl, profiler_index);
             }
 
             // Ensure light resources are bound.
