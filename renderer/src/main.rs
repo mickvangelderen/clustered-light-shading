@@ -987,8 +987,7 @@ impl<'s> Context<'s> {
                         self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
                     if self.rain_drops.len() > max_count {
-                        self.rain_drops
-                            .truncate(self.rain_drops.len().max(max_count - drops_per_update as usize));
+                        self.rain_drops.truncate(max_count);
                     }
                 }
 
