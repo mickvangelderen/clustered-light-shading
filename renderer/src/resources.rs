@@ -565,8 +565,6 @@ pub fn compute_instance_matrices(
     instances: &[scene_file::Instance],
     transforms: &[scene_file::Transform],
 ) -> Vec<InstanceMatrices> {
-    // let start = std::time::Instant::now();
-
     let instance_matrices: Vec<InstanceMatrices> = instances
         .iter()
         .map(|instance| {
@@ -580,8 +578,6 @@ pub fn compute_instance_matrices(
             }
         })
         .collect();
-
-    // info!("compute instance matrices elapsed {:?}", start.elapsed());
 
     instance_matrices
 }
@@ -597,8 +593,6 @@ pub fn compute_draw_commands(
     materials: &[Material],
     mesh_descriptions: &[scene_file::MeshDescription],
 ) -> DrawCommandResources {
-    // let start = std::time::Instant::now();
-
     // Prefix sum draw counts per material.
     let mut counts: Vec<usize> =
         instances
@@ -649,8 +643,6 @@ pub fn compute_draw_commands(
         counts[material_index] += 1;
     }
 
-    // info!("compute draw commands elapsed {:?}", start.elapsed());
-
     DrawCommandResources {
         counts,
         offsets,
@@ -668,10 +660,14 @@ pub struct DrawResources {
     pub draw_command_data: Vec<DrawCommand>,
     pub draw_counts: Vec<usize>,
     pub draw_offsets: Vec<usize>,
+
+    // Profiling
+    pub compute_instance_matrices_profiler: profiling::SampleIndex,
+    pub compute_draw_commands_profiler: profiling::SampleIndex,
 }
 
 impl DrawResources {
-    pub fn new(gl: &gl::Gl) -> Self {
+    pub fn new(gl: &gl::Gl, profiling_context: &mut ProfilingContext) -> Self {
         Self {
             instance_matrices_buffer: unsafe { gl.create_buffer() },
             draw_command_buffer: unsafe { gl.create_buffer() },
@@ -680,11 +676,16 @@ impl DrawResources {
             draw_command_data: Vec::new(),
             draw_offsets: Vec::new(),
             draw_counts: Vec::new(),
+
+            compute_instance_matrices_profiler: profiling_context.add_sample("compute instance matrices"),
+            compute_draw_commands_profiler: profiling_context.add_sample("compute draw commands"),
         }
     }
 
     pub fn recompute(
         &mut self,
+        gl: &gl::Gl,
+        profiling_context: &mut ProfilingContext,
         wld_to_ren_clp: Matrix4<f64>,
         wld_to_clu_cam: Matrix4<f64>,
         instances: &[scene_file::Instance],
@@ -692,29 +693,42 @@ impl DrawResources {
         transforms: &[scene_file::Transform],
         mesh_descriptions: &[scene_file::MeshDescription],
     ) {
-        self.instance_matrices_data = compute_instance_matrices(wld_to_ren_clp, wld_to_clu_cam, instances, transforms);
-        let DrawCommandResources {
-            counts,
-            offsets,
-            buffer,
-        } = compute_draw_commands(instances, materials, mesh_descriptions);
-        self.draw_command_data = buffer;
-        self.draw_counts = counts;
-        self.draw_offsets = offsets;
-    }
+        {
+            let profiler_index = profiling_context.start(gl, self.compute_instance_matrices_profiler);
 
-    pub fn reupload(&mut self, gl: &gl::Gl) {
-        unsafe {
-            gl.named_buffer_data(
-                self.instance_matrices_buffer,
-                self.instance_matrices_data.vec_as_bytes(),
-                gl::DYNAMIC_DRAW,
-            );
-            gl.named_buffer_data(
-                self.draw_command_buffer,
-                self.draw_command_data.vec_as_bytes(),
-                gl::DYNAMIC_DRAW,
-            );
+            self.instance_matrices_data =
+                compute_instance_matrices(wld_to_ren_clp, wld_to_clu_cam, instances, transforms);
+            unsafe {
+                gl.named_buffer_data(
+                    self.instance_matrices_buffer,
+                    self.instance_matrices_data.vec_as_bytes(),
+                    gl::DYNAMIC_DRAW,
+                );
+            }
+
+            profiling_context.stop(gl, profiler_index);
+        }
+
+        {
+            let profiler_index = profiling_context.start(gl, self.compute_draw_commands_profiler);
+
+            let DrawCommandResources {
+                counts,
+                offsets,
+                buffer,
+            } = compute_draw_commands(instances, materials, mesh_descriptions);
+            self.draw_command_data = buffer;
+            self.draw_counts = counts;
+            self.draw_offsets = offsets;
+            unsafe {
+                gl.named_buffer_data(
+                    self.draw_command_buffer,
+                    self.draw_command_data.vec_as_bytes(),
+                    gl::DYNAMIC_DRAW,
+                );
+            }
+
+            profiling_context.stop(gl, profiler_index);
         }
     }
 }
