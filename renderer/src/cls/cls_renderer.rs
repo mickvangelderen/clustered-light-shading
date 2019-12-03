@@ -259,11 +259,12 @@ impl Context<'_> {
 
             self.clear_and_render_depth(main_resources_index, draw_resources_index);
 
+            self.profiling_context.stop(gl, profiler_index);
+
             // Reborrow.
             let gl = &self.gl;
             let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
             let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
-            self.profiling_context.stop(gl, profiler_index);
 
             let camera_parameters = &camera_resources.parameters;
             let main_resources = &mut self.main_resources_pool[main_resources_index];
