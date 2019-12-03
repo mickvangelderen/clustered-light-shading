@@ -677,8 +677,8 @@ impl DrawResources {
             draw_offsets: Vec::new(),
             draw_counts: Vec::new(),
 
-            compute_instance_matrices_profiler: profiling_context.add_sample("compute instance matrices"),
-            compute_draw_commands_profiler: profiling_context.add_sample("compute draw commands"),
+            compute_instance_matrices_profiler: profiling_context.add_sample("inst matrs"),
+            compute_draw_commands_profiler: profiling_context.add_sample("draw cmds"),
         }
     }
 

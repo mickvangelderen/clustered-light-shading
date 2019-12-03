@@ -7,6 +7,7 @@ pub struct Renderer {
 
 pub struct Parameters {
     pub mode: u32,
+    pub main_resources_index: MainResourcesIndex,
     pub main_parameters_index: usize,
 }
 
@@ -40,6 +41,10 @@ impl Context<'_> {
             ref mut basic_renderer,
             ..
         } = *self;
+
+        let main_resources = &self.main_resources_pool[params.main_resources_index];
+
+        let profiler_index = self.profiling_context.start(gl, main_resources.basic_profiler);
 
         let main_parameters = &self.main_parameters_vec[params.main_parameters_index];
         let cam_pos_in_lgt = main_parameters.cam_pos_in_lgt;
@@ -98,17 +103,21 @@ impl Context<'_> {
                     draw_resources.instance_matrices_buffer,
                 );
 
-                gl.bind_buffer(
-                    gl::DRAW_INDIRECT_BUFFER,
-                    draw_resources.draw_command_buffer,
-                );
+                gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, draw_resources.draw_command_buffer);
 
                 gl.bind_vertex_array(self.resources.scene_vao);
 
                 let draw_counts = &draw_resources.draw_counts;
                 let draw_offsets = &draw_resources.draw_offsets;
 
-                for &(program, has_alpha) in [(opaque_program, false), (masked_program, true)].iter() {
+                for &(program, has_alpha, profiler) in [
+                    (opaque_program, false, main_resources.basic_opaque_profiler),
+                    (masked_program, true, main_resources.basic_masked_profiler),
+                ]
+                .iter()
+                {
+                    let profiler_index = self.profiling_context.start(gl, profiler);
+
                     gl.use_program(program);
 
                     gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
@@ -137,12 +146,17 @@ impl Context<'_> {
                             std::mem::size_of::<DrawCommand>() as i32,
                         );
                     }
+
+                    self.profiling_context.stop(gl, profiler_index);
                 }
+
                 gl.unuse_program();
 
                 gl.unbind_vertex_array();
             }
         }
+
+        self.profiling_context.stop(gl, profiler_index);
     }
 }
 

@@ -1165,10 +1165,7 @@ impl<'s> Context<'s> {
             pub fn new(camera: camera::Camera, hmd_to_bdy: Matrix4<f64>) -> Self {
                 let bdy_to_wld = camera.transform.pos_to_parent().cast::<f64>().unwrap();
                 let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                Self {
-                    camera,
-                    hmd_to_wld,
-                }
+                Self { camera, hmd_to_wld }
             }
         }
 
@@ -1643,48 +1640,6 @@ impl<'s> Context<'s> {
         } = *self;
 
         if self.configuration.profiling.display {
-            if let Some(stats) = self.profiling_context.stats(self.frame_sample_index) {
-                overlay_textbox.write(
-                    &monospace,
-                    &format!(
-                        "[{:>3}] {:<29} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                        self.frame_sample_index.to_usize(),
-                        "frame",
-                        stats.cpu_elapsed_min as f64 / 1000.0,
-                        stats.cpu_elapsed_avg as f64 / 1000.0,
-                        stats.cpu_elapsed_max as f64 / 1000.0,
-                        stats.gpu_elapsed_min as f64 / 1000.0,
-                        stats.gpu_elapsed_avg as f64 / 1000.0,
-                        stats.gpu_elapsed_max as f64 / 1000.0,
-                    ),
-                );
-            }
-
-            // NOTE: Not that useful always.
-            // for draw_resources in self.resources.draw_resources_pool.iter() {
-            //     for &(sample_index, sample_name) in &[
-            //         (draw_resources.compute_instance_matrices_profiler, "instance matrices"),
-            //         (draw_resources.compute_draw_commands_profiler, "draw commands"),
-            //     ] {
-            //         if let Some(stats) = self.profiling_context.stats(sample_index) {
-            //             overlay_textbox.write(
-            //                     &monospace,
-            //                     &format!(
-            //                         "[{:>3}] {:<29} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-            //                         sample_index.to_usize(),
-            //                         sample_name,
-            //                         stats.cpu_elapsed_min as f64 / 1000.0,
-            //                         stats.cpu_elapsed_avg as f64 / 1000.0,
-            //                         stats.cpu_elapsed_max as f64 / 1000.0,
-            //                         stats.gpu_elapsed_min as f64 / 1000.0,
-            //                         stats.gpu_elapsed_avg as f64 / 1000.0,
-            //                         stats.gpu_elapsed_max as f64 / 1000.0,
-            //                     ),
-            //                 );
-            //         }
-            //     }
-            // }
-
             for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
                 let res = &mut self.cluster_resources_pool[cluster_resources_index];
                 let dimensions_u32 = res.computed.dimensions;
@@ -1699,19 +1654,30 @@ impl<'s> Context<'s> {
                         dimensions_u32.z,
                     ),
                 );
+            }
 
-                for camera_resources_index in res.camera_resources_pool.used_index_iter() {
-                    let camera_resources = &mut res.camera_resources_pool[camera_resources_index];
-                    for &stage in &CameraStage::VALUES {
-                        let sample_index = camera_resources.profilers[stage];
-                        if let Some(stats) = self.profiling_context.stats(sample_index) {
-                            overlay_textbox.write(
+            let mut stack = Vec::new();
+            if let Some(events) = self.profiling_context.events(self.frame_index) {
+                for event in events {
+                    match *event {
+                        profiling::FrameEvent::BeginTimeSpan(sample_index) => {
+                            let sample_name = self.profiling_context.sample_names[sample_index.to_usize()];
+
+                            let hide = self.configuration.profiling.hide.iter().any(|s| s == sample_name);
+
+                            stack.push(sample_name);
+
+                            if hide {
+                                continue;
+                            }
+
+                            if let Some(stats) = self.profiling_context.stats(sample_index) {
+                                overlay_textbox.write(
                                     &monospace,
                                     &format!(
-                                        "[{}][{}] {:<28} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                        cluster_resources_index.to_usize(),
-                                        camera_resources_index.to_usize(),
-                                        stage.title(),
+                                        "[{:>3}] {:<40} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                        sample_index.to_usize(),
+                                        stack.join("."),
                                         stats.cpu_elapsed_min as f64 / 1000.0,
                                         stats.cpu_elapsed_avg as f64 / 1000.0,
                                         stats.cpu_elapsed_max as f64 / 1000.0,
@@ -1720,54 +1686,14 @@ impl<'s> Context<'s> {
                                         stats.gpu_elapsed_max as f64 / 1000.0,
                                     ),
                                 );
+                            }
                         }
-                    }
-                }
-
-                for &stage in &ClusterStage::VALUES {
-                    let sample_index = res.profilers[stage];
-
-                    if let Some(stats) = self.profiling_context.stats(sample_index) {
-                        overlay_textbox.write(
-                                &monospace,
-                                &format!(
-                                    "[{}]    {:<28} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                    cluster_resources_index.to_usize(),
-                                    stage.title(),
-                                    stats.cpu_elapsed_min as f64 / 1000.0,
-                                    stats.cpu_elapsed_avg as f64 / 1000.0,
-                                    stats.cpu_elapsed_max as f64 / 1000.0,
-                                    stats.gpu_elapsed_min as f64 / 1000.0,
-                                    stats.gpu_elapsed_avg as f64 / 1000.0,
-                                    stats.gpu_elapsed_max as f64 / 1000.0,
-                                ),
-                            );
-                    }
-                }
-            }
-
-            for (main_resources_index, main_resources) in self.main_resources_pool.used_slice().iter().enumerate() {
-                for &(name, sample_index) in [
-                    ("depth", main_resources.depth_pass_profiler),
-                    ("basic", main_resources.basic_pass_profiler),
-                ]
-                .iter()
-                {
-                    if let Some(stats) = self.profiling_context.stats(sample_index) {
-                        overlay_textbox.write(
-                                &monospace,
-                                &format!(
-                                    "[{}]    {:<28} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                    main_resources_index,
-                                    name,
-                                    stats.cpu_elapsed_min as f64 / 1000.0,
-                                    stats.cpu_elapsed_avg as f64 / 1000.0,
-                                    stats.cpu_elapsed_max as f64 / 1000.0,
-                                    stats.gpu_elapsed_min as f64 / 1000.0,
-                                    stats.gpu_elapsed_avg as f64 / 1000.0,
-                                    stats.gpu_elapsed_max as f64 / 1000.0,
-                                ),
-                            );
+                        profiling::FrameEvent::EndTimeSpan => {
+                            stack.pop();
+                        }
+                        _ => {
+                            // Whatever.
+                        }
                     }
                 }
             }
@@ -1845,7 +1771,10 @@ impl<'s> Context<'s> {
             gl.cull_face(gl::BACK);
         }
 
-        self.render_depth(draw_resources_index);
+        self.render_depth(depth_renderer::Parameters {
+            main_resources_index,
+            draw_resources_index,
+        });
     }
 
     fn clear_and_render_main(&mut self, main_resources_index: MainResourcesIndex, main_parameters_index: usize) {
@@ -1870,47 +1799,33 @@ impl<'s> Context<'s> {
         }
 
         if self.depth_prepass {
-            let profiler_index = self
-                .profiling_context
-                .start(gl, self.main_resources_pool[main_resources_index].depth_pass_profiler);
-
-            self.render_depth(self.main_parameters_vec[main_parameters_index].draw_resources_index);
-
-            let Self { ref gl, .. } = *self;
+            self.render_depth(depth_renderer::Parameters {
+                main_resources_index,
+                draw_resources_index: self.main_parameters_vec[main_parameters_index].draw_resources_index,
+            });
 
             unsafe {
+                let gl = &self.gl;
                 gl.depth_func(gl::GEQUAL);
                 gl.depth_mask(gl::FALSE);
             }
-
-            self.profiling_context.stop(gl, profiler_index);
         }
 
-        {
-            // Reborrow
-            let gl = &self.gl;
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
-            let profiler_index = self.profiling_context.start(gl, main_resources.basic_pass_profiler);
+        self.render_main(&basic_renderer::Parameters {
+            mode: match self.target_camera_key {
+                CameraKey::Main => 0,
+                CameraKey::Debug => self.display_mode,
+            },
+            main_resources_index,
+            main_parameters_index,
+        });
 
-            self.render_main(&basic_renderer::Parameters {
-                mode: match self.target_camera_key {
-                    CameraKey::Main => 0,
-                    CameraKey::Debug => self.display_mode,
-                },
-                main_parameters_index,
-            });
-
-            // Reborrow.
-            let gl = &self.gl;
-
-            if self.depth_prepass {
-                unsafe {
-                    gl.depth_func(gl::GREATER);
-                    gl.depth_mask(gl::TRUE);
-                }
+        if self.depth_prepass {
+            unsafe {
+                let gl = &self.gl;
+                gl.depth_func(gl::GREATER);
+                gl.depth_mask(gl::TRUE);
             }
-
-            self.profiling_context.stop(gl, profiler_index);
         }
     }
 }
