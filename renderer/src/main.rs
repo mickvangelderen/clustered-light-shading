@@ -1644,6 +1644,23 @@ impl<'s> Context<'s> {
         } = *self;
 
         if self.configuration.profiling.display {
+            if let Some(stats) = self.profiling_context.stats(self.frame_sample_index) {
+                overlay_textbox.write(
+                    &monospace,
+                    &format!(
+                        "[{:>3}] {:<29} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                        self.frame_sample_index.to_usize(),
+                        "frame",
+                        stats.cpu_elapsed_min as f64 / 1000.0,
+                        stats.cpu_elapsed_avg as f64 / 1000.0,
+                        stats.cpu_elapsed_max as f64 / 1000.0,
+                        stats.gpu_elapsed_min as f64 / 1000.0,
+                        stats.gpu_elapsed_avg as f64 / 1000.0,
+                        stats.gpu_elapsed_max as f64 / 1000.0,
+                    ),
+                );
+            }
+
             for draw_resources in self.resources.draw_resources_pool.iter() {
                 for &(sample_index, sample_name) in &[
                     (draw_resources.compute_instance_matrices_profiler, "instance matrices"),
