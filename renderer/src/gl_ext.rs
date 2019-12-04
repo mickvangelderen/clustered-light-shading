@@ -518,3 +518,130 @@ impl<U> AsRef<gl::BufferName> for Buffer<U> {
 pub type StaticBuffer = Buffer<buffer_usage::Static>;
 pub type DynamicBuffer = Buffer<buffer_usage::Dynamic>;
 pub type StreamBuffer = Buffer<buffer_usage::Stream>;
+
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Ring3<T>([T; 3]);
+
+impl<T> Ring3<T> {
+    pub fn new<F>(mut f: F) -> Self
+    where
+        F: FnMut() -> T,
+    {
+        Self([f(), f(), f()])
+    }
+}
+
+impl<T> std::ops::Index<usize> for Ring3<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index % self.0.len()]
+    }
+}
+
+impl<T> std::ops::IndexMut<usize> for Ring3<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index % self.0.len()]
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct StorageBufferWrite;
+
+impl Into<gl::BufferStorageFlag> for StorageBufferWrite {
+    fn into(self) -> gl::BufferStorageFlag {
+        gl::BufferStorageFlag::WRITE | gl::BufferStorageFlag::DYNAMIC_STORAGE
+    }
+}
+
+pub struct StorageBuffer<F> {
+    name: gl::BufferName,
+    capacity: usize,
+    storage_flags: F,
+}
+
+fn make_mult_4_usize(n: usize) -> usize {
+    ((n + 3) / 4) * 4
+}
+
+impl<F> StorageBuffer<F>
+where
+    F: Into<gl::BufferStorageFlag> + Copy,
+{
+    pub fn new(gl: &gl::Gl, storage_flags: F) -> Self {
+        Self {
+            name: unsafe { gl.create_buffer() },
+            capacity: 0,
+            storage_flags,
+        }
+    }
+
+    /// Destroys old data.
+    pub fn reconcile(&mut self, gl: &gl::Gl, capacity: usize) {
+        unsafe {
+            let capacity = if capacity > self.capacity {
+                // Grow
+                make_mult_4_usize(std::cmp::max(capacity, self.capacity + self.capacity / 2))
+            } else if (capacity + capacity / 2) < self.capacity {
+                // Shrink
+                capacity
+            } else {
+                gl.invalidate_buffer_data(self.name);
+                return;
+            };
+
+            if self.capacity > 0 {
+                gl.delete_buffer(self.name);
+                self.name = gl.create_buffer();
+            }
+
+            if capacity > 0 {
+                gl.named_buffer_storage_reserve(self.name, capacity, self.storage_flags.into());
+            }
+
+            self.capacity = capacity;
+        }
+    }
+
+    pub unsafe fn map(
+        &mut self,
+        gl: &gl::Gl,
+        flags: gl::MapAccessFlag,
+    ) -> *mut std::ffi::c_void {
+        gl.map_named_buffer(self.name, flags)
+    }
+
+    pub unsafe fn unmap(
+        &mut self,
+        gl: &gl::Gl,
+    ) {
+        gl.unmap_named_buffer(self.name)
+    }
+
+    pub unsafe fn map_range(
+        &mut self,
+        gl: &gl::Gl,
+        offset: usize,
+        length: usize,
+        flags: gl::MapRangeAccessFlag,
+    ) -> *mut std::ffi::c_void {
+        debug_assert!(offset + length <= self.capacity);
+        gl.map_named_buffer_range(self.name, offset, length, flags)
+    }
+
+    pub unsafe fn flush_range(&mut self, gl: &gl::Gl, offset: usize, length: usize) {
+        debug_assert!(offset + length <= self.capacity);
+        gl.flush_mapped_named_buffer_range(self.name, offset, length);
+    }
+
+    pub fn write_at(&mut self, gl: &gl::Gl, offset: usize, bytes: &[u8]) {
+        unsafe {
+            debug_assert!(offset + bytes.len() <= self.capacity);
+            gl.named_buffer_sub_data(self.name, offset, bytes);
+        }
+    }
+
+    pub fn name(&self) -> gl::BufferName {
+        self.name
+    }
+}

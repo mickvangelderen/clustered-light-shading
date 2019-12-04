@@ -35,7 +35,7 @@ impl Context<'_> {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     LIGHT_BUFFER_BINDING,
-                    light_resources.buffer_name,
+                    light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
 
                 let camera = &self.main_parameters_vec[params.main_parameters_index].camera;

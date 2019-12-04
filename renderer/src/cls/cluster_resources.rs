@@ -7,7 +7,9 @@ impl_enum_and_enum_map! {
     enum ClusterStage => struct ClusterStages {
         Cluster => cluster,
         CompactClusters => compact_clusters,
-        UploadLights => upload_lights,
+        Lights => lights,
+        LightsCompute => lights_compute,
+        LightsUpload => lights_upload,
         CountLights => count_lights,
         LightOffsets => light_offsets,
         AssignLights => assign_lights,
@@ -15,10 +17,12 @@ impl_enum_and_enum_map! {
 }
 
 impl ClusterStage {
-    pub const VALUES: [ClusterStage; 6] = [
+    pub const VALUES: [ClusterStage; 8] = [
         ClusterStage::Cluster,
         ClusterStage::CompactClusters,
-        ClusterStage::UploadLights,
+        ClusterStage::Lights,
+        ClusterStage::LightsCompute,
+        ClusterStage::LightsUpload,
         ClusterStage::CountLights,
         ClusterStage::LightOffsets,
         ClusterStage::AssignLights,
@@ -28,7 +32,9 @@ impl ClusterStage {
         match self {
             ClusterStage::Cluster => "cluster",
             ClusterStage::CompactClusters => "compact_clusters",
-            ClusterStage::UploadLights => "upload_lights",
+            ClusterStage::Lights => "lights",
+            ClusterStage::LightsCompute => "compute",
+            ClusterStage::LightsUpload => "upload",
             ClusterStage::CountLights => "count_lights",
             ClusterStage::LightOffsets => "compact_lights",
             ClusterStage::AssignLights => "assign_lights",

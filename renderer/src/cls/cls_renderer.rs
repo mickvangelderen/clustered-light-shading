@@ -447,25 +447,40 @@ impl Context<'_> {
         // We have our active clusters.
 
         {
-            unsafe {
-                let data: Vec<[f32; 4]> = self
-                    .point_lights
-                    .iter()
-                    .map(|&light| {
-                        let pos_in_clu_cam = cluster_resources
-                            .computed
-                            .wld_to_clu_cam
-                            .transform_point(light.pos_in_wld.cast().unwrap());
-                        let [x, y, z]: [f32; 3] = pos_in_clu_cam.cast::<f32>().unwrap().into();
-                        [x, y, z, light.attenuation.r1]
-                    })
-                    .collect();
-                let bytes = data.vec_as_bytes();
-                let padded_byte_count = bytes.len().ceiled_div(64) * 64;
+            let profiler_index = self
+                .profiling_context
+                .start(gl, cluster_resources.profilers.lights);
 
+            let data: Vec<[f32; 4]> = {
                 let profiler_index = self
                     .profiling_context
-                    .start(gl, cluster_resources.profilers.upload_lights);
+                    .start(gl, cluster_resources.profilers.lights_compute);
+
+                let data = self
+                .point_lights
+                .iter()
+                .map(|&light| {
+                    let pos_in_clu_cam = cluster_resources
+                        .computed
+                        .wld_to_clu_cam
+                        .transform_point(light.pos_in_wld.cast().unwrap());
+                    let [x, y, z]: [f32; 3] = pos_in_clu_cam.cast::<f32>().unwrap().into();
+                    [x, y, z, light.attenuation.r1]
+                })
+                .collect();
+
+                self.profiling_context.stop(gl, profiler_index);
+
+                data
+            };
+
+            unsafe {
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, cluster_resources.profilers.lights_upload);
+
+                let bytes = data.vec_as_bytes();
+                let padded_byte_count = bytes.len().ceiled_div(64) * 64;
 
                 let buffer = &mut cluster_resources.light_xyzr_buffer;
                 buffer.invalidate(gl);
@@ -476,9 +491,11 @@ impl Context<'_> {
                     cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
                     buffer.name(),
                 );
+
                 self.profiling_context.stop(gl, profiler_index);
             }
 
+            self.profiling_context.stop(gl, profiler_index);
         }
 
         {
