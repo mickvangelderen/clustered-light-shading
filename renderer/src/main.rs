@@ -1687,7 +1687,7 @@ impl<'s> Context<'s> {
                 );
             }
 
-            let mut stack = Vec::new();
+            let mut depth = 0;
             if let Some(events) = self.profiling_context.events(self.frame_index) {
                 for event in events {
                     match *event {
@@ -1696,31 +1696,40 @@ impl<'s> Context<'s> {
 
                             let hide = self.configuration.profiling.hide.iter().any(|s| s == sample_name);
 
-                            stack.push(sample_name);
+                            let title = format!("{}{}", "  ".repeat(depth), sample_name);
 
-                            if hide {
-                                continue;
+                            if !hide {
+                                if let Some(stats) = self.profiling_context.stats(sample_index) {
+                                    overlay_textbox.write(
+                                        &monospace,
+                                        // &format!(
+                                        //     "[{:>3}] {:<30} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
+                                        //     sample_index.to_usize(),
+                                        //     &title,
+                                        //     stats.cpu_elapsed_min as f64 / 1000.0,
+                                        //     stats.cpu_elapsed_avg as f64 / 1000.0,
+                                        //     stats.cpu_elapsed_max as f64 / 1000.0,
+                                        //     stats.gpu_elapsed_min as f64 / 1000.0,
+                                        //     stats.gpu_elapsed_avg as f64 / 1000.0,
+                                        //     stats.gpu_elapsed_max as f64 / 1000.0,
+                                        // ),
+                                        &format!(
+                                            "[{:>3}] {:<30} | CPU {:>7.1}μs - {:>7.1}μs | GPU {:>7.1}μs - {:>7.1}μs\n",
+                                            sample_index.to_usize(),
+                                            &title,
+                                            stats.cpu_elapsed_min as f64 / 1000.0,
+                                            stats.cpu_elapsed_max as f64 / 1000.0,
+                                            stats.gpu_elapsed_min as f64 / 1000.0,
+                                            stats.gpu_elapsed_max as f64 / 1000.0,
+                                        ),
+                                    );
+                                }
                             }
 
-                            if let Some(stats) = self.profiling_context.stats(sample_index) {
-                                overlay_textbox.write(
-                                    &monospace,
-                                    &format!(
-                                        "[{:>3}] {:<40} | CPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs | GPU {:>7.1}μs < {:>7.1}μs < {:>7.1}μs\n",
-                                        sample_index.to_usize(),
-                                        stack.join("."),
-                                        stats.cpu_elapsed_min as f64 / 1000.0,
-                                        stats.cpu_elapsed_avg as f64 / 1000.0,
-                                        stats.cpu_elapsed_max as f64 / 1000.0,
-                                        stats.gpu_elapsed_min as f64 / 1000.0,
-                                        stats.gpu_elapsed_avg as f64 / 1000.0,
-                                        stats.gpu_elapsed_max as f64 / 1000.0,
-                                    ),
-                                );
-                            }
+                            depth += 1;
                         }
                         profiling::FrameEvent::EndTimeSpan => {
-                            stack.pop();
+                            depth -= 1;
                         }
                         _ => {
                             // Whatever.
