@@ -96,7 +96,7 @@ impl LightSampleIndices {
 }
 
 pub struct LightResources {
-    pub buffer_name: gl::BufferName,
+    pub buffer_ring: Ring3<StorageBuffer<StorageBufferWrite>>,
     pub lights: Vec<LightBufferLight>,
     pub dirty: bool,
     pub sample_indices: LightSampleIndices,
@@ -105,7 +105,7 @@ pub struct LightResources {
 impl LightResources {
     pub fn new(gl: &gl::Gl, profiling_context: &mut profiling::ProfilingContext) -> Self {
         Self {
-            buffer_name: unsafe { gl.create_buffer() },
+            buffer_ring: Ring3::new(|| StorageBuffer::new(gl, StorageBufferWrite)),
             lights: Vec::new(),
             dirty: true,
             sample_indices: LightSampleIndices::new(profiling_context),

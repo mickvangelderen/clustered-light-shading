@@ -1020,6 +1020,9 @@ impl<'s> Context<'s> {
     }
 
     pub fn render(&mut self) {
+        self.profiling_context.begin_frame(self.gl, self.frame_index);
+        let profiler_index = self.profiling_context.start(self.gl, self.sample_indices.frame);
+
         #[derive(Copy, Clone)]
         pub struct EyeData {
             tangents: vr::RawProjection,
@@ -1146,10 +1149,6 @@ impl<'s> Context<'s> {
         for res in self.light_resources_vec.iter_mut() {
             res.dirty = true;
         }
-
-        self.profiling_context.begin_frame(self.gl, self.frame_index);
-
-        let profiler_index = self.profiling_context.start(self.gl, self.sample_indices.frame);
 
         let mut light_index = None;
         let mut cluster_resources_index = None;
@@ -1478,16 +1477,31 @@ impl<'s> Context<'s> {
 
                 unsafe {
                     let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.upload);
+
                     let header_bytes = header.value_as_bytes();
                     let body_bytes = light_resources.lights.vec_as_bytes();
+                    let total_byte_count = header_bytes.len() + body_bytes.len();
 
-                    gl.named_buffer_reserve(
-                        light_resources.buffer_name,
-                        header_bytes.len() + body_bytes.len(),
-                        gl::STREAM_DRAW,
+                    let buffer = &mut light_resources.buffer_ring[self.frame_index.to_usize()];
+
+                    buffer.reconcile(gl, total_byte_count);
+                    let dst = buffer.map_range(
+                        gl,
+                        0,
+                        total_byte_count,
+                        gl::MapRangeAccessFlag::WRITE | gl::MapRangeAccessFlag::INVALIDATE_BUFFER,
+                    ) as *mut u8;
+                    std::ptr::copy_nonoverlapping(header_bytes.as_ptr(), dst, header_bytes.len());
+                    std::ptr::copy_nonoverlapping(
+                        body_bytes.as_ptr(),
+                        dst.offset(header_bytes.len() as isize),
+                        body_bytes.len(),
                     );
-                    gl.named_buffer_sub_data(light_resources.buffer_name, 0, header_bytes);
-                    gl.named_buffer_sub_data(light_resources.buffer_name, header_bytes.len(), body_bytes);
+                    buffer.unmap(gl);
+
+                    // NOTE(mickvangelderen): Not necessary but wanted this for the profiling.
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+
                     self.profiling_context.stop(gl, profiler_index);
                 }
 
@@ -1500,7 +1514,7 @@ impl<'s> Context<'s> {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     basic_renderer::LIGHT_BUFFER_BINDING,
-                    light_resources.buffer_name,
+                    light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
             }
 
