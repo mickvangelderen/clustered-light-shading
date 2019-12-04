@@ -17,10 +17,10 @@ sample_count = 4
 # sample_count = 16
 
 [rain]
-max_count = 10000
+max_count = 1000000
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max= { x = +80.0, y = +40.0, z = +60.0 }
-intensity = 10.0
+intensity = 1.0
 clip_near = 0.5
 cut_off = 0.8
 
