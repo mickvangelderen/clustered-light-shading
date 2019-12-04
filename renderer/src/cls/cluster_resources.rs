@@ -90,7 +90,7 @@ pub struct ClusterResources {
     pub active_cluster_light_counts_buffer: DynamicBuffer,
     pub active_cluster_light_offsets_buffer: DynamicBuffer,
 
-    pub light_xyzr_buffer: DynamicBuffer,
+    pub light_xyzr_buffer_ring: Ring3<StorageBuffer<StorageBufferWrite>>,
     pub light_indices_buffer: DynamicBuffer,
 
     pub offset_buffer: DynamicBuffer,
@@ -150,11 +150,7 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_clusters as usize);
                 buffer
             },
-            light_xyzr_buffer: unsafe {
-                let buffer = Buffer::new(gl);
-                gl.buffer_label(&buffer, "light_xyrz");
-                buffer
-            },
+            light_xyzr_buffer_ring: Ring3::new(|| StorageBuffer::new(gl, StorageBufferWrite)),
             light_indices_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "light_indices");

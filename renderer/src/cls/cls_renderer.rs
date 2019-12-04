@@ -480,12 +480,26 @@ impl Context<'_> {
                     .start(gl, cluster_resources.profilers.lights_upload);
 
                 let bytes = data.vec_as_bytes();
-                let padded_byte_count = bytes.len().ceiled_div(64) * 64;
+                let total_byte_count = bytes.len();
 
-                let buffer = &mut cluster_resources.light_xyzr_buffer;
-                buffer.invalidate(gl);
-                buffer.ensure_capacity(gl, padded_byte_count);
-                buffer.write_at(gl, bytes, 0);
+                let buffer = &mut cluster_resources.light_xyzr_buffer_ring[self.frame_index.to_usize()];
+
+                buffer.reconcile(gl, total_byte_count);
+                let dst = buffer.map_range(
+                    gl,
+                    0,
+                    total_byte_count,
+                    gl::MapRangeAccessFlag::WRITE | gl::MapRangeAccessFlag::INVALIDATE_BUFFER,
+                ) as *mut u8;
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr(),
+                    dst,
+                    bytes.len(),
+                );
+                buffer.unmap(gl);
+
+                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
