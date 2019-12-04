@@ -1500,6 +1500,8 @@ impl<'s> Context<'s> {
                     self.profiling_context.stop(gl, profiler_index);
                 }
 
+                light_resources.dirty = false;
+
                 self.profiling_context.stop(gl, profiler_index);
             }
 
