@@ -1485,19 +1485,14 @@ impl<'s> Context<'s> {
                     let buffer = &mut light_resources.buffer_ring[self.frame_index.to_usize()];
 
                     buffer.reconcile(gl, total_byte_count);
-                    let dst = buffer.map_range(
-                        gl,
-                        0,
-                        total_byte_count,
-                        gl::MapRangeAccessFlag::WRITE | gl::MapRangeAccessFlag::INVALIDATE_BUFFER,
-                    ) as *mut u8;
+                    let dst = buffer.as_mut_ptr();
                     std::ptr::copy_nonoverlapping(header_bytes.as_ptr(), dst, header_bytes.len());
                     std::ptr::copy_nonoverlapping(
                         body_bytes.as_ptr(),
                         dst.offset(header_bytes.len() as isize),
                         body_bytes.len(),
                     );
-                    buffer.unmap(gl);
+                    buffer.flush_range(gl, 0, total_byte_count);
 
                     // NOTE(mickvangelderen): Not necessary but wanted this for the profiling.
                     gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);

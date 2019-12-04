@@ -483,11 +483,11 @@ where
             return;
         }
 
-        if byte_capacity < (self.byte_capacity + self.byte_capacity/2) {
-            byte_capacity = self.byte_capacity + self.byte_capacity/2;
+        if byte_capacity < (self.byte_capacity + self.byte_capacity / 2) {
+            byte_capacity = self.byte_capacity + self.byte_capacity / 2;
         }
 
-        byte_capacity = ((byte_capacity + 15)/16)*16;
+        byte_capacity = ((byte_capacity + 15) / 16) * 16;
 
         gl.named_buffer_reserve(self.name, byte_capacity, U::value());
         self.byte_capacity = byte_capacity;
@@ -545,34 +545,39 @@ impl<T> std::ops::IndexMut<usize> for Ring3<T> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct StorageBufferWrite;
+// #[derive(Debug, Copy, Clone)]
+// pub struct StorageBufferWrite;
 
-impl Into<gl::BufferStorageFlag> for StorageBufferWrite {
-    fn into(self) -> gl::BufferStorageFlag {
-        gl::BufferStorageFlag::WRITE | gl::BufferStorageFlag::DYNAMIC_STORAGE
-    }
-}
+// impl Into<gl::BufferStorageFlag> for StorageBufferWrite {
+//     fn into(self) -> gl::BufferStorageFlag {
+//         gl::BufferStorageFlag::WRITE
+//     }
+// }
 
-pub struct StorageBuffer<F> {
-    name: gl::BufferName,
+// impl Into<gl::MapRangeAccessFlag> for StorageBufferWrite {
+//     fn into(self) -> gl::MapRangeAccessFlag {
+//         gl::MapRangeAccessFlag::WRITE
+//     }
+// }
+
+pub struct StorageBuffer {
+    staging: gl::BufferName,
+    device: gl::BufferName,
     capacity: usize,
-    storage_flags: F,
+    pointer: *mut u8,
 }
 
 fn make_mult_4_usize(n: usize) -> usize {
     ((n + 3) / 4) * 4
 }
 
-impl<F> StorageBuffer<F>
-where
-    F: Into<gl::BufferStorageFlag> + Copy,
-{
-    pub fn new(gl: &gl::Gl, storage_flags: F) -> Self {
+impl StorageBuffer {
+    pub fn new(gl: &gl::Gl) -> Self {
         Self {
-            name: unsafe { gl.create_buffer() },
+            device: unsafe { gl.create_buffer() },
+            staging: unsafe { gl.create_buffer() },
             capacity: 0,
-            storage_flags,
+            pointer: std::ptr::null_mut(),
         }
     }
 
@@ -586,62 +591,83 @@ where
                 // Shrink
                 capacity
             } else {
-                gl.invalidate_buffer_data(self.name);
+                gl.invalidate_buffer_data(self.device);
+                gl.invalidate_buffer_data(self.staging);
                 return;
             };
 
             if self.capacity > 0 {
-                gl.delete_buffer(self.name);
-                self.name = gl.create_buffer();
+                gl.delete_buffer(self.device);
+                self.device = gl.create_buffer();
+                gl.delete_buffer(self.staging);
+                self.staging = gl.create_buffer();
             }
 
-            if capacity > 0 {
-                gl.named_buffer_storage_reserve(self.name, capacity, self.storage_flags.into());
-            }
+            self.pointer = if capacity > 0 {
+                gl.named_buffer_storage_reserve(
+                    self.device,
+                    capacity,
+                    gl::BufferStorageFlag::empty(),
+                );
+
+                gl.named_buffer_storage_reserve(
+                    self.staging,
+                    capacity,
+                    gl::BufferStorageFlag::PERSISTENT | gl::BufferStorageFlag::WRITE,
+                );
+                gl.map_named_buffer_range(
+                    self.staging,
+                    0,
+                    capacity,
+                    gl::MapRangeAccessFlag::PERSISTENT
+                        | gl::MapRangeAccessFlag::WRITE
+                        | gl::MapRangeAccessFlag::FLUSH_EXPLICIT,
+                ) as *mut u8
+            } else {
+                std::ptr::null_mut()
+            };
 
             self.capacity = capacity;
         }
     }
 
-    pub unsafe fn map(
-        &mut self,
-        gl: &gl::Gl,
-        flags: gl::MapAccessFlag,
-    ) -> *mut std::ffi::c_void {
-        gl.map_named_buffer(self.name, flags)
-    }
+    // pub unsafe fn map(&mut self, gl: &gl::Gl, flags: gl::MapAccessFlag) -> *mut std::ffi::c_void {
+    //     gl.map_named_buffer(self.name, flags)
+    // }
 
-    pub unsafe fn unmap(
-        &mut self,
-        gl: &gl::Gl,
-    ) {
-        gl.unmap_named_buffer(self.name)
-    }
+    // pub unsafe fn unmap(&mut self, gl: &gl::Gl) {
+    //     gl.unmap_named_buffer(self.name)
+    // }
 
-    pub unsafe fn map_range(
-        &mut self,
-        gl: &gl::Gl,
-        offset: usize,
-        length: usize,
-        flags: gl::MapRangeAccessFlag,
-    ) -> *mut std::ffi::c_void {
-        debug_assert!(offset + length <= self.capacity);
-        gl.map_named_buffer_range(self.name, offset, length, flags)
-    }
+    // pub unsafe fn map_range(
+    //     &mut self,
+    //     gl: &gl::Gl,
+    //     offset: usize,
+    //     length: usize,
+    //     flags: gl::MapRangeAccessFlag,
+    // ) -> *mut std::ffi::c_void {
+    //     debug_assert!(offset + length <= self.capacity);
+    //     gl.map_named_buffer_range(self.name, offset, length, flags)
+    // }
 
     pub unsafe fn flush_range(&mut self, gl: &gl::Gl, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.capacity);
-        gl.flush_mapped_named_buffer_range(self.name, offset, length);
+        gl.flush_mapped_named_buffer_range(self.staging, offset, length);
+        gl.copy_named_buffer_sub_data(self.staging, self.device, offset, offset, length);
     }
 
-    pub fn write_at(&mut self, gl: &gl::Gl, offset: usize, bytes: &[u8]) {
-        unsafe {
-            debug_assert!(offset + bytes.len() <= self.capacity);
-            gl.named_buffer_sub_data(self.name, offset, bytes);
-        }
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.pointer
     }
+
+    // pub fn write_at(&mut self, gl: &gl::Gl, offset: usize, bytes: &[u8]) {
+    //     unsafe {
+    //         debug_assert!(offset + bytes.len() <= self.capacity);
+    //         gl.named_buffer_sub_data(self.name, offset, bytes);
+    //     }
+    // }
 
     pub fn name(&self) -> gl::BufferName {
-        self.name
+        self.device
     }
 }
