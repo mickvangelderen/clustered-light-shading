@@ -7,6 +7,7 @@
 #include "active_cluster_cluster_indices_buffer.glsl"
 #include "active_cluster_light_counts_buffer.glsl"
 #include "active_cluster_light_offsets_buffer.glsl"
+#include "../light_buffer.glsl"
 #include "light_xyzr_buffer.glsl"
 // out
 #include "light_indices_buffer.glsl"
@@ -15,9 +16,7 @@
 #define wid gl_WorkGroupID.x
 // NOTE(mickvangelderen): For some reason this was the fastest. Maybe the driver
 // is doing something smart. Maybe register pressure?
-#define LOCAL_X 32
-
-layout(location = LIGHT_COUNT_LOC) uniform uint light_count;
+#define LOCAL_X 256
 
 shared uint values[LOCAL_X];
 
@@ -100,9 +99,9 @@ void main() {
   vec2 ny = normalize(vec2(-1.0, -y0));
   vec2 py = normalize(vec2(1.0, y1));
 
-  for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
+  for (uint light_base = 0; light_base < light_buffer.light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;
-    bool within_buffer_bounds = light_index < light_count;
+    bool within_buffer_bounds = light_index < light_buffer.light_count;
 
     bool did_intersect = false;
     if (within_buffer_bounds) {
@@ -156,9 +155,9 @@ void main() {
   vec3 p0 = cluster_clp_to_cam(vec3(idx_in_cls));
   vec3 p1 = cluster_clp_to_cam(vec3(idx_in_cls + uvec3(1)));
 
-  for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
+  for (uint light_base = 0; light_base < light_buffer.light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;
-    bool within_buffer_bounds = light_index < light_count;
+    bool within_buffer_bounds = light_index < light_buffer.light_count;
 
     bool did_intersect = false;
 

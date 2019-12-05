@@ -2,7 +2,7 @@ struct PointLight {
   vec3 tint;
   float _pad0;
 
-  vec3 pos_in_lgt;
+  vec3 position;
   float _pad1;
 
   float i;

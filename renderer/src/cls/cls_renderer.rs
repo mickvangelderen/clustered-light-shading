@@ -6,6 +6,7 @@ pub struct Renderer {
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
     pub compact_clusters_2_program: rendering::Program,
+    pub transform_lights_program: rendering::Program,
     pub count_lights_program: rendering::Program,
     pub light_count_hist_program: rendering::Program,
     pub compact_light_counts_0_program: rendering::Program,
@@ -21,20 +22,21 @@ glsl_defines!(fixed_header {
         ACTIVE_CLUSTER_CLUSTER_INDICES_BUFFER_BINDING = 2;
         ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 3;
         ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 4;
-        LIGHT_XYZR_BUFFER_BINDING = 5;
-        OFFSETS_BUFFER_BINDING = 6;
-        DRAW_COMMANDS_BUFFER_BINDING = 7;
-        COMPUTE_COMMANDS_BUFFER_BINDING = 8;
-        LIGHT_INDICES_BUFFER_BINDING = 9;
-        CLUSTER_SPACE_BUFFER_BINDING = 10;
-        PROFILING_CLUSTER_BUFFER_BINDING = 11;
+        LIGHT_BUFFER_BINDING = 5;
+        LIGHT_XYZR_BUFFER_BINDING = 6;
+        OFFSETS_BUFFER_BINDING = 7;
+        DRAW_COMMANDS_BUFFER_BINDING = 8;
+        COMPUTE_COMMANDS_BUFFER_BINDING = 9;
+        LIGHT_INDICES_BUFFER_BINDING = 10;
+        CLUSTER_SPACE_BUFFER_BINDING = 11;
+        PROFILING_CLUSTER_BUFFER_BINDING = 12;
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
         DEPTH_DIMENSIONS_LOC = 1;
-        REN_CLP_TO_CLU_CAM = 2;
+        REN_CLP_TO_CLU_CAM_LOC = 2;
         ITEM_COUNT_LOC = 3;
-        LIGHT_COUNT_LOC = 4;
+        LGT_TO_CLU_CAM_LOC = 4;
     },
 });
 
@@ -100,6 +102,18 @@ impl Renderer {
                     EntryPoint::new(
                         &mut shader_compilation_context,
                         "cls/compact_clusters_2.comp",
+                        fixed_header(),
+                    ),
+                )],
+            ),
+            transform_lights_program: rendering::Program::new(
+                gl,
+                vec![rendering::Shader::new(
+                    gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context,
+                        "cls/transform_lights.comp",
                         fixed_header(),
                     ),
                 )],
@@ -282,7 +296,12 @@ impl Context<'_> {
                             cluster_resources.cluster_fragment_counts_buffer.name(),
                         );
 
-                        gl.bind_texture_unit(0, main_resources.cluster_depth_texture.unwrap_or(main_resources.depth_texture));
+                        gl.bind_texture_unit(
+                            0,
+                            main_resources
+                                .cluster_depth_texture
+                                .unwrap_or(main_resources.depth_texture),
+                        );
 
                         gl.uniform_2i(
                             cls_renderer::DEPTH_DIMENSIONS_LOC,
@@ -293,7 +312,7 @@ impl Context<'_> {
                             cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld;
 
                         gl.uniform_matrix4f(
-                            cls_renderer::REN_CLP_TO_CLU_CAM,
+                            cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
                             gl::MajorAxis::Column,
                             ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
                         );
@@ -446,57 +465,46 @@ impl Context<'_> {
 
         // We have our active clusters.
 
-        {
+        unsafe {
             let profiler_index = self
                 .profiling_context
-                .start(gl, cluster_resources.profilers.lights);
+                .start(gl, cluster_resources.profilers.transform_lights);
 
-            let data: Vec<[f32; 4]> = {
-                let profiler_index = self
-                    .profiling_context
-                    .start(gl, cluster_resources.profilers.lights_compute);
+            gl.bind_buffer_base(
+                gl::SHADER_STORAGE_BUFFER,
+                cls_renderer::LIGHT_BUFFER_BINDING,
+                self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
+            );
 
-                let data = self
-                .point_lights
-                .iter()
-                .map(|&light| {
-                    let pos_in_clu_cam = cluster_resources
-                        .computed
-                        .wld_to_clu_cam
-                        .transform_point(light.pos_in_wld.cast().unwrap());
-                    let [x, y, z]: [f32; 3] = pos_in_clu_cam.cast::<f32>().unwrap().into();
-                    [x, y, z, light.attenuation.r1]
-                })
-                .collect();
-
-                self.profiling_context.stop(gl, profiler_index);
-
-                data
-            };
-
-            unsafe {
-                let profiler_index = self
-                    .profiling_context
-                    .start(gl, cluster_resources.profilers.lights_upload);
-
-                let bytes = data.vec_as_bytes();
-                let total_byte_count = bytes.len();
-
+            gl.bind_buffer_base(gl::SHADER_STORAGE_BUFFER, cls_renderer::LIGHT_XYZR_BUFFER_BINDING, {
                 let buffer = &mut cluster_resources.light_xyzr_buffer_ring[self.frame_index.to_usize()];
-
-                buffer.reconcile(gl, total_byte_count);
-                buffer.write_at(gl, 0, bytes);
-
-                // NOTE(mickvangelderen): For profiling only
-                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
-
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    cls_renderer::LIGHT_XYZR_BUFFER_BINDING,
-                    buffer.name(),
+                buffer.reconcile(
+                    gl,
+                    std::mem::size_of::<[f32; 4]>() * self.light_resources.header.light_count as usize,
                 );
 
-                self.profiling_context.stop(gl, profiler_index);
+                buffer.name()
+            });
+
+            let program = &mut self.cls_renderer.transform_lights_program;
+            program.update(&mut rendering_context!(self));
+            if let ProgramName::Linked(name) = program.name {
+                gl.use_program(name);
+
+                gl.uniform_matrix4f(
+                    cls_renderer::LGT_TO_CLU_CAM_LOC,
+                    gl::MajorAxis::Column,
+                    cluster_resources
+                        .computed
+                        .wld_to_clu_cam
+                        .cast::<f32>()
+                        .unwrap()
+                        .as_ref(),
+                );
+
+                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+                gl.dispatch_compute(self.light_resources.header.light_count.ceiled_div(480), 1, 1);
+                gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
             }
 
             self.profiling_context.stop(gl, profiler_index);
@@ -524,7 +532,6 @@ impl Context<'_> {
                 program.update(&mut rendering_context!(self));
                 if let ProgramName::Linked(name) = program.name {
                     gl.use_program(name);
-                    gl.uniform_1ui(cls_renderer::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                     gl.bind_buffer(
                         gl::DISPATCH_INDIRECT_BUFFER,
                         cluster_resources.compute_commands_buffer.name(),
@@ -645,7 +652,6 @@ impl Context<'_> {
                 program.update(&mut rendering_context!(self));
                 if let ProgramName::Linked(name) = program.name {
                     gl.use_program(name);
-                    gl.uniform_1ui(cls_renderer::LIGHT_COUNT_LOC, self.point_lights.len() as u32);
                     gl.bind_buffer(
                         gl::DISPATCH_INDIRECT_BUFFER,
                         cluster_resources.compute_commands_buffer.name(),

@@ -1,0 +1,17 @@
+#include "../common.glsl"
+
+// in
+#include "../light_buffer.glsl"
+// out
+#include "light_xyzr_buffer.glsl"
+
+layout(location = LGT_TO_CLU_CAM_LOC) uniform mat4 lgt_to_clu_cam;
+
+layout(local_size_x = 480, local_size_y = 1, local_size_z = 1) in;
+void main() {
+  if (gl_GlobalInvocationID.x < light_buffer.light_count.x) {
+    PointLight light = light_buffer.point_lights[gl_GlobalInvocationID.x];
+    vec3 pos_in_clu_cam = mat4x3(lgt_to_clu_cam) * to_homogeneous(light.position);
+    light_xyzr[gl_GlobalInvocationID.x] = vec4(pos_in_clu_cam, light.r1);
+  }
+}

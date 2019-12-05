@@ -5,6 +5,7 @@
 #include "cluster_space_buffer.glsl"
 // in
 #include "active_cluster_cluster_indices_buffer.glsl"
+#include "../light_buffer.glsl"
 #include "light_xyzr_buffer.glsl"
 // use
 // out
@@ -12,9 +13,7 @@
 
 #define tid gl_LocalInvocationID.x
 #define wid gl_WorkGroupID.x
-#define LOCAL_X 128
-
-layout(location = LIGHT_COUNT_LOC) uniform uint light_count;
+#define LOCAL_X 256
 
 shared uint values[LOCAL_X];
 
@@ -95,10 +94,10 @@ void main() {
   vec2 ny = normalize(vec2(-1.0, -y0));
   vec2 py = normalize(vec2(1.0, y1));
 
-  for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
+  for (uint light_base = 0; light_base < light_buffer.light_count; light_base += LOCAL_X) {
     // TODO: Add bounding sphere check. Midpoint of longest diagonal probably good enough.
     uint light_index = light_base + tid;
-    if (light_index < light_count) {
+    if (light_index < light_buffer.light_count) {
       vec4 light = light_xyzr[light_index];
       bool inside = true;
       if (dot(nx, light.xz) > light.w) {
@@ -129,9 +128,9 @@ void main() {
   vec3 p0 = cluster_clp_to_cam(vec3(idx_in_cls));
   vec3 p1 = cluster_clp_to_cam(vec3(idx_in_cls + uvec3(1)));
 
-  for (uint light_base = 0; light_base < light_count; light_base += LOCAL_X) {
+  for (uint light_base = 0; light_base < light_buffer.light_count; light_base += LOCAL_X) {
     uint light_index = light_base + tid;
-    if (light_index < light_count) {
+    if (light_index < light_buffer.light_count) {
       vec4 light = light_xyzr[light_index];
       float d = 0;
       float r;
