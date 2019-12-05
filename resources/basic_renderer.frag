@@ -55,7 +55,7 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
 }
 
 float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
-  vec3 pos_from_frag_to_light = point_light.pos_in_lgt - frag_pos;
+  vec3 pos_from_frag_to_light = point_light.position - frag_pos;
   vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
   float I = point_light.i;
@@ -96,7 +96,7 @@ float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
 }
 
 vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
-  vec3 frag_to_light = point_light.pos_in_lgt.xyz - P;
+  vec3 frag_to_light = point_light.position - P;
   vec3 L = normalize(frag_to_light);
 
   vec3 F0 = vec3(0.04);

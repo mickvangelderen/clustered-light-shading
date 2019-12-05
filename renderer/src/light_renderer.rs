@@ -6,7 +6,6 @@ pub struct Renderer {
 
 pub struct Parameters {
     pub main_parameters_index: usize,
-    pub light_resources_index: usize,
 }
 
 glsl_defines!(fixed_header {
@@ -30,7 +29,7 @@ impl Context<'_> {
         unsafe {
             light_renderer.program.update(&mut rendering_context!(self));
             if let ProgramName::Linked(program) = light_renderer.program.name {
-                let light_resources = &mut self.light_resources_vec[params.light_resources_index];
+                let light_resources = &mut self.light_resources;
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
@@ -62,7 +61,7 @@ impl Context<'_> {
                     6,
                     gl::UNSIGNED_INT,
                     0,
-                    light_resources.lights.len() as u32,
+                    light_resources.header.light_count as u32,
                     0,
                 );
 

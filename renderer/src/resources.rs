@@ -508,7 +508,7 @@ impl Resources {
 
                     Some(PointLight {
                         tint: Vector3::from(emissive_color).normalize().into(),
-                        pos_in_wld,
+                        position: pos_in_wld,
                         attenuation: AttenParams {
                             i: 6.0,
                             i0: 0.4,

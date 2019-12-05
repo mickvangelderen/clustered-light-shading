@@ -176,7 +176,6 @@ pub struct MainParameters {
     pub cam_pos_in_lgt: Point3<f64>,
 
     pub draw_resources_index: usize,
-    pub light_index: usize,
     pub cluster_resources_index: Option<ClusterResourcesIndex>,
 
     pub dimensions: Vector2<i32>,
@@ -302,8 +301,7 @@ pub struct MainContext {
 
     pub main_parameters_vec: Vec<MainParameters>,
     pub camera_buffer_pool: BufferPool,
-    pub light_resources_vec: Vec<light::LightResources>,
-    pub light_params_vec: Vec<light::LightParameters>,
+    pub light_resources: light::LightResources,
     pub cluster_resources_pool: ClusterResourcesPool,
     pub main_resources_pool: MainResourcesPool,
     pub point_lights: Vec<light::PointLight>,
@@ -474,6 +472,8 @@ impl MainContext {
         let initial_win_dpi = gl_window.get_hidpi_factor();
         let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
 
+        let light_resources = light::LightResources::new(&gl, &mut profiling_context);
+
         Self {
             paths: Paths {
                 current_dir,
@@ -511,8 +511,7 @@ impl MainContext {
             frame_downloader,
             sample_indices: MainSampleIndices::new(&mut profiling_context),
             camera_buffer_pool: BufferPool::new(),
-            light_resources_vec: Vec::new(),
-            light_params_vec: Vec::new(),
+            light_resources,
             main_parameters_vec: Vec::new(),
             cluster_resources_pool: ClusterResourcesPool::new(),
             main_resources_pool: MainResourcesPool::new(),
@@ -560,8 +559,7 @@ pub struct Context<'s> {
     pub sample_indices: MainSampleIndices,
     pub main_parameters_vec: &'s mut Vec<MainParameters>,
     pub camera_buffer_pool: &'s mut BufferPool,
-    pub light_resources_vec: &'s mut Vec<light::LightResources>,
-    pub light_params_vec: &'s mut Vec<light::LightParameters>,
+    pub light_resources: &'s mut light::LightResources,
     pub cluster_resources_pool: &'s mut ClusterResourcesPool,
     pub main_resources_pool: &'s mut MainResourcesPool,
     pub point_lights: &'s mut Vec<light::PointLight>,
@@ -627,8 +625,7 @@ impl<'s> Context<'s> {
             sample_indices,
             ref mut main_parameters_vec,
             ref mut camera_buffer_pool,
-            ref mut light_resources_vec,
-            ref mut light_params_vec,
+            ref mut light_resources,
             ref mut cluster_resources_pool,
             ref mut main_resources_pool,
             ref mut point_lights,
@@ -689,8 +686,7 @@ impl<'s> Context<'s> {
             sample_indices,
             main_parameters_vec,
             camera_buffer_pool,
-            light_resources_vec,
-            light_params_vec,
+            light_resources,
             cluster_resources_pool,
             main_resources_pool,
             point_lights,
@@ -1120,7 +1116,6 @@ impl<'s> Context<'s> {
         //  - cam --[projection]--> clp
 
         self.main_parameters_vec.clear();
-        self.light_params_vec.clear();
         self.cluster_resources_pool.reset();
         self.main_resources_pool.reset();
         self.resources.draw_resources_pool.reset();
@@ -1135,7 +1130,7 @@ impl<'s> Context<'s> {
             for rain_drop in self.rain_drops.iter() {
                 self.point_lights.push(light::PointLight {
                     tint: rain_drop.tint.into(),
-                    pos_in_wld: Point3::from_vec(rain_drop.position),
+                    position: Point3::from_vec(rain_drop.position),
                     attenuation: light::AttenParams {
                         i: self.configuration.rain.intensity as f32,
                         i0: self.configuration.rain.clip_near as f32,
@@ -1146,20 +1141,16 @@ impl<'s> Context<'s> {
             }
         }
 
-        for res in self.light_resources_vec.iter_mut() {
-            res.dirty = true;
+        unsafe {
+            self.light_resources.recompute(
+                &self.gl,
+                &mut self.profiling_context,
+                self.frame_index,
+                &self.point_lights,
+            );
         }
 
-        let mut light_index = None;
         let mut cluster_resources_index = None;
-
-        if self.shader_compiler.light_space() == LightSpace::Wld {
-            light_index = Some(self.light_params_vec.len());
-            self.light_params_vec.push(light::LightParameters {
-                wld_to_lgt: Matrix4::identity(),
-                lgt_to_wld: Matrix4::identity(),
-            });
-        }
 
         let gl = &self.gl;
 
@@ -1286,7 +1277,6 @@ impl<'s> Context<'s> {
                                 move || resources::DrawResources::new(gl, profiling_context)
                             }),
 
-                            light_index: light_index.expect("Programming error: light_index was never set."),
                             cluster_resources_index,
 
                             dimensions: win_size,
@@ -1393,7 +1383,6 @@ impl<'s> Context<'s> {
                         cam_pos_in_lgt: cam_pos_in_wld,
 
                         draw_resources_index,
-                        light_index: light_index.expect("Programming error: light_index was never set."),
                         cluster_resources_index,
 
                         dimensions,
@@ -1415,7 +1404,6 @@ impl<'s> Context<'s> {
 
             let MainParameters {
                 draw_resources_index,
-                light_index,
                 cluster_resources_index,
 
                 dimensions,
@@ -1442,70 +1430,13 @@ impl<'s> Context<'s> {
                 &self.resources.scene_file.mesh_descriptions,
             );
 
-            let light_params = &self.light_params_vec[light_index];
-
-            // Ensure light resources are available.
-            while self.light_resources_vec.len() < light_index + 1 {
-                self.light_resources_vec
-                    .push(light::LightResources::new(gl, &mut self.profiling_context));
-            }
-            let light_resources = &mut self.light_resources_vec[light_index];
-
-            // Ensure light resources are uploaded.
-            if light_resources.dirty {
-                let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.total);
-                let header = {
-                    let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.compute);
-                    light_resources.lights.clear();
-                    light_resources
-                        .lights
-                        .extend(self.point_lights.iter().map(|&point_light| {
-                            light::LightBufferLight::from_point_light(point_light, light_params.wld_to_lgt)
-                        }));
-
-                    let header = light::LightBufferHeader {
-                        wld_to_lgt: light_params.wld_to_lgt.cast().unwrap(),
-                        lgt_to_wld: light_params.lgt_to_wld.cast().unwrap(),
-
-                        light_count: Vector4::new(light_resources.lights.len() as u32, 0, 0, 0),
-                    };
-
-                    self.profiling_context.stop(gl, profiler_index);
-
-                    header
-                };
-
-                unsafe {
-                    let profiler_index = self.profiling_context.start(gl, light_resources.sample_indices.upload);
-
-                    let header_bytes = header.value_as_bytes();
-                    let body_bytes = light_resources.lights.vec_as_bytes();
-                    let total_byte_count = header_bytes.len() + body_bytes.len();
-
-                    let buffer = &mut light_resources.buffer_ring[self.frame_index.to_usize()];
-
-                    buffer.reconcile(gl, total_byte_count);
-                    buffer.write_at(gl, 0, header_bytes);
-                    buffer.write_at(gl, header_bytes.len(), body_bytes);
-
-                    // NOTE(mickvangelderen): Not necessary but wanted this for the profiling.
-                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
-
-                    self.profiling_context.stop(gl, profiler_index);
-                }
-
-                light_resources.dirty = false;
-
-                self.profiling_context.stop(gl, profiler_index);
-            }
-
             // Ensure light resources are bound.
             unsafe {
                 // TODO: Make this less global. Should be in basic renderer.
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     basic_renderer::LIGHT_BUFFER_BINDING,
-                    light_resources.buffer_ring[self.frame_index.to_usize()].name(),
+                    self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
             }
 
@@ -1540,10 +1471,7 @@ impl<'s> Context<'s> {
             }
 
             if self.configuration.global.render_lights {
-                self.render_lights(&light_renderer::Parameters {
-                    main_parameters_index,
-                    light_resources_index: light_index,
-                });
+                self.render_lights(&light_renderer::Parameters { main_parameters_index });
             }
 
             if self.target_camera_key == CameraKey::Debug {

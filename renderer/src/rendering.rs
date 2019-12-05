@@ -111,7 +111,6 @@ impl Shader {
                 gl,
                 [
                     COMMON_DECLARATION,
-                    crate::light::LIGHT_BUFFER_DECLARATION,
                     &self.entry_point.fixed_header,
                     &self.entry_point.contents,
                 ]

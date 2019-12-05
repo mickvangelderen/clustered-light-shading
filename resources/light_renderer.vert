@@ -12,7 +12,7 @@ out vec3 fs_tint;
 void main() {
   PointLight light = light_buffer.point_lights[gl_InstanceID];
 
-  vec3 pos_in_cam = mat4x3(wld_to_cam) * to_homogeneous(light.pos_in_lgt);
+  vec3 pos_in_cam = mat4x3(wld_to_cam) * to_homogeneous(light.position);
   pos_in_cam.xy += (vs_pos_in_tex - vec2(0.5)) * light.r1 * 0.20;
   gl_Position = cam_to_clp * to_homogeneous(pos_in_cam);
 
