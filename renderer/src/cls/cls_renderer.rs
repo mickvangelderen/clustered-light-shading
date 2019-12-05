@@ -485,15 +485,10 @@ impl Context<'_> {
                 let buffer = &mut cluster_resources.light_xyzr_buffer_ring[self.frame_index.to_usize()];
 
                 buffer.reconcile(gl, total_byte_count);
-                let dst = buffer.as_mut_ptr();
-                std::ptr::copy_nonoverlapping(
-                    bytes.as_ptr(),
-                    dst,
-                    bytes.len(),
-                );
-                buffer.flush_range(gl, 0, total_byte_count);
+                buffer.write_at(gl, 0, bytes);
 
-                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
+                // NOTE(mickvangelderen): For profiling only
+                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
