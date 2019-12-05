@@ -1,6 +1,6 @@
 use crate::*;
-use renderer::*;
 use cluster_space_buffer::ClusterSpaceCoefficients;
+use renderer::*;
 
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -90,7 +90,7 @@ pub struct ClusterResources {
     pub active_cluster_light_counts_buffer: DynamicBuffer,
     pub active_cluster_light_offsets_buffer: DynamicBuffer,
 
-    pub light_xyzr_buffer_ring: Ring3<StorageBuffer>,
+    pub light_xyzr_buffer_ring: Ring3<StorageBuffer<StorageBufferKindWO>>,
     pub light_indices_buffer: DynamicBuffer,
 
     pub offset_buffer: DynamicBuffer,
@@ -150,7 +150,7 @@ impl ClusterResources {
                 buffer.ensure_capacity(gl, std::mem::size_of::<u32>() * cfg.max_active_clusters as usize);
                 buffer
             },
-            light_xyzr_buffer_ring: Ring3::new(|| StorageBuffer::new(gl)),
+            light_xyzr_buffer_ring: Ring3::new(|| unsafe { StorageBuffer::new(gl) }),
             light_indices_buffer: unsafe {
                 let mut buffer = Buffer::new(gl);
                 gl.buffer_label(&buffer, "light_indices");
@@ -306,7 +306,8 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp * parameters.clu_ori_to_wld)
+                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp
+                                    * parameters.clu_ori_to_wld)
                                     .invert()
                                     .unwrap();
                                 far_pos_in_clp
@@ -320,7 +321,8 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp * parameters.clu_ori_to_wld)
+                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp
+                                    * parameters.clu_ori_to_wld)
                                     .invert()
                                     .unwrap();
                                 near_pos_in_clp

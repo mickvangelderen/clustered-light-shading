@@ -1485,14 +1485,8 @@ impl<'s> Context<'s> {
                     let buffer = &mut light_resources.buffer_ring[self.frame_index.to_usize()];
 
                     buffer.reconcile(gl, total_byte_count);
-                    let dst = buffer.as_mut_ptr();
-                    std::ptr::copy_nonoverlapping(header_bytes.as_ptr(), dst, header_bytes.len());
-                    std::ptr::copy_nonoverlapping(
-                        body_bytes.as_ptr(),
-                        dst.offset(header_bytes.len() as isize),
-                        body_bytes.len(),
-                    );
-                    buffer.flush_range(gl, 0, total_byte_count);
+                    buffer.write_at(gl, 0, header_bytes);
+                    buffer.write_at(gl, header_bytes.len(), body_bytes);
 
                     // NOTE(mickvangelderen): Not necessary but wanted this for the profiling.
                     gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
