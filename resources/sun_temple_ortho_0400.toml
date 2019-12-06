@@ -1,0 +1,104 @@
+[global]
+diffuse_srgb = true
+render_lights = true
+# mode = "Normal"
+# mode = "Record"
+mode = "Replay"
+
+# scene_path = "bistro/Bistro_Exterior.bin"
+# scene_path = "bistro/Bistro_Interior.bin"
+scene_path = "sun_temple/SunTemple.bin"
+
+sample_count = 0
+# sample_count = 1
+# sample_count = 2
+# sample_count = 4
+# sample_count = 8
+# sample_count = 16
+
+[rain]
+max_count = 10000
+bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
+bounds_max= { x = +80.0, y = +40.0, z = +60.0 }
+intensity = 10.0
+clip_near = 0.5
+cut_off = 0.8
+
+[record]
+path = "sun_temple_replay.bin"
+
+[replay]
+run_count = 4
+path = "sun_temple_replay.bin"
+
+[profiling]
+display = false
+record_frames = true
+path = "profiling.bin"
+hide = [
+  "opaque",
+  "masked",
+  "inst matrs",
+  "draw cmds",
+]
+
+[window]
+vsync = false
+srgb = true
+rgb_bits = 24
+alpha_bits = 8
+width = 1280
+height = 720
+
+[gl]
+framebuffer_srgb = true
+
+[clustered_light_shading]
+projection = "Orthographic"
+# projection = "Perspective"
+
+# grouping = "Individual"
+grouping = "Enclosed"
+
+# orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
+# orthographic_sides = { x = 1.75, y = 1.75, z = 1.75 }
+# orthographic_sides = { x = 2.0, y = 2.0, z = 2.0 }
+# orthographic_sides = { x = 3.0, y = 3.0, z = 3.0 }
+orthographic_sides = { x = 4.0, y = 4.0, z = 4.0 }
+# orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
+
+# perspective_pixels = { x = 16, y = 16 }
+# perspective_pixels = { x = 24, y = 24 }
+perspective_pixels = { x = 32, y = 32 }
+# perspective_pixels = { x = 48, y = 48 }
+# perspective_pixels = { x = 64, y = 64 }
+
+max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
+max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
+max_light_indices = 1048576 # 2^20 u32 4MB * (light index)
+
+[virtual_stereo]
+enabled = false
+pitch_deg = 0.0
+yaw_deg = 5.0
+
+[camera]
+maximum_smoothness = 0.80
+
+[main_camera]
+near = 0.4
+far = 100.0
+positional_velocity = 8.0
+angular_velocity = 0.4
+zoom_velocity = 0.5
+
+[debug_camera]
+near = 0.4
+far = 3000.0
+positional_velocity = 32.0
+angular_velocity = 0.4
+zoom_velocity = 0.5
+
+[prefix_sum]
+pass_0_threads = 128
+pass_1_threads = 480
