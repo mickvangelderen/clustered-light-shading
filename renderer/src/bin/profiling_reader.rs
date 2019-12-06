@@ -104,13 +104,41 @@ fn main() {
         }
     }
 
+    let mut sample_path_stack = vec!["".to_string()];
+    let mut sample_paths: Vec<Option<String>> = sample_names.iter().map(|_| None).collect();
+
+    for event in events.iter() {
+        match *event {
+            MeasurementEvent::BeginTimeSpan(sample_index, _) => {
+                let sample_name = &sample_names[sample_index.to_usize()];
+                let sample_path = format!("{}/{}", sample_path_stack.iter().last().unwrap(), sample_name);
+                sample_path_stack.push(sample_path.clone());
+                if let Some(existing) = sample_paths[sample_index.to_usize()].as_ref() {
+                    assert_eq!(existing, &sample_path);
+                } else {
+                    sample_paths[sample_index.to_usize()] = Some(sample_path)
+                }
+            }
+            MeasurementEvent::EndTimeSpan => {
+                sample_path_stack.pop();
+            }
+            _ => {}
+        }
+    }
+
+
+    let sample_paths: Vec<String> = sample_paths.into_iter().map(Option::unwrap_or_default).collect();
+
     let run_count = max_run_index.map(|index| index + 1).unwrap_or(0);
     let frame_count = max_frame_index.map(|index| index + 1).unwrap_or(0);
     let sample_count = sample_names.len();
     let cluster_buffer_count = max_cluster_buffer_count.unwrap_or(0);
     let basic_buffer_count = max_basic_buffer_count.unwrap_or(0);
 
-    dbg!(&sample_names);
+    for i in 0..sample_count {
+        println!("[{:3}] {:18} {:30}", i, &sample_names[i], &sample_paths[i]);
+    }
+
     dbg!(sample_count);
     dbg!(run_count);
     dbg!(frame_count);
@@ -199,8 +227,8 @@ fn main() {
     )
     .unwrap();
 
-    for name in sample_names.iter() {
-        let bytes = name.as_bytes();
+    for path in sample_paths.iter() {
+        let bytes = path.as_bytes();
         let count = bytes.len() as u64;
         file.write(&count.to_ne_bytes()).unwrap();
         file.write(bytes).unwrap();
