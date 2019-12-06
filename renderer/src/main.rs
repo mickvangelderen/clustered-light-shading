@@ -308,11 +308,10 @@ pub struct MainContext {
 }
 
 impl MainContext {
-    fn new() -> Self {
+    fn new(configuration_path: PathBuf) -> Self {
         let current_dir = std::env::current_dir().unwrap();
         let resource_dir = current_dir.join("resources");
 
-        let configuration_path = resource_dir.join(Configuration::DEFAULT_PATH);
         let configuration = Configuration::read(&configuration_path);
 
         let mut events_loop = glutin::EventsLoop::new();
@@ -346,7 +345,7 @@ impl MainContext {
                 symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
                 std::fs::copy(
                     &configuration_path,
-                    current_profiling_dir.join(Configuration::DEFAULT_PATH),
+                    current_profiling_dir.join("configuration.toml"),
                 )
                 .unwrap();
 
@@ -1797,7 +1796,23 @@ impl<'s> Context<'s> {
 fn main() {
     env_logger::init();
 
-    let mut context = MainContext::new();
+    let matches = clap::App::new("renderer")
+        .version("0.1.0")
+        .author("Mick van Gelderen <mickvangelderen@gmail.com>")
+        .about("Clustered light shading renderer built for master thesis at TU Delft.")
+        .arg(
+            clap::Arg::with_name("configuration path")
+                .short("c")
+                .long("configuration-path")
+                .default_value(Configuration::DEFAULT_PATH)
+                .help("Specify the path to the configuration file."),
+        )
+        .get_matches();
+
+    // Gets a value for config if supplied by user, or defaults to "default.conf"
+    let configuration_path = PathBuf::from(matches.value_of("configuration path").unwrap());
+
+    let mut context = MainContext::new(configuration_path);
 
     let mut run_index = RunIndex::from_usize(0);
     let run_count = RunIndex::from_usize(match context.configuration.global.mode {

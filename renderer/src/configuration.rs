@@ -45,7 +45,7 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    pub const DEFAULT_PATH: &'static str = "configuration.toml";
+    pub const DEFAULT_PATH: &'static str = "resources/configuration.toml";
 
     pub fn read(configuration_path: &std::path::Path) -> Self {
         match std::fs::read_to_string(&configuration_path) {
