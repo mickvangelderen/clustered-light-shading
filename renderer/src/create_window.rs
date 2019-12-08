@@ -1,4 +1,4 @@
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct WindowConfiguration {
     pub vsync: bool,
     pub rgb_bits: u8,

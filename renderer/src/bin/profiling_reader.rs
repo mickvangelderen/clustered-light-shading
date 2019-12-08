@@ -54,9 +54,7 @@ fn main() {
     let current_profiling_dir =
         std::fs::read_link(latest_profiling_dir).expect("Didn't find symlink to latest profiling directory.");
     dbg!(&current_profiling_dir);
-    let configuration_path = current_profiling_dir.join("configuration.toml");
-    let cfg = Configuration::read(&configuration_path);
-    let profiling_path = current_profiling_dir.join(cfg.profiling.path.as_ref().unwrap());
+    let profiling_path = current_profiling_dir.join("events.bin");
 
     let events = read_events(profiling_path).unwrap();
 
@@ -125,7 +123,6 @@ fn main() {
             _ => {}
         }
     }
-
 
     let sample_paths: Vec<String> = sample_paths.into_iter().map(Option::unwrap_or_default).collect();
 

@@ -2,7 +2,7 @@ use crate::camera;
 use crate::profiling::ProfilingConfiguration;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct Vector3<T> {
     pub x: T,
     pub y: T,
@@ -15,7 +15,7 @@ impl<T> Vector3<T> {
     }
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct Vector2<T> {
     pub x: T,
     pub y: T,
@@ -27,7 +27,7 @@ impl<T> Vector2<T> {
     }
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct Configuration {
     pub global: GlobalConfiguration,
     pub rain: RainConfiguration,
@@ -58,18 +58,18 @@ impl Configuration {
     }
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct RecordConfiguration {
     pub path: PathBuf,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ReplayConfiguration {
     pub run_count: usize,
     pub path: PathBuf,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GlobalConfiguration {
     pub diffuse_srgb: bool,
     pub mode: ApplicationMode,
@@ -78,7 +78,7 @@ pub struct GlobalConfiguration {
     pub render_lights: bool,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct RainConfiguration {
     pub max_count: u32,
     pub bounds_min: Vector3<f64>,
@@ -88,33 +88,33 @@ pub struct RainConfiguration {
     pub cut_off: f64,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct VirtualStereoConfiguration {
     pub enabled: bool,
     pub pitch_deg: f32,
     pub yaw_deg: f32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApplicationMode {
     Normal,
     Record,
     Replay,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ClusteringProjection {
     Orthographic,
     Perspective,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ClusteringGrouping {
     Individual,
     Enclosed,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShadingConfiguration {
     pub projection: ClusteringProjection,
     pub grouping: ClusteringGrouping,
@@ -125,18 +125,18 @@ pub struct ClusteredLightShadingConfiguration {
     pub max_light_indices: u32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub struct PrefixSumConfiguration {
     pub pass_0_threads: u32,
     pub pass_1_threads: u32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone)]
 pub struct GenericCameraConfiguration {
     pub maximum_smoothness: f32,
 }
 
-#[derive(serde::Deserialize, Debug, Copy, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone)]
 pub struct CameraConfiguration {
     pub near: f32,
     pub far: f32,
