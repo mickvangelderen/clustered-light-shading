@@ -10,11 +10,12 @@ use ProfilingContext as Context;
 use indices::ProfilerIndex;
 pub use indices::{FrameIndex, RunIndex, SampleIndex};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ProfilingConfiguration {
-    pub display: bool,
+    pub name: Option<std::path::PathBuf>,
+    pub record_events: bool,
     pub record_frames: bool,
-    pub path: Option<std::path::PathBuf>,
+    pub display: bool,
     pub hide: Vec<String>,
 }
 
@@ -162,8 +163,8 @@ impl Drop for ProfilingThread {
 
 impl Context {
     pub fn new(gl: &gl::Gl, profiling_dir: &std::path::Path, configuration: &Configuration) -> Self {
-        let thread = ProfilingThread(configuration.path.as_ref().map(|path| {
-            let mut file = std::io::BufWriter::new(std::fs::File::create(profiling_dir.join(path)).unwrap());
+        let thread = ProfilingThread(if configuration.record_events {
+            let mut file = std::io::BufWriter::new(std::fs::File::create(profiling_dir.join("events.bin")).unwrap());
             let (tx, rx) = std::sync::mpsc::channel();
             let handle = std::thread::Builder::new()
                 .name("profiling".to_string())
@@ -173,8 +174,10 @@ impl Context {
                     }
                 })
                 .unwrap();
-            ProfilingThreadInner { handle, tx }
-        }));
+            Some(ProfilingThreadInner { handle, tx })
+        } else {
+            None
+        });
 
         Self {
             epoch: std::time::Instant::now(),
@@ -339,7 +342,9 @@ impl Context {
         let context = &mut self.frame_context_ring[self.frame_index];
         let view = context.buffer.alloc::<ClusterBuffer>(gl, 1);
         gl.copy_named_buffer_sub_data(name, view.name, byte_offset, view.byte_offset, view.byte_count);
-        context.events.push(FrameEvent::RecordClusterBuffer { byte_offset: view.byte_offset });
+        context.events.push(FrameEvent::RecordClusterBuffer {
+            byte_offset: view.byte_offset,
+        });
     }
 
     #[inline]
@@ -403,7 +408,7 @@ impl Context {
 
 pub type Epoch = std::time::Instant;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Default)]
 pub struct TimeSpan {
     pub begin: u64,
     pub end: u64,
@@ -416,7 +421,7 @@ impl TimeSpan {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Default)]
 pub struct GpuCpuTimeSpan {
     pub gpu: TimeSpan,
     pub cpu: TimeSpan,
@@ -528,7 +533,7 @@ pub struct GpuCpuStats {
     pub cpu_elapsed_max: u64,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum MeasurementEvent {
     SampleName(SampleIndex, String),
     BeginRun(RunIndex),
@@ -541,7 +546,7 @@ pub enum MeasurementEvent {
     RecordBasicBuffer(BasicBuffer),
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 #[repr(C)]
 pub struct ClusterBuffer {
     active_cluster_count: u32,
@@ -552,7 +557,7 @@ pub struct ClusterBuffer {
     lights_per_fragment_hist: [u32; 32],
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 #[repr(C)]
 pub struct BasicBuffer {
     shading_ops: u32,

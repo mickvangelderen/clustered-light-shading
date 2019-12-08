@@ -32,9 +32,10 @@ run_count = 4
 path = "recording.bin"
 
 [profiling]
+# name = "not_auto_generated"
 display = true
+record_events = true
 record_frames = false
-path = "profiling.bin"
 hide = [
   "opaque",
   "masked",

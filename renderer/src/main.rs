@@ -329,27 +329,37 @@ impl MainContext {
 
         let base_profiling_dir: PathBuf = current_dir.join("profiling");
         let latest_profiling_dir = base_profiling_dir.join("latest");
-        let current_profiling_dir =
-            base_profiling_dir.join(chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string());
+        let profiling_name = configuration
+            .profiling
+            .name
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string()));
+
+        let current_profiling_dir = base_profiling_dir.join(profiling_name);
         let frames_dir = current_profiling_dir.join("frames");
 
         let mut profiling_context = {
-            if configuration.profiling.path.is_some() {
-                std::fs::create_dir_all(&current_profiling_dir).unwrap();
-                std::fs::remove_file(&latest_profiling_dir)
-                    .or_else(|error| match error.kind() {
-                        std::io::ErrorKind::NotFound => Ok(()),
-                        _ => Err(error),
-                    })
-                    .unwrap();
-                symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
-                std::fs::copy(
-                    &configuration_path,
-                    current_profiling_dir.join("configuration.toml"),
-                )
-                .unwrap();
+            // Ensure profiling directory exists.
+            std::fs::create_dir_all(&current_profiling_dir).unwrap();
 
-                // Make sure we can write out the frames.
+            // Update latest symlink
+            std::fs::remove_file(&latest_profiling_dir)
+                .or_else(|error| match error.kind() {
+                    std::io::ErrorKind::NotFound => Ok(()),
+                    _ => Err(error),
+                })
+                .unwrap();
+            symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
+
+            std::fs::copy(&configuration_path, current_profiling_dir.join("configuration.toml")).unwrap();
+
+            // Make sure we can write out the frames.
+            if let Ok(entries) = std::fs::read_dir(&frames_dir) {
+                // Delete existing frames.
+                for entry in entries {
+                    std::fs::remove_file(entry.unwrap().path()).unwrap();
+                }
+            } else {
                 std::fs::create_dir_all(&frames_dir).unwrap();
             }
 

@@ -1,6 +1,6 @@
 use gl_typed as gl;
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GlConfiguration {
     pub framebuffer_srgb: bool,
 }
