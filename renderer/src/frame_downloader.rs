@@ -17,7 +17,7 @@ impl Format {
 impl Into<gl::Format> for Format {
     fn into(self) -> gl::Format {
         match self {
-            Format::RGBA => gl::Format::Bgra,
+            Format::RGBA => gl::Format::Rgba,
         }
     }
 }
