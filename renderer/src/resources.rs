@@ -509,12 +509,7 @@ impl Resources {
                     Some(PointLight {
                         tint: Vector3::from(emissive_color).normalize().into(),
                         position: pos_in_wld,
-                        attenuation: AttenParams {
-                            i: 6.0,
-                            i0: 0.4,
-                            r0: 0.4,
-                        }
-                        .into(),
+                        attenuation: light::AttenCoefs::from(configuration.light.attenuation).cast().unwrap()
                     })
                 } else {
                     None

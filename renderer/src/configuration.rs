@@ -27,9 +27,17 @@ impl<T> Vector2<T> {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
+pub struct Attenuation {
+    pub i: f64,
+    pub i0: f64,
+    pub r0: f64,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct Configuration {
     pub global: GlobalConfiguration,
+    pub light: LightConfiguration,
     pub rain: RainConfiguration,
     pub window: crate::WindowConfiguration,
     pub gl: crate::GlConfiguration,
@@ -82,7 +90,12 @@ pub struct GlobalConfiguration {
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
-    pub render_lights: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct LightConfiguration {
+    pub display: bool,
+    pub attenuation: Attenuation,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -90,9 +103,6 @@ pub struct RainConfiguration {
     pub max_count: u32,
     pub bounds_min: Vector3<f64>,
     pub bounds_max: Vector3<f64>,
-    pub intensity: f64,
-    pub clip_near: f64,
-    pub cut_off: f64,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

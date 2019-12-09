@@ -142,7 +142,7 @@ void main() {
     compute_commands[COMPUTE_COMMAND_INDEX_PREFIX_SUM_LIGHT_COUNTS].work_group_x = dispatch_count;
 
 #if defined(PROFILING_TIME_SENSITIVE)
-#if PROFILING_TIME_SENSITIVE == false
+#if !PROFILING_TIME_SENSITIVE
     // NOTE: 32*8 should be the layout of light_count_hist.comp.
     compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_HIST].work_group_x = ceiled_div_u32(active_cluster_count, 32*8);
     profiling_cluster_buffer.active_cluster_count = active_cluster_count;

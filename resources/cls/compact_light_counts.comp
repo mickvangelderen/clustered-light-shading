@@ -126,7 +126,7 @@ void main() {
   offsets[tid] = values[tid];
 
 #if defined(PROFILING_TIME_SENSITIVE)
-#if PROFILING_TIME_SENSITIVE == false
+#if !PROFILING_TIME_SENSITIVE
   if (tid == LOCAL_X - 1) {
     profiling_cluster_buffer.light_indices_count = offsets[tid];
   }
