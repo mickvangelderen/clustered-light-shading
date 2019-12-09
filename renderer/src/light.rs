@@ -1,11 +1,5 @@
 use crate::*;
 
-pub struct AttenParams<S> {
-    pub i: S,
-    pub i0: S,
-    pub r0: S,
-}
-
 #[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct AttenCoefs<S> {
@@ -15,18 +9,26 @@ pub struct AttenCoefs<S> {
     pub r1: S,
 }
 
-impl<S> From<AttenParams<S>> for AttenCoefs<S>
-where
-    S: num_traits::Float,
-{
-    fn from(value: AttenParams<S>) -> Self {
-        let AttenParams { i, i0, r0 } = value;
+impl<S> AttenCoefs<S> where S: num_traits::Float {
+    pub fn cast<U>(self) -> Option<AttenCoefs<U>> where U: num_traits::Float {
+        Some(AttenCoefs {
+            i: num_traits::cast(self.i)?,
+            i0: num_traits::cast(self.i0)?,
+            r0: num_traits::cast(self.r0)?,
+            r1: num_traits::cast(self.r1)?,
+        })
+    }
+}
+
+impl From<configuration::Attenuation> for AttenCoefs<f64> {
+    fn from(value: configuration::Attenuation) -> Self {
+        let configuration::Attenuation { i, i0, r0 } = value;
 
         AttenCoefs {
             i,
             i0,
             r0,
-            r1: S::sqrt(i / i0),
+            r1: f64::sqrt(i / i0),
         }
     }
 }

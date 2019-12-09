@@ -422,7 +422,7 @@ impl Context<'_> {
                 );
             }
 
-            let renderer::PrefixSumConfiguration {
+            let renderer::configuration::PrefixSumConfiguration {
                 pass_0_threads,
                 pass_1_threads,
                 ..

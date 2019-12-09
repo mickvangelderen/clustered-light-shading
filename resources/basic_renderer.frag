@@ -1,6 +1,7 @@
 #include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
 #include "native/PROFILING"
+#include "native/DEPTH_PREPASS"
 
 #include "common.glsl"
 #include "heatmap.glsl"
@@ -18,15 +19,41 @@
 #if !defined(PROFILING_TIME_SENSITIVE)
 #error PROFILING_TIME_SENSITIVE is not defined.
 #endif
-#if PROFILING_TIME_SENSITIVE == false
+
 #if !defined(BASIC_PASS)
 #error BASIC_PASS is not defined.
 #endif
-#if BASIC_PASS == BASIC_PASS_OPAQUE
-layout(early_fragment_tests) in;
+
+#if !defined(BASIC_PASS_OPAQUE)
+#error BASIC_PASS_OPAQUE is not defined.
 #endif
+
+#if !defined(BASIC_PASS_MASKED)
+#error BASIC_PASS_MASKED is not defined.
+#endif
+
+#if !defined(DEPTH_PREPASS)
+#error DEPTH_PREPASS is not defined.
+#endif
+
+#if !PROFILING_TIME_SENSITIVE
 layout(binding = BASIC_ATOMIC_BINDING, offset = 0) uniform atomic_uint shading_ops;
 layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_ops;
+#endif
+
+#if BASIC_PASS == BASIC_PASS_OPAQUE
+// NOTE(mickvangelderen) Should be the default, unless using side
+// effects like the atomic writes for atemporal profiling where we have
+// to force this behaviour.
+layout(early_fragment_tests) in;
+#endif
+
+#if BASIC_PASS == BASIC_PASS_MASKED
+// NOTE(mickvangelderen) Can only force this on when we disable depth
+// writes because of how early-z is implemented.
+#if DEPTH_PREPASS
+layout(early_fragment_tests) in;
+#endif
 #endif
 
 layout(binding = NORMAL_SAMPLER_BINDING) uniform sampler2D normal_sampler;
@@ -133,9 +160,6 @@ void main() {
   vec4 kd = texture(diffuse_sampler, frag_pos_in_tex);
   vec4 ks = texture(specular_sampler, frag_pos_in_tex);
 
-#if !defined(BASIC_PASS)
-#error BASIC_PASS is undefined.
-#endif
 #if BASIC_PASS == BASIC_PASS_MASKED
   if (kd.a < 0.5) {
     discard;
@@ -209,10 +233,7 @@ void main() {
       // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
       // ACTUAL SHADING
-#if !defined(PROFILING_TIME_SENSITIVE)
-#error PROFILING_TIME_SENSITIVE is not defined.
-#endif
-#if PROFILING_TIME_SENSITIVE == false
+#if !PROFILING_TIME_SENSITIVE
       atomicCounterIncrement(shading_ops);
 #endif
 
@@ -222,10 +243,7 @@ void main() {
 
         color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
-#if !defined(PROFILING_TIME_SENSITIVE)
-#error PROFILING_TIME_SENSITIVE is not defined.
-#endif
-#if PROFILING_TIME_SENSITIVE == false
+#if !PROFILING_TIME_SENSITIVE
         atomicCounterIncrement(lighting_ops);
 #endif
       }

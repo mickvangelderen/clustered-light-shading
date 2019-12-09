@@ -48,6 +48,7 @@ mod toggle;
 mod viewport;
 mod window_mode;
 
+use renderer::configuration::Configuration;
 use renderer::frustum::Frustum;
 use renderer::range::Range3;
 
@@ -368,14 +369,16 @@ impl MainContext {
         };
 
         let mut record_file = match configuration.global.mode {
-            ApplicationMode::Record => Some(io::BufWriter::new(
+            configuration::ApplicationMode::Record => Some(io::BufWriter::new(
                 fs::File::create(&configuration.record.path).unwrap(),
             )),
             _ => None,
         };
 
         let mut replay_file = match configuration.global.mode {
-            ApplicationMode::Replay => Some(io::BufReader::new(fs::File::open(&configuration.replay.path).unwrap())),
+            configuration::ApplicationMode::Replay => {
+                Some(io::BufReader::new(fs::File::open(&configuration.replay.path).unwrap()))
+            }
             _ => None,
         };
 
@@ -455,6 +458,7 @@ impl MainContext {
                 clustered_light_shading: configuration.clustered_light_shading,
                 profiling: shader_compiler::ProfilingVariables { time_sensitive: false },
                 sample_count: configuration.global.sample_count,
+                depth_prepass: true,
             },
         );
 
@@ -659,6 +663,8 @@ impl<'s> Context<'s> {
             maximum_smoothness: configuration.camera.maximum_smoothness,
         });
 
+        let depth_prepass = shader_compiler.depth_prepass();
+
         Context {
             paths,
             configuration,
@@ -714,7 +720,7 @@ impl<'s> Context<'s> {
             clear_color: [0.0; 3],
             window_mode: WindowMode::Main,
             display_mode: 1,
-            depth_prepass: true,
+            depth_prepass,
             target_camera_key: CameraKey::Main,
             transition_camera,
             cameras,
@@ -884,6 +890,8 @@ impl<'s> Context<'s> {
                                 }
                                 VirtualKeyCode::Key5 => {
                                     self.depth_prepass = !self.depth_prepass;
+                                    self.shader_compiler
+                                        .replace_depth_prepass(&mut self.current, self.depth_prepass);
                                 }
                                 VirtualKeyCode::R => {
                                     reset_debug_camera = true;
@@ -1143,12 +1151,7 @@ impl<'s> Context<'s> {
                 self.point_lights.push(light::PointLight {
                     tint: rain_drop.tint.into(),
                     position: Point3::from_vec(rain_drop.position),
-                    attenuation: light::AttenParams {
-                        i: self.configuration.rain.intensity as f32,
-                        i0: self.configuration.rain.clip_near as f32,
-                        r0: self.configuration.rain.cut_off as f32,
-                    }
-                    .into(),
+                    attenuation: light::AttenCoefs::from(self.configuration.light.attenuation).cast().unwrap()
                 });
             }
         }
@@ -1206,7 +1209,8 @@ impl<'s> Context<'s> {
                 let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), hmd_to_bdy);
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
+                    && self.configuration.clustered_light_shading.grouping
+                        == configuration::ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
@@ -1242,7 +1246,8 @@ impl<'s> Context<'s> {
                     };
 
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                        && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
+                        && self.configuration.clustered_light_shading.grouping
+                            == configuration::ClusteringGrouping::Individual
                     {
                         cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                             gl,
@@ -1315,7 +1320,8 @@ impl<'s> Context<'s> {
                 let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), Matrix4::identity());
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Enclosed
+                    && self.configuration.clustered_light_shading.grouping
+                        == configuration::ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
@@ -1348,7 +1354,8 @@ impl<'s> Context<'s> {
                 };
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
-                    && self.configuration.clustered_light_shading.grouping == ClusteringGrouping::Individual
+                    && self.configuration.clustered_light_shading.grouping
+                        == configuration::ClusteringGrouping::Individual
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
                         gl,
@@ -1482,7 +1489,7 @@ impl<'s> Context<'s> {
                 }
             }
 
-            if self.configuration.global.render_lights {
+            if self.configuration.light.display {
                 self.render_lights(&light_renderer::Parameters { main_parameters_index });
             }
 
@@ -1581,9 +1588,10 @@ impl<'s> Context<'s> {
                  Attenuation Mode: {:<14} | Lighting Space:   {:<14} | Light Count:      {:<14}\n\
                  ",
                 match self.configuration.global.mode {
-                    ApplicationMode::Normal => "".to_string(),
-                    ApplicationMode::Record => format!("Frame {:>4} | Recording...\n", self.frame_index.to_usize()),
-                    ApplicationMode::Replay => format!(
+                    configuration::ApplicationMode::Normal => "".to_string(),
+                    configuration::ApplicationMode::Record =>
+                        format!("Frame {:>4} | Recording...\n", self.frame_index.to_usize()),
+                    configuration::ApplicationMode::Replay => format!(
                         "Frame {:>4}/{} | Run {:>2}/{}\n",
                         self.frame_index.to_usize(),
                         self.replay_frame_events.as_ref().map(Vec::len).unwrap(),
@@ -1828,8 +1836,8 @@ fn main() {
 
     let mut run_index = RunIndex::from_usize(0);
     let run_count = RunIndex::from_usize(match context.configuration.global.mode {
-        ApplicationMode::Normal | ApplicationMode::Record => 1,
-        ApplicationMode::Replay => context.configuration.replay.run_count,
+        configuration::ApplicationMode::Normal | configuration::ApplicationMode::Record => 1,
+        configuration::ApplicationMode::Replay => context.configuration.replay.run_count,
     });
 
     while run_index < run_count {
@@ -1853,7 +1861,7 @@ fn main() {
         context.profiling_context.end_run(run_index);
 
         match context.configuration.global.mode {
-            ApplicationMode::Normal | ApplicationMode::Record => {
+            configuration::ApplicationMode::Normal | configuration::ApplicationMode::Record => {
                 // Save state.
                 let mut file = io::BufWriter::new(fs::File::create("state.bin").unwrap());
                 for key in CameraKey::iter() {
@@ -1862,7 +1870,7 @@ fn main() {
                 }
                 break;
             }
-            ApplicationMode::Replay => {
+            configuration::ApplicationMode::Replay => {
                 // Do nothing.
             }
         }

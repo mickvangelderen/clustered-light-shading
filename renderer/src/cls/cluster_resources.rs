@@ -1,6 +1,7 @@
 use crate::*;
 use cluster_space_buffer::ClusterSpaceCoefficients;
 use renderer::*;
+use renderer::configuration::ClusteringProjection;
 
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -38,7 +39,7 @@ impl ClusterStage {
 
 #[derive(Debug)]
 pub struct ClusterParameters {
-    pub configuration: ClusteredLightShadingConfiguration,
+    pub configuration: configuration::ClusteredLightShadingConfiguration,
     pub clu_ori_to_wld: Matrix4<f64>,
 }
 

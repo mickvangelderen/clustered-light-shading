@@ -1,6 +1,5 @@
 [global]
 diffuse_srgb = true
-render_lights = true
 mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
@@ -16,13 +15,14 @@ sample_count = 4
 # sample_count = 8
 # sample_count = 16
 
+[light]
+display = true
+attenuation = { i = 4.0, i0 = 0.8, r0 = 0.1 }
+
 [rain]
-max_count = 1000000
+max_count = 200000
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
-bounds_max= { x = +80.0, y = +40.0, z = +60.0 }
-intensity = 1.0
-clip_near = 0.5
-cut_off = 0.8
+bounds_max = { x = +80.0, y = +40.0, z = +60.0 }
 
 [record]
 path = "recording.bin"

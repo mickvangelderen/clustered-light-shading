@@ -7,5 +7,5 @@ void main() {
   vec2 d = fs_pos_in_tex * 2.0 - vec2(1.0);
   float a = max(0.0, 1.0 - dot(d, d));
 
-  frag_color = vec4(normalize(fs_tint), pow(a, 4.0));
+  frag_color = vec4(fs_tint, pow(a, 4.0));
 }

@@ -1,6 +1,7 @@
 use crate::*;
 
 use incremental::{Current, LastComputed, LastModified, LastVerified};
+use renderer::configuration::ClusteringProjection;
 use renderer::*;
 
 use std::collections::HashMap;
@@ -86,6 +87,7 @@ pub enum SourceReader {
     ClusteredLightShading,
     Profiling,
     SampleCount,
+    DepthPrepass,
 }
 
 impl SourceReader {
@@ -203,8 +205,8 @@ impl SourceReader {
                     line!() - 2,
                     source_index,
                     match vars.profiling.time_sensitive {
-                        true => "true",
-                        false => "false",
+                        true => 1,
+                        false => 0,
                     }
                 )));
             }
@@ -217,6 +219,20 @@ impl SourceReader {
                     line!() - 2,
                     source_index,
                     vars.sample_count,
+                )));
+            }
+            SourceReader::DepthPrepass => {
+                tokens.push(Token::Literal(format!(
+                    "\
+                    #line {} {}\n\
+                    #define DEPTH_PREPASS {}\n\
+                    ",
+                    line!() - 2,
+                    source_index,
+                    match vars.depth_prepass {
+                        true => 1,
+                        false => 0,
+                    }
                 )));
             }
         }
@@ -436,10 +452,11 @@ pub struct Variables {
     pub light_space: LightSpace,
     pub attenuation_mode: AttenuationMode,
     pub render_technique: RenderTechnique,
-    pub prefix_sum: PrefixSumConfiguration,
-    pub clustered_light_shading: ClusteredLightShadingConfiguration,
+    pub prefix_sum: configuration::PrefixSumConfiguration,
+    pub clustered_light_shading: configuration::ClusteredLightShadingConfiguration,
     pub profiling: ProfilingVariables,
     pub sample_count: u32,
+    pub depth_prepass: bool,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -455,6 +472,7 @@ pub struct NativeSourceIndices {
     pub clustered_light_shading: SourceIndex,
     pub profiling: SourceIndex,
     pub sample_count: SourceIndex,
+    pub depth_prepass: SourceIndex,
 }
 
 pub struct ShaderCompilationContext<'a> {
@@ -478,31 +496,67 @@ impl ShaderCompiler {
         let indices = NativeSourceIndices {
             light_space: memory.add_source(
                 PathBuf::from("native/LIGHT_SPACE"),
-                Source::new(current, SourceReader::LightSpace, PathBuf::from(concat!(file!(), "LIGHT_SPACE")))
+                Source::new(
+                    current,
+                    SourceReader::LightSpace,
+                    PathBuf::from(concat!(file!(), "LIGHT_SPACE")),
+                ),
             ),
             attenuation_mode: memory.add_source(
                 PathBuf::from("native/ATTENUATION_MODE"),
-                Source::new(current, SourceReader::AttenuationMode, PathBuf::from(concat!(file!(), "ATTENUATION_MODE")))
+                Source::new(
+                    current,
+                    SourceReader::AttenuationMode,
+                    PathBuf::from(concat!(file!(), "ATTENUATION_MODE")),
+                ),
             ),
             render_technique: memory.add_source(
                 PathBuf::from("native/RENDER_TECHNIQUE"),
-                Source::new(current, SourceReader::RenderTechnique, PathBuf::from(concat!(file!(), "RENDER_TECHNIQUE")))
+                Source::new(
+                    current,
+                    SourceReader::RenderTechnique,
+                    PathBuf::from(concat!(file!(), "RENDER_TECHNIQUE")),
+                ),
             ),
             prefix_sum: memory.add_source(
                 PathBuf::from("native/PREFIX_SUM"),
-                Source::new(current, SourceReader::PrefixSum, PathBuf::from(concat!(file!(), "PREFIX_SUM"))),
+                Source::new(
+                    current,
+                    SourceReader::PrefixSum,
+                    PathBuf::from(concat!(file!(), "PREFIX_SUM")),
+                ),
             ),
             clustered_light_shading: memory.add_source(
                 PathBuf::from("native/CLUSTERED_LIGHT_SHADING"),
-                Source::new(current, SourceReader::ClusteredLightShading, PathBuf::from(concat!(file!(), "CLUSTERED_LIGHT_SHADING"))),
+                Source::new(
+                    current,
+                    SourceReader::ClusteredLightShading,
+                    PathBuf::from(concat!(file!(), "CLUSTERED_LIGHT_SHADING")),
+                ),
             ),
             profiling: memory.add_source(
                 PathBuf::from("native/PROFILING"),
-                Source::new(current, SourceReader::Profiling, PathBuf::from(concat!(file!(), "PROFILING"))),
+                Source::new(
+                    current,
+                    SourceReader::Profiling,
+                    PathBuf::from(concat!(file!(), "PROFILING")),
+                ),
             ),
             sample_count: memory.add_source(
                 PathBuf::from("native/SAMPLE_COUNT"),
-                Source::new(current, SourceReader::SampleCount, PathBuf::from(concat!(file!(), "X"))),
+                Source::new(
+                    current,
+                    SourceReader::SampleCount,
+                    PathBuf::from(concat!(file!(), "SAMPLE_COUNT")),
+                ),
+            ),
+            depth_prepass: memory.add_source(
+                PathBuf::from("native/DEPTH_PREPASS"),
+                Source::new(
+                    current,
+                    SourceReader::DepthPrepass,
+                    PathBuf::from(concat!(file!(), "DEPTH_PREPASS")),
+                ),
             ),
         };
 
@@ -577,34 +631,32 @@ impl ShaderCompiler {
         old
     }
 
-    pub fn prefix_sum(&self) -> PrefixSumConfiguration {
+    pub fn prefix_sum(&self) -> configuration::PrefixSumConfiguration {
         self.variables.prefix_sum
     }
 
     pub fn replace_prefix_sum(
         &mut self,
         current: &mut Current,
-        prefix_sum: PrefixSumConfiguration,
-    ) -> PrefixSumConfiguration {
-        let old = std::mem::replace(&mut self.variables.prefix_sum, prefix_sum);
-        if old != prefix_sum {
+        value: configuration::PrefixSumConfiguration,
+    ) -> configuration::PrefixSumConfiguration {
+        if self.variables.prefix_sum != value {
             self.source_mut(self.indices.prefix_sum).last_modified.modify(current);
         }
-        old
+        std::mem::replace(&mut self.variables.prefix_sum, value)
     }
 
     pub fn replace_clustered_light_shading(
         &mut self,
         current: &mut Current,
-        clustered_light_shading: ClusteredLightShadingConfiguration,
-    ) -> ClusteredLightShadingConfiguration {
-        let old = std::mem::replace(&mut self.variables.clustered_light_shading, clustered_light_shading);
-        if old != clustered_light_shading {
+        value: configuration::ClusteredLightShadingConfiguration,
+    ) -> configuration::ClusteredLightShadingConfiguration {
+        if self.variables.clustered_light_shading != value {
             self.source_mut(self.indices.clustered_light_shading)
                 .last_modified
                 .modify(current);
         }
-        old
+        std::mem::replace(&mut self.variables.clustered_light_shading, value)
     }
 
     pub fn replace_profiling(&mut self, current: &mut Current, value: ProfilingVariables) -> ProfilingVariables {
@@ -619,5 +671,18 @@ impl ShaderCompiler {
             self.source_mut(self.indices.sample_count).last_modified.modify(current);
         }
         std::mem::replace(&mut self.variables.sample_count, value)
+    }
+
+    pub fn depth_prepass(&self) -> bool {
+        self.variables.depth_prepass
+    }
+
+    pub fn replace_depth_prepass(&mut self, current: &mut Current, value: bool) -> bool {
+        if self.variables.depth_prepass != value {
+            self.source_mut(self.indices.depth_prepass)
+                .last_modified
+                .modify(current);
+        }
+        std::mem::replace(&mut self.variables.depth_prepass, value)
     }
 }
