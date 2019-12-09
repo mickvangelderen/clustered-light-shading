@@ -47,14 +47,21 @@ pub struct Configuration {
 impl Configuration {
     pub const DEFAULT_PATH: &'static str = "resources/configuration.toml";
 
-    pub fn read(configuration_path: &std::path::Path) -> Self {
-        match std::fs::read_to_string(&configuration_path) {
+    pub fn read(configuration_path: impl AsRef<std::path::Path>) -> Self {
+        let configuration_path = configuration_path.as_ref();
+        match std::fs::read_to_string(configuration_path) {
             Ok(contents) => match toml::from_str(&contents) {
                 Ok(configuration) => configuration,
                 Err(err) => panic!("Failed to parse configuration file {:?}: {}.", configuration_path, err),
             },
             Err(err) => panic!("Failed to read configuration file {:?}: {}.", configuration_path, err),
         }
+    }
+
+    pub fn write(&self, configuration_path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let contents = toml::Value::try_from(self).unwrap().to_string();
+        std::fs::create_dir_all(configuration_path.as_ref().parent().unwrap())?;
+        std::fs::write(configuration_path, contents)
     }
 }
 

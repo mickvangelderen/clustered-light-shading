@@ -25,16 +25,17 @@ clip_near = 0.5
 cut_off = 0.8
 
 [record]
-path = "sun_temple_replay.bin"
+path = "recording.bin"
 
 [replay]
 run_count = 4
-path = "sun_temple_replay.bin"
+path = "recording.bin"
 
 [profiling]
-display = false
-record_frames = true
-path = "profiling.bin"
+# name = "not_auto_generated"
+display = true
+record_events = true
+record_frames = false
 hide = [
   "opaque",
   "masked",
@@ -62,9 +63,9 @@ grouping = "Enclosed"
 
 # orthographic_sides = { x = 1.5, y = 1.5, z = 1.5 }
 # orthographic_sides = { x = 1.75, y = 1.75, z = 1.75 }
-# orthographic_sides = { x = 2.0, y = 2.0, z = 2.0 }
+orthographic_sides = { x = 2.0, y = 2.0, z = 2.0 }
 # orthographic_sides = { x = 3.0, y = 3.0, z = 3.0 }
-orthographic_sides = { x = 4.0, y = 4.0, z = 4.0 }
+# orthographic_sides = { x = 4.0, y = 4.0, z = 4.0 }
 # orthographic_sides = { x = 12.0, y = 12.0, z = 12.0 }
 
 # perspective_pixels = { x = 16, y = 16 }
