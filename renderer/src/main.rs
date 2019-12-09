@@ -1822,8 +1822,7 @@ fn main() {
         )
         .get_matches();
 
-    // Gets a value for config if supplied by user, or defaults to "default.conf"
-    let configuration_path = PathBuf::from(matches.value_of("configuration path").unwrap());
+    let configuration_path = std::fs::canonicalize(matches.value_of("configuration path").unwrap()).unwrap();
 
     let mut context = MainContext::new(configuration_path);
 
