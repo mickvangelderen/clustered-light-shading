@@ -999,16 +999,18 @@ impl<'s> Context<'s> {
                     .unwrap();
 
                 let max_count = self.configuration.rain.max_count as usize;
-                let seconds_to_bottom = (p1.y - p0.y) / 17.0; // 17 from rain.rs
-                let frames_to_bottom = DESIRED_UPS as f32 * seconds_to_bottom;
-                let drops_per_update = max_count as f32 / frames_to_bottom;
-                for _ in 0..drops_per_update as usize {
-                    if self.rain_drops.len() < max_count {
+
+                if self.rain_drops.len() < max_count {
+                    let seconds_to_bottom = (p1.y - p0.y) / 17.0; // 17 from rain.rs
+                    let frames_to_bottom = DESIRED_UPS as f32 * seconds_to_bottom;
+                    let drops_per_update = f32::ceil(max_count as f32 / frames_to_bottom);
+                    for _ in 0..drops_per_update as usize {
                         self.rain_drops.push(rain::Particle::new(rng, p0, p1));
                     }
-                    if self.rain_drops.len() > max_count {
-                        self.rain_drops.truncate(max_count);
-                    }
+                }
+
+                if self.rain_drops.len() > max_count {
+                    self.rain_drops.truncate(max_count);
                 }
 
                 for rain_drop in self.rain_drops.iter_mut() {
