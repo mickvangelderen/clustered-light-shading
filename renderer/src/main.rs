@@ -351,7 +351,8 @@ impl MainContext {
                 .unwrap();
             symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
 
-            std::fs::copy(&configuration_path, current_profiling_dir.join("configuration.toml")).unwrap();
+            // FIXME(mickvangelderen): Don't do this because the profile binary writes the configuration here.
+            // std::fs::copy(&configuration_path, current_profiling_dir.join("configuration.toml")).unwrap();
 
             // Make sure we can write out the frames.
             if let Ok(entries) = std::fs::read_dir(&frames_dir) {
