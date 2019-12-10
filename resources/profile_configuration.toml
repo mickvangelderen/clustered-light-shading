@@ -35,7 +35,7 @@ path = "replay_bistro.bin"
 # name = "not_auto_generated"
 display = false
 record_events = true
-record_frames = false
+record_frames = true
 hide = []
 
 [window]

@@ -36,14 +36,15 @@ enum Technique {
 impl Technique {
     pub fn name(&self) -> String {
         match *self {
-            Self::Ortho { size } => format!("ortho_{:4.0}", size * 100.0),
-            Self::Persp { size } => format!("persp_{:4}", size),
+            Self::Ortho { size } => format!("ortho_{:04.0}", size * 100.0),
+            Self::Persp { size } => format!("persp_{:04}", size),
         }
     }
 
     pub fn apply(&self, cfg: &mut Configuration) {
         match *self {
             Self::Ortho { size } => {
+                cfg.clustered_light_shading.projection = configuration::ClusteringProjection::Orthographic;
                 cfg.clustered_light_shading.orthographic_sides = configuration::Vector3 {
                     x: size,
                     y: size,
@@ -51,6 +52,7 @@ impl Technique {
                 };
             }
             Self::Persp { size } => {
+                cfg.clustered_light_shading.projection = configuration::ClusteringProjection::Perspective;
                 cfg.clustered_light_shading.perspective_pixels = configuration::Vector2 { x: size, y: size };
             }
         }
@@ -59,7 +61,14 @@ impl Technique {
 
 struct Lighting {
     count: u32,
-    intensity: f64,
+    attenuation: configuration::Attenuation,
+}
+
+impl Lighting {
+    pub fn apply(&self, cfg: &mut Configuration) {
+        cfg.rain.max_count = self.count;
+        cfg.light.attenuation = self.attenuation;
+    }
 }
 
 pub fn main() {
@@ -71,11 +80,11 @@ pub fn main() {
             scene_path: PathBuf::from("bistro/Bistro_Exterior.bin"),
             replay_path: PathBuf::from("replay_bistro.bin"),
         },
-        Scene {
-            short_name: "suntem",
-            scene_path: PathBuf::from("sun_temple/SunTemple.bin"),
-            replay_path: PathBuf::from("replay_sun_temple.bin"),
-        },
+        // Scene {
+        //     short_name: "suntem",
+        //     scene_path: PathBuf::from("sun_temple/SunTemple.bin"),
+        //     replay_path: PathBuf::from("replay_sun_temple.bin"),
+        // },
     ];
 
     let base_cfg = Configuration::read("resources/profile_configuration.toml");
@@ -83,22 +92,34 @@ pub fn main() {
     let lightings = [
         Lighting {
             count: 1000,
-            intensity: 20.0,
+            attenuation: configuration::Attenuation {
+                i: 100.0,
+                i0: 0.5,
+                r0: 0.1,
+            }
         },
         Lighting {
             count: 10_000,
-            intensity: 10.0,
+            attenuation: configuration::Attenuation {
+                i: 20.0,
+                i0: 0.5,
+                r0: 0.1,
+            }
         },
         Lighting {
             count: 100_000,
-            intensity: 5.0,
+            attenuation: configuration::Attenuation {
+                i: 1.0,
+                i0: 0.5,
+                r0: 0.1,
+            }
         },
     ];
 
-    let techniques: Vec<Technique> = [1.0, 1.5, 2.0, 4.0]
+    let techniques: Vec<Technique> = [1.0, 2.0, 4.0, 8.0, 16.0]
         .iter()
         .map(|&n| Technique::Ortho { size: n })
-        .chain([16, 24, 32, 48, 64].iter().map(|&n| Technique::Persp { size: n }))
+        .chain([16, 32, 64, 128].iter().map(|&n| Technique::Persp { size: n }))
         .collect();
 
     for scene in scenes.iter() {
@@ -117,9 +138,7 @@ pub fn main() {
                 cfg.replay.path = scene.replay_path.clone();
                 cfg.profiling.name = Some(PathBuf::from(name.clone()));
 
-                cfg.light.attenuation.i = lighting.intensity;
-                cfg.rain.max_count = lighting.count;
-
+                lighting.apply(&mut cfg);
                 technique.apply(&mut cfg);
 
                 let profiling_dir = PathBuf::from("profiling").join(name);
