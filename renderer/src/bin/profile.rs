@@ -83,7 +83,7 @@ pub fn main() {
         // Scene {
         //     short_name: "suntem",
         //     scene_path: PathBuf::from("sun_temple/SunTemple.bin"),
-        //     replay_path: PathBuf::from("replay_sun_temple.bin"),
+        //     replay_path: PathBuf::from("replay_suntem.bin"),
         // },
     ];
 
