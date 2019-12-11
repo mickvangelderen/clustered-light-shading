@@ -994,39 +994,39 @@ impl<'s> Context<'s> {
             end_camera: &self.target_camera().current_to_camera(),
         });
 
-        if self.paused == false {
-            {
+        {
+            let center = Point3::origin();
+            let p0 = (center + Vector3::from(self.configuration.rain.bounds_min.to_array()))
+                .cast()
+                .unwrap();
+            let p1 = (center + Vector3::from(self.configuration.rain.bounds_max.to_array()))
+                .cast()
+                .unwrap();
+
+            let max_count = self.configuration.rain.max_count as usize;
+
+            if self.rain_drops.len() < max_count {
                 // let center = self.transition_camera.current_camera.transform.position;
-                let center = Point3::origin();
-                let rng = &mut self.rng;
-                let p0 = (center + Vector3::from(self.configuration.rain.bounds_min.to_array()))
-                    .cast()
-                    .unwrap();
-                let p1 = (center + Vector3::from(self.configuration.rain.bounds_max.to_array()))
-                    .cast()
-                    .unwrap();
 
-                let max_count = self.configuration.rain.max_count as usize;
-
-                if self.rain_drops.len() < max_count {
-                    let seconds_to_bottom = (p1.y - p0.y) / 17.0; // 17 from rain.rs
-                    let frames_to_bottom = DESIRED_UPS as f32 * seconds_to_bottom;
-                    let drops_per_update = f32::ceil(max_count as f32 / frames_to_bottom);
-                    for _ in 0..drops_per_update as usize {
-                        self.rain_drops.push(rain::Particle::new(rng, p0, p1));
-                    }
-                }
-
-                if self.rain_drops.len() > max_count {
-                    self.rain_drops.truncate(max_count);
-                }
-
-                for rain_drop in self.rain_drops.iter_mut() {
-                    rain_drop.update(delta_time, rng, p0, p1);
+                // let seconds_to_bottom = (p1.y - p0.y) / 17.0; // 17 from rain.rs
+                // let frames_to_bottom = DESIRED_UPS as f32 * seconds_to_bottom;
+                // let drops_per_update = f32::ceil(max_count as f32 / frames_to_bottom);
+                for _ in self.rain_drops.len()..max_count {
+                    self.rain_drops.push(rain::Particle::spawn(&mut self.rng, p0, p1));
                 }
             }
 
-            self.tick += 1;
+            if self.rain_drops.len() > max_count {
+                self.rain_drops.truncate(max_count);
+            }
+
+            if self.paused == false {
+                for rain_drop in self.rain_drops.iter_mut() {
+                    rain_drop.update(delta_time, &mut self.rng, p0, p1);
+                }
+
+                self.tick += 1;
+            }
         }
 
         if self.vr.is_some() {
