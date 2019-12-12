@@ -1853,9 +1853,9 @@ fn main() {
         );
 
         while context.running {
-            context.render();
             context.process_events();
             context.simulate();
+            context.render();
         }
 
         context.profiling_context.end_run(run_index);
