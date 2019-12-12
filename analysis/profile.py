@@ -55,90 +55,117 @@ def load_profiles(profiling_directory, regex):
 profile_dir_regex = re.compile(r"^(suntem|bistro)_[ \d]{7}_(ortho|persp)_[ \d]{4}$");
 profiles_0 = load_profiles("../profiling", profile_dir_regex);
 
-profiles_1 = [profile for profile in profiles_0 if
-                    profile.configuration["global"]["scene_path"] == "bistro/Bistro_Exterior.bin"]
-
 sample_names = ["/frame", "/frame/cluster", "/frame/basic"]
-lightings = sorted({ Lighting(profile.configuration) for profile in profiles_1 }, key = lambda x: x.count)
 
-# ortho
+print("thesis.textwidth = {}in, thesis.dpi = {}".format(thesis.textwidth, thesis.dpi))
 
-fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth_inch, thesis.textwidth_inch))
+def gridspec_box(l, r, b, t, w, h):
+    return {
+        "left": l/w,
+        "right": (w - r)/w,
+        "bottom": b/h,
+        "top": (h - t)/h,
+    }
 
-for row, sample_name in enumerate(sample_names):
-    for col, lighting in enumerate(lightings):
-        ax = axes[row, col]
-        ax.set_title("{} lights(i = {}, r1 = {:.2f})".format(
-            lighting.count,
-            lighting.attenuation.i,
-            lighting.attenuation.r1
-        ))
+for (scene_name, scene_path) in [
+    ("bistro", "bistro/Bistro_Exterior.bin"),
+    ("suntem", "sun_temple/SunTemple.bin"),
+]:
 
-        if col == 0:
-            ax.set_ylabel("{} (ms)".format(sample_name))
+    profiles_1 = [profile for profile in profiles_0 if
+                        profile.configuration["global"]["scene_path"] == scene_path]
 
-        if row + 1 == len(sample_names):
-            ax.set_xlabel("frame")
+    lightings = sorted({ Lighting(profile.configuration) for profile in profiles_1 }, key = lambda x: x.count)
 
-        profiles_2 = sorted([
-            profile for profile in profiles_1
-            if lighting == Lighting(profile.configuration)
-            and profile.configuration["clustered_light_shading"]["projection"] == "Orthographic"
-        ], key = lambda profile: profile.configuration["clustered_light_shading"]["orthographic_sides"]["x"])
+    # ortho
 
-        for profile in profiles_2:
-            frame_sample_index = profile.samples.sample_names.index(sample_name)
-            # GPU Samples from all frames except the first
-            run_samples = profile.samples.deltas[1:, :, frame_sample_index, 1]
-            samples = np.nanmin(run_samples, axis = 0) / 1000000.0
-            size = profile.configuration["clustered_light_shading"]["orthographic_sides"]
-            size_x = size["x"]
-            assert size_x == size["y"]
-            assert size_x == size["z"]
-            ax.plot(samples, label="ortho {}".format(size_x))
 
-        ax.legend(loc = 'upper left')
+    fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
+        gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
+    )
 
-fig.savefig('../media/tune_ortho.pdf', format='pdf', bbox_inches='tight')
+    for row, sample_name in enumerate(sample_names):
+        for col, lighting in enumerate(lightings):
+            ax = axes[row, col]
 
-# persp
+            if row == 0:
+                ax.set_title("{} lights (r1 = {:.2f})".format(
+                    lighting.count,
+                    lighting.attenuation.r1
+                ))
 
-fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth_inch, thesis.textwidth_inch))
+            if row + 1 == len(sample_names):
+                ax.set_xlabel("frame")
 
-for row, sample_name in enumerate(sample_names):
-    for col, lighting in enumerate(lightings):
-        ax = axes[row, col]
-        ax.set_title("{} lights(i = {}, r1 = {:.2f})".format(
-            lighting.count,
-            lighting.attenuation.i,
-            lighting.attenuation.r1
-        ))
+            if col == 0:
+                ax.set_ylabel("{} (ms)".format(sample_name))
 
-        if col == 0:
-            ax.set_ylabel("{} (ms)".format(sample_name))
+            profiles_2 = sorted([
+                profile for profile in profiles_1
+                if lighting == Lighting(profile.configuration)
+                and profile.configuration["clustered_light_shading"]["projection"] == "Orthographic"
+            ], key = lambda profile: profile.configuration["clustered_light_shading"]["orthographic_sides"]["x"])
 
-        if row + 1 == len(sample_names):
-            ax.set_xlabel("frame")
+            for profile in profiles_2:
+                frame_sample_index = profile.samples.sample_names.index(sample_name)
+                # GPU Samples from all frames except the first
+                run_samples = profile.samples.deltas[1:, :, frame_sample_index, 1]
+                samples = np.nanmin(run_samples, axis = 0) / 1000000.0
+                size = profile.configuration["clustered_light_shading"]["orthographic_sides"]
+                size_x = size["x"]
+                assert size_x == size["y"]
+                assert size_x == size["z"]
+                ax.plot(samples, label="ortho {}".format(size_x))
 
-        profiles_2 = sorted([
-            profile for profile in profiles_1
-            if lighting == Lighting(profile.configuration)
-            and profile.configuration["clustered_light_shading"]["projection"] == "Perspective"
-        ], key = lambda p: p.configuration["clustered_light_shading"]["perspective_pixels"]["x"])
+            ax.legend(loc = 'upper left')
 
-        for profile in profiles_2:
-            frame_sample_index = profile.samples.sample_names.index(sample_name)
-            # GPU Samples from all frames except the first
-            run_samples = profile.samples.deltas[1:, :, frame_sample_index, 1]
-            samples = np.nanmin(run_samples, axis = 0) / 1000000.0
-            size = profile.configuration["clustered_light_shading"]["perspective_pixels"]
-            size_x = size["x"]
-            assert size_x == size["y"]
-            ax.plot(samples, label="persp {}".format(size_x))
+    fig.align_ylabels(axes)
 
-        ax.legend(loc = 'upper left')
+    fig.savefig('../../thesis/media/tune_ortho_{}.pdf'.format(scene_name), format='pdf')
 
-fig.savefig('../media/tune_persp.pdf', format='pdf', bbox_inches='tight')
+    # persp
+
+    fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
+        gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
+    )
+
+    for row, sample_name in enumerate(sample_names):
+        for col, lighting in enumerate(lightings):
+            ax = axes[row, col]
+
+            if row == 0:
+                ax.set_title("{} lights (r1 = {:.2f})".format(
+                    lighting.count,
+                    lighting.attenuation.r1
+                ))
+
+            if row + 1 == len(sample_names):
+                ax.set_xlabel("frame")
+
+            if col == 0:
+                ax.set_ylabel("{} (ms)".format(sample_name))
+
+            profiles_2 = sorted([
+                profile for profile in profiles_1
+                if lighting == Lighting(profile.configuration)
+                and profile.configuration["clustered_light_shading"]["projection"] == "Perspective"
+            ], key = lambda p: p.configuration["clustered_light_shading"]["perspective_pixels"]["x"])
+
+            for profile in profiles_2:
+                frame_sample_index = profile.samples.sample_names.index(sample_name)
+                # GPU Samples from all frames except the first
+                run_samples = profile.samples.deltas[1:, :, frame_sample_index, 1]
+                samples = np.nanmin(run_samples, axis = 0) / 1000000.0
+                size = profile.configuration["clustered_light_shading"]["perspective_pixels"]
+                size_x = size["x"]
+                assert size_x == size["y"]
+                ax.plot(samples, label="persp {}".format(size_x))
+
+            ax.legend(loc = 'upper left')
+
+    fig.align_ylabels(axes)
+
+    fig.savefig('../../thesis/media/tune_persp_{}.pdf'.format(scene_name), format='pdf')
 
 plt.show()
 
