@@ -1518,22 +1518,35 @@ impl<'s> Context<'s> {
                         );
                     }
 
-                    let cluster_range =
-                        Range3::from_vector(cluster_resources.computed.dimensions.cast::<f64>().unwrap());
+                    {
+                        let cluster_range =
+                            Range3::from_vector(cluster_resources.computed.dimensions.cast::<f64>().unwrap());
 
-                    let vertices: Vec<[f32; 3]> = cluster_range
-                        .vertices()
-                        .iter()
-                        .map(|point| point.cast().unwrap().into())
-                        .collect();
+                        let vertices: Vec<[f32; 3]> = cluster_range
+                            .vertices()
+                            .iter()
+                            .map(|point| point.cast().unwrap().into())
+                            .collect();
 
-                    if false {
+                        let clu_clp_to_clu_cam = match self.configuration.clustered_light_shading.projection {
+                            configuration::ClusteringProjection::Perspective => cluster_resources
+                                .computed
+                                .frustum
+                                .inverse_perspective(&cluster_range),
+                            configuration::ClusteringProjection::Orthographic => cluster_resources
+                                .computed
+                                .frustum
+                                .inverse_orthographic(&cluster_range),
+                        };
+
+                        let clu_clp_to_wld = cluster_resources.computed.clu_cam_to_wld * clu_clp_to_clu_cam;
+
                         self.line_renderer.render(
                             &mut rendering_context!(self),
                             &line_renderer::Parameters {
                                 vertices: &vertices,
                                 indices: &cluster_range.line_mesh_indices(),
-                                obj_to_clp: &(camera.wld_to_clp/* * cluster_resources.computed.clu_clp_to_wld */),
+                                obj_to_clp: &(camera.wld_to_clp * clu_clp_to_wld),
                                 color: color::RED,
                             },
                         );
