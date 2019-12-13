@@ -34,6 +34,12 @@ pub struct Attenuation {
     pub r0: f64,
 }
 
+impl Attenuation {
+    pub fn r1(&self) -> f64 {
+        (self.i / self.i0).sqrt()
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct Configuration {
     pub global: GlobalConfiguration,
