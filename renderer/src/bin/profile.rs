@@ -1,7 +1,7 @@
+pub(crate) use log::*;
 use renderer::configuration::{self, Configuration};
 use std::path::PathBuf;
 use std::process::Command;
-pub(crate) use log::*;
 
 pub fn run_with_configuration(configuration_path: &str) {
     let _ = Command::new("cargo")
@@ -80,11 +80,11 @@ pub fn main() {
             scene_path: PathBuf::from("bistro/Bistro_Exterior.bin"),
             replay_path: PathBuf::from("replay_bistro.bin"),
         },
-        // Scene {
-        //     short_name: "suntem",
-        //     scene_path: PathBuf::from("sun_temple/SunTemple.bin"),
-        //     replay_path: PathBuf::from("replay_suntem.bin"),
-        // },
+        Scene {
+            short_name: "suntem",
+            scene_path: PathBuf::from("sun_temple/SunTemple.bin"),
+            replay_path: PathBuf::from("replay_suntem.bin"),
+        },
     ];
 
     let base_cfg = Configuration::read("resources/profile_configuration.toml");
@@ -96,7 +96,7 @@ pub fn main() {
                 i: 100.0,
                 i0: 0.5,
                 r0: 0.1,
-            }
+            },
         },
         Lighting {
             count: 10_000,
@@ -104,7 +104,7 @@ pub fn main() {
                 i: 20.0,
                 i0: 0.5,
                 r0: 0.1,
-            }
+            },
         },
         Lighting {
             count: 100_000,
@@ -112,7 +112,7 @@ pub fn main() {
                 i: 1.0,
                 i0: 0.5,
                 r0: 0.1,
-            }
+            },
         },
     ];
 
@@ -125,12 +125,7 @@ pub fn main() {
     for scene in scenes.iter() {
         for lighting in lightings.iter() {
             for technique in techniques.iter() {
-                let name = format!(
-                    "{}_{:07}_{}",
-                    scene.short_name,
-                    lighting.count,
-                    technique.name(),
-                );
+                let name = format!("{}_{:07}_{}", scene.short_name, lighting.count, technique.name());
                 info!("Profiling {}...", &name);
                 let mut cfg = base_cfg.clone();
                 cfg.global.mode = configuration::ApplicationMode::Replay;
@@ -145,6 +140,46 @@ pub fn main() {
                 let configuration_path = profiling_dir.join("configuration.toml");
                 cfg.write(&configuration_path).unwrap();
                 run_with_configuration(configuration_path.to_str().unwrap());
+            }
+        }
+    }
+
+    let tuned_techniques = vec![Technique::Ortho { size: 4.0 }, Technique::Persp { size: 64 }];
+
+    let groupings = vec![
+        ("indi", configuration::ClusteringGrouping::Individual),
+        ("encl", configuration::ClusteringGrouping::Enclosed),
+    ];
+
+    for scene in scenes.iter() {
+        for lighting in lightings.iter() {
+            for technique in tuned_techniques.iter() {
+                for &(grouping_name, grouping) in groupings.iter() {
+                    let name = format!(
+                        "stereo_{}_{:07}_{}_{}",
+                        scene.short_name,
+                        lighting.count,
+                        grouping_name,
+                        technique.name()
+                    );
+                    info!("Profiling {}...", &name);
+                    let mut cfg = base_cfg.clone();
+                    cfg.global.mode = configuration::ApplicationMode::Replay;
+                    cfg.global.scene_path = scene.scene_path.clone();
+                    cfg.replay.path = scene.replay_path.clone();
+                    cfg.profiling.name = Some(PathBuf::from(name.clone()));
+
+                    cfg.virtual_stereo.enabled = true;
+                    cfg.clustered_light_shading.grouping = grouping;
+
+                    lighting.apply(&mut cfg);
+                    technique.apply(&mut cfg);
+
+                    let profiling_dir = PathBuf::from("profiling").join(name);
+                    let configuration_path = profiling_dir.join("configuration.toml");
+                    cfg.write(&configuration_path).unwrap();
+                    run_with_configuration(configuration_path.to_str().unwrap());
+                }
             }
         }
     }
