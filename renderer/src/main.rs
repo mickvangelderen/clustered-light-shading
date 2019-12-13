@@ -1597,8 +1597,14 @@ impl<'s> Context<'s> {
             &format!(
                 "\
                  {}\
-                 Render Technique: {:<14} | CLS Grouping:     {:<14} | CLS Projection:   {:<14}\n\
-                 Attenuation Mode: {:<14} | Lighting Space:   {:<14} | Light Count:      {:<14}\n\
+                 Render Technique: {:<14} | \
+                 CLS Grouping:     {:<14} | \
+                 CLS Projection:   {:<14} | \
+                 CLS Size:         {:<14}\n\
+                 Attenuation Mode: {:<14} | \
+                 Light Count:      {:<14} | \
+                 Light Intensity:  {:<14} | \
+                 Light Radius:     {:<14}\n\
                  ",
                 match self.configuration.global.mode {
                     configuration::ApplicationMode::Normal => "".to_string(),
@@ -1615,9 +1621,20 @@ impl<'s> Context<'s> {
                 format!("{:?}", self.shader_compiler.render_technique()),
                 format!("{:?}", self.configuration.clustered_light_shading.grouping),
                 format!("{:?}", self.configuration.clustered_light_shading.projection),
+                match self.configuration.clustered_light_shading.projection {
+                    configuration::ClusteringProjection::Perspective => {
+                        let size = self.configuration.clustered_light_shading.perspective_pixels;
+                        format!("{}x{}px", size.x, size.y)
+                    },
+                    configuration::ClusteringProjection::Orthographic => {
+                        let size = self.configuration.clustered_light_shading.orthographic_sides;
+                        format!("{:.2}x{:.2}x{:.2}m", size.x, size.y, size.z)
+                    }
+                },
                 format!("{:?}", self.shader_compiler.attenuation_mode()),
-                format!("{:?}", self.shader_compiler.light_space()),
                 self.point_lights.len(),
+                self.configuration.light.attenuation.i,
+                format!("{:.2}", self.configuration.light.attenuation.r1()),
             ),
         );
 
