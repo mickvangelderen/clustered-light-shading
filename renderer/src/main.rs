@@ -1254,7 +1254,7 @@ impl<'s> Context<'s> {
                             &mut self.profiling_context,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
-                                clu_ori_to_wld: cluster_c1.hmd_to_wld,
+                                clu_ori_to_wld: cluster_c3.cam_to_wld,
                             },
                         ));
                     }
@@ -1362,7 +1362,7 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            clu_ori_to_wld: cluster_c1.hmd_to_wld,
+                            clu_ori_to_wld: cluster_c3.cam_to_wld,
                         },
                     ));
                 }
@@ -1513,7 +1513,7 @@ impl<'s> Context<'s> {
                                 vertices: &vertices[..],
                                 indices: &RENDER_RANGE.line_mesh_indices(),
                                 obj_to_clp: &(camera.wld_to_clp * camera_resources.parameters.camera.clp_to_wld),
-                                color: color::MAGENTA,
+                                color: color::GREEN,
                             },
                         );
                     }

@@ -1,7 +1,7 @@
 use crate::*;
 use cluster_space_buffer::ClusterSpaceCoefficients;
-use renderer::*;
 use renderer::configuration::ClusteringProjection;
+use renderer::*;
 
 impl_enum_and_enum_map! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
@@ -266,22 +266,24 @@ impl ClusterResources {
                         let x_per_c = f.dx() * px as f64 / dims.x as f64;
                         let y_per_c = f.dy() * py as f64 / dims.y as f64;
                         let d_per_c = (x_per_c + y_per_c) * 0.5;
-                        let cls_x = dims.x.ceiled_div(px as i32) as f64;
-                        let cls_y = dims.y.ceiled_div(py as i32) as f64;
-                        let cls_z = (f.z0 / f.z1).log(1.0 + d_per_c).ceil();
+                        let dimensions = Vector3::new(
+                            dims.x.ceiled_div(px as i32) as f64,
+                            dims.y.ceiled_div(py as i32) as f64,
+                            (f.z0 / f.z1).log(1.0 + d_per_c).ceil(),
+                        );
 
                         // We adjust the frustum to make clusters line up nicely
                         // with pixels in the framebuffer..
                         let frustum = Frustum {
                             x0: f.x0,
-                            x1: f.x0 + cls_x * x_per_c,
+                            x1: f.x0 + dimensions.x * x_per_c,
                             y0: f.y0,
-                            y1: f.y0 + cls_y * y_per_c,
-                            z0: f.z1 * (1.0 + d_per_c).powi(cls_z as i32),
+                            y1: f.y0 + dimensions.y * y_per_c,
+                            z0: f.z1 * (1.0 + d_per_c).powi(dimensions.z as i32),
                             z1: f.z1,
                         };
 
-                        let dimensions = Vector3::new(cls_x, cls_y, cls_z);
+                        cgmath::assert_relative_eq!(camera.parameters.camera.cam_to_wld, parameters.clu_ori_to_wld);
 
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
@@ -592,9 +594,7 @@ impl ClusterResources {
             if computed.dimensions[i] < 1 {
                 computed.dimensions[i] = 1;
             }
-            if computed.dimensions[i] > 1000 {
-                computed.dimensions[i] = 1000;
-            }
+            assert!(computed.dimensions[i] <= 1024);
         }
 
         self.computed = computed;
