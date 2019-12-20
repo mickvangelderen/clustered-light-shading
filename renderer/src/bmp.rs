@@ -29,6 +29,7 @@
 use std::io::Write;
 use std::convert::TryFrom;
 
+#[allow(unused)]
 pub fn rgba_header(width: u32, height: u32) -> [u8; 122] {
     #[rustfmt::skip]
     let mut header: [u8; 122] = [
