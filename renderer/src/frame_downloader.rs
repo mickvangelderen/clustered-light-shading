@@ -1,5 +1,9 @@
 use crate::*;
 
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::thread;
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Format {
     RGBA,
@@ -7,7 +11,7 @@ pub enum Format {
 
 impl Format {
     #[inline]
-    pub fn bytes(&self) -> usize {
+    pub fn byte_count(&self) -> usize {
         match *self {
             Format::RGBA => 4,
         }
@@ -18,6 +22,14 @@ impl Into<gl::Format> for Format {
     fn into(self) -> gl::Format {
         match self {
             Format::RGBA => gl::Format::Rgba,
+        }
+    }
+}
+
+impl Into<image::ColorType> for Format {
+    fn into(self) -> image::ColorType {
+        match self {
+            Format::RGBA => image::ColorType::RGBA(8),
         }
     }
 }
@@ -68,7 +80,7 @@ impl Buffer {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.width as usize * self.height as usize * self.format.bytes()
+        self.width as usize * self.height as usize * self.format.byte_count()
     }
 }
 
@@ -92,8 +104,12 @@ impl Default for Image {
 
 impl Image {
     #[inline]
-    pub fn desired_len(&self) -> usize {
-        self.width as usize * self.height as usize * self.format.bytes()
+    pub fn image_byte_count(&self) -> usize {
+        self.height as usize * self.row_byte_count()
+    }
+
+    pub fn row_byte_count(&self) -> usize {
+        self.width as usize * self.format.byte_count()
     }
 }
 
@@ -134,9 +150,41 @@ impl std::ops::IndexMut<FrameIndex> for BufferRing {
     }
 }
 
+pub struct EncoderThread {
+    tx: mpsc::SyncSender<(PathBuf, Image)>,
+    handle: thread::JoinHandle<()>,
+}
+
+impl Default for EncoderThread {
+    fn default() -> Self {
+        let (tx, rx) = mpsc::sync_channel::<(PathBuf, Image)>(2);
+
+        let handle = thread::spawn(move || {
+            for (path, image) in rx.iter() {
+                let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+                let mut encoder = image::jpeg::JPEGEncoder::new_with_quality(&mut file, 95);
+                encoder
+                    .encode(&image.bytes, image.width, image.height, image.format.into())
+                    .unwrap();
+            }
+        });
+
+        Self { tx, handle }
+    }
+}
+
+impl EncoderThread {
+    pub fn join(self) -> thread::Result<()> {
+        let Self { tx, handle } = self;
+        std::mem::drop(tx);
+        handle.join()
+    }
+}
+
 pub struct FrameDownloader {
     buffer_ring: BufferRing,
     last_image: Image,
+    thread_pool: Vec<EncoderThread>,
 }
 
 impl FrameDownloader {
@@ -144,6 +192,7 @@ impl FrameDownloader {
         Self {
             buffer_ring: BufferRing::new(gl),
             last_image: Default::default(),
+            thread_pool: std::iter::repeat_with(EncoderThread::default).take(6).collect(),
         }
     }
 
@@ -179,6 +228,10 @@ impl FrameDownloader {
             buffer.resize(gl, width, height, format);
             if buffer.len() > 0 {
                 gl.bind_buffer(gl::PIXEL_PACK_BUFFER, buffer.name);
+                {
+                    assert_eq!(buffer.format.byte_count(), 4);
+                    gl.pixel_store_pack_alignment(gl::PixelAlignment::P4);
+                }
                 gl.read_pixels(
                     0,
                     0,
@@ -193,14 +246,47 @@ impl FrameDownloader {
         }
 
         if frame_index.to_usize() >= BufferRing::CAPACITY {
-            let frame_index = FrameIndex::from_usize(frame_index.to_usize() - BufferRing::CAPACITY);
-            let frame_path = frames_dir.join(&format!("{}.bmp", frame_index.to_usize()));
-            let mut file = std::io::BufWriter::new(std::fs::File::create(frame_path).unwrap());
-            file.write_all(&crate::bmp::rgba_header(self.last_image.width, self.last_image.height))
-                .unwrap();
-            file.write_all(&self.last_image.bytes).unwrap();
+            let image_frame_index = frame_index.to_usize() - BufferRing::CAPACITY;
+
+            let path = frames_dir.join(&format!("{}.jpg", image_frame_index));
+
+            // Clone bytes and flip-y while we're at it.
+            let image = unsafe {
+                let mut bytes = Vec::<u8>::with_capacity(self.last_image.image_byte_count());
+                bytes.set_len(self.last_image.image_byte_count());
+
+                let row_byte_count = self.last_image.row_byte_count() as isize;
+                let dst = bytes.as_mut_ptr();
+                let src = self.last_image.bytes.as_ptr();
+
+                for y in 0..self.last_image.height as isize {
+                    std::ptr::copy_nonoverlapping(
+                        src.offset((self.last_image.height as isize - 1 - y) * row_byte_count),
+                        dst.offset(y * row_byte_count),
+                        row_byte_count as usize,
+                    );
+                }
+
+                Image {
+                    bytes: bytes,
+                    width: self.last_image.width,
+                    height: self.last_image.height,
+                    format: self.last_image.format,
+                }
+            };
+
+            let thread_index = image_frame_index % self.thread_pool.len();
+            self.thread_pool[thread_index].tx.send((path, image)).unwrap();
         }
 
         &self.last_image
+    }
+}
+
+impl Drop for FrameDownloader {
+    fn drop(&mut self) {
+        for thread in self.thread_pool.drain(..) {
+            thread.join().unwrap();
+        }
     }
 }
