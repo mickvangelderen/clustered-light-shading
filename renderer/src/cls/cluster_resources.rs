@@ -94,11 +94,7 @@ pub struct ClusterResources {
 
     pub profiling_cluster_buffer: DynamicBuffer,
     pub profilers: ClusterStages<SampleIndex>,
-    // CPU
-    pub active_clusters: Vec<u32>,
-    pub active_cluster_lengths: Vec<u32>,
-    pub active_cluster_offsets: Vec<u32>,
-    pub light_indices: Vec<u32>,
+
     // Other
     pub camera_resources_pool: ClusterCameraResourcesPool,
     pub parameters: ClusterParameters,
@@ -202,11 +198,6 @@ impl ClusterResources {
                 buffer
             },
             profilers: ClusterStages::new(|stage| profiling_context.add_sample(stage.title())),
-
-            active_clusters: Vec::new(),
-            active_cluster_lengths: Vec::new(),
-            active_cluster_offsets: Vec::new(),
-            light_indices: Vec::new(),
 
             camera_resources_pool: ClusterCameraResourcesPool::new(),
             parameters,
