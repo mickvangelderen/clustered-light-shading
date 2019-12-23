@@ -10,7 +10,7 @@ Probably only works on unixies.
 Run with steam-runtime, for example:
 
 ```
-~/.steam/steam/ubuntu12_32/steam-runtime/run.sh lldb target/debug/vr-lab
+~/.steam/steam/ubuntu12_32/steam-runtime/run.sh lldb target/debug/renderer
 ```
 
 Disable vsync in the driver if you're using vr. This prevents the buffer swap
@@ -103,7 +103,7 @@ representation with a volume: the tetrahedron. Decided that it would be a good
 idea to take a tetrahedron and divide each triangle into 3 new triangles joined
 at the barycenter of the original vertices.
 
-[Commit](https://github.com/mickvangelderen/vr-lab/commit/42118e32d058836fa58fdbd1224750c05514af20)
+[Commit](https://github.com/mickvangelderen/clustered-light-shading/commit/42118e32d058836fa58fdbd1224750c05514af20)
 
 The top row in this image shows the results of that approach:
 
@@ -115,7 +115,7 @@ and then subdivide the quads instead we will get nice results. That technique
 yields the middle row of spheres. It breaks down after a couple of subdivisions
 and we're back at the start.
 
-[Commit](https://github.com/mickvangelderen/vr-lab/commit/29f355ce63516bd215546d28169bb7d190399a0d)
+[Commit](https://github.com/mickvangelderen/clustered-light-shading/commit/29f355ce63516bd215546d28169bb7d190399a0d)
 
 We need a better method. After going through a number of criteria and
 implementations I arrived at the following rule. For each pair of different
@@ -133,7 +133,7 @@ center.
 This method yields the spheres in the last row. It looks a lot like a cubic
 subdivision projected on a sphere and it might be *exactly* that.
 
-[Commit](https://github.com/mickvangelderen/vr-lab/commit/5051017792ff93a013b3e6a5510b5d9a96f16713)
+[Commit](https://github.com/mickvangelderen/clustered-light-shading/commit/5051017792ff93a013b3e6a5510b5d9a96f16713)
 
 ![Sphere at 7 subdivisions](media/spheres/sphere_7.jpg)
 
@@ -185,7 +185,7 @@ vertices.
 
 ![Sphere at 5 subdivisions](media/spheres/cubic_sphere.jpg)
 
-[Code](https://github.com/mickvangelderen/vr-lab/releases/tag/cubic-sphere-generation)
+[Code](https://github.com/mickvangelderen/clustered-light-shading/releases/tag/cubic-sphere-generation)
 
 #### Jarring change in curvature of face vertices versus edge vertices
 
@@ -201,7 +201,7 @@ of the angles to PI/4 changes the sphere to look like the one on the right.
 
 ![Sphere at 5 subdivision with edges spherical](media/spheres/cubic_sphere_fix_edge.jpg)
 
-[Code](https://github.com/mickvangelderen/vr-lab/releases/tag/cubic-sphere-generation-fix-edge)
+[Code](https://github.com/mickvangelderen/clustered-light-shading/releases/tag/cubic-sphere-generation-fix-edge)
 
 ## A decent VR-ready renderer
 
