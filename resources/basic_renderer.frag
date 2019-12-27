@@ -248,6 +248,8 @@ void main() {
 #endif
       }
       frag_color = vec4(color_accumulator, 1.0);
+      // FIXME(TO ILLUSTRATE LINEAR CLUSTER SUBD)
+      frag_color = texture(diffuse_sampler, frag_pos_in_tex);
     }
 #else
 #error Unimplemented render technique!

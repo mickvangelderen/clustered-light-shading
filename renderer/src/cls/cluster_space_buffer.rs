@@ -65,17 +65,18 @@ impl ClusterSpaceCoefficients {
     pub fn perspective(frustum: &Frustum<f64>, dimensions: Vector3<f64>, d_per_c: f64) -> Self {
         let (ax, bx) = lic(frustum.x0, frustum.x1, 0.0, dimensions.x);
         let (ay, by) = lic(frustum.y0, frustum.y1, 0.0, dimensions.y);
-        // // Linear.
+        // Linear.
+        let (az, bz) = lic(-1.0/frustum.z0, -1.0/frustum.z1, 0.0, dimensions.z);
         // let (az, bz) = {
-        //     let d = one / (frustum.z1 - frustum.z0);
+        //     let d = 1.0 / (frustum.z1 - frustum.z0);
         //     (
-        //         (range.z1 - range.z0) * (frustum.z0 * frustum.z1) * d,
-        //         (frustum.z1 * range.z1 - frustum.z0 * range.z0) * d,
+        //         (dimensions.z) * (frustum.z0 * frustum.z1) * d,
+        //         (frustum.z1 * dimensions.z) * d,
         //     )
         // };
 
         // Geometric: z_clp = Z - ln(z_cam / fz1) / ln(1.0 + d)
-        let (az, bz) = ((1.0 / frustum.z1), 1.0 / (1.0 + d_per_c).ln());
+        // let (az, bz) = ((1.0 / frustum.z1), 1.0 / (1.0 + d_per_c).ln());
 
         Self {
             ax: ax as f32,
@@ -92,14 +93,16 @@ impl ClusterSpaceCoefficients {
     pub fn inverse_perspective(frustum: &Frustum<f64>, dimensions: Vector3<f64>, d_per_c: f64) -> Self {
         let (ax, bx) = lic(0.0, dimensions.x, frustum.x0, frustum.x1);
         let (ay, by) = lic(0.0, dimensions.y, frustum.y0, frustum.y1);
-        // // Linear
+        // Linear.
+        let (az, bz) = lic(0.0, dimensions.z, -1.0/frustum.z0, -1.0/frustum.z1);
+        // Linear
         // let (az, bz) = {
-        //     let d = one / ((dimensions.z1) * frustum.z0 * frustum.z1);
-        //     ((frustum.z1 - frustum.z0) * d, (-dimensions.z * frustum.z1) * d)
+        //     let d = 1.0 / (dimensions.z * frustum.z0 * frustum.z1);
+        //     ((frustum.z1 - frustum.z0) * d, -1.0 / frustum.z0)
         // };
 
         // Geometric: z_cam = fz1 * (1.0 + d)^(Z - z_clp)
-        let (az, bz) = (frustum.z1, 1.0 + d_per_c);
+        // let (az, bz) = (frustum.z1, 1.0 + d_per_c);
 
         Self {
             ax: ax as f32,
@@ -114,9 +117,7 @@ impl ClusterSpaceCoefficients {
 }
 
 impl ClusterSpaceBuffer {
-    pub fn from(
-        resources: &ClusterResources
-    ) -> Self {
+    pub fn from(resources: &ClusterResources) -> Self {
         let dimensions = resources.computed.dimensions;
         Self {
             dimensions,

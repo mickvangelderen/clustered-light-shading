@@ -43,7 +43,8 @@ vec3 cluster_cam_to_clp(vec3 pos_in_cam) {
   float frac_1_neg_z_cam = -1.0 / pos_in_cam.z;
   float x_cls = frac_1_neg_z_cam * (ax * pos_in_cam.x) + bx;
   float y_cls = frac_1_neg_z_cam * (ay * pos_in_cam.y) + by;
-  float z_cls = float(cluster_space.dimensions.z) - log(pos_in_cam.z * az) * bz;
+  // float z_cls = float(cluster_space.dimensions.z) - log(pos_in_cam.z * az) * bz;
+  float z_cls = az * frac_1_neg_z_cam + bz;
 #elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
   float x_cls = ax * pos_in_cam.x + bx;
   float y_cls = ay * pos_in_cam.y + by;
@@ -65,7 +66,9 @@ vec3 cluster_clp_to_cam(vec3 pos_in_clp) {
 #error CLUSTERING_PROJECTION is not defined.
 #endif
 #if CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_PERSPECTIVE
-  float z_cam = az * pow(bz, float(cluster_space.dimensions.z) - pos_in_clp.z);
+  // float z_cam = az * pow(bz, float(cluster_space.dimensions.z) - pos_in_clp.z);
+  float frac_1_neg_z_cam = az * pos_in_clp.z + bz;
+  float z_cam = -1.0/frac_1_neg_z_cam;
   float x_cam = -z_cam * (ax * pos_in_clp.x + bx);
   float y_cam = -z_cam * (ay * pos_in_clp.y + by);
 #elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
