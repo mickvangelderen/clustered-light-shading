@@ -23,7 +23,7 @@ impl CameraTransform {
 
     #[inline]
     fn pitch_range() -> (Rad<f32>, Rad<f32>) {
-        (Rad::from(Deg(-89.0)), Rad::from(Deg(89.0)))
+        (Rad::from(Deg(-90.0)), Rad::from(Deg(90.0)))
     }
 
     #[inline]
