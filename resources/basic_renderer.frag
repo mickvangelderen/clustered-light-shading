@@ -45,14 +45,14 @@ layout(binding = BASIC_ATOMIC_BINDING, offset = 4) uniform atomic_uint lighting_
 // NOTE(mickvangelderen) Should be the default, unless using side
 // effects like the atomic writes for atemporal profiling where we have
 // to force this behaviour.
-layout(early_fragment_tests) in;
+// layout(early_fragment_tests) in;
 #endif
 
 #if BASIC_PASS == BASIC_PASS_MASKED
 // NOTE(mickvangelderen) Can only force this on when we disable depth
 // writes because of how early-z is implemented.
 #if DEPTH_PREPASS
-layout(early_fragment_tests) in;
+// layout(early_fragment_tests) in;
 #endif
 #endif
 
@@ -178,6 +178,11 @@ void main() {
     frag_color = vec4(color_accumulator, 1.0);
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
     vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
+    if (
+      any(greaterThanEqual(pos_in_cls, vec3(cluster_space.dimensions)))
+      || any(lessThan(pos_in_cls, vec3(0.0)))) {
+      discard;
+    }
     uvec3 idx_in_cls = uvec3(pos_in_cls);
     // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 
@@ -185,8 +190,10 @@ void main() {
     // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
 
     // CLUSTER INDICES X, Y, Z mod 3
-    // vec3 cluster_index_colors = vec3((idx_in_cls % 3) + 1)/4.0;
-    // frag_color = vec4(cluster_index_colors.xyz, 1.0);
+    uvec3 M = uvec3(6, 6, 6);
+    vec3 cluster_index_colors = (vec3(idx_in_cls % M) + vec3(0.5))/vec3(M);
+    frag_color = vec4(cluster_index_colors.xyz, 1.0);
+    return;
 
     // CLUSTER MORTON INDEX
     // uint cluster_morton_index = to_morton_3(idx_in_cls);
