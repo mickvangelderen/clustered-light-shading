@@ -50,3 +50,8 @@ class ProfileSamples:
                 np.fromfile(f, dtype='uint32', count = self.frame_count*self.basic_buffer_count*basic_buffer_u32_size),
                 (self.frame_count, self.basic_buffer_count, basic_buffer_u32_size)
             );
+
+    def min_gpu_samples_by_name(self, sample_name):
+        frame_sample_index = self.sample_names.index(sample_name)
+        samples = self.deltas[:, :, frame_sample_index, 1]
+        return np.nanmin(samples, axis = 0) / 1000000.0
