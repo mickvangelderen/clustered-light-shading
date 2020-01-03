@@ -143,11 +143,17 @@ impl Resources {
     pub fn new<P: AsRef<Path>>(gl: &gl::Gl, resource_dir: P, configuration: &Configuration) -> Self {
         let resource_dir = resource_dir.as_ref();
 
-        let scene_file_path = std::fs::canonicalize(resource_dir.join(&configuration.global.scene_path)).unwrap();
+        let relative_scene_file_path: PathBuf = configuration.global.scene_path.split("/").collect();
+
+        dbg!(&relative_scene_file_path);
+
+        dbg!(resource_dir.join(&relative_scene_file_path));
+
+        let scene_file_path = resource_dir.join(&relative_scene_file_path);
         let scene_dir = scene_file_path.parent().unwrap();
 
         let scene_file = {
-            let mut file = std::fs::File::open(&scene_file_path).unwrap();
+            let mut file = std::fs::File::open(&scene_file_path).unwrap_or_else(|e| panic!("Failed to open scene file {:?}: {:?}", &scene_file_path, e));
             renderer::scene_file::SceneFile::read(&mut file).unwrap()
         };
 

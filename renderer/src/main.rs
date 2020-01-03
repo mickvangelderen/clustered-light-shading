@@ -181,6 +181,8 @@ pub struct MainParameters {
 
     pub dimensions: Vector2<i32>,
     pub display_viewport: Viewport<i32>,
+
+    pub upload_eye: Option<vr::Eye>,
 }
 
 const RENDER_RANGE: Range3<f64> = Range3 {
@@ -350,7 +352,10 @@ impl MainContext {
                     _ => Err(error),
                 })
                 .unwrap();
-            symlink_dir(&current_profiling_dir, &latest_profiling_dir).unwrap();
+
+            if let Err(e) = symlink_dir(&current_profiling_dir, &latest_profiling_dir) {
+                error!("Failed to create \"latest\" profiling dir symlink: {:?}", e);
+            }
 
             // FIXME(mickvangelderen): Don't do this because the profile binary writes the configuration here.
             // std::fs::copy(&configuration_path, current_profiling_dir.join("configuration.toml")).unwrap();
@@ -359,7 +364,11 @@ impl MainContext {
             if let Ok(entries) = std::fs::read_dir(&frames_dir) {
                 // Delete existing frames.
                 for entry in entries {
-                    std::fs::remove_file(entry.unwrap().path()).unwrap();
+                    if let Ok(entry) = entry {
+                        if let Err(e) = std::fs::remove_file(entry.path()) {
+                            error!("Failed to remove frame {:?}: {:?}", entry.path().display(), e);
+                        }
+                    }
                 }
             } else {
                 std::fs::create_dir_all(&frames_dir).unwrap();
@@ -1225,6 +1234,8 @@ impl<'s> Context<'s> {
                 for &eye_key in EYE_KEYS.iter() {
                     let EyeData { tangents, cam_to_hmd } = eyes[eye_key];
 
+                    dbg!(tangents, cam_to_hmd);
+
                     let render_c3 = {
                         let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, cam_to_hmd);
                         CameraParameters::new(
@@ -1310,6 +1321,8 @@ impl<'s> Context<'s> {
                                     }
                                 }
                             },
+
+                            upload_eye: Some(eye_key),
                         });
                     }
                 }
@@ -1406,6 +1419,8 @@ impl<'s> Context<'s> {
 
                         dimensions,
                         display_viewport: Viewport::from_dimensions(dimensions),
+
+                        upload_eye: None,
                     });
                 }
             }
@@ -1566,6 +1581,13 @@ impl<'s> Context<'s> {
             // Reborrow.
             let main_resources = &mut self.main_resources_pool[main_resources_index];
 
+            if let Some(eye) = self.main_parameters_vec[main_parameters_index].upload_eye {
+                let mut t = gen_texture_t(main_resources.color_texture);
+                self.vr.as_ref().unwrap().compositor().submit(eye, &mut t, None, vr::SubmitFlag::DEFAULT).unwrap_or_else(|error| {
+                    error!("Failed to submit texture {:?}", error);
+                });
+            }
+            
             unsafe {
                 self.gl.blit_named_framebuffer(
                     main_resources.framebuffer_name.into(),
@@ -1860,9 +1882,9 @@ fn main() {
         )
         .get_matches();
 
-    let configuration_path = std::fs::canonicalize(matches.value_of("configuration path").unwrap()).unwrap();
+    let configuration_path = matches.value_of("configuration path").unwrap();
 
-    let mut context = MainContext::new(configuration_path);
+    let mut context = MainContext::new(PathBuf::from(configuration_path));
 
     let mut run_index = RunIndex::from_usize(0);
     let run_count = RunIndex::from_usize(match context.configuration.global.mode {

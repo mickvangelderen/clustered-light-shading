@@ -17,10 +17,10 @@ sample_count = 4
 
 [light]
 display = true
-attenuation = { i = 4.0, i0 = 0.8, r0 = 0.1 }
+attenuation = { i = 100.0, i0 = 0.8, r0 = 0.1 }
 
 [rain]
-max_count = 200000
+max_count = 1000
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +40.0, z = +60.0 }
 

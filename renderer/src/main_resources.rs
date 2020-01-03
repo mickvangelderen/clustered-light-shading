@@ -53,7 +53,7 @@ unsafe fn create_texture(
 }
 
 const DEPTH_FORMAT: gl::symbols::DEPTH32F_STENCIL8 = gl::DEPTH32F_STENCIL8;
-const COLOR_FORMAT: gl::symbols::RGBA16F = gl::RGBA16F;
+const COLOR_FORMAT: gl::symbols::RGBA8 = gl::RGBA8;
 
 impl MainResources {
     pub fn new(

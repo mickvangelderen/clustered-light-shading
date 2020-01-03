@@ -1001,7 +1001,7 @@ dependencies = [
 [[package]]
 name = "openvr"
 version = "0.1.0"
-source = "git+https://github.com/mickvangelderen/openvr-rust?branch=0.1.x#c1322c8b615aec3a312e2ef9f2fba6348c698966"
+source = "git+https://github.com/mickvangelderen/openvr-rust?branch=0.1.x#15b8bc0988932e16bfecf3fe07302f2fbaeac23e"
 dependencies = [
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "openvr-sys 0.1.0 (git+https://github.com/mickvangelderen/openvr-sys-rust?branch=0.1.x)",

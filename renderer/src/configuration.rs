@@ -94,7 +94,7 @@ pub struct ReplayConfiguration {
 pub struct GlobalConfiguration {
     pub diffuse_srgb: bool,
     pub mode: ApplicationMode,
-    pub scene_path: PathBuf,
+    pub scene_path: String,
     pub sample_count: u32,
 }
 

@@ -410,32 +410,21 @@ impl EntryPoint {
                                 SourceReader::File(ref path) => path.parent().unwrap(),
                                 _ => panic!("Can't include files from native sources."),
                             };
-                            match std::fs::canonicalize(parent_path.join(relative_path)) {
-                                Ok(absolute_path) => Some(
-                                    context
-                                        .shader_compiler
-                                        .memory
-                                        .source_index(&absolute_path)
-                                        .unwrap_or_else(|| {
-                                            let resource_path =
-                                                absolute_path.strip_prefix(&context.resource_dir).unwrap();
-                                            let source = Source::new(
-                                                &context.current,
-                                                SourceReader::File(absolute_path.clone()),
-                                                resource_path.to_owned(),
-                                            );
-                                            context.shader_compiler.memory.add_source(absolute_path, source)
-                                        }),
-                                ),
-                                Err(error) => {
-                                    error!(
-                                        "Failed to get canonical path of {:?}: {}",
-                                        parent_path.join(relative_path),
-                                        error
+                            let absolute_path = parent_path.join(relative_path);
+                            Some(context
+                                .shader_compiler
+                                .memory
+                                .source_index(&absolute_path)
+                                .unwrap_or_else(|| {
+                                    let resource_path =
+                                        absolute_path.strip_prefix(&context.resource_dir).unwrap();
+                                    let source = Source::new(
+                                        &context.current,
+                                        SourceReader::File(absolute_path.clone()),
+                                        resource_path.to_owned(),
                                     );
-                                    None
-                                }
-                            }
+                                    context.shader_compiler.memory.add_source(absolute_path, source)
+                                }))
                         };
 
                         if let Some(source_index) = maybe_source_index {
