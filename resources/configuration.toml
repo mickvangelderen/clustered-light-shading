@@ -4,23 +4,23 @@ mode = "Normal"
 # mode = "Record"
 # mode = "Replay"
 
-# scene_path = "bistro/Bistro_Exterior.bin"
+scene_path = "bistro/Bistro_Exterior.bin"
 # scene_path = "bistro/Bistro_Interior.bin"
-scene_path = "sun_temple/SunTemple.bin"
+# scene_path = "sun_temple/SunTemple.bin"
 
-# sample_count = 0
+sample_count = 0
 # sample_count = 1
 # sample_count = 2
-sample_count = 4
+# sample_count = 4
 # sample_count = 8
 # sample_count = 16
 
 [light]
 display = true
-attenuation = { i = 4.0, i0 = 0.8, r0 = 0.1 }
+attenuation = { i = 40.0, i0 = 0.8, r0 = 0.1 }
 
 [rain]
-max_count = 200000
+max_count = 100
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +40.0, z = +60.0 }
 
@@ -33,7 +33,7 @@ path = "recording.bin"
 
 [profiling]
 # name = "not_auto_generated"
-display = true
+display = false
 record_events = true
 record_frames = false
 hide = [
@@ -48,7 +48,7 @@ vsync = false
 srgb = true
 rgb_bits = 24
 alpha_bits = 8
-width = 1280
+width = 426
 height = 720
 
 [gl]
