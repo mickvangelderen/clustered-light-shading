@@ -86,16 +86,16 @@ float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
   float I = point_light.i;
-  float C = point_light.i0;
+  float I0 = point_light.i0;
   float R0 = point_light.r0;
-  float R1 = point_light.r1; // sqrt(I/C)
+  float R1 = point_light.r1; // sqrt(I/I0)
 
   // Attenuation.
   float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
   float d_unclipped = sqrt(d_sq_unclipped);
 
-  float d_sq = clamp(d_sq_unclipped, R0*R0, R1*R1);
-  float d = clamp(d_unclipped, R0, R1);
+  float d_sq = max(d_sq_unclipped, R0*R0);
+  float d = max(d_unclipped, R0);
 
 #if defined(ATTENUATION_MODE_STEP)
   float attenuation = (d_sq_unclipped < R1*R1 ? 1.0 : 0.0) * I * (1.0 / R0 + R0 - 1.0 / R1) / R1;
@@ -103,26 +103,39 @@ float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   // Linear doesn't go infinite so we can use the unclipped distance.
   float attenuation = max(0.0, I - (I / R1) * d_unclipped);
 #elif defined(ATTENUATION_MODE_PHYSICAL)
-  #if defined(RENDER_TECHNIQUE_NAIVE)
-    float attenuation = I / max(R0*R0, d_sq_unclipped);
-  #else
-    float attenuation = (d_sq_unclipped < R1*R1 ? 1.0 : 0.0) * I / max(R0*R0, d_sq_unclipped);
-  #endif
+  float attenuation = I / d_sq;
 #elif defined(ATTENUATION_MODE_INTERPOLATED)
-  float attenuation = I / d_sq - (C / R1) * d;
-  // attenuation = I / (d_sq + 1) - C * pow(d_sq / (R1 * R1), 1);
+  float attenuation = I / d_sq - (I0 / R1) * d;
 #elif defined(ATTENUATION_MODE_REDUCED)
-  float attenuation = I / d_sq - C;
+  float attenuation = I / d_sq - I0;
 #elif defined(ATTENUATION_MODE_SMOOTH)
-  float attenuation = I / d_sq - 3.0 * C + (2.0 * C / R1) * d;
+  float attenuation = I / d_sq - 3.0 * I0 + (2.0 * I0 / R1) * d;
+  #if defined(RENDER_TECHNIQUE_NAIVE)
+  if (d_sq >= R1*R1) {
+    attenuation = 0.0;
+  }
+  #endif
 #else
 #error invalid attenuation mode!
+#endif
+
+#if defined(RENDER_TECHNIQUE_NAIVE)
+  if (attenuation <= 0.0) {
+    attenuation = 0.0;
+  }
+#else
+  if (d_sq >= R1*R1) {
+    attenuation = 0.0;
+  }
 #endif
 
   return attenuation;
 }
 
 vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
+  // roughness *= 0.6;
+  // metalness *= 2.0;
+
   vec3 frag_to_light = point_light.position - P;
   vec3 L = normalize(frag_to_light);
 
