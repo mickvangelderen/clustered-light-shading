@@ -1150,7 +1150,8 @@ impl<'s> Context<'s> {
         {
             self.point_lights.clear();
 
-            for &point_light in self.resources.point_lights.iter() {
+            for mut point_light in self.resources.point_lights.iter().copied() {
+                point_light.attenuation = light::AttenCoefs::from(self.configuration.light.attenuation).cast().unwrap();
                 self.point_lights.push(point_light);
             }
 
