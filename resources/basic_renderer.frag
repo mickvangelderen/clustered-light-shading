@@ -98,43 +98,35 @@ float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   float d = max(d_unclipped, R0);
 
 #if defined(ATTENUATION_MODE_STEP)
-  float attenuation = (d_sq_unclipped < R1*R1 ? 1.0 : 0.0) * I * (1.0 / R0 + R0 - 1.0 / R1) / R1;
+  // Use physical intensity halfway between 0 and R1
+  float attenuation = d_sq_unclipped < R1*R1 ? 4*I/(R1*R1) : 0.0;
 #elif defined(ATTENUATION_MODE_LINEAR)
   // Linear doesn't go infinite so we can use the unclipped distance.
-  float attenuation = max(0.0, I - (I / R1) * d_unclipped);
+  float attenuation = d_unclipped < R1 ? I/2.0*(R1 - d_unclipped)/(R1 - 1.0) : 0.0;
 #elif defined(ATTENUATION_MODE_PHYSICAL)
   float attenuation = I / d_sq;
-#elif defined(ATTENUATION_MODE_INTERPOLATED)
-  float attenuation = I / d_sq - (I0 / R1) * d;
 #elif defined(ATTENUATION_MODE_REDUCED)
-  float attenuation = I / d_sq - I0;
+  float attenuation = d_sq < R1*R1 ? I / d_sq - I0 : 0.0;
+#elif defined(ATTENUATION_MODE_PHY_RED_1)
+  float attenuation = d_sq < R1*R1 ? I / d_sq - I0/R1*d : 0.0;
+#elif defined(ATTENUATION_MODE_PHY_RED_2)
+  float attenuation = d_sq < R1*R1 ? I / d_sq - (I0 / (R1*R1)) * d_sq : 0.0;
 #elif defined(ATTENUATION_MODE_SMOOTH)
-  float attenuation = I / d_sq - 3.0 * I0 + (2.0 * I0 / R1) * d;
-  #if defined(RENDER_TECHNIQUE_NAIVE)
-  if (d_sq >= R1*R1) {
-    attenuation = 0.0;
-  }
-  #endif
+  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / R1) * d - 3.0 * I0 : 0.0;
+#elif defined(ATTENUATION_MODE_PHY_SMO_1)
+  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / (R1*R1)) * d_sq - 3.0 * I0/R1 * d : 0.0;
+#elif defined(ATTENUATION_MODE_PHY_SMO_2)
+  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / (R1*R1*R1)) * (d_sq*d) - 3.0 * I0/(R1*R1) * d_sq : 0.0;
 #else
 #error invalid attenuation mode!
-#endif
-
-#if defined(RENDER_TECHNIQUE_NAIVE)
-  if (attenuation <= 0.0) {
-    attenuation = 0.0;
-  }
-#else
-  if (d_sq >= R1*R1) {
-    attenuation = 0.0;
-  }
 #endif
 
   return attenuation;
 }
 
 vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
-  // roughness *= 0.6;
-  // metalness *= 2.0;
+  roughness *= 0.6;
+  metalness *= 2.0;
 
   vec3 frag_to_light = point_light.position - P;
   vec3 L = normalize(frag_to_light);

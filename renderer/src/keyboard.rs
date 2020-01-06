@@ -87,5 +87,7 @@ implement_with_keys!(
     (right, Right),
     (left, Left),
     (lshift, LShift),
+    (rshift, RShift),
     (lalt, LAlt),
+    (ralt, RAlt),
 );
