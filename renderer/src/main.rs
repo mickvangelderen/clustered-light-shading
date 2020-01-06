@@ -69,7 +69,7 @@ use crate::frame_downloader::FrameDownloader;
 use crate::symlink::symlink_dir;
 
 use cgmath::*;
-use derive::EnumNext;
+use derive::{EnumNext, EnumPrev};
 use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
@@ -453,7 +453,7 @@ impl MainContext {
             shader_compiler::Variables {
                 light_space: LightSpace::Wld,
                 render_technique: RenderTechnique::Clustered,
-                attenuation_mode: AttenuationMode::Interpolated,
+                attenuation_mode: AttenuationMode::PhyRed2,
                 prefix_sum: configuration.prefix_sum,
                 clustered_light_shading: configuration.clustered_light_shading,
                 profiling: shader_compiler::ProfilingVariables { time_sensitive: false },
@@ -868,12 +868,19 @@ impl<'s> Context<'s> {
                             match vk {
                                 VirtualKeyCode::Tab => {
                                     // Don't trigger when we ALT TAB.
-                                    if self.keyboard_state.lalt.is_released() {
+                                    if self.keyboard_state.lalt.is_released() && self.keyboard_state.ralt.is_released()
+                                    {
                                         new_target_camera_key.wrapping_next_assign();
                                     }
                                 }
                                 VirtualKeyCode::Key1 => {
-                                    new_attenuation_mode.wrapping_next_assign();
+                                    if self.keyboard_state.lshift.is_released()
+                                        && self.keyboard_state.rshift.is_released()
+                                    {
+                                        new_attenuation_mode.wrapping_next_assign();
+                                    } else {
+                                        new_attenuation_mode.wrapping_prev_assign();
+                                    }
                                 }
                                 VirtualKeyCode::Key2 => {
                                     // new_window_mode.wrapping_next_assign();

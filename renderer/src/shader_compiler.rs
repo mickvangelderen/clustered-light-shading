@@ -126,9 +126,12 @@ impl SourceReader {
                     AttenuationMode::Step => "ATTENUATION_MODE_STEP",
                     AttenuationMode::Linear => "ATTENUATION_MODE_LINEAR",
                     AttenuationMode::Physical => "ATTENUATION_MODE_PHYSICAL",
-                    AttenuationMode::Interpolated => "ATTENUATION_MODE_INTERPOLATED",
                     AttenuationMode::Reduced => "ATTENUATION_MODE_REDUCED",
+                    AttenuationMode::PhyRed1 => "ATTENUATION_MODE_PHY_RED_1",
+                    AttenuationMode::PhyRed2 => "ATTENUATION_MODE_PHY_RED_2",
                     AttenuationMode::Smooth => "ATTENUATION_MODE_SMOOTH",
+                    AttenuationMode::PhySmo1 => "ATTENUATION_MODE_PHY_SMO_1",
+                    AttenuationMode::PhySmo2 => "ATTENUATION_MODE_PHY_SMO_2",
                 };
 
                 tokens.push(Token::Literal(format!(
@@ -145,7 +148,6 @@ impl SourceReader {
                 let define = match vars.render_technique {
                     RenderTechnique::Clustered => "RENDER_TECHNIQUE_CLUSTERED",
                     RenderTechnique::Naive => "RENDER_TECHNIQUE_NAIVE",
-                    RenderTechnique::Tiled => "RENDER_TECHNIQUE_TILED",
                 };
 
                 tokens.push(Token::Literal(format!(

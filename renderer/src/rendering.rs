@@ -63,19 +63,21 @@ pub enum LightSpace {
 #[repr(u32)]
 pub enum RenderTechnique {
     Naive = 1,
-    Tiled = 2,
-    Clustered = 3,
+    Clustered = 2,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, EnumNext, EnumPrev)]
 #[repr(u32)]
 pub enum AttenuationMode {
     Step = 1,
     Linear = 2,
     Physical = 3,
-    Interpolated = 4,
-    Reduced = 5,
-    Smooth = 6,
+    Reduced = 4,
+    PhyRed1 = 5,
+    PhyRed2 = 6,
+    Smooth = 7,
+    PhySmo1 = 8,
+    PhySmo2 = 9,
 }
 
 pub struct RenderingContext<'a> {
