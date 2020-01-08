@@ -56,6 +56,12 @@ layout(early_fragment_tests) in;
 #endif
 #endif
 
+#if BASIC_PASS == BASIC_PASS_TRANSPARENT
+// NOTE(mickvangelderen) For transparent shading we should always
+// have depth writes disabled?
+layout(early_fragment_tests) in;
+#endif
+
 layout(binding = NORMAL_SAMPLER_BINDING) uniform sampler2D normal_sampler;
 layout(binding = EMISSIVE_SAMPLER_BINDING) uniform sampler2D emissive_sampler;
 layout(binding = AMBIENT_SAMPLER_BINDING) uniform sampler2D ambient_sampler;
@@ -125,8 +131,8 @@ float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
 }
 
 vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
-  roughness *= 0.6;
-  metalness *= 2.0;
+  // roughness *= 0.6;
+  // metalness *= 2.0;
 
   vec3 frag_to_light = point_light.position - P;
   vec3 L = normalize(frag_to_light);
@@ -170,6 +176,11 @@ void main() {
     discard;
   }
 #endif
+#if BASIC_PASS == BASIC_PASS_TRANSPARENT
+  if (kd.a < 0.001) {
+    discard;
+  }
+#endif
 
   mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
@@ -180,7 +191,12 @@ void main() {
     for (uint i = 0; i < light_buffer.light_count.x; i++) {
       color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
     }
+#if BASIC_PASS == BASIC_PASS_TRANSPARENT
+    frag_color = vec4(color_accumulator, kd.a);
+#else
     frag_color = vec4(color_accumulator, 1.0);
+#endif
+
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
     vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
     uvec3 idx_in_cls = uvec3(pos_in_cls);
@@ -252,7 +268,11 @@ void main() {
         atomicCounterIncrement(lighting_ops);
 #endif
       }
+#if BASIC_PASS == BASIC_PASS_TRANSPARENT
+      frag_color = vec4(color_accumulator, kd.a*0.95);
+#else
       frag_color = vec4(color_accumulator, 1.0);
+#endif
     }
 #else
 #error Unimplemented render technique!

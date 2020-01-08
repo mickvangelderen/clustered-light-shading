@@ -20,7 +20,7 @@ num-traits = "0.2.6"
 openvr = { git = "https://github.com/mickvangelderen/openvr-rust", branch = "0.1.x" }
 polygen = { path = "../polygen" }
 bmfont = { path = "../bmfont" }
-regex = "1.1.7"
+regex = "1.3.1"
 serde = { version = "1.0.91", features = ["derive"] }
 tobj = "0.1.6"
 toml = "0.5.5"
