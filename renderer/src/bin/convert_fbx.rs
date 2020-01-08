@@ -146,6 +146,8 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 
     let root = fbx::dom::Root::from_fbx_file(&file);
 
+    let glass_regex = regex::RegexBuilder::new(r"glass").case_insensitive(true).build().unwrap();
+
     let mut file = SceneFile {
         mesh_descriptions: Vec::new(),
         pos_in_obj_buffer: Vec::new(),
@@ -210,6 +212,9 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                     specular_texture_index: None,
                     shininess: material.properties.shininess as f32,
                     opacity: material.properties.opacity as f32,
+                    masked: false,
+                    // NOTE: Not the nicest way of determining this.
+                    transparent: material.properties.opacity < 1.0 || glass_regex.is_match(&material.name),
                 }
             })
             .collect(),
@@ -469,6 +474,22 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 match op.2.as_ref() {
                     "DiffuseColor" => {
                         material.diffuse_texture_index = some_texture_index;
+                        let file_path = file_dir.join(&file.textures[texture_index].file_path);
+                        match file_path.extension().and_then(std::ffi::OsStr::to_str) {
+                            Some("dds") => {
+                                let file = std::fs::File::open(&file_path).unwrap();
+                                let mut reader = std::io::BufReader::new(file);
+                                let dds = dds::File::parse(&mut reader).unwrap();
+                                let has_alpha = match dds.header.pixel_format {
+                                    dds::Format::BC1_UNORM_RGBA | dds::Format::BC2_UNORM_RGBA | dds::Format::BC3_UNORM_RGBA => true,
+                                    _ => false,
+                                };
+
+                                // NOTE: Not the nicest way of determining this.
+                                material.masked = has_alpha;
+                            }
+                            _ => eprint!("Can't read emissive texture file format {:?}", &file_path),
+                        }
                     }
                     "NormalMap" => {
                         material.normal_texture_index = some_texture_index;

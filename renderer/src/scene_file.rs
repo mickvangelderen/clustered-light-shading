@@ -131,6 +131,8 @@ pub struct RawMaterial {
     pub specular_texture_index: Option<NonMaxU32>,
     pub shininess: f32,
     pub opacity: f32,
+    pub masked: bool,
+    pub transparent: bool,
 }
 
 #[derive(Debug)]

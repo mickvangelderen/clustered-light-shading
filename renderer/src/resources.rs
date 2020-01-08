@@ -11,18 +11,24 @@ use std::path::Path;
 pub static FULL_SCREEN_VERTICES: [[f32; 2]; 3] = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
 pub static FULL_SCREEN_INDICES: [[u32; 3]; 1] = [[0, 1, 2]];
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum MaterialKind {
+    Opaque,
+    Masked,
+    Transparent,
+}
+
 pub struct Material {
+    pub kind: MaterialKind,
     pub normal_texture_index: usize,
     pub emissive_texture_index: usize,
     pub ambient_texture_index: usize,
     pub diffuse_texture_index: usize,
     pub specular_texture_index: usize,
-    pub shininess: f32,
 }
 
 pub struct Texture {
     pub name: gl::TextureName,
-    pub has_alpha: bool,
 }
 
 #[allow(unused)]
@@ -96,7 +102,7 @@ fn create_1x1_rgb_texture(gl: &gl::Gl, rgb: [u8; 3]) -> Texture {
         gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
         gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
 
-        Texture { name, has_alpha: false }
+        Texture { name }
     }
 }
 
@@ -130,12 +136,7 @@ fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>, srgb: bool) -> io:
 
         gl.texture_parameterf(name, gl::TEXTURE_MAX_ANISOTROPY, 16.0);
 
-        let has_alpha = match dds.header.pixel_format {
-            dds::Format::BC1_UNORM_RGBA | dds::Format::BC2_UNORM_RGBA | dds::Format::BC3_UNORM_RGBA => true,
-            _ => false,
-        };
-
-        Ok(Texture { name, has_alpha })
+        Ok(Texture { name })
     }
 }
 
@@ -229,6 +230,15 @@ impl Resources {
                 .materials
                 .iter()
                 .map(|material| Material {
+                    kind: if material.transparent {
+                        MaterialKind::Transparent
+                    } else {
+                        if material.masked {
+                            MaterialKind::Masked
+                        } else {
+                            MaterialKind::Opaque
+                        }
+                    },
                     normal_texture_index: match material.normal_texture_index {
                         Some(file_texture_index) => file_texture_index.get() as usize,
                         None => color_texture_index([127, 127, 255]),
@@ -261,7 +271,6 @@ impl Resources {
                             color_texture_index(f32_3_to_unorm([r, g, b]))
                         }
                     },
-                    shininess: material.shininess,
                 })
                 .collect();
 

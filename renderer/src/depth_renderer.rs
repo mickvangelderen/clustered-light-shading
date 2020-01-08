@@ -23,10 +23,7 @@ glsl_defines!(fixed_header {
         DIFFUSE_SAMPLER_BINDING = 4;
         // SPECULAR_SAMPLER_BINDING = 5;
     },
-    uniforms: {
-        // OBJ_TO_WLD_LOC = 0;
-        // SHININESS_LOC = 6;
-    },
+    uniforms: {},
 });
 
 pub struct Parameters {
@@ -67,29 +64,45 @@ impl Context<'_> {
                 let draw_counts = &draw_resources.draw_counts;
                 let draw_offsets = &draw_resources.draw_offsets;
 
-                for &(program, has_alpha, sample_index) in [
-                    (opaque_program, false, main_resources.depth_opaque_profiler),
-                    (masked_program, true, main_resources.depth_masked_profiler),
+                for &(program, material_kind, sample_index) in [
+                    (
+                        opaque_program,
+                        resources::MaterialKind::Opaque,
+                        main_resources.depth_opaque_profiler,
+                    ),
+                    (
+                        masked_program,
+                        resources::MaterialKind::Masked,
+                        main_resources.depth_masked_profiler,
+                    ),
                 ]
                 .iter()
                 {
                     let profiler_index = self.profiling_context.start(gl, sample_index);
 
                     gl.use_program(program);
-                    for (material_index, material) in resources.materials.iter().enumerate() {
-                        if resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
-                            || draw_counts[material_index] == 0
-                        {
-                            continue;
-                        }
 
-                        if has_alpha {
-                            // Update material.
-                            let textures = &resources.textures;
-                            gl.bind_texture_unit(
-                                DIFFUSE_SAMPLER_BINDING,
-                                textures[material.diffuse_texture_index].name,
-                            );
+                    for (material_index, material) in resources
+                        .materials
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, material)| material.kind == material_kind)
+                    {
+                        match material_kind {
+                            resources::MaterialKind::Opaque => {
+                                // Do nothing.
+                            }
+                            resources::MaterialKind::Masked => {
+                                // Update material.
+                                let textures = &resources.textures;
+                                gl.bind_texture_unit(
+                                    DIFFUSE_SAMPLER_BINDING,
+                                    textures[material.diffuse_texture_index].name,
+                                );
+                            }
+                            resources::MaterialKind::Transparent => {
+                                panic!("Don't use transparent material for depth passes?")
+                            }
                         }
 
                         // Execute draw.
@@ -104,6 +117,7 @@ impl Context<'_> {
 
                     self.profiling_context.stop(gl, profiler_index);
                 }
+
                 gl.unuse_program();
 
                 gl.unbind_vertex_array();

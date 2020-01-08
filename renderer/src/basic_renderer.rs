@@ -3,6 +3,7 @@ use crate::*;
 pub struct Renderer {
     pub opaque_program: rendering::Program,
     pub masked_program: rendering::Program,
+    pub transparent_program: rendering::Program,
 }
 
 pub struct Parameters {
@@ -53,8 +54,9 @@ impl Context<'_> {
         unsafe {
             basic_renderer.opaque_program.update(&mut rendering_context!(self));
             basic_renderer.masked_program.update(&mut rendering_context!(self));
-            if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
-                (&basic_renderer.opaque_program.name, &basic_renderer.masked_program.name)
+            basic_renderer.transparent_program.update(&mut rendering_context!(self));
+            if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program), &ProgramName::Linked(transparent_program)) =
+                (&basic_renderer.opaque_program.name, &basic_renderer.masked_program.name, &basic_renderer.transparent_program.name)
             {
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
@@ -110,9 +112,22 @@ impl Context<'_> {
                 let draw_counts = &draw_resources.draw_counts;
                 let draw_offsets = &draw_resources.draw_offsets;
 
-                for &(program, has_alpha, profiler) in [
-                    (opaque_program, false, main_resources.basic_opaque_profiler),
-                    (masked_program, true, main_resources.basic_masked_profiler),
+                for &(program, material_kind, profiler) in [
+                    (
+                        opaque_program,
+                        resources::MaterialKind::Opaque,
+                        main_resources.basic_opaque_profiler,
+                    ),
+                    (
+                        masked_program,
+                        resources::MaterialKind::Masked,
+                        main_resources.basic_masked_profiler,
+                    ),
+                    (
+                        transparent_program,
+                        resources::MaterialKind::Transparent,
+                        main_resources.basic_transparent_profiler,
+                    ),
                 ]
                 .iter()
                 {
@@ -122,13 +137,19 @@ impl Context<'_> {
 
                     gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
 
-                    for (material_index, material) in self.resources.materials.iter().enumerate() {
-                        if self.resources.textures[material.diffuse_texture_index as usize].has_alpha != has_alpha
-                            || draw_counts[material_index] == 0
-                        {
-                            continue;
-                        }
+                    if material_kind == resources::MaterialKind::Transparent {
+                        gl.depth_mask(gl::WriteMask::Disabled);
+                        gl.enable(gl::BLEND);
+                        gl.blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    }
 
+                    for (material_index, material) in self
+                        .resources
+                        .materials
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, material)| material.kind == material_kind)
+                    {
                         // Update material.
                         let textures = &self.resources.textures;
                         gl.bind_texture_unit(NORMAL_SAMPLER_BINDING, textures[material.normal_texture_index].name);
@@ -147,6 +168,11 @@ impl Context<'_> {
                         );
                     }
 
+                    if material_kind == resources::MaterialKind::Transparent {
+                        gl.depth_mask(gl::WriteMask::Enabled);
+                        gl.disable(gl::BLEND);
+                    }
+
                     self.profiling_context.stop(gl, profiler_index);
                 }
 
@@ -162,33 +188,35 @@ impl Context<'_> {
 
 impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {
+        fn basic_pass_header(kind: resources::MaterialKind) -> String {
+            format!(
+                "\
+                #define BASIC_PASS_OPAQUE 1\n\
+                #define BASIC_PASS_MASKED 2\n\
+                #define BASIC_PASS_TRANSPARENT 3\n\
+                #define BASIC_PASS {}\n\
+                ",
+                match kind {
+                    resources::MaterialKind::Opaque => "BASIC_PASS_OPAQUE",
+                    resources::MaterialKind::Masked => "BASIC_PASS_MASKED",
+                    resources::MaterialKind::Transparent => "BASIC_PASS_TRANSPARENT",
+                }
+            )
+        };
+
+        let mut create_program = |kind: resources::MaterialKind| -> rendering::Program {
+            vs_fs_program(
+                context,
+                "basic_renderer.vert",
+                "basic_renderer.frag",
+                format!("{}{}", fixed_header(), basic_pass_header(kind))
+            )
+        };
+
         Renderer {
-            opaque_program: vs_fs_program(
-                context,
-                "basic_renderer.vert",
-                "basic_renderer.frag",
-                format!(
-                    "{}\
-                     #define BASIC_PASS_OPAQUE 1\n\
-                     #define BASIC_PASS_MASKED 2\n\
-                     #define BASIC_PASS BASIC_PASS_OPAQUE\n\
-                     ",
-                    fixed_header()
-                ),
-            ),
-            masked_program: vs_fs_program(
-                context,
-                "basic_renderer.vert",
-                "basic_renderer.frag",
-                format!(
-                    "{}\
-                     #define BASIC_PASS_OPAQUE 1\n\
-                     #define BASIC_PASS_MASKED 2\n\
-                     #define BASIC_PASS BASIC_PASS_MASKED\n\
-                     ",
-                    fixed_header()
-                ),
-            ),
+            opaque_program: create_program(resources::MaterialKind::Opaque),
+            masked_program: create_program(resources::MaterialKind::Masked),
+            transparent_program: create_program(resources::MaterialKind::Transparent),
         }
     }
 }
