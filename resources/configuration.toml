@@ -55,8 +55,8 @@ height = 720
 framebuffer_srgb = true
 
 [clustered_light_shading]
-fragment_counting_strategy = "Depth"
-# fragment_counting_strategy = "Geometry"
+# fragment_counting_strategy = "Depth"
+fragment_counting_strategy = "Geometry"
 
 projection = "Orthographic"
 # projection = "Perspective"
