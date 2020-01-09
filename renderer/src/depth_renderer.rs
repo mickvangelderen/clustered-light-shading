@@ -7,21 +7,8 @@ pub struct Renderer {
 
 glsl_defines!(fixed_header {
     bindings: {
-        // CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING = 1;
-        // ACTIVE_CLUSTER_LIGHT_COUNTS_BUFFER_BINDING = 2;
-        // ACTIVE_CLUSTER_LIGHT_OFFSETS_BUFFER_BINDING = 3;
-        // LIGHT_BUFFER_BINDING = 4;
-        // LIGHT_INDICES_BUFFER_BINDING = 8;
-        // CLUSTER_SPACE_BUFFER_BINDING = 9;
         INSTANCE_MATRICES_BUFFER_BINDING = 10;
-
-        // BASIC_ATOMIC_BINDING = 0;
-
-        // NORMAL_SAMPLER_BINDING = 1;
-        // EMISSIVE_SAMPLER_BINDING = 2;
-        // AMBIENT_SAMPLER_BINDING = 3;
         DIFFUSE_SAMPLER_BINDING = 4;
-        // SPECULAR_SAMPLER_BINDING = 5;
     },
     uniforms: {},
 });

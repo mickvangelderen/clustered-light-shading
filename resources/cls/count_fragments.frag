@@ -1,11 +1,11 @@
 #include "native/PROFILING"
 #include "native/DEPTH_PREPASS"
 
-#include "common.glsl"
-#include "light_buffer.glsl"
+#include "../common.glsl"
+#include "../light_buffer.glsl"
 
-#include "cls/cluster_space_buffer.glsl"
-#include "cls/cluster_fragment_counts_buffer.glsl"
+#include "cluster_space_buffer.glsl"
+#include "cluster_fragment_counts_buffer.glsl"
 
 #if !defined(PROFILING_TIME_SENSITIVE)
 #error PROFILING_TIME_SENSITIVE is not defined.

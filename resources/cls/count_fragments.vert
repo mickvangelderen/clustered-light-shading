@@ -1,8 +1,9 @@
-#include "common.glsl"
-#include "light_buffer.glsl"
-#include "instance_matrices_buffer.glsl"
-#include "cls/cluster_space_buffer.glsl"
+#include "../common.glsl"
+#include "../light_buffer.glsl"
+#include "../instance_matrices_buffer.glsl"
+#include "cluster_space_buffer.glsl"
 
+layout(location = VS_POS_IN_OBJ_LOC) in vec3 vs_pos_in_obj;
 #if BASIC_PASS == BASIC_PASS_MASKED || BASIC_PASS == BASIC_PASS_TRANSPARENT
 layout(location = VS_POS_IN_TEX_LOC) in vec2 vs_pos_in_tex;
 out vec2 fs_pos_in_tex;

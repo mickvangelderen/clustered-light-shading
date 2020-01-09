@@ -31,9 +31,18 @@ glsl_defines!(fixed_header {
         OFFSETS_BUFFER_BINDING = 7;
         DRAW_COMMANDS_BUFFER_BINDING = 8;
         COMPUTE_COMMANDS_BUFFER_BINDING = 9;
-        LIGHT_INDICES_BUFFER_BINDING = 10;
-        CLUSTER_SPACE_BUFFER_BINDING = 11;
-        PROFILING_CLUSTER_BUFFER_BINDING = 12;
+        INSTANCE_MATRICES_BUFFER_BINDING = 10;
+        LIGHT_INDICES_BUFFER_BINDING = 11;
+        CLUSTER_SPACE_BUFFER_BINDING = 12;
+        PROFILING_CLUSTER_BUFFER_BINDING = 13;
+
+        // BASIC_ATOMIC_BINDING = 0;
+
+        // NORMAL_SAMPLER_BINDING = 1;
+        // EMISSIVE_SAMPLER_BINDING = 2;
+        // AMBIENT_SAMPLER_BINDING = 3;
+        DIFFUSE_SAMPLER_BINDING = 4;
+        // SPECULAR_SAMPLER_BINDING = 5;
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
@@ -62,14 +71,15 @@ impl Renderer {
             )
         };
 
-        let count_fragments_program = |context: &mut RenderingContext, kind: resources::MaterialKind| -> rendering::Program {
-            vs_fs_program(
-                context,
-                "cls/count_fragments.vert",
-                "cls/count_fragments.frag",
-                format!("{}{}", fixed_header(), basic_pass_header(kind)),
-            )
-        };
+        let count_fragments_program =
+            |context: &mut RenderingContext, kind: resources::MaterialKind| -> rendering::Program {
+                vs_fs_program(
+                    context,
+                    "cls/count_fragments.vert",
+                    "cls/count_fragments.frag",
+                    format!("{}{}", fixed_header(), basic_pass_header(kind)),
+                )
+            };
 
         let compute_program = |context: &mut RenderingContext, path: &'static str| -> rendering::Program {
             rendering::Program::new(
@@ -77,11 +87,7 @@ impl Renderer {
                 vec![rendering::Shader::new(
                     context.gl,
                     gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context!(context),
-                        path,
-                        fixed_header(),
-                    ),
+                    EntryPoint::new(&mut shader_compilation_context!(context), path, fixed_header()),
                 )],
             )
         };
@@ -123,11 +129,6 @@ impl Context<'_> {
 
             buffer.invalidate(gl);
             buffer.write(gl, data.value_as_bytes());
-            gl.bind_buffer_base(
-                gl::UNIFORM_BUFFER,
-                cls_renderer::CLUSTER_SPACE_BUFFER_BINDING,
-                buffer.name(),
-            );
         }
 
         unsafe {
@@ -136,20 +137,6 @@ impl Context<'_> {
             buffer.invalidate(gl);
             // buffer.ensure_capacity(gl, byte_count);
             buffer.clear_0u32(gl, byte_count);
-        }
-
-        unsafe {
-            let buffer = &mut cluster_resources.cluster_maybe_active_cluster_indices_buffer;
-            let byte_count = std::mem::size_of::<u32>() * cluster_resources.computed.cluster_count() as usize;
-            assert!(byte_count <= buffer.byte_capacity());
-            buffer.invalidate(gl);
-            // buffer.ensure_capacity(gl, byte_count);
-            // buffer.clear_0u32(gl, byte_count);
-            gl.bind_buffer_base(
-                gl::SHADER_STORAGE_BUFFER,
-                cls_renderer::CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
-                buffer.name(),
-            );
         }
 
         // NOTE: Work around borrow checker.
@@ -197,6 +184,21 @@ impl Context<'_> {
             let camera_parameters = &camera_resources.parameters;
             let main_resources = &mut self.main_resources_pool[main_resources_index];
 
+            // Re-bind buffers.
+            unsafe {
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
+                    cluster_resources.cluster_fragment_counts_buffer.name(),
+                );
+
+                gl.bind_buffer_base(
+                    gl::UNIFORM_BUFFER,
+                    cls_renderer::CLUSTER_SPACE_BUFFER_BINDING,
+                    cluster_resources.cluster_space_buffer.name(),
+                );
+            }
+
             {
                 let profiler_index = self.profiling_context.start(gl, camera_resources.profilers.count_frags);
                 {
@@ -210,12 +212,6 @@ impl Context<'_> {
                             program.update(&mut rendering_context!(self));
                             if let ProgramName::Linked(name) = program.name {
                                 gl.use_program(name);
-
-                                gl.bind_buffer_base(
-                                    gl::SHADER_STORAGE_BUFFER,
-                                    cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
-                                    cluster_resources.cluster_fragment_counts_buffer.name(),
-                                );
 
                                 gl.bind_texture_unit(
                                     0,
@@ -260,19 +256,191 @@ impl Context<'_> {
                                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                             }
                         },
-                        FragmentCountingStrategy::Geometry => {}
+                        FragmentCountingStrategy::Geometry => unsafe {
+                            let renderer = &mut self.cls_renderer;
+
+                            renderer
+                                .count_fragments_opaque_program
+                                .update(&mut rendering_context!(self));
+                            renderer
+                                .count_fragments_masked_program
+                                .update(&mut rendering_context!(self));
+                            if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) = (
+                                &renderer.count_fragments_opaque_program.name,
+                                &renderer.count_fragments_masked_program.name,
+                            ) {
+                                let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
+
+                                gl.bind_buffer_base(
+                                    gl::SHADER_STORAGE_BUFFER,
+                                    INSTANCE_MATRICES_BUFFER_BINDING,
+                                    draw_resources.instance_matrices_buffer,
+                                );
+
+                                gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, draw_resources.draw_command_buffer);
+
+                                gl.bind_vertex_array(self.resources.scene_vao);
+
+                                let draw_counts = &draw_resources.draw_counts;
+                                let draw_offsets = &draw_resources.draw_offsets;
+
+                                for &(program, material_kind, profiler) in [
+                                    (
+                                        opaque_program,
+                                        resources::MaterialKind::Opaque,
+                                        camera_resources.profilers.count_opaque_frags,
+                                    ),
+                                    (
+                                        masked_program,
+                                        resources::MaterialKind::Masked,
+                                        camera_resources.profilers.count_masked_frags,
+                                    ),
+                                ]
+                                .iter()
+                                {
+                                    let profiler_index = self.profiling_context.start(gl, profiler);
+
+                                    gl.use_program(program);
+
+                                    gl.depth_func(gl::GEQUAL);
+                                    gl.depth_mask(gl::WriteMask::Disabled);
+                                    gl.color_mask(
+                                        gl::WriteMask::Disabled,
+                                        gl::WriteMask::Disabled,
+                                        gl::WriteMask::Disabled,
+                                        gl::WriteMask::Disabled,
+                                    );
+
+                                    for (material_index, material) in self
+                                        .resources
+                                        .materials
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(_, material)| material.kind == material_kind)
+                                    {
+                                        if material_kind == resources::MaterialKind::Masked {
+                                            // Update material.
+                                            gl.bind_texture_unit(
+                                                DIFFUSE_SAMPLER_BINDING,
+                                                self.resources.textures[material.diffuse_texture_index].name,
+                                            );
+                                        }
+
+                                        // Execute draw.
+                                        gl.multi_draw_elements_indirect(
+                                            gl::TRIANGLES,
+                                            gl::UNSIGNED_INT,
+                                            draw_offsets[material_index] as usize * std::mem::size_of::<DrawCommand>(),
+                                            draw_counts[material_index] as i32,
+                                            std::mem::size_of::<DrawCommand>() as i32,
+                                        );
+                                    }
+
+                                    gl.depth_func(gl::GREATER);
+                                    gl.depth_mask(gl::WriteMask::Enabled);
+                                    gl.color_mask(
+                                        gl::WriteMask::Enabled,
+                                        gl::WriteMask::Enabled,
+                                        gl::WriteMask::Enabled,
+                                        gl::WriteMask::Enabled,
+                                    );
+
+                                    self.profiling_context.stop(gl, profiler_index);
+                                }
+
+                                gl.unuse_program();
+
+                                gl.unbind_vertex_array();
+                            }
+                        },
                     }
 
                     self.profiling_context.stop(gl, profiler_index);
                 }
-                self.profiling_context.stop(gl, profiler_index);
-            }
 
-            // Transparent
-            {
-                let profiler_index = self
-                    .profiling_context
-                    .start(gl, camera_resources.profilers.count_transparent_frags);
+                // Transparent
+                unsafe {
+                    let renderer = &mut self.cls_renderer;
+
+                    renderer
+                        .count_fragments_transparent_program
+                        .update(&mut rendering_context!(self));
+                    if let &ProgramName::Linked(transparent_program) = &renderer.count_fragments_opaque_program.name {
+                        let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
+
+                        gl.bind_buffer_base(
+                            gl::SHADER_STORAGE_BUFFER,
+                            INSTANCE_MATRICES_BUFFER_BINDING,
+                            draw_resources.instance_matrices_buffer,
+                        );
+
+                        gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, draw_resources.draw_command_buffer);
+
+                        gl.bind_vertex_array(self.resources.scene_vao);
+
+                        let draw_counts = &draw_resources.draw_counts;
+                        let draw_offsets = &draw_resources.draw_offsets;
+
+                        for &(program, material_kind, profiler) in [(
+                            transparent_program,
+                            resources::MaterialKind::Transparent,
+                            camera_resources.profilers.count_transparent_frags,
+                        )]
+                        .iter()
+                        {
+                            let profiler_index = self.profiling_context.start(gl, profiler);
+
+                            gl.use_program(program);
+
+                            gl.depth_func(gl::GEQUAL);
+                            gl.depth_mask(gl::WriteMask::Disabled);
+                            gl.color_mask(
+                                gl::WriteMask::Disabled,
+                                gl::WriteMask::Disabled,
+                                gl::WriteMask::Disabled,
+                                gl::WriteMask::Disabled,
+                            );
+
+                            for (material_index, material) in self
+                                .resources
+                                .materials
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, material)| material.kind == material_kind)
+                            {
+                                // Update material.
+                                gl.bind_texture_unit(
+                                    DIFFUSE_SAMPLER_BINDING,
+                                    self.resources.textures[material.diffuse_texture_index].name,
+                                );
+
+                                // Execute draw.
+                                gl.multi_draw_elements_indirect(
+                                    gl::TRIANGLES,
+                                    gl::UNSIGNED_INT,
+                                    draw_offsets[material_index] as usize * std::mem::size_of::<DrawCommand>(),
+                                    draw_counts[material_index] as i32,
+                                    std::mem::size_of::<DrawCommand>() as i32,
+                                );
+                            }
+
+                            gl.depth_func(gl::GREATER);
+                            gl.depth_mask(gl::WriteMask::Enabled);
+                            gl.color_mask(
+                                gl::WriteMask::Enabled,
+                                gl::WriteMask::Enabled,
+                                gl::WriteMask::Enabled,
+                                gl::WriteMask::Enabled,
+                            );
+
+                            self.profiling_context.stop(gl, profiler_index);
+                        }
+
+                        gl.unuse_program();
+
+                        gl.unbind_vertex_array();
+                    }
+                }
 
                 self.profiling_context.stop(gl, profiler_index);
             }
@@ -331,10 +499,26 @@ impl Context<'_> {
             }
 
             unsafe {
+                let buffer = &mut cluster_resources.cluster_maybe_active_cluster_indices_buffer;
+                let byte_count = std::mem::size_of::<u32>() * cluster_resources.computed.cluster_count() as usize;
+                buffer.invalidate(gl);
+                assert!(byte_count <= buffer.byte_capacity());
+                // buffer.ensure_capacity(gl, byte_count);
+                // NOTE(mickvangelderen): No need to clear, a value is written for each cluster.
+                // buffer.clear_0u32(gl, byte_count);
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    cls_renderer::CLUSTER_MAYBE_ACTIVE_CLUSTER_INDICES_BUFFER_BINDING,
+                    buffer.name(),
+                );
+            }
+
+            unsafe {
                 let buffer = &mut cluster_resources.active_cluster_cluster_indices_buffer;
                 buffer.invalidate(gl);
-                // buffer.ensure_capacity(gl, byte_count);
-                buffer.clear_0u32(gl, buffer.byte_capacity());
+                // Can't check capacity because the number of active clusters is only known on the GPU.
+                // NOTE(mickvangelderen): No need to clear, a value is written for each cluster.
+                // buffer.clear_0u32(gl, buffer.byte_capacity());
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::ACTIVE_CLUSTER_CLUSTER_INDICES_BUFFER_BINDING,
@@ -348,9 +532,7 @@ impl Context<'_> {
                     cls_renderer::DRAW_COMMANDS_BUFFER_BINDING,
                     cluster_resources.draw_commands_buffer.name(),
                 );
-            }
 
-            unsafe {
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::COMPUTE_COMMANDS_BUFFER_BINDING,
