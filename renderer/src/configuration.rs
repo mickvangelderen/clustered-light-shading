@@ -137,8 +137,15 @@ pub enum ClusteringGrouping {
     Enclosed,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum FragmentCountingStrategy {
+    Depth,
+    Geometry,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct ClusteredLightShadingConfiguration {
+    pub fragment_counting_strategy: FragmentCountingStrategy,
     pub projection: ClusteringProjection,
     pub grouping: ClusteringGrouping,
     pub perspective_pixels: Vector2<u32>,

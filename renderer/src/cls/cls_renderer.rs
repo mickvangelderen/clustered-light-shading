@@ -1,7 +1,11 @@
 use crate::*;
+use renderer::configuration::FragmentCountingStrategy;
 
 pub struct Renderer {
-    pub count_fragments_program: rendering::Program,
+    pub count_fragments_depth_program: rendering::Program,
+    pub count_fragments_opaque_program: rendering::Program,
+    pub count_fragments_masked_program: rendering::Program,
+    pub count_fragments_transparent_program: rendering::Program,
     pub frag_count_hist_program: rendering::Program,
     pub compact_clusters_0_program: rendering::Program,
     pub compact_clusters_1_program: rendering::Program,
@@ -42,150 +46,62 @@ glsl_defines!(fixed_header {
 
 impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {
-        let gl = context.gl;
-        let mut shader_compilation_context = shader_compilation_context!(context);
+        fn basic_pass_header(kind: resources::MaterialKind) -> String {
+            format!(
+                "\
+                #define BASIC_PASS_OPAQUE 1\n\
+                #define BASIC_PASS_MASKED 2\n\
+                #define BASIC_PASS_TRANSPARENT 3\n\
+                #define BASIC_PASS {}\n\
+                ",
+                match kind {
+                    resources::MaterialKind::Opaque => "BASIC_PASS_OPAQUE",
+                    resources::MaterialKind::Masked => "BASIC_PASS_MASKED",
+                    resources::MaterialKind::Transparent => "BASIC_PASS_TRANSPARENT",
+                }
+            )
+        };
+
+        let count_fragments_program = |context: &mut RenderingContext, kind: resources::MaterialKind| -> rendering::Program {
+            vs_fs_program(
+                context,
+                "cls/count_fragments.vert",
+                "cls/count_fragments.frag",
+                format!("{}{}", fixed_header(), basic_pass_header(kind)),
+            )
+        };
+
+        let compute_program = |context: &mut RenderingContext, path: &'static str| -> rendering::Program {
+            rendering::Program::new(
+                context.gl,
+                vec![rendering::Shader::new(
+                    context.gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context!(context),
+                        path,
+                        fixed_header(),
+                    ),
+                )],
+            )
+        };
 
         Renderer {
-            count_fragments_program: rendering::Program::new(
-                context.gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/count_fragments.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            frag_count_hist_program: rendering::Program::new(
-                context.gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/frag_count_hist.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            compact_clusters_0_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/compact_clusters_0.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            compact_clusters_1_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/compact_clusters_1.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            compact_clusters_2_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/compact_clusters_2.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            transform_lights_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/transform_lights.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            count_lights_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(&mut shader_compilation_context, "cls/count_lights.comp", fixed_header()),
-                )],
-            ),
-            light_count_hist_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/light_count_hist.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            compact_light_counts_0_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/compact_light_counts_0.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            compact_light_counts_1_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/compact_light_counts_1.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            compact_light_counts_2_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/compact_light_counts_2.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
-            assign_lights_program: rendering::Program::new(
-                gl,
-                vec![rendering::Shader::new(
-                    gl,
-                    gl::COMPUTE_SHADER,
-                    EntryPoint::new(
-                        &mut shader_compilation_context,
-                        "cls/assign_lights.comp",
-                        fixed_header(),
-                    ),
-                )],
-            ),
+            count_fragments_depth_program: compute_program(context, "cls/count_fragments_depth.comp"),
+            count_fragments_opaque_program: count_fragments_program(context, resources::MaterialKind::Opaque),
+            count_fragments_masked_program: count_fragments_program(context, resources::MaterialKind::Masked),
+            count_fragments_transparent_program: count_fragments_program(context, resources::MaterialKind::Transparent),
+            frag_count_hist_program: compute_program(context, "cls/frag_count_hist.comp"),
+            compact_clusters_0_program: compute_program(context, "cls/compact_clusters_0.comp"),
+            compact_clusters_1_program: compute_program(context, "cls/compact_clusters_1.comp"),
+            compact_clusters_2_program: compute_program(context, "cls/compact_clusters_2.comp"),
+            transform_lights_program: compute_program(context, "cls/transform_lights.comp"),
+            count_lights_program: compute_program(context, "cls/count_lights.comp"),
+            light_count_hist_program: compute_program(context, "cls/light_count_hist.comp"),
+            compact_light_counts_0_program: compute_program(context, "cls/compact_light_counts_0.comp"),
+            compact_light_counts_1_program: compute_program(context, "cls/compact_light_counts_1.comp"),
+            compact_light_counts_2_program: compute_program(context, "cls/compact_light_counts_2.comp"),
+            assign_lights_program: compute_program(context, "cls/assign_lights.comp"),
         }
     }
 }
@@ -283,60 +199,80 @@ impl Context<'_> {
 
             {
                 let profiler_index = self.profiling_context.start(gl, camera_resources.profilers.count_frags);
+                {
+                    let profiler_index = self
+                        .profiling_context
+                        .start(gl, camera_resources.profilers.count_opaque_masked_frags);
 
-                unsafe {
-                    let program = &mut self.cls_renderer.count_fragments_program;
-                    program.update(&mut rendering_context!(self));
-                    if let ProgramName::Linked(name) = program.name {
-                        gl.use_program(name);
+                    match self.configuration.clustered_light_shading.fragment_counting_strategy {
+                        FragmentCountingStrategy::Depth => unsafe {
+                            let program = &mut self.cls_renderer.count_fragments_depth_program;
+                            program.update(&mut rendering_context!(self));
+                            if let ProgramName::Linked(name) = program.name {
+                                gl.use_program(name);
 
-                        gl.bind_buffer_base(
-                            gl::SHADER_STORAGE_BUFFER,
-                            cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
-                            cluster_resources.cluster_fragment_counts_buffer.name(),
-                        );
+                                gl.bind_buffer_base(
+                                    gl::SHADER_STORAGE_BUFFER,
+                                    cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
+                                    cluster_resources.cluster_fragment_counts_buffer.name(),
+                                );
 
-                        gl.bind_texture_unit(
-                            0,
-                            main_resources
-                                .cluster_depth_texture
-                                .unwrap_or(main_resources.depth_texture),
-                        );
+                                gl.bind_texture_unit(
+                                    0,
+                                    main_resources
+                                        .cluster_depth_texture
+                                        .unwrap_or(main_resources.depth_texture),
+                                );
 
-                        gl.uniform_2i(
-                            cls_renderer::DEPTH_DIMENSIONS_LOC,
-                            main_resources.dimensions.cast::<i32>().unwrap().into(),
-                        );
+                                gl.uniform_2i(
+                                    cls_renderer::DEPTH_DIMENSIONS_LOC,
+                                    main_resources.dimensions.cast::<i32>().unwrap().into(),
+                                );
 
-                        let ren_clp_to_clu_cam =
-                            cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld;
+                                let ren_clp_to_clu_cam =
+                                    cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld;
 
-                        gl.uniform_matrix4f(
-                            cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
-                            gl::MajorAxis::Column,
-                            ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
-                        );
+                                gl.uniform_matrix4f(
+                                    cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
+                                    gl::MajorAxis::Column,
+                                    ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
+                                );
 
-                        gl.memory_barrier(gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER);
+                                gl.memory_barrier(
+                                    gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
+                                );
 
-                        let (lx, ly) = match self.configuration.global.sample_count {
-                            0 | 1 => (16, 16),
-                            2 => (8, 16),
-                            4 => (8, 8),
-                            8 => (4, 8),
-                            16 => (4, 4),
-                            other => panic!("Unsupported multisampling sample count {}.", other),
-                        };
+                                let (lx, ly) = match self.configuration.global.sample_count {
+                                    0 | 1 => (16, 16),
+                                    2 => (8, 16),
+                                    4 => (8, 8),
+                                    8 => (4, 8),
+                                    16 => (4, 4),
+                                    other => panic!("Unsupported multisampling sample count {}.", other),
+                                };
 
-                        gl.dispatch_compute(
-                            main_resources.dimensions.x.ceiled_div(lx) as u32,
-                            main_resources.dimensions.y.ceiled_div(ly) as u32,
-                            1,
-                        );
+                                gl.dispatch_compute(
+                                    main_resources.dimensions.x.ceiled_div(lx) as u32,
+                                    main_resources.dimensions.y.ceiled_div(ly) as u32,
+                                    1,
+                                );
 
-                        gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                                gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                            }
+                        },
+                        FragmentCountingStrategy::Geometry => {}
                     }
+
+                    self.profiling_context.stop(gl, profiler_index);
                 }
+                self.profiling_context.stop(gl, profiler_index);
+            }
+
+            // Transparent
+            {
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, camera_resources.profilers.count_transparent_frags);
 
                 self.profiling_context.stop(gl, profiler_index);
             }
