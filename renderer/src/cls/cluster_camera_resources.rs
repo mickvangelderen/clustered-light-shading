@@ -5,6 +5,10 @@ impl_enum_and_enum_map! {
     enum CameraStage => struct CameraStages {
         Camera => camera,
         CountFrags => count_frags,
+        CountOpaqueMaskedFrags => count_opaque_masked_frags,
+        CountOpaqueFrags => count_opaque_frags,
+        CountMaskedFrags => count_masked_frags,
+        CountTransparentFrags => count_transparent_frags,
     }
 }
 
@@ -15,6 +19,10 @@ impl CameraStage {
         match self {
             CameraStage::Camera => "camera",
             CameraStage::CountFrags => "count frags",
+            CameraStage::CountOpaqueMaskedFrags => "opaque and masked",
+            CameraStage::CountOpaqueFrags => "opaque",
+            CameraStage::CountMaskedFrags => "masked",
+            CameraStage::CountTransparentFrags => "transparent",
         }
     }
 }
