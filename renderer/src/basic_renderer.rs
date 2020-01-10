@@ -4,6 +4,7 @@ pub struct Renderer {
     pub opaque_program: rendering::Program,
     pub masked_program: rendering::Program,
     pub transparent_program: rendering::Program,
+    pub oit_compose_program: rendering::Program,
 }
 
 pub struct Parameters {
@@ -42,6 +43,14 @@ glsl_defines!(fixed_header {
     },
 });
 
+glsl_defines!(oit_compose_header {
+    bindings: {
+        ACCUM_SAMPLER_BINDING = 0;
+        REVEAL_SAMPLER_BINDING = 1;
+    },
+    uniforms: {},
+});
+
 impl Context<'_> {
     pub fn render_main(&mut self, params: &Parameters) {
         let Context {
@@ -62,9 +71,18 @@ impl Context<'_> {
             basic_renderer.opaque_program.update(&mut rendering_context!(self));
             basic_renderer.masked_program.update(&mut rendering_context!(self));
             basic_renderer.transparent_program.update(&mut rendering_context!(self));
-            if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program), &ProgramName::Linked(transparent_program)) =
-                (&basic_renderer.opaque_program.name, &basic_renderer.masked_program.name, &basic_renderer.transparent_program.name)
-            {
+            basic_renderer.oit_compose_program.update(&mut rendering_context!(self));
+            if let (
+                &ProgramName::Linked(opaque_program),
+                &ProgramName::Linked(masked_program),
+                &ProgramName::Linked(transparent_program),
+                &ProgramName::Linked(oit_compose_program),
+            ) = (
+                &basic_renderer.opaque_program.name,
+                &basic_renderer.masked_program.name,
+                &basic_renderer.transparent_program.name,
+                &basic_renderer.oit_compose_program.name,
+            ) {
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
 
@@ -145,9 +163,24 @@ impl Context<'_> {
                     gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
 
                     if material_kind == resources::MaterialKind::Transparent {
+                        gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.trans_framebuffer_name);
+                        gl.clear_named_framebufferfv(
+                            main_resources.trans_framebuffer_name.into(),
+                            gl::COLOR,
+                            0,
+                            [0.0, 0.0, 0.0, 0.0],
+                        );
+                        gl.clear_named_framebufferfv(
+                            main_resources.trans_framebuffer_name.into(),
+                            gl::COLOR,
+                            1,
+                            [1.0, 1.0, 1.0, 1.0],
+                        );
+
                         gl.depth_mask(gl::WriteMask::Disabled);
                         gl.enable(gl::BLEND);
-                        gl.blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                        gl.blend_funci(0, gl::ONE, gl::ONE);
+                        gl.blend_funci(1, gl::ZERO, gl::ONE_MINUS_SRC_ALPHA);
                     }
 
                     for (material_index, material) in self
@@ -176,6 +209,25 @@ impl Context<'_> {
                     }
 
                     if material_kind == resources::MaterialKind::Transparent {
+                        gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
+                        gl.blend_func(gl::ONE_MINUS_SRC_ALPHA, gl::SRC_ALPHA);
+                        gl.disable(gl::DEPTH_TEST);
+
+                        gl.use_program(oit_compose_program);
+
+                        gl.bind_texture_unit(ACCUM_SAMPLER_BINDING, main_resources.trans_color_texture);
+                        gl.bind_texture_unit(REVEAL_SAMPLER_BINDING, main_resources.trans_weights_texture);
+
+                        gl.bind_vertex_array(self.resources.full_screen_vao);
+                        gl.draw_elements(
+                            gl::TRIANGLES,
+                            u32::try_from(resources::FULL_SCREEN_INDICES.len() * 3).unwrap(),
+                            gl::UNSIGNED_INT,
+                            0,
+                        );
+                        gl.unbind_vertex_array();
+
+                        gl.enable(gl::DEPTH_TEST);
                         gl.depth_mask(gl::WriteMask::Enabled);
                         gl.disable(gl::BLEND);
                     }
@@ -224,6 +276,7 @@ impl Renderer {
             opaque_program: create_program(resources::MaterialKind::Opaque),
             masked_program: create_program(resources::MaterialKind::Masked),
             transparent_program: create_program(resources::MaterialKind::Transparent),
+            oit_compose_program: vs_fs_program(context, "oit_compose.vert", "oit_compose.frag", oit_compose_header()),
         }
     }
 }

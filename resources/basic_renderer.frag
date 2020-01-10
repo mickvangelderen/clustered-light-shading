@@ -80,6 +80,9 @@ in vec3 fs_pos_in_clu_cam;
 #endif
 
 layout(location = 0) out vec4 frag_color;
+#if BASIC_PASS == BASIC_PASS_TRANSPARENT
+layout(location = 1) out vec4 frag_reveal;
+#endif
 
 vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   vec2 xy = texture(normal_sampler, pos_in_tex).xy * 2.0 - vec2(1.0);
@@ -276,7 +279,8 @@ void main() {
 #endif
 
 #if BASIC_PASS == BASIC_PASS_TRANSPARENT
-  frag_color = vec4(color_accumulator, kd.a);
+  frag_color = vec4(color_accumulator, kd.a) * gl_FragCoord.z * kd.a;
+  frag_reveal = vec4(kd.a);
 #else
   frag_color = vec4(color_accumulator, 1.0);
 #endif

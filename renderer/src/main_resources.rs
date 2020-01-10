@@ -12,6 +12,10 @@ pub struct MainResources {
     pub depth_texture: gl::TextureName,
     pub cluster_depth_texture: Option<gl::TextureName>,
 
+    pub trans_framebuffer_name: gl::NonDefaultFramebufferName,
+    pub trans_color_texture: gl::TextureName,
+    pub trans_weights_texture: gl::TextureName,
+
     // Profiling
     pub depth_profiler: SampleIndex,
     pub depth_opaque_profiler: SampleIndex,
@@ -55,6 +59,7 @@ unsafe fn create_texture(
 
 const DEPTH_FORMAT: gl::symbols::DEPTH32F_STENCIL8 = gl::DEPTH32F_STENCIL8;
 const COLOR_FORMAT: gl::symbols::RGBA16F = gl::RGBA16F;
+const TRANSPARENCY_WEIGHTS_FORMAT: gl::symbols::R32F = gl::R32F;
 
 impl MainResources {
     pub fn new(
@@ -80,14 +85,26 @@ impl MainResources {
                 gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT1, cluster_depth_texture, 0);
             }
 
-            let c01 = [gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()];
-            let c0 = [gl::COLOR_ATTACHMENT0.into()];
             gl.named_framebuffer_draw_buffers(
                 framebuffer_name,
-                match cluster_depth_texture {
-                    Some(_) => &c01,
-                    None => &c0,
-                },
+                &[
+                    gl::COLOR_ATTACHMENT0.into(),
+                    match cluster_depth_texture {
+                        Some(_) => gl::COLOR_ATTACHMENT1.into(),
+                        None => gl::NONE.into(),
+                    },
+                ],
+            );
+
+            let trans_framebuffer_name = gl.create_framebuffer();
+            let trans_color_texture = create_texture(gl, COLOR_FORMAT, dimensions, sample_count);
+            let trans_weights_texture = create_texture(gl, TRANSPARENCY_WEIGHTS_FORMAT, dimensions, sample_count);
+            gl.named_framebuffer_texture(trans_framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture, 0);
+            gl.named_framebuffer_texture(trans_framebuffer_name, gl::COLOR_ATTACHMENT0, trans_color_texture, 0);
+            gl.named_framebuffer_texture(trans_framebuffer_name, gl::COLOR_ATTACHMENT1, trans_weights_texture, 0);
+            gl.named_framebuffer_draw_buffers(
+                trans_framebuffer_name,
+                &[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()],
             );
 
             MainResources {
@@ -98,6 +115,10 @@ impl MainResources {
                 color_texture,
                 depth_texture,
                 cluster_depth_texture,
+
+                trans_framebuffer_name,
+                trans_color_texture,
+                trans_weights_texture,
 
                 depth_profiler: profiling_context.add_sample("depth"),
                 depth_opaque_profiler: profiling_context.add_sample("opaque"),
@@ -138,17 +159,34 @@ impl MainResources {
                     gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT1, cluster_depth_texture, 0);
                 }
 
-                let c01 = [gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()];
-                let c0 = [gl::COLOR_ATTACHMENT0.into()];
                 gl.named_framebuffer_draw_buffers(
                     framebuffer_name,
-                    match cluster_depth_texture {
-                        Some(_) => &c01,
-                        None => &c0,
-                    },
+                    &[
+                        gl::COLOR_ATTACHMENT0.into(),
+                        match cluster_depth_texture {
+                            Some(_) => gl::COLOR_ATTACHMENT1.into(),
+                            None => gl::NONE.into(),
+                        },
+                    ],
+                );
+
+                let trans_framebuffer_name = gl.create_framebuffer();
+                let trans_color_texture = create_texture(gl, COLOR_FORMAT, dimensions, sample_count);
+                let trans_weights_texture = create_texture(gl, TRANSPARENCY_WEIGHTS_FORMAT, dimensions, sample_count);
+                gl.named_framebuffer_texture(trans_framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture, 0);
+                gl.named_framebuffer_texture(trans_framebuffer_name, gl::COLOR_ATTACHMENT0, trans_color_texture, 0);
+                gl.named_framebuffer_texture(trans_framebuffer_name, gl::COLOR_ATTACHMENT1, trans_weights_texture, 0);
+                gl.named_framebuffer_draw_buffers(
+                    trans_framebuffer_name,
+                    &[gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()],
                 );
 
                 gl.delete_framebuffer(std::mem::replace(&mut self.framebuffer_name, framebuffer_name));
+                gl.delete_framebuffer(std::mem::replace(
+                    &mut self.trans_framebuffer_name,
+                    trans_framebuffer_name,
+                ));
+
                 gl.delete_texture(std::mem::replace(&mut self.depth_texture, depth_texture));
                 gl.delete_texture(std::mem::replace(&mut self.color_texture, color_texture));
                 if let Some(cluster_depth_texture) =
@@ -156,6 +194,11 @@ impl MainResources {
                 {
                     gl.delete_texture(cluster_depth_texture);
                 }
+                gl.delete_texture(std::mem::replace(&mut self.trans_color_texture, trans_color_texture));
+                gl.delete_texture(std::mem::replace(
+                    &mut self.trans_weights_texture,
+                    trans_weights_texture,
+                ));
             }
         }
     }
@@ -163,11 +206,14 @@ impl MainResources {
     pub fn drop(mut self, gl: &gl::Gl) {
         unsafe {
             gl.delete_framebuffer(self.framebuffer_name);
+            gl.delete_framebuffer(self.trans_framebuffer_name);
             gl.delete_texture(self.depth_texture);
             gl.delete_texture(self.color_texture);
             if let Some(cluster_depth_texture) = std::mem::replace(&mut self.cluster_depth_texture, None) {
                 gl.delete_texture(cluster_depth_texture);
             }
+            gl.delete_texture(self.trans_color_texture);
+            gl.delete_texture(self.trans_weights_texture);
         }
     }
 }
