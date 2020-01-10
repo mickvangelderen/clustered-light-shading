@@ -182,99 +182,102 @@ void main() {
   }
 #endif
 
+#if !PROFILING_TIME_SENSITIVE
+  atomicCounterIncrement(shading_ops);
+#endif
+
+  // FIXME: Make sure transparent materials are
+  // actually somewhat transparent. Asset problem.
+  kd.a *= 0.95;
+
   mat3 tbn = mat3(frag_geo_tan_in_lgt, frag_geo_bin_in_lgt, frag_geo_nor_in_lgt);
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
   vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt - frag_pos_in_lgt);
 
+  vec3 color_accumulator = vec3(ke.xyz);
 #if defined(RENDER_TECHNIQUE_NAIVE)
-    vec3 color_accumulator = vec3(ke.xyz);
-    for (uint i = 0; i < light_buffer.light_count.x; i++) {
-      color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
-    }
-#if BASIC_PASS == BASIC_PASS_TRANSPARENT
-    frag_color = vec4(color_accumulator, kd.a);
-#else
-    frag_color = vec4(color_accumulator, 1.0);
-#endif
+  for (uint i = 0; i < light_buffer.light_count.x; i++) {
+    color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
+#if !PROFILING_TIME_SENSITIVE
+    atomicCounterIncrement(lighting_ops);
+#endif
+  }
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-    vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
-    uvec3 idx_in_cls = uvec3(pos_in_cls);
-    // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
+  vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
+  uvec3 idx_in_cls = uvec3(pos_in_cls);
+  // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 
-    // CLUSTER INDICES X, Y, Z
-    // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
+  // CLUSTER INDICES X, Y, Z
+  // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
 
-    // CLUSTER INDICES X, Y, Z mod 3
-    // vec3 cluster_index_colors = vec3((idx_in_cls % 3) + 1)/4.0;
-    // frag_color = vec4(cluster_index_colors.xyz, 1.0);
+  // CLUSTER INDICES X, Y, Z mod 3
+  // vec3 cluster_index_colors = vec3((idx_in_cls % 3) + 1)/4.0;
+  // frag_color = vec4(cluster_index_colors.xyz, 1.0);
 
-    // CLUSTER MORTON INDEX
-    // uint cluster_morton_index = to_morton_3(idx_in_cls);
-    // frag_color = vec4(                              //
-    //     float((cluster_morton_index >> 16) & 0xff) / 255.0, //
-    //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
-    //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
+  // CLUSTER MORTON INDEX
+  // uint cluster_morton_index = to_morton_3(idx_in_cls);
+  // frag_color = vec4(                              //
+  //     float((cluster_morton_index >> 16) & 0xff) / 255.0, //
+  //     float((cluster_morton_index >> 8) & 0xff) / 255.0,  //
+  //     float((cluster_morton_index >> 0) & 0xff) / 255.0, 1.0);
 
-    uint cluster_index = index_3_to_1(idx_in_cls, cluster_space.dimensions);
-    uint maybe_active_cluster_index =
-        cluster_maybe_active_cluster_indices[cluster_index];
+  uint cluster_index = index_3_to_1(idx_in_cls, cluster_space.dimensions);
+  uint maybe_active_cluster_index =
+      cluster_maybe_active_cluster_indices[cluster_index];
 
-    if (maybe_active_cluster_index == 0) {
-      // We generally shouldn't see clusters that don't have any fragments.
-      frag_color = vec4(1.0, 0.0, 1.0, 1.0);
-    } else {
-      uint active_cluster_index = maybe_active_cluster_index - 1;
-      uint cluster_light_count = active_cluster_light_counts[active_cluster_index];
-      uint cluster_light_offset = active_cluster_light_offsets[active_cluster_index];
+  if (maybe_active_cluster_index == 0) {
+    // We generally shouldn't see clusters that don't have any fragments.
+    frag_color = vec4(1.0, 0.0, 1.0, 1.0);
+    return;
+  }
 
-      // ACTIVE CLUSTERINDEX
-      // frag_color = vec4(vec3(float(active_cluster_index) / 100.0), 1.0);
+  uint active_cluster_index = maybe_active_cluster_index - 1;
+  uint cluster_light_count = active_cluster_light_counts[active_cluster_index];
+  uint cluster_light_offset = active_cluster_light_offsets[active_cluster_index];
 
-      // CLUSTER LENGHTS
-      // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
-      // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
+  // ACTIVE CLUSTERINDEX
+  // frag_color = vec4(vec3(float(active_cluster_index) / 100.0), 1.0);
 
-      // COLORED CLUSTER LENGTHS
-      // if (cluster_light_count == 0) {
-      //   discard;
-      // }
-      // frag_color = vec4(vec3(float(cluster_light_count)/2.0) *
-      // cluster_index_colors, 1.0);
+  // CLUSTER LENGHTS
+  // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
+  // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
 
-      // HASH LIGHT INDICES
-      // uint hash = 0;
-      // uint p_pow = 1;
-      // for (uint i = 0; i < cluster_light_count; i++) {
-      //   uint light_index = light_indices[cluster_light_offset + i];
-      //   hash = (hash + light_index * p_pow) % 0xffff;
-      //   p_pow = (p_pow * 31) % 0xffff;
-      // }
-      // hash = cluster_light_offset;
-      // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
+  // COLORED CLUSTER LENGTHS
+  // if (cluster_light_count == 0) {
+  //   discard;
+  // }
+  // frag_color = vec4(vec3(float(cluster_light_count)/2.0) *
+  // cluster_index_colors, 1.0);
 
-      // ACTUAL SHADING
-#if !PROFILING_TIME_SENSITIVE
-      atomicCounterIncrement(shading_ops);
-#endif
+  // HASH LIGHT INDICES
+  // uint hash = 0;
+  // uint p_pow = 1;
+  // for (uint i = 0; i < cluster_light_count; i++) {
+  //   uint light_index = light_indices[cluster_light_offset + i];
+  //   hash = (hash + light_index * p_pow) % 0xffff;
+  //   p_pow = (p_pow * 31) % 0xffff;
+  // }
+  // hash = cluster_light_offset;
+  // frag_color = vec4(float(hash & 0xff)/255.0, float((hash >> 8) & 0xff)/255.0, float((hash >> 16) & 0xff)/255.0, 1.0);
 
-      vec3 color_accumulator = ke.xyz;
-      for (uint i = 0; i < cluster_light_count; i++) {
-        uint light_index = light_indices[cluster_light_offset + i];
+  // ACTUAL SHADING
+  for (uint i = 0; i < cluster_light_count; i++) {
+    uint light_index = light_indices[cluster_light_offset + i];
 
-        color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
 #if !PROFILING_TIME_SENSITIVE
-        atomicCounterIncrement(lighting_ops);
+    atomicCounterIncrement(lighting_ops);
 #endif
-      }
-#if BASIC_PASS == BASIC_PASS_TRANSPARENT
-      frag_color = vec4(color_accumulator, kd.a*0.95);
-#else
-      frag_color = vec4(color_accumulator, 1.0);
-#endif
-    }
+  }
 #else
 #error Unimplemented render technique!
+#endif
+
+#if BASIC_PASS == BASIC_PASS_TRANSPARENT
+  frag_color = vec4(color_accumulator, kd.a);
+#else
+  frag_color = vec4(color_accumulator, 1.0);
 #endif
 }

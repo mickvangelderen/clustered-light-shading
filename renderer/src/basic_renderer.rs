@@ -216,7 +216,7 @@ impl Renderer {
                 context,
                 "basic_renderer.vert",
                 "basic_renderer.frag",
-                format!("{}{}", fixed_header(), basic_pass_header(kind))
+                format!("{}{}", fixed_header(), basic_pass_header(kind)),
             )
         };
 
