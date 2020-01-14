@@ -134,6 +134,26 @@ impl_enum_map! {
 
 pub const EYE_KEYS: [Eye; 2] = [Eye::Left, Eye::Right];
 
+#[derive(Debug, Clone, Copy)]
+pub struct FrustumTangents {
+    x0: f64,
+    x1: f64,
+    y0: f64,
+    y1: f64,
+}
+
+impl From<vr::RawProjection> for FrustumTangents {
+    fn from(x: vr::RawProjection) -> Self {
+        let vr::RawProjection { l, r, b, t } = x;
+        Self {
+            x0: l as f64,
+            x1: r as f64,
+            y0: b as f64,
+            y1: t as f64,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CameraParameters {
     pub frustum: Frustum<f64>,
@@ -1048,7 +1068,7 @@ impl<'s> Context<'s> {
 
         #[derive(Copy, Clone)]
         pub struct EyeData {
-            tangents: vr::RawProjection,
+            tangents: FrustumTangents,
             cam_to_hmd: Matrix4<f64>,
         }
 
@@ -1084,7 +1104,7 @@ impl<'s> Context<'s> {
                             .cast()
                             .unwrap();
                         EyeData {
-                            tangents: vr.system().get_projection_raw(eye),
+                            tangents: FrustumTangents::from(vr.system().get_projection_raw(eye)),
                             cam_to_hmd: cam_to_hmd,
                         }
                     }),
@@ -1098,26 +1118,28 @@ impl<'s> Context<'s> {
                         let win_size = Vector2::new(win_size.width / 2.0, win_size.height)
                             .cast::<f32>()
                             .unwrap();
-                        let fovy: Rad<f32> = Deg(90.0).into();
-                        let fovx: Rad<f32> = fovy * (win_size.x / win_size.y);
-                        let pitch: Rad<f32> = Deg(configuration.virtual_stereo.pitch_deg).into();
-                        let yaw: Rad<f32> = Deg(configuration.virtual_stereo.yaw_deg).into();
-                        let l = -Rad::tan(yaw + fovx * 0.5);
-                        let r = -Rad::tan(yaw - fovx * 0.5);
-                        let b = -Rad::tan(pitch + fovy * 0.5);
-                        let t = -Rad::tan(pitch - fovy * 0.5);
 
                         Some(StereoData {
                             win_size: win_size.cast().unwrap(),
                             hmd_to_bdy: Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0)),
                             eyes: EyeMap {
-                                left: EyeData {
-                                    tangents: vr::RawProjection { l, r, b, t },
-                                    cam_to_hmd: Matrix4::from_translation(Vector3::new(-0.1, 0.01, -0.01)),
+                                left: {
+                                    EyeData {
+                                        tangents: {
+                                            let [x0, x1, y0, y1] = configuration.virtual_stereo.l_tan;
+                                            FrustumTangents { x0, x1, y0, y1 }
+                                        },
+                                        cam_to_hmd: Matrix4::from(configuration.virtual_stereo.l_mat),
+                                    }
                                 },
-                                right: EyeData {
-                                    tangents: vr::RawProjection { l: -r, r: -l, b, t },
-                                    cam_to_hmd: Matrix4::from_translation(Vector3::new(0.1, 0.01, -0.01)),
+                                right: {
+                                    EyeData {
+                                        tangents: {
+                                            let [x0, x1, y0, y1] = configuration.virtual_stereo.r_tan;
+                                            FrustumTangents { x0, x1, y0, y1 }
+                                        },
+                                        cam_to_hmd: Matrix4::from(configuration.virtual_stereo.r_mat),
+                                    }
                                 },
                             },
                         })
@@ -1942,13 +1964,13 @@ fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f6
     }
 }
 
-fn stereo_frustum(camera_properties: &camera::CameraProperties, tangents: vr::RawProjection) -> Frustum<f64> {
-    let vr::RawProjection { l, r, b, t } = tangents;
+fn stereo_frustum(camera_properties: &camera::CameraProperties, tangents: FrustumTangents) -> Frustum<f64> {
+    let FrustumTangents { x0, x1, y0, y1 } = tangents;
     Frustum {
-        x0: l as f64,
-        x1: r as f64,
-        y0: b as f64,
-        y1: t as f64,
+        x0,
+        x1,
+        y0,
+        y1,
         z0: camera_properties.z0 as f64,
         z1: camera_properties.z1 as f64,
     }
