@@ -114,8 +114,10 @@ pub struct RainConfiguration {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct VirtualStereoConfiguration {
     pub enabled: bool,
-    pub pitch_deg: f32,
-    pub yaw_deg: f32,
+    pub l_mat: [[f64; 4]; 4],
+    pub l_tan: [f64; 4],
+    pub r_mat: [[f64; 4]; 4],
+    pub r_tan: [f64; 4],
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
