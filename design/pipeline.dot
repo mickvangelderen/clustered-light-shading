@@ -5,7 +5,7 @@ digraph pipeline {
   camera0 [label = "Camera Body"];
   hmd_space [label = "HMD Space"];
   pose [label = "Pose"];
-  tan_mat [label = "Frustrum Tangents[2]\ncam_to_hmd[2]"];
+  tan_mat [label = "Frustum Tangents[2]\ncam_to_hmd[2]"];
   cam_to_clp [label = "Projection Matrices[2]"];
   clusters [shape = "hexagon" label = "Clusters"];
   vr [label = "OpenVR"];
