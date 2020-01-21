@@ -1,31 +1,7 @@
 use crate::camera;
 use crate::profiling::ProfilingConfiguration;
+use cgmath::*;
 use std::path::PathBuf;
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
-pub struct Vector3<T> {
-    pub x: T,
-    pub y: T,
-    pub z: T,
-}
-
-impl<T> Vector3<T> {
-    pub fn to_array(self) -> [T; 3] {
-        [self.x, self.y, self.z]
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
-pub struct Vector2<T> {
-    pub x: T,
-    pub y: T,
-}
-
-impl<T> Vector2<T> {
-    pub fn to_array(self) -> [T; 2] {
-        [self.x, self.y]
-    }
-}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct Attenuation {

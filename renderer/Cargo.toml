@@ -6,7 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-cgmath = "0.17.0"
+cgmath = { version = "0.17.0", features = ["serde"] }
 derive = { path = "../derive" }
 env_logger = "0.6.1"
 gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", branch = "master" }

@@ -1023,10 +1023,10 @@ impl<'s> Context<'s> {
 
         {
             let center = Point3::origin();
-            let p0 = (center + Vector3::from(self.configuration.rain.bounds_min.to_array()))
+            let p0 = (center + self.configuration.rain.bounds_min)
                 .cast()
                 .unwrap();
-            let p1 = (center + Vector3::from(self.configuration.rain.bounds_max.to_array()))
+            let p1 = (center + self.configuration.rain.bounds_max)
                 .cast()
                 .unwrap();
 
