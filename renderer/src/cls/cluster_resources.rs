@@ -227,7 +227,7 @@ impl ClusterResources {
 
                 let dimensions = range
                     .delta()
-                    .div_element_wise(Vector3::from(cfg.orthographic_sides.to_array()))
+                    .div_element_wise(cfg.orthographic_sides)
                     .map(f64::ceil);
 
                 let frustum = Frustum::from_range(&range);

@@ -2,6 +2,7 @@ pub(crate) use log::*;
 use renderer::configuration::{self, Configuration};
 use std::path::PathBuf;
 use std::process::Command;
+use cgmath::*;
 
 pub fn run_with_configuration(configuration_path: &str) {
     let _ = Command::new("cargo")
@@ -45,7 +46,7 @@ impl Technique {
         match *self {
             Self::Ortho { size } => {
                 cfg.clustered_light_shading.projection = configuration::ClusteringProjection::Orthographic;
-                cfg.clustered_light_shading.orthographic_sides = configuration::Vector3 {
+                cfg.clustered_light_shading.orthographic_sides = Vector3 {
                     x: size,
                     y: size,
                     z: size,
@@ -53,7 +54,7 @@ impl Technique {
             }
             Self::Persp { size } => {
                 cfg.clustered_light_shading.projection = configuration::ClusteringProjection::Perspective;
-                cfg.clustered_light_shading.perspective_pixels = configuration::Vector2 { x: size, y: size };
+                cfg.clustered_light_shading.perspective_pixels = Vector2 { x: size, y: size };
             }
         }
     }
