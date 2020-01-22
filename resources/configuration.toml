@@ -18,6 +18,9 @@ sample_count = 0
 [light]
 display = true
 
+[light.shadows]
+enabled = true
+dimensions = { x = 256, y = 256 }
 [light.attenuation]
 r0 = 0.10
 i = 10.0

@@ -78,6 +78,13 @@ pub struct GlobalConfiguration {
 pub struct LightConfiguration {
     pub display: bool,
     pub attenuation: Attenuation,
+    pub shadows: LightShadowsConfiguration,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct LightShadowsConfiguration {
+    pub enabled: bool,
+    pub dimensions: Vector2<u32>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

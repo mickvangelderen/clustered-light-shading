@@ -36,6 +36,7 @@ glsl_defines!(fixed_header {
         AMBIENT_SAMPLER_BINDING = 3;
         DIFFUSE_SAMPLER_BINDING = 4;
         SPECULAR_SAMPLER_BINDING = 5;
+        SHADOW_SAMPLER_BINDING = 6;
     },
     uniforms: {
         CAM_POS_IN_LGT_LOC = 0;
@@ -62,9 +63,15 @@ impl Context<'_> {
             basic_renderer.opaque_program.update(&mut rendering_context!(self));
             basic_renderer.masked_program.update(&mut rendering_context!(self));
             basic_renderer.transparent_program.update(&mut rendering_context!(self));
-            if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program), &ProgramName::Linked(transparent_program)) =
-                (&basic_renderer.opaque_program.name, &basic_renderer.masked_program.name, &basic_renderer.transparent_program.name)
-            {
+            if let (
+                &ProgramName::Linked(opaque_program),
+                &ProgramName::Linked(masked_program),
+                &ProgramName::Linked(transparent_program),
+            ) = (
+                &basic_renderer.opaque_program.name,
+                &basic_renderer.masked_program.name,
+                &basic_renderer.transparent_program.name,
+            ) {
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
 
@@ -143,6 +150,7 @@ impl Context<'_> {
                     gl.use_program(program);
 
                     gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
+                    gl.bind_texture_unit(SHADOW_SAMPLER_BINDING, self.light_resources.distance_texture);
 
                     if material_kind == resources::MaterialKind::Transparent {
                         gl.depth_mask(gl::WriteMask::Disabled);

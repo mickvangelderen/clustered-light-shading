@@ -31,6 +31,7 @@ pub mod gl_ext;
 mod glutin_ext;
 mod keyboard;
 mod light;
+mod light_depth_renderer;
 mod light_renderer;
 mod line_renderer;
 mod main_resources;
@@ -203,7 +204,7 @@ pub struct MainParameters {
     pub display_viewport: Viewport<i32>,
 }
 
-const RENDER_RANGE: Range3<f64> = Range3 {
+pub const RENDER_RANGE: Range3<f64> = Range3 {
     x0: -1.0,
     x1: 1.0,
     y0: -1.0,
@@ -305,6 +306,7 @@ pub struct MainContext {
 
     // Renderers
     pub depth_renderer: depth_renderer::Renderer,
+    pub light_depth_renderer: light_depth_renderer::Renderer,
     pub line_renderer: line_renderer::Renderer,
     pub basic_renderer: basic_renderer::Renderer,
     pub light_renderer: light_renderer::Renderer,
@@ -490,6 +492,7 @@ impl MainContext {
         };
 
         let depth_renderer = depth_renderer::Renderer::new(&mut rendering_context);
+        let light_depth_renderer = light_depth_renderer::Renderer::new(&mut rendering_context);
         let line_renderer = line_renderer::Renderer::new(&mut rendering_context);
         let basic_renderer = basic_renderer::Renderer::new(&mut rendering_context);
         let light_renderer = light_renderer::Renderer::new(&mut rendering_context);
@@ -534,6 +537,7 @@ impl MainContext {
             sans_serif,
             monospace,
             depth_renderer,
+            light_depth_renderer,
             line_renderer,
             basic_renderer,
             light_renderer,
@@ -577,6 +581,7 @@ pub struct Context<'s> {
 
     // Renderers
     pub depth_renderer: &'s mut depth_renderer::Renderer,
+    pub light_depth_renderer: &'s mut light_depth_renderer::Renderer,
     pub line_renderer: &'s mut line_renderer::Renderer,
     pub basic_renderer: &'s mut basic_renderer::Renderer,
     pub light_renderer: &'s mut light_renderer::Renderer,
@@ -647,6 +652,7 @@ impl<'s> Context<'s> {
             ref mut sans_serif,
             ref mut monospace,
             ref mut depth_renderer,
+            ref mut light_depth_renderer,
             ref mut line_renderer,
             ref mut basic_renderer,
             ref mut light_renderer,
@@ -706,6 +712,7 @@ impl<'s> Context<'s> {
 
             // Renderers
             depth_renderer,
+            light_depth_renderer,
             line_renderer,
             basic_renderer,
             light_renderer,
@@ -1023,12 +1030,8 @@ impl<'s> Context<'s> {
 
         {
             let center = Point3::origin();
-            let p0 = (center + self.configuration.rain.bounds_min)
-                .cast()
-                .unwrap();
-            let p1 = (center + self.configuration.rain.bounds_max)
-                .cast()
-                .unwrap();
+            let p0 = (center + self.configuration.rain.bounds_min).cast().unwrap();
+            let p1 = (center + self.configuration.rain.bounds_max).cast().unwrap();
 
             let max_count = self.configuration.rain.max_count as usize;
 
@@ -1172,8 +1175,27 @@ impl<'s> Context<'s> {
         {
             self.point_lights.clear();
 
+            let attenuation = light::AttenCoefs::from(self.configuration.light.attenuation)
+                .cast()
+                .unwrap();
+
+            self.point_lights.push(light::PointLight {
+                tint: [1.0, 1.0, 0.8],
+                position: self
+                    .transition_camera
+                    .current_camera
+                    .transform
+                    .pos_to_parent()
+                    .transform_point(Point3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: -3.0,
+                    }),
+                attenuation,
+            });
+
             for mut point_light in self.resources.point_lights.iter().copied() {
-                point_light.attenuation = light::AttenCoefs::from(self.configuration.light.attenuation).cast().unwrap();
+                point_light.attenuation = attenuation;
                 self.point_lights.push(point_light);
             }
 
@@ -1181,7 +1203,7 @@ impl<'s> Context<'s> {
                 self.point_lights.push(light::PointLight {
                     tint: rain_drop.tint.into(),
                     position: Point3::from_vec(rain_drop.position),
-                    attenuation: light::AttenCoefs::from(self.configuration.light.attenuation).cast().unwrap()
+                    attenuation,
                 });
             }
         }
@@ -1487,7 +1509,18 @@ impl<'s> Context<'s> {
                     basic_renderer::LIGHT_BUFFER_BINDING,
                     self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
+
+                gl.bind_framebuffer(gl::FRAMEBUFFER, self.light_resources.framebuffer);
+                gl.viewport(0, 0, 256, 256);
+                gl.clear_color(1.0, 1.0, 1.0, 0.0);
+                gl.clear_depth(0.0);
+                gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
+                self.render_light_depth(light_depth_renderer::Parameters {
+                    draw_resources_index: draw_resources_index,
+                });
             }
+
+            let gl = &self.gl;
 
             let profiling_basic_buffer = match self.profiling_context.time_sensitive() {
                 true => None,
@@ -1559,14 +1592,12 @@ impl<'s> Context<'s> {
                             .collect();
 
                         let clu_clp_to_clu_cam = match self.configuration.clustered_light_shading.projection {
-                            configuration::ClusteringProjection::Perspective => cluster_resources
-                                .computed
-                                .frustum
-                                .inverse_perspective(&cluster_range),
-                            configuration::ClusteringProjection::Orthographic => cluster_resources
-                                .computed
-                                .frustum
-                                .inverse_orthographic(&cluster_range),
+                            configuration::ClusteringProjection::Perspective => {
+                                cluster_resources.computed.frustum.inverse_perspective(&cluster_range)
+                            }
+                            configuration::ClusteringProjection::Orthographic => {
+                                cluster_resources.computed.frustum.inverse_orthographic(&cluster_range)
+                            }
                         };
 
                         let clu_clp_to_wld = cluster_resources.computed.clu_cam_to_wld * clu_clp_to_clu_cam;
@@ -1655,7 +1686,7 @@ impl<'s> Context<'s> {
                     configuration::ClusteringProjection::Perspective => {
                         let size = self.configuration.clustered_light_shading.perspective_pixels;
                         format!("{}x{}px", size.x, size.y)
-                    },
+                    }
                     configuration::ClusteringProjection::Orthographic => {
                         let size = self.configuration.clustered_light_shading.orthographic_sides;
                         format!("{:.2}x{:.2}x{:.2}m", size.x, size.y, size.z)

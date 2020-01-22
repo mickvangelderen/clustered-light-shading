@@ -9,8 +9,14 @@ pub struct AttenCoefs<S> {
     pub r1: S,
 }
 
-impl<S> AttenCoefs<S> where S: num_traits::Float {
-    pub fn cast<U>(self) -> Option<AttenCoefs<U>> where U: num_traits::Float {
+impl<S> AttenCoefs<S>
+where
+    S: num_traits::Float,
+{
+    pub fn cast<U>(self) -> Option<AttenCoefs<U>>
+    where
+        U: num_traits::Float,
+    {
         Some(AttenCoefs {
             i: num_traits::cast(self.i)?,
             i0: num_traits::cast(self.i0)?,
@@ -99,15 +105,47 @@ pub struct LightResources {
     pub sample_indices: LightSampleIndices,
     pub header: LightBufferHeader,
     pub body: Vec<LightBufferLight>,
+    pub framebuffer: gl::NonDefaultFramebufferName,
+    pub depth_texture: gl::TextureName,
+    pub distance_texture: gl::TextureName,
 }
 
 impl LightResources {
     pub fn new(gl: &gl::Gl, profiling_context: &mut profiling::ProfilingContext) -> Self {
-        Self {
-            buffer_ring: Ring3::new(|| unsafe { StorageBuffer::new(gl) }),
-            header: Default::default(),
-            body: Default::default(),
-            sample_indices: LightSampleIndices::new(profiling_context),
+        unsafe {
+            let framebuffer = gl.create_framebuffer();
+
+            let depth_texture = {
+                let name = gl.create_texture(gl::TEXTURE_CUBE_MAP);
+                gl.texture_storage_2d(name, 1, gl::DEPTH_COMPONENT32, 256, 256);
+                gl.texture_parameteri(name, gl::TEXTURE_MAX_LEVEL, 0u32);
+                gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+                name
+            };
+
+            let distance_texture = {
+                let name = gl.create_texture(gl::TEXTURE_CUBE_MAP);
+                gl.texture_storage_2d(name, 1, gl::R16, 256, 256);
+                gl.texture_parameteri(name, gl::TEXTURE_MAX_LEVEL, 0u32);
+                gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
+                gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
+                name
+            };
+
+            gl.named_framebuffer_texture(framebuffer, gl::DEPTH_ATTACHMENT, depth_texture, 0);
+            gl.named_framebuffer_texture(framebuffer, gl::COLOR_ATTACHMENT0, distance_texture, 0);
+            gl.named_framebuffer_draw_buffers(framebuffer, &[gl::COLOR_ATTACHMENT0.into()]);
+
+            Self {
+                buffer_ring: Ring3::new(|| StorageBuffer::new(gl)),
+                header: Default::default(),
+                body: Default::default(),
+                sample_indices: LightSampleIndices::new(profiling_context),
+                framebuffer,
+                depth_texture,
+                distance_texture,
+            }
         }
     }
 
