@@ -3,6 +3,7 @@ use crate::*;
 pub struct Renderer {
     pub opaque_program: rendering::Program,
     pub masked_program: rendering::Program,
+    pub compute_program: rendering::Program,
 }
 
 glsl_defines!(fixed_header {
@@ -10,12 +11,35 @@ glsl_defines!(fixed_header {
         INSTANCE_MATRICES_BUFFER_BINDING = 10;
         LIGHT_BUFFER_BINDING = 4;
 
+        NORMAL_SAMPLER_BINDING = 1;
+        // EMISSIVE_SAMPLER_BINDING = 2;
+        // AMBIENT_SAMPLER_BINDING = 3;
         DIFFUSE_SAMPLER_BINDING = 4;
+        // SPECULAR_SAMPLER_BINDING = 5;
     },
     uniforms: {
         WLD_TO_CLP_ARRAY_LOC = 0;
+        // WLD_TO_CLP_ARRAY_LOC = 1;
+        // WLD_TO_CLP_ARRAY_LOC = 2;
+        // WLD_TO_CLP_ARRAY_LOC = 3;
+        // WLD_TO_CLP_ARRAY_LOC = 4;
+        // WLD_TO_CLP_ARRAY_LOC = 5;
+        SHADOW_MAP_DIMENSIONS_LOC = 6;
     },
 });
+
+mod compute {
+    glsl_defines!(header {
+        bindings: {
+            LIGHT_BUFFER_BINDING = 4;
+
+            DISTANCE_SAMPLER_BINDING = 0;
+            NOR_SAMPLER_BINDING = 1;
+            TINT_SAMPLER_BINDING = 2;
+        },
+        uniforms: {},
+    });
+}
 
 pub struct Parameters {
     pub draw_resources_index: usize,
@@ -32,6 +56,8 @@ impl Context<'_> {
 
         let draw_resources = &self.resources.draw_resources_pool[params.draw_resources_index];
 
+        let profiler_index = self.profiling_context.start(gl, self.light_resources.cubemap_profiler);
+
         unsafe {
             renderer.opaque_program.update(&mut rendering_context!(self));
             renderer.masked_program.update(&mut rendering_context!(self));
@@ -46,7 +72,7 @@ impl Context<'_> {
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
-                    basic_renderer::LIGHT_BUFFER_BINDING,
+                    LIGHT_BUFFER_BINDING,
                     self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
 
@@ -100,9 +126,7 @@ impl Context<'_> {
                         .cast()
                         .unwrap()
                         .into(),
-                    (cam_to_clp
-                        * Matrix4::from_angle_z(-Rad::turn_div_2())
-                        * wld_to_cam)
+                    (cam_to_clp * Matrix4::from_angle_z(-Rad::turn_div_2()) * wld_to_cam)
                         .cast()
                         .unwrap()
                         .into(),
@@ -117,29 +141,25 @@ impl Context<'_> {
                     gl.use_program(program);
 
                     gl.uniform_matrix4fv(WLD_TO_CLP_ARRAY_LOC, gl::MajorAxis::Column, &wld_to_clp_array);
+                    gl.uniform_2ui(
+                        SHADOW_MAP_DIMENSIONS_LOC,
+                        self.configuration.light.shadows.dimensions.into(),
+                    );
 
-                    for (material_index, material) in resources
+                    for (material_index, material) in self
+                        .resources
                         .materials
                         .iter()
                         .enumerate()
                         .filter(|(_, material)| material.kind == material_kind)
                     {
-                        match material_kind {
-                            resources::MaterialKind::Opaque => {
-                                // Do nothing.
-                            }
-                            resources::MaterialKind::Masked => {
-                                // Update material.
-                                let textures = &resources.textures;
-                                gl.bind_texture_unit(
-                                    DIFFUSE_SAMPLER_BINDING,
-                                    textures[material.diffuse_texture_index].name,
-                                );
-                            }
-                            resources::MaterialKind::Transparent => {
-                                panic!("Don't use transparent material for depth passes?")
-                            }
-                        }
+                        // Update material.
+                        let textures = &self.resources.textures;
+                        gl.bind_texture_unit(NORMAL_SAMPLER_BINDING, textures[material.normal_texture_index].name);
+                        // gl.bind_texture_unit(EMISSIVE_SAMPLER_BINDING, textures[material.emissive_texture_index].name);
+                        // gl.bind_texture_unit(AMBIENT_SAMPLER_BINDING, textures[material.ambient_texture_index].name);
+                        gl.bind_texture_unit(DIFFUSE_SAMPLER_BINDING, textures[material.diffuse_texture_index].name);
+                        // gl.bind_texture_unit(SPECULAR_SAMPLER_BINDING, textures[material.specular_texture_index].name);
 
                         // Execute draw.
                         gl.multi_draw_elements_indirect(
@@ -157,6 +177,28 @@ impl Context<'_> {
                 gl.unbind_vertex_array();
             }
         }
+
+        unsafe {
+            renderer.compute_program.update(&mut rendering_context!(self));
+            if let ProgramName::Linked(program) = renderer.compute_program.name {
+                gl.use_program(program);
+
+                gl.bind_buffer_base(
+                    gl::SHADER_STORAGE_BUFFER,
+                    compute::LIGHT_BUFFER_BINDING,
+                    self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
+                );
+
+                gl.bind_texture_unit(compute::DISTANCE_SAMPLER_BINDING, self.light_resources.distance_texture);
+                gl.bind_texture_unit(compute::NOR_SAMPLER_BINDING, self.light_resources.nor_texture);
+                gl.bind_texture_unit(compute::TINT_SAMPLER_BINDING, self.light_resources.tint_texture);
+
+                gl.dispatch_compute(1, 1, 6);
+                gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+            }
+        }
+
+        self.profiling_context.stop(gl, profiler_index);
     }
 }
 
@@ -218,6 +260,18 @@ impl Renderer {
         Renderer {
             opaque_program: create_program(resources::MaterialKind::Opaque),
             masked_program: create_program(resources::MaterialKind::Masked),
+            compute_program: rendering::Program::new(
+                context.gl,
+                vec![Shader::new(
+                    context.gl,
+                    gl::COMPUTE_SHADER,
+                    EntryPoint::new(
+                        &mut shader_compilation_context!(context),
+                        "compute_virtual_lights.comp",
+                        compute::header(),
+                    ),
+                )],
+            ),
         }
     }
 }

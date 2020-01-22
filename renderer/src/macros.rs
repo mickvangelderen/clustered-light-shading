@@ -40,7 +40,7 @@ macro_rules! glsl_defines {
             pub const $uname: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked($uval) };
         )*
 
-        fn $fn() -> String {
+        pub fn $fn() -> String {
             let mut s = String::new();
             $(
                 s.push_str(&format!("#define {} {}\n", stringify!($bname), $bname));

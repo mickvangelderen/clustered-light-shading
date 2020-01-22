@@ -108,34 +108,52 @@ pub struct LightResources {
     pub framebuffer: gl::NonDefaultFramebufferName,
     pub depth_texture: gl::TextureName,
     pub distance_texture: gl::TextureName,
+    pub nor_texture: gl::TextureName,
+    pub tint_texture: gl::TextureName,
+    pub cubemap_profiler: profiling::SampleIndex,
 }
 
 impl LightResources {
-    pub fn new(gl: &gl::Gl, profiling_context: &mut profiling::ProfilingContext) -> Self {
+    pub fn new(
+        gl: &gl::Gl,
+        profiling_context: &mut profiling::ProfilingContext,
+        cfg: &configuration::Configuration,
+    ) -> Self {
         unsafe {
             let framebuffer = gl.create_framebuffer();
 
-            let depth_texture = {
+            let create_texture = |format: gl::InternalFormat| {
                 let name = gl.create_texture(gl::TEXTURE_CUBE_MAP);
-                gl.texture_storage_2d(name, 1, gl::DEPTH_COMPONENT32, 256, 256);
+                gl.texture_storage_2d(
+                    name,
+                    1,
+                    format,
+                    cfg.light.shadows.dimensions.x as i32,
+                    cfg.light.shadows.dimensions.y as i32,
+                );
                 gl.texture_parameteri(name, gl::TEXTURE_MAX_LEVEL, 0u32);
                 gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
                 gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
                 name
             };
 
-            let distance_texture = {
-                let name = gl.create_texture(gl::TEXTURE_CUBE_MAP);
-                gl.texture_storage_2d(name, 1, gl::R16, 256, 256);
-                gl.texture_parameteri(name, gl::TEXTURE_MAX_LEVEL, 0u32);
-                gl.texture_parameteri(name, gl::TEXTURE_MIN_FILTER, gl::NEAREST);
-                gl.texture_parameteri(name, gl::TEXTURE_MAG_FILTER, gl::NEAREST);
-                name
-            };
+            let depth_texture = create_texture(gl::DEPTH_COMPONENT32.into());
+            let distance_texture = create_texture(gl::R16.into());
+            let nor_texture = create_texture(gl::RGB16_SNORM.into());
+            let tint_texture = create_texture(gl::RGB8.into());
 
             gl.named_framebuffer_texture(framebuffer, gl::DEPTH_ATTACHMENT, depth_texture, 0);
             gl.named_framebuffer_texture(framebuffer, gl::COLOR_ATTACHMENT0, distance_texture, 0);
-            gl.named_framebuffer_draw_buffers(framebuffer, &[gl::COLOR_ATTACHMENT0.into()]);
+            gl.named_framebuffer_texture(framebuffer, gl::COLOR_ATTACHMENT1, nor_texture, 0);
+            gl.named_framebuffer_texture(framebuffer, gl::COLOR_ATTACHMENT2, tint_texture, 0);
+            gl.named_framebuffer_draw_buffers(
+                framebuffer,
+                &[
+                    gl::COLOR_ATTACHMENT0.into(),
+                    gl::COLOR_ATTACHMENT1.into(),
+                    gl::COLOR_ATTACHMENT2.into(),
+                ],
+            );
 
             Self {
                 buffer_ring: Ring3::new(|| StorageBuffer::new(gl)),
@@ -145,6 +163,9 @@ impl LightResources {
                 framebuffer,
                 depth_texture,
                 distance_texture,
+                nor_texture,
+                tint_texture,
+                cubemap_profiler: profiling_context.add_sample("cubemap"),
             }
         }
     }
