@@ -1,0 +1,63 @@
+#include "common.glsl"
+#include "light_buffer.glsl"
+
+layout(binding = DISTANCE_SAMPLER_BINDING) uniform samplerCube distance_sampler;
+layout(binding = NOR_SAMPLER_BINDING) uniform samplerCube nor_sampler;
+layout(binding = TINT_SAMPLER_BINDING) uniform samplerCube tint_sampler;
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+  vec2 st = (vec2(gl_LocalInvocationID.xy) + vec2(0.5)) / vec2(gl_WorkGroupSize.xy) - vec2(0.5);
+
+  vec3 pick_f[6] = {
+    vec3(1.0, 0.0, 0.0),
+    vec3(-1.0, 0.0, 0.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, -1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, -1.0),
+  };
+
+  vec3 pick_s[6] = {
+    vec3(0.0, 0.0, -1.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(1.0, 0.0, 0.0),
+    vec3(-1.0, 0.0, 0.0),
+  };
+
+  vec3 pick_t[6] = {
+    vec3(0.0, -1.0, 0.0),
+    vec3(0.0, -1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 0.0, -1.0),
+    vec3(0.0, -1.0, 0.0),
+    vec3(0.0, -1.0, 0.0),
+  };
+
+  vec3 dir = normalize(
+    pick_f[gl_GlobalInvocationID.z] * 0.5 +
+    pick_s[gl_GlobalInvocationID.z] * st.s +
+    pick_t[gl_GlobalInvocationID.z] * st.t
+  );
+
+  PointLight l = light_buffer.point_lights[0];
+  float d = texture(distance_sampler, dir).r * l.r1;
+
+  uint i = 1 + (gl_GlobalInvocationID.z * gl_WorkGroupSize.y + gl_LocalInvocationID.y) * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+  if (d >= l.r0 && d < l.r1) {
+    vec3 n = texture(nor_sampler, dir).rgb;
+    vec3 t = texture(tint_sampler, dir).rgb;
+
+    float tl = length(t);
+
+    light_buffer.point_lights[i].position = l.position + d * dir;
+    light_buffer.point_lights[i].i = l.i/(tl*d*d);
+    light_buffer.point_lights[i].r1 = l.r1/(d);
+    light_buffer.point_lights[i].tint = t/tl;
+  } else {
+    light_buffer.point_lights[i].i = 0.0;
+  }
+}

@@ -509,7 +509,7 @@ impl MainContext {
         let initial_win_dpi = gl_window.get_hidpi_factor();
         let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
 
-        let light_resources = light::LightResources::new(&gl, &mut profiling_context);
+        let light_resources = light::LightResources::new(&gl, &mut profiling_context, &configuration);
 
         Self {
             paths: Paths {
@@ -1188,24 +1188,36 @@ impl<'s> Context<'s> {
                     .pos_to_parent()
                     .transform_point(Point3 {
                         x: 0.0,
-                        y: 0.0,
-                        z: -3.0,
+                        y: 1.0,
+                        z: -4.0,
                     }),
                 attenuation,
             });
 
-            for mut point_light in self.resources.point_lights.iter().copied() {
-                point_light.attenuation = attenuation;
-                self.point_lights.push(point_light);
-            }
-
-            for rain_drop in self.rain_drops.iter() {
+            for _ in 0..(16*16*6) {
                 self.point_lights.push(light::PointLight {
-                    tint: rain_drop.tint.into(),
-                    position: Point3::from_vec(rain_drop.position),
+                    tint: [1.0, 1.0, 1.0],
+                    position: Point3 {
+                        x: -10000.0,
+                        y: -10000.0,
+                        z: -10000.0,
+                    },
                     attenuation,
                 });
             }
+
+            // for mut point_light in self.resources.point_lights.iter().copied() {
+            //     point_light.attenuation = attenuation;
+            //     self.point_lights.push(point_light);
+            // }
+
+            // for rain_drop in self.rain_drops.iter() {
+            //     self.point_lights.push(light::PointLight {
+            //         tint: rain_drop.tint.into(),
+            //         position: Point3::from_vec(rain_drop.position),
+            //         attenuation,
+            //     });
+            // }
         }
 
         unsafe {
@@ -1215,6 +1227,48 @@ impl<'s> Context<'s> {
                 self.frame_index,
                 &self.point_lights,
             );
+
+            let draw_resources_index = self.resources.draw_resources_pool.next({
+                let gl = &self.gl;
+                let profiling_context = &mut self.profiling_context;
+                move || resources::DrawResources::new(gl, profiling_context)
+            });
+
+            let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
+
+            draw_resources.recompute(
+                &self.gl,
+                &mut self.profiling_context,
+                Matrix4::identity(),
+                Matrix4::identity(),
+                &self.resources.scene_file.instances,
+                &self.resources.materials,
+                &self.resources.scene_file.transforms,
+                &self.resources.scene_file.mesh_descriptions,
+            );
+
+            self.gl
+                .bind_framebuffer(gl::FRAMEBUFFER, self.light_resources.framebuffer);
+            self.gl.viewport(
+                0,
+                0,
+                self.configuration.light.shadows.dimensions.x as i32,
+                self.configuration.light.shadows.dimensions.y as i32,
+            );
+
+            self.gl.enable(gl::DEPTH_TEST);
+            self.gl.depth_func(gl::GEQUAL);
+
+            self.gl.enable(gl::CULL_FACE);
+            self.gl.cull_face(gl::BACK);
+
+            self.gl.clear_color(1.0, 1.0, 1.0, 0.0);
+            self.gl.clear_depth(0.0);
+            self.gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
+            self.render_light_depth(light_depth_renderer::Parameters {
+                draw_resources_index: draw_resources_index,
+            });
+            self.gl.finish();
         }
 
         let mut cluster_resources_index = None;
@@ -1509,15 +1563,6 @@ impl<'s> Context<'s> {
                     basic_renderer::LIGHT_BUFFER_BINDING,
                     self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
-
-                gl.bind_framebuffer(gl::FRAMEBUFFER, self.light_resources.framebuffer);
-                gl.viewport(0, 0, 256, 256);
-                gl.clear_color(1.0, 1.0, 1.0, 0.0);
-                gl.clear_depth(0.0);
-                gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
-                self.render_light_depth(light_depth_renderer::Parameters {
-                    draw_resources_index: draw_resources_index,
-                });
             }
 
             let gl = &self.gl;

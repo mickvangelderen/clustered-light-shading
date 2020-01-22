@@ -273,13 +273,15 @@ void main() {
   // ACTUAL SHADING
   for (uint i = 0; i < cluster_light_count; i++) {
     uint light_index = light_indices[cluster_light_offset + i];
-
-    color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    PointLight light = light_buffer.point_lights[light_index];
+    color_accumulator += cook_torrance(light, frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
 #endif
   }
+
+  // color_accumulator = texture(shadow_sampler, frag_pos_in_lgt - light_buffer.point_lights[0].position).rrr;
 #else
 #error Unimplemented render technique!
 #endif
