@@ -67,6 +67,8 @@ layout(binding = EMISSIVE_SAMPLER_BINDING) uniform sampler2D emissive_sampler;
 layout(binding = AMBIENT_SAMPLER_BINDING) uniform sampler2D ambient_sampler;
 layout(binding = DIFFUSE_SAMPLER_BINDING) uniform sampler2D diffuse_sampler;
 layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
+// layout(binding = SHADOW_SAMPLER_BINDING) uniform samplerCubeShadow shadow_sampler;
+layout(binding = SHADOW_SAMPLER_BINDING) uniform samplerCube shadow_sampler;
 
 layout(location = CAM_POS_IN_LGT_LOC) uniform vec3 cam_pos_in_lgt;
 
@@ -197,7 +199,14 @@ void main() {
   vec3 color_accumulator = vec3(ke.xyz);
 #if defined(RENDER_TECHNIQUE_NAIVE)
   for (uint i = 0; i < light_buffer.light_count.x; i++) {
-    color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    PointLight light = light_buffer.point_lights[i];
+    float visibility_factor = 1.0;
+    if (i == 0) {
+      vec3 d = frag_pos_in_lgt - light.position;
+      float b = (length(d) - light.r0)/(light.r1 - light.r0);
+      visibility_factor = b < (texture(shadow_sampler, d).r + 0.05) ? 1.0 : 0.0;
+    }
+    color_accumulator += visibility_factor * cook_torrance(light, frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
