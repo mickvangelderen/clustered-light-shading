@@ -5,7 +5,7 @@ layout(binding = DISTANCE_SAMPLER_BINDING) uniform samplerCube distance_sampler;
 layout(binding = NOR_SAMPLER_BINDING) uniform samplerCube nor_sampler;
 layout(binding = TINT_SAMPLER_BINDING) uniform samplerCube tint_sampler;
 
-layout(local_size_x = 8, local_size_y = 8) in;
+layout(local_size_x = 16, local_size_y = 16) in;
 
 void main() {
   vec2 st = (vec2(gl_LocalInvocationID.xy) + vec2(0.5)) / vec2(gl_WorkGroupSize.xy) - vec2(0.5);
@@ -38,26 +38,27 @@ void main() {
   };
 
   vec3 dir = normalize(
-    pick_f[gl_GlobalInvocationID.z] * 0.5 +
-    pick_s[gl_GlobalInvocationID.z] * st.s +
-    pick_t[gl_GlobalInvocationID.z] * st.t
+    pick_f[gl_WorkGroupID.z] * 0.5 +
+    pick_s[gl_WorkGroupID.z] * st.s +
+    pick_t[gl_WorkGroupID.z] * st.t
   );
 
   PointLight l = light_buffer.point_lights[0];
-  float d = texture(distance_sampler, dir).r * l.r1;
+  float d = texture(distance_sampler, dir).r;
 
-  uint i = 1 + (gl_GlobalInvocationID.z * gl_WorkGroupSize.y + gl_LocalInvocationID.y) * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+  uint i = gl_WorkGroupID.z * gl_WorkGroupSize.x * gl_WorkGroupSize.y + gl_LocalInvocationIndex + 1;
+
   if (d >= l.r0 && d < l.r1) {
     vec3 n = texture(nor_sampler, dir).rgb;
-    vec3 t = texture(tint_sampler, dir).rgb;
-
-    float tl = length(t);
+    vec3 kd = texture(tint_sampler, dir).rgb;
+    vec3 new_tint = l.i/(d*d)*max(0.0, dot(-dir, n))*l.tint*kd;
+    float new_i = length(new_tint);
+    new_tint *= 1.0/new_i;
 
     light_buffer.point_lights[i].position = l.position + d * dir;
-    light_buffer.point_lights[i].i = l.i/(tl*d*d);
-    light_buffer.point_lights[i].r1 = l.r1/(d);
-    light_buffer.point_lights[i].tint = t/tl;
-  } else {
-    light_buffer.point_lights[i].i = 0.0;
+    light_buffer.point_lights[i].normal = u8x3_to_u32(uvec3(clamp(n * 128.0 + 128.0, 0.0, 255.0)));
+    light_buffer.point_lights[i].i = new_i;
+    light_buffer.point_lights[i].r1 = sqrt(new_i/l.i0);
+    light_buffer.point_lights[i].tint = new_tint;
   }
 }

@@ -76,7 +76,7 @@ pub struct LightBufferLight {
     pub _pad0: f32,
 
     pub position: [f32; 3],
-    pub _pad1: f32,
+    pub normal: u32,
 
     pub attenuation: AttenCoefs<f32>,
 }
@@ -93,7 +93,7 @@ impl LightBufferLight {
             _pad0: 0.0,
 
             position: position.into(),
-            _pad1: 1.0,
+            normal: 0,
 
             attenuation,
         }
@@ -138,7 +138,7 @@ impl LightResources {
             };
 
             let depth_texture = create_texture(gl::DEPTH_COMPONENT32.into());
-            let distance_texture = create_texture(gl::R16.into());
+            let distance_texture = create_texture(gl::R32F.into());
             let nor_texture = create_texture(gl::RGB16_SNORM.into());
             let tint_texture = create_texture(gl::RGB8.into());
 
