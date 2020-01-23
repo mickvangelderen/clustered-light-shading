@@ -129,20 +129,32 @@ void main() {
 
   vec3 color_accumulator = vec3(ke.xyz);
 #if defined(RENDER_TECHNIQUE_NAIVE)
-  for (uint i = 0; i < light_buffer.light_count.x; i++) {
-    PointLight light = light_buffer.point_lights[i];
-    float visibility_factor = 1.0;
-    if (i == 0) {
-      vec3 d = frag_pos_in_lgt - light.position;
-      float b = (length(d) - light.r0)/(light.r1 - light.r0);
-      visibility_factor = b < (texture(shadow_sampler, d).r + 0.05) ? 1.0 : 0.0;
-    }
-    color_accumulator += visibility_factor * cook_torrance(light, frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+  // Indirect
+  for (uint i = 1; i < light_buffer.light_count.x; i += 1) {
+    PointLight light = light_buffer.point_lights[0];
+    vec3 f_to_l = light.position - frag_pos_in_lgt;
+    float f_to_l_mag = length(f_to_l);
+
+    color_accumulator +=
+    (light.i/(f_to_l_mag*f_to_l_mag)) *
+    light.tint *
+    cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
 #endif
   }
+  // Direct
+  // {
+  //   PointLight light = light_buffer.point_lights[0];
+  //   vec3 l_to_f = frag_pos_in_lgt - light.position;
+  //   float l_to_f_mag = length(l_to_f);
+
+  //   color_accumulator +=
+  //   (light.i/(l_to_f_mag*l_to_f_mag)) *
+  //   light.tint *
+  //   cook_torrance(l_to_f/(-l_to_f_mag), frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+  // }
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
   vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
   uvec3 idx_in_cls = uvec3(pos_in_cls);
@@ -205,8 +217,13 @@ void main() {
   for (uint i = 0; i < cluster_light_count; i++) {
     uint light_index = light_indices[cluster_light_offset + i];
     PointLight light = light_buffer.point_lights[light_index];
+    if (light_index == 0) {
+      continue;
+    }
+
     vec3 f_to_l = light.position - frag_pos_in_lgt;
     float f_to_l_mag = length(f_to_l);
+
     color_accumulator +=
       point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
       light.tint *

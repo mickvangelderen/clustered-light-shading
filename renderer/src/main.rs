@@ -678,7 +678,7 @@ impl<'s> Context<'s> {
         let transition_camera = camera::TransitionCamera {
             start_camera: initial_cameras.main,
             current_camera: initial_cameras.main,
-            progress: 0.0,
+            progress: 1.0,
         };
         let cameras = initial_cameras.map(|camera| camera::SmoothCamera {
             properties: camera.properties,
@@ -1194,7 +1194,7 @@ impl<'s> Context<'s> {
                 attenuation,
             });
 
-            for _ in 0..(16 * 16 * 6) {
+            for _ in 0..(self.configuration.light.shadows.dimensions.product() * 6) {
                 self.point_lights.push(light::PointLight {
                     tint: [0.0, 0.0, 0.0],
                     position: Point3::origin(),

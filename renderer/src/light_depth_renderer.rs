@@ -193,6 +193,7 @@ impl Context<'_> {
                 gl.bind_texture_unit(compute::NOR_SAMPLER_BINDING, self.light_resources.nor_texture);
                 gl.bind_texture_unit(compute::TINT_SAMPLER_BINDING, self.light_resources.tint_texture);
 
+                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
                 gl.dispatch_compute(1, 1, 6);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
             }
