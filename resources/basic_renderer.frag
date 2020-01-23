@@ -91,7 +91,6 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
 
 float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
   vec3 pos_from_frag_to_light = point_light.position - frag_pos;
-  vec3 light_dir_norm = normalize(pos_from_frag_to_light);
 
   float I = point_light.i;
   float I0 = point_light.i0;
