@@ -1,20 +1,6 @@
-#include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
 #include "native/PROFILING"
 #include "native/DEPTH_PREPASS"
-
-#include "common.glsl"
-#include "heatmap.glsl"
-#include "light_buffer.glsl"
-#include "pbr.glsl"
-
-#if defined(RENDER_TECHNIQUE_CLUSTERED)
-#include "cls/cluster_space_buffer.glsl"
-#include "cls/cluster_maybe_active_cluster_indices_buffer.glsl"
-#include "cls/active_cluster_light_counts_buffer.glsl"
-#include "cls/active_cluster_light_offsets_buffer.glsl"
-#include "cls/light_indices_buffer.glsl"
-#endif
 
 #if !defined(PROFILING_TIME_SENSITIVE)
 #error PROFILING_TIME_SENSITIVE is not defined.
@@ -34,6 +20,20 @@
 
 #if !defined(DEPTH_PREPASS)
 #error DEPTH_PREPASS is not defined.
+#endif
+
+#include "common.glsl"
+#include "heatmap.glsl"
+#include "light_buffer.glsl"
+#include "point_light_attenuate.glsl"
+#include "pbr.glsl"
+
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+#include "cls/cluster_space_buffer.glsl"
+#include "cls/cluster_maybe_active_cluster_indices_buffer.glsl"
+#include "cls/active_cluster_light_counts_buffer.glsl"
+#include "cls/active_cluster_light_offsets_buffer.glsl"
+#include "cls/light_indices_buffer.glsl"
 #endif
 
 #if !PROFILING_TIME_SENSITIVE
@@ -69,6 +69,8 @@ layout(binding = DIFFUSE_SAMPLER_BINDING) uniform sampler2D diffuse_sampler;
 layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
 // layout(binding = SHADOW_SAMPLER_BINDING) uniform samplerCubeShadow shadow_sampler;
 layout(binding = SHADOW_SAMPLER_BINDING) uniform samplerCube shadow_sampler;
+layout(binding = SHADOW_SAMPLER_BINDING_2) uniform samplerCube shadow_sampler_2;
+layout(binding = SHADOW_SAMPLER_BINDING_3) uniform samplerCube shadow_sampler_3;
 
 layout(location = CAM_POS_IN_LGT_LOC) uniform vec3 cam_pos_in_lgt;
 
@@ -87,76 +89,6 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   vec2 xy = texture(normal_sampler, pos_in_tex).xy * 2.0 - vec2(1.0);
   float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));
   return vec3(xy, z);
-}
-
-float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
-  vec3 pos_from_frag_to_light = point_light.position - frag_pos;
-
-  float I = point_light.i;
-  float I0 = point_light.i0;
-  float R0 = point_light.r0;
-  float R1 = point_light.r1; // sqrt(I/I0)
-
-  // Attenuation.
-  float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
-  float d_unclipped = sqrt(d_sq_unclipped);
-
-  float d_sq = max(d_sq_unclipped, R0*R0);
-  float d = max(d_unclipped, R0);
-
-#if defined(ATTENUATION_MODE_STEP)
-  // Use physical intensity halfway between 0 and R1
-  float attenuation = d_sq_unclipped < R1*R1 ? 4*I/(R1*R1) : 0.0;
-#elif defined(ATTENUATION_MODE_LINEAR)
-  // Linear doesn't go infinite so we can use the unclipped distance.
-  float attenuation = d_unclipped < R1 ? I/2.0*(R1 - d_unclipped)/(R1 - 1.0) : 0.0;
-#elif defined(ATTENUATION_MODE_PHYSICAL)
-  float attenuation = I / d_sq;
-#elif defined(ATTENUATION_MODE_REDUCED)
-  float attenuation = d_sq < R1*R1 ? I / d_sq - I0 : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_RED_1)
-  float attenuation = d_sq < R1*R1 ? I / d_sq - I0/R1*d : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_RED_2)
-  float attenuation = d_sq < R1*R1 ? I / d_sq - (I0 / (R1*R1)) * d_sq : 0.0;
-#elif defined(ATTENUATION_MODE_SMOOTH)
-  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / R1) * d - 3.0 * I0 : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_SMO_1)
-  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / (R1*R1)) * d_sq - 3.0 * I0/R1 * d : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_SMO_2)
-  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / (R1*R1*R1)) * (d_sq*d) - 3.0 * I0/(R1*R1) * d_sq : 0.0;
-#else
-#error invalid attenuation mode!
-#endif
-
-  return attenuation;
-}
-
-vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
-  // roughness *= 0.6;
-  // metalness *= 2.0;
-
-  vec3 frag_to_light = point_light.position - P;
-  vec3 L = normalize(frag_to_light);
-
-  vec3 F0 = vec3(0.04);
-  F0 = mix(F0, kd, metalness);
-
-  // calculate per-light radiance
-  vec3 H = normalize(V + L);
-  vec3 radiance = point_light.tint * point_light_attenuate(point_light, P);
-
-  // Cook-Torrance BRDF
-  float NDF = DistributionGGX(N, H, roughness);
-  float G   = GeometrySmith(N, V, L, roughness);
-  vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
-
-  float NdotV = max(dot(N, V), 0.0);
-  float NdotL = max(dot(N, L), 0.0);
-  vec3 specular = NDF * G * F / max(4 * NdotV * NdotL, 0.001); // prevent divide by zero for NdotV=0.0 or NdotL=0.0
-
-  vec3 kD = (vec3(1.0) - F) * (1.0 - metalness);
-
-  return (kD * kd / PI + specular) * radiance * NdotL;
 }
 
 void main() {
@@ -273,14 +205,35 @@ void main() {
   for (uint i = 0; i < cluster_light_count; i++) {
     uint light_index = light_indices[cluster_light_offset + i];
     PointLight light = light_buffer.point_lights[light_index];
-    color_accumulator += cook_torrance(light, frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    vec3 f_to_l = light.position - frag_pos_in_lgt;
+    float f_to_l_mag = length(f_to_l);
+    color_accumulator +=
+      point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
+      light.tint *
+      cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
 #endif
   }
 
-  // color_accumulator = texture(shadow_sampler, frag_pos_in_lgt - light_buffer.point_lights[0].position).rrr;
+  // SHADOW MAP
+  // PointLight light = light_buffer.point_lights[0];
+  // vec3 l_to_f = frag_pos_in_lgt - light.position;
+  // float d_l_to_f_closest = texture(shadow_sampler, l_to_f).r;
+  // float d_l_to_f = length(l_to_f);
+  // vec3 triangle_normal = normalize(cross(dFdx(frag_pos_in_lgt), dFdy(frag_pos_in_lgt)));
+
+  // color_accumulator = triangle_normal * 0.5 + 0.5;
+  // if (d_l_to_f < d_l_to_f_closest + 1.0 && dot(-l_to_f, triangle_normal) > 0.0) {
+  //   // color_accumulator = texture(shadow_sampler_2, l_to_f).rgb * 0.5 + 0.5;
+  //   color_accumulator = texture(shadow_sampler_3, l_to_f).rgb * 0.5 + 0.5;
+  // } else {
+  //   color_accumulator = vec3(0.0);
+  // }
+
+  // DIFFUSE
+  // color_accumulator = normalize(kd.rgb);
 #else
 #error Unimplemented render technique!
 #endif

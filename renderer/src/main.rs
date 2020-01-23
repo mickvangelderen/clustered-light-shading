@@ -1182,9 +1182,9 @@ impl<'s> Context<'s> {
             self.point_lights.push(light::PointLight {
                 tint: [1.0, 1.0, 0.8],
                 position: self
-                    .transition_camera
-                    .current_camera
-                    .transform
+                    .cameras
+                    .main
+                    .current_transform
                     .pos_to_parent()
                     .transform_point(Point3 {
                         x: 0.0,
@@ -1194,15 +1194,16 @@ impl<'s> Context<'s> {
                 attenuation,
             });
 
-            for _ in 0..(16*16*6) {
+            for _ in 0..(16 * 16 * 6) {
                 self.point_lights.push(light::PointLight {
-                    tint: [1.0, 1.0, 1.0],
-                    position: Point3 {
-                        x: -10000.0,
-                        y: -10000.0,
-                        z: -10000.0,
+                    tint: [0.0, 0.0, 0.0],
+                    position: Point3::origin(),
+                    attenuation: light::AttenCoefs {
+                        i: 0.0,
+                        i0: 0.0,
+                        r0: 0.0,
+                        r1: 0.0,
                     },
-                    attenuation,
                 });
             }
 
@@ -1262,13 +1263,28 @@ impl<'s> Context<'s> {
             self.gl.enable(gl::CULL_FACE);
             self.gl.cull_face(gl::BACK);
 
-            self.gl.clear_color(1.0, 1.0, 1.0, 0.0);
+            self.gl
+                .named_framebuffer_draw_buffers(self.light_resources.framebuffer, &[gl::COLOR_ATTACHMENT0.into()]);
+            self.gl.clear_color(
+                std::f32::INFINITY,
+                std::f32::INFINITY,
+                std::f32::INFINITY,
+                std::f32::INFINITY,
+            );
             self.gl.clear_depth(0.0);
             self.gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
+            self.gl.named_framebuffer_draw_buffers(
+                self.light_resources.framebuffer,
+                &[
+                    gl::COLOR_ATTACHMENT0.into(),
+                    gl::COLOR_ATTACHMENT1.into(),
+                    gl::COLOR_ATTACHMENT2.into(),
+                ],
+            );
+
             self.render_light_depth(light_depth_renderer::Parameters {
                 draw_resources_index: draw_resources_index,
             });
-            self.gl.finish();
         }
 
         let mut cluster_resources_index = None;

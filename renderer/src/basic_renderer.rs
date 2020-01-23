@@ -37,6 +37,8 @@ glsl_defines!(fixed_header {
         DIFFUSE_SAMPLER_BINDING = 4;
         SPECULAR_SAMPLER_BINDING = 5;
         SHADOW_SAMPLER_BINDING = 6;
+        SHADOW_SAMPLER_BINDING_2 = 7;
+        SHADOW_SAMPLER_BINDING_3 = 8;
     },
     uniforms: {
         CAM_POS_IN_LGT_LOC = 0;
@@ -151,6 +153,8 @@ impl Context<'_> {
 
                     gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING, self.light_resources.distance_texture);
+                    gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_2, self.light_resources.nor_texture);
+                    gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_3, self.light_resources.tint_texture);
 
                     if material_kind == resources::MaterialKind::Transparent {
                         gl.depth_mask(gl::WriteMask::Disabled);

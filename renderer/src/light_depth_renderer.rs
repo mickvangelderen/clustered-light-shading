@@ -12,7 +12,7 @@ glsl_defines!(fixed_header {
         LIGHT_BUFFER_BINDING = 4;
 
         NORMAL_SAMPLER_BINDING = 1;
-        // EMISSIVE_SAMPLER_BINDING = 2;
+        EMISSIVE_SAMPLER_BINDING = 2;
         // AMBIENT_SAMPLER_BINDING = 3;
         DIFFUSE_SAMPLER_BINDING = 4;
         // SPECULAR_SAMPLER_BINDING = 5;
