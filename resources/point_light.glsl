@@ -3,7 +3,8 @@ struct PointLight {
   float _pad0;
 
   vec3 position;
-  uint normal;
+  // uint normal;
+  float _pad1;
 
   float i;
   float i0;

@@ -20,11 +20,11 @@ display = true
 
 [light.shadows]
 enabled = true
-dimensions = { x = 16, y = 16 }
+dimensions = { x = 8, y = 8 }
 
 [light.attenuation]
-r0 = 0.50
-i = 10.0
+r0 = 0.10
+i = 4.0
 # i0 = 0.10
 i0 = 0.10
 # i0 = 0.50
