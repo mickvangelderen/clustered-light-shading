@@ -61,7 +61,8 @@ impl Context<'_> {
                     6,
                     gl::UNSIGNED_INT,
                     0,
-                    light_resources.header.light_count as u32,
+                    // light_resources.header.light_count as u32,
+                    1,
                     0,
                 );
 

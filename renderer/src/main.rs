@@ -1247,7 +1247,7 @@ impl<'s> Context<'s> {
                 attenuation,
             });
 
-            for _ in 0..(self.configuration.light.shadows.dimensions.product() * 6) {
+            for _ in 0..(8 * 8 * 6) {
                 self.point_lights.push(light::PointLight {
                     tint: [0.0, 0.0, 0.0],
                     position: Point3::origin(),

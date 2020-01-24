@@ -110,7 +110,8 @@ pub struct LightResources {
     pub distance_texture: gl::TextureName,
     pub nor_texture: gl::TextureName,
     pub tint_texture: gl::TextureName,
-    pub cubemap_profiler: profiling::SampleIndex,
+    pub shadow_map_profiler: profiling::SampleIndex,
+    pub virtual_light_profiler: profiling::SampleIndex,
 }
 
 impl LightResources {
@@ -165,7 +166,8 @@ impl LightResources {
                 distance_texture,
                 nor_texture,
                 tint_texture,
-                cubemap_profiler: profiling_context.add_sample("cubemap"),
+                shadow_map_profiler: profiling_context.add_sample("shadow map"),
+                virtual_light_profiler: profiling_context.add_sample("place VPL"),
             }
         }
     }

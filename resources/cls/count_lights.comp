@@ -146,7 +146,8 @@ void main() {
       if (r >= 0.0) {
         d += r*r;
       }
-      if (d <= light.w * light.w) {
+      // NOTE: We want this to fail in case of d = NaN.
+      if (light.w * light.w > d) {
         intersection_count += 1;
       }
     }

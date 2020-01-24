@@ -178,7 +178,10 @@ void main() {
         d += r*r;
       }
 
-      did_intersect = d <= (light.w * light.w);
+      // NOTE: We want this to fail in case of d = NaN.
+      if (light.w * light.w > d) {
+        did_intersect = true;
+      }
     }
     // NOTE: I could do its only if we're within buffer bounds but I'd rather
     // ensure that all values are written to. This would only save a few writes
