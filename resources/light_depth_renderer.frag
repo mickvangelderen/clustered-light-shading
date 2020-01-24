@@ -51,6 +51,8 @@ void main() {
   PointLight light = light_buffer.point_lights[0];
 
   frag_distance = length(frag_pos_in_lgt - light.position);
-  frag_nor = frag_nor_in_lgt;
+  // NOTE: Too expensive!
+  // frag_nor = frag_nor_in_lgt;
+  frag_nor = normalize(cross(dFdx(frag_pos_in_lgt), dFdy(frag_pos_in_lgt)));
   frag_tint = kd.rgb;
 }

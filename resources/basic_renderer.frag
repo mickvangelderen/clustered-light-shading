@@ -189,11 +189,11 @@ void main() {
   uint cluster_light_offset = active_cluster_light_offsets[active_cluster_index];
 
   // ACTIVE CLUSTERINDEX
-  // frag_color = vec4(vec3(float(active_cluster_index) / 100.0), 1.0);
+  // color_accumulator = vec3(float(active_cluster_index) / 100.0);
 
   // CLUSTER LENGHTS
-  // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
-  // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
+  // color_accumulator = vec3(float(cluster_light_count) / 400.0);
+  // color_accumulator = heatmap(float(cluster_light_count), 0.0, 100.0);
 
   // COLORED CLUSTER LENGTHS
   // if (cluster_light_count == 0) {
@@ -216,16 +216,15 @@ void main() {
   // ACTUAL SHADING
   for (uint i = 0; i < cluster_light_count; i++) {
     uint light_index = light_indices[cluster_light_offset + i];
-    PointLight light = light_buffer.point_lights[light_index];
     if (light_index == 0) {
       continue;
     }
-
+    PointLight light = light_buffer.point_lights[light_index];
     vec3 f_to_l = light.position - frag_pos_in_lgt;
     float f_to_l_mag = length(f_to_l);
 
     color_accumulator +=
-      point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
+      point_light_attenuate(light.i, light.i0, light.r0, light.r1, max(2.0, f_to_l_mag)) *
       light.tint *
       cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
@@ -235,19 +234,34 @@ void main() {
   }
 
   // SHADOW MAP
-  // PointLight light = light_buffer.point_lights[0];
-  // vec3 l_to_f = frag_pos_in_lgt - light.position;
-  // float d_l_to_f_closest = texture(shadow_sampler, l_to_f).r;
-  // float d_l_to_f = length(l_to_f);
-  // vec3 triangle_normal = normalize(cross(dFdx(frag_pos_in_lgt), dFdy(frag_pos_in_lgt)));
+  PointLight light = light_buffer.point_lights[0];
+  vec3 l_to_f = frag_pos_in_lgt - light.position;
+  float d_l_to_f_closest = texture(shadow_sampler, l_to_f).r;
+  float d_l_to_f = length(l_to_f);
+  vec3 f_to_l_norm = l_to_f/-d_l_to_f;
+  vec3 triangle_normal = normalize(cross(dFdx(frag_pos_in_lgt), dFdy(frag_pos_in_lgt)));
 
-  // color_accumulator = triangle_normal * 0.5 + 0.5;
-  // if (d_l_to_f < d_l_to_f_closest + 1.0 && dot(-l_to_f, triangle_normal) > 0.0) {
-  //   // color_accumulator = texture(shadow_sampler_2, l_to_f).rgb * 0.5 + 0.5;
-  //   color_accumulator = texture(shadow_sampler_3, l_to_f).rgb * 0.5 + 0.5;
-  // } else {
-  //   color_accumulator = vec3(0.0);
-  // }
+  float dot_n_lo = dot(f_to_l_norm, triangle_normal);
+  float bias = 0.1*sqrt(1.0 - dot_n_lo*dot_n_lo);
+
+  uint DISPLAY = 0;
+
+  if (dot_n_lo > 0.0 && d_l_to_f < d_l_to_f_closest + bias) {
+    if (DISPLAY == 1) {
+      color_accumulator +=
+        point_light_attenuate(light.i, light.i0, light.r0, light.r1, d_l_to_f) *
+        light.tint *
+        cook_torrance(l_to_f/-d_l_to_f, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    } else if (DISPLAY == 2) {
+      color_accumulator = step(d_l_to_f, light.r1) * (texture(shadow_sampler_2, l_to_f).rgb * 0.5 + 0.5);
+    } else if (DISPLAY == 3) {
+      color_accumulator = step(d_l_to_f, light.r1) * texture(shadow_sampler_3, l_to_f).rgb;
+    }
+  } else {
+    if (DISPLAY == 2 || DISPLAY == 3) {
+      color_accumulator = vec3(0.0);
+    }
+  }
 
   // DIFFUSE
   // color_accumulator = normalize(kd.rgb);

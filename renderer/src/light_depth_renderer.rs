@@ -56,9 +56,9 @@ impl Context<'_> {
 
         let draw_resources = &self.resources.draw_resources_pool[params.draw_resources_index];
 
-        let profiler_index = self.profiling_context.start(gl, self.light_resources.cubemap_profiler);
-
         unsafe {
+            let profiler_index = self.profiling_context.start(gl, self.light_resources.shadow_map_profiler);
+
             renderer.opaque_program.update(&mut rendering_context!(self));
             renderer.masked_program.update(&mut rendering_context!(self));
             if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
@@ -176,9 +176,13 @@ impl Context<'_> {
 
                 gl.unbind_vertex_array();
             }
+
+            self.profiling_context.stop(gl, profiler_index);
         }
 
         unsafe {
+            let profiler_index = self.profiling_context.start(gl, self.light_resources.virtual_light_profiler);
+
             renderer.compute_program.update(&mut rendering_context!(self));
             if let ProgramName::Linked(program) = renderer.compute_program.name {
                 gl.use_program(program);
@@ -197,9 +201,10 @@ impl Context<'_> {
                 gl.dispatch_compute(1, 1, 6);
                 gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
             }
+
+            self.profiling_context.stop(gl, profiler_index);
         }
 
-        self.profiling_context.stop(gl, profiler_index);
     }
 }
 

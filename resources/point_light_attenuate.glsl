@@ -11,7 +11,7 @@ float point_light_attenuate(float i, float i0, float r0, float r1, float d_uncli
   float attenuation = 4*i/(r1*r1)*step(d_unclipped, r1);
 #elif defined(ATTENUATION_MODE_LINEAR)
   // Linear doesn't go infinite so we can use the unclipped distance.
-  float attenuation = max(0.0, i/2.0*(r1 - d_unclipped)/(r1 - 1.0));
+  float attenuation = max(0.0, i*(r1 - d_unclipped)/r1);
 #elif defined(ATTENUATION_MODE_PHYSICAL)
   float attenuation = i / d_sq_unclipped * step(d_unclipped, r1);
 #elif defined(ATTENUATION_MODE_REDUCED)
