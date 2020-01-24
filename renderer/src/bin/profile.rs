@@ -61,7 +61,7 @@ impl Technique {
 }
 
 struct Lighting {
-    count: u32,
+    count: usize,
     attenuation: configuration::Attenuation,
 }
 

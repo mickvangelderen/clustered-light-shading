@@ -89,9 +89,14 @@ pub struct LightShadowsConfiguration {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct RainConfiguration {
-    pub max_count: u32,
-    pub bounds_min: Vector3<f64>,
-    pub bounds_max: Vector3<f64>,
+    pub max_count: usize,
+    pub bounds_min: Point3<f32>,
+    pub bounds_max: Point3<f32>,
+    pub drag: f32,
+    pub gravity: f32,
+    pub attraction_count: usize,
+    pub attraction_strength: f32,
+    pub attraction_epsilon: f32,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

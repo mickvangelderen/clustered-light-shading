@@ -1029,20 +1029,21 @@ impl<'s> Context<'s> {
         });
 
         {
-            let center = Point3::origin();
-            let p0 = (center + self.configuration.rain.bounds_min).cast().unwrap();
-            let p1 = (center + self.configuration.rain.bounds_max).cast().unwrap();
-
-            let max_count = self.configuration.rain.max_count as usize;
+            let configuration::RainConfiguration {
+                max_count,
+                bounds_min,
+                bounds_max,
+                drag,
+                gravity,
+                attraction_count,
+                attraction_strength,
+                attraction_epsilon,
+            } = self.configuration.rain;
+            let bounds = Range3::from_min_max(bounds_min, bounds_max);
 
             if self.rain_drops.len() < max_count {
-                // let center = self.transition_camera.current_camera.transform.position;
-
-                // let seconds_to_bottom = (p1.y - p0.y) / 17.0; // 17 from rain.rs
-                // let frames_to_bottom = DESIRED_UPS as f32 * seconds_to_bottom;
-                // let drops_per_update = f32::ceil(max_count as f32 / frames_to_bottom);
                 for _ in self.rain_drops.len()..max_count {
-                    self.rain_drops.push(rain::Particle::spawn(&mut self.rng, p0, p1));
+                    self.rain_drops.push(rain::Particle::spawn(&mut self.rng, bounds));
                 }
             }
 
@@ -1051,8 +1052,60 @@ impl<'s> Context<'s> {
             }
 
             if self.paused == false {
+                if attraction_strength != 0.0 {
+                    for i0 in 0..self.rain_drops.len() {
+                        if i0 % attraction_count == 0 {
+                            continue;
+                        }
+
+                        let p0 = self.rain_drops[i0].position;
+
+                        let i1 = i0 - i0 % attraction_count;
+                        let p1 = self.rain_drops[i1].position;
+
+                        let d = p1 - p0;
+                        let dm = d.magnitude();
+                        self.rain_drops[i0].velocity +=
+                            if dm > attraction_epsilon { 1.0 } else { -1.0 } * attraction_strength * d / dm;
+                    }
+                }
+
                 for rain_drop in self.rain_drops.iter_mut() {
-                    rain_drop.update(delta_time, &mut self.rng, p0, p1);
+                    rain_drop.velocity += Vector3::new(0.0, gravity, 0.0);
+                    rain_drop.velocity *= drag;
+                    rain_drop.position += delta_time * rain_drop.velocity;
+                }
+
+                let core_spawn_range = Range3 {
+                    x0: bounds.x0,
+                    x1: bounds.x1,
+                    y0: 0.01 * bounds.y0 + 0.99 * bounds.y1,
+                    y1: bounds.y1,
+                    z0: bounds.z0,
+                    z1: bounds.z1,
+                };
+                const FOLLOW_OFFSET: Vector3<f32> = Vector3 {
+                    x: 20.0,
+                    y: 20.0,
+                    z: 20.0,
+                };
+                let mut follow_spawn_range = None;
+                for (i, rain_drop) in self.rain_drops.iter_mut().enumerate() {
+                    if i % attraction_count == 0 {
+                        follow_spawn_range = if !bounds.contains(rain_drop.position) {
+                            *rain_drop = rain::Particle::spawn(&mut self.rng, core_spawn_range);
+                            Some(Range3::from_min_max(
+                                rain_drop.position - FOLLOW_OFFSET,
+                                rain_drop.position + FOLLOW_OFFSET,
+                            ))
+                        } else {
+                            None
+                        };
+                    } else {
+                        if let Some(range) = follow_spawn_range {
+                            *rain_drop = rain::Particle::spawn(&mut self.rng, range);
+                        }
+                    }
                 }
 
                 self.tick += 1;
@@ -1207,18 +1260,18 @@ impl<'s> Context<'s> {
                 });
             }
 
-            // for mut point_light in self.resources.point_lights.iter().copied() {
-            //     point_light.attenuation = attenuation;
-            //     self.point_lights.push(point_light);
-            // }
+            for mut point_light in self.resources.point_lights.iter().copied() {
+                point_light.attenuation = attenuation;
+                self.point_lights.push(point_light);
+            }
 
-            // for rain_drop in self.rain_drops.iter() {
-            //     self.point_lights.push(light::PointLight {
-            //         tint: rain_drop.tint.into(),
-            //         position: Point3::from_vec(rain_drop.position),
-            //         attenuation,
-            //     });
-            // }
+            for rain_drop in self.rain_drops.iter() {
+                self.point_lights.push(light::PointLight {
+                    tint: rain_drop.tint.into(),
+                    position: rain_drop.position,
+                    attenuation,
+                });
+            }
         }
 
         unsafe {
