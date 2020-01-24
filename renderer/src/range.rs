@@ -37,6 +37,18 @@ impl<T: Float> Range3<T> {
     }
 
     #[inline]
+    pub fn from_min_max(min: Point3<T>, max: Point3<T>) -> Self {
+        Self {
+            x0: min.x,
+            x1: max.x,
+            y0: min.y,
+            y1: max.y,
+            z0: min.z,
+            z1: max.z,
+        }
+    }
+
+    #[inline]
     pub fn from_points<I>(points: I) -> Option<Self>
     where
         I: IntoIterator<Item = Point3<T>>,
@@ -44,11 +56,6 @@ impl<T: Float> Range3<T> {
         let mut points = points.into_iter();
         if let Some(first) = points.next() {
             Some(points.fold(Self::from_point(first), Self::include_point))
-        // let mut range = Self::from_point(first);
-        // for point in points {
-        //     range = range.include_point(point);
-        // }
-        // Some(range)
         } else {
             None
         }
@@ -64,6 +71,11 @@ impl<T: Float> Range3<T> {
             z0: self.z0.min(p.z),
             z1: self.z1.max(p.z),
         }
+    }
+
+    #[inline]
+    pub fn contains(self, p: Point3<T>) -> bool {
+        p.x >= self.x0 && p.x < self.x1 && p.y >= self.y0 && p.y < self.y1 && p.z >= self.z0 && p.z < self.z1
     }
 
     #[inline]
