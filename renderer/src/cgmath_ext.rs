@@ -153,3 +153,22 @@ where
         Point3::zip3(self, min, max, S::partial_clamp)
     }
 }
+
+pub trait ArrayExt {
+    fn dominant_axis(self) -> usize;
+}
+
+impl <S> ArrayExt for Vector3<S> where S: PartialOrd {
+    fn dominant_axis(self) -> usize {
+        let axis = if self.x > self.y {
+            0
+        } else {
+            1
+        };
+        if self.z > self[axis] {
+            2
+        } else {
+            axis
+        }
+    }
+}

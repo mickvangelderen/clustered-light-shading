@@ -152,31 +152,6 @@ impl Resources {
             renderer::scene_file::SceneFile::read(&mut file).unwrap()
         };
 
-        // TODO(mickvangelderen): Use these for culling?
-        // let bounding_boxes: Vec<Range3<f32>> = scene_file.mesh_descriptions.iter().map(|mesh_description| {
-        //     let vertex_offset = mesh_description.vertex_offset as usize;
-        //     let vertex_count = mesh_description.vertex_count as usize;
-        //     let vertex_iter = scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter().map(|&pos_in_obj| {
-        //         Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get())
-        //     });
-        //     Range3::from_points(vertex_iter).unwrap()
-        // }).collect();
-
-        // let bounding_spheres: Vec<(Point3<f32>, f32)> = scene_file.mesh_descriptions.iter().enumerate().map(|(mesh_index, mesh_description)| {
-        //     let center = bounding_boxes[mesh_index].center();
-        //     let vertex_offset = mesh_description.vertex_offset as usize;
-        //     let vertex_count = mesh_description.vertex_count as usize;
-        //     let mut max_squared_distance = 0.0;
-        //     for &pos_in_obj in scene_file.pos_in_obj_buffer[vertex_offset..(vertex_offset + vertex_count)].iter() {
-        //         let pos_in_obj = Point3::new(pos_in_obj[0].get(), pos_in_obj[1].get(), pos_in_obj[2].get());
-        //         let squared_distance = (pos_in_obj - center).magnitude2();
-        //         if squared_distance > max_squared_distance {
-        //             max_squared_distance = squared_distance;
-        //         }
-        //     }
-        //     (center, max_squared_distance.sqrt())
-        // }).collect();
-
         {
             let mut total_triangles = 0;
             let mut total_vertices = 0;
@@ -518,7 +493,7 @@ impl Resources {
                     Some(PointLight {
                         tint: Vector3::from(emissive_color).normalize().into(),
                         position: pos_in_wld,
-                        attenuation: light::AttenCoefs::from(configuration.light.attenuation).cast().unwrap()
+                        attenuation: light::AttenCoefs::from(configuration.light.attenuation).cast().unwrap(),
                     })
                 } else {
                     None
@@ -587,16 +562,102 @@ pub struct DrawCommandResources {
     pub buffer: Vec<DrawCommand>,
 }
 
+pub enum ProjectionKind {
+    Perspective,
+    Orthographic,
+}
+
+pub struct CullingCamera {
+    pub wld_to_cam: Matrix4<f64>,
+    pub frustum: Frustum<f64>,
+    pub projection_kind: ProjectionKind,
+}
+
+fn intersect_sphere_enlarged_frustum(sphere: scene_file::Sphere3<f64>, frustum: Frustum<f64>) -> bool {
+    let nx0 = Vector2::new(-1.0, -frustum.x0).normalize();
+    let nx1 = Vector2::new(1.0, frustum.x1).normalize();
+    let ny0 = Vector2::new(-1.0, -frustum.y0).normalize();
+    let ny1 = Vector2::new(1.0, frustum.y1).normalize();
+    ((frustum.z0 - sphere.p.z) < sphere.r)
+        && ((sphere.p.z - frustum.z1) < sphere.r)
+        && (Vector2::dot(nx0, Vector2::new(sphere.p.x, sphere.p.z)) < sphere.r)
+        && (Vector2::dot(nx1, Vector2::new(sphere.p.x, sphere.p.z)) < sphere.r)
+        && (Vector2::dot(ny0, Vector2::new(sphere.p.y, sphere.p.z)) < sphere.r)
+        && (Vector2::dot(ny1, Vector2::new(sphere.p.y, sphere.p.z)) < sphere.r)
+}
+
+fn intersect_sphere_box(sphere: scene_file::Sphere3<f64>, box3: scene_file::Box3<f64>) -> bool {
+    let mut r_sq_acc = 0.0;
+    for axis in 0..3 {
+        let d = sphere.p[axis] - box3.p0[axis];
+        if d < -0.0 {
+            r_sq_acc += d * d;
+        }
+        let d = sphere.p[axis] - box3.p1[axis];
+        if d > 0.0 {
+            r_sq_acc += d * d;
+        }
+    }
+    r_sq_acc < sphere.r * sphere.r
+}
+
 pub fn compute_draw_commands(
+    culling_camera: CullingCamera,
     instances: &[scene_file::Instance],
+    transforms: &[scene_file::Transform],
     materials: &[Material],
     mesh_descriptions: &[scene_file::MeshDescription],
 ) -> DrawCommandResources {
+    let visible_instance_indices: Vec<usize> = instances
+        .iter()
+        .enumerate()
+        .filter_map(|(instance_index, instance)| {
+            let transform = &transforms[instance.transform_index as usize];
+            let obj_to_wld = transform.to_parent();
+
+            let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
+            let p_obj = mesh_description.bounding_sphere.p.cast::<f64>().unwrap();
+            let r_obj = Vector3::new(
+                mesh_description.bounding_sphere.r as f64,
+                mesh_description.bounding_sphere.r as f64,
+                mesh_description.bounding_sphere.r as f64,
+            );
+
+            let p_cam = culling_camera
+                .wld_to_cam
+                .transform_point(obj_to_wld.transform_point(p_obj));
+            let r_cam = culling_camera
+                .wld_to_cam
+                .transform_vector(obj_to_wld.transform_vector(r_obj)).map(f64::abs);
+
+            let sphere = scene_file::Sphere3 {
+                p: p_cam,
+                r: r_cam[r_cam.dominant_axis()],
+            };
+            if match culling_camera.projection_kind {
+                ProjectionKind::Orthographic => intersect_sphere_box(sphere, {
+                    let Frustum { x0, x1, y0, y1, z0, z1 } = culling_camera.frustum;
+                    scene_file::Box3 {
+                        p0: Point3::new(x0, y0, z0),
+                        p1: Point3::new(x1, y1, z1),
+                    }
+                }),
+
+                ProjectionKind::Perspective => intersect_sphere_enlarged_frustum(sphere, culling_camera.frustum),
+            } {
+                Some(instance_index)
+            } else {
+                None
+            }
+        })
+        .collect();
+
     // Prefix sum draw counts per material.
     let mut counts: Vec<usize> =
-        instances
+        visible_instance_indices
             .iter()
-            .fold(materials.iter().map(|_| 0).collect(), |mut counts, instance| {
+            .fold(materials.iter().map(|_| 0).collect(), |mut counts, &instance_index| {
+                let instance = &instances[instance_index];
                 counts[instance.material_index as usize] += 1;
                 counts
             });
@@ -623,12 +684,13 @@ pub fn compute_draw_commands(
         base_vertex: 0,
         base_instance: 0,
     })
-    .take(instances.len())
+    .take(visible_instance_indices.len())
     .collect();
 
     // Fill out the buffer.
 
-    for (instance_index, instance) in instances.iter().enumerate() {
+    for &instance_index in visible_instance_indices.iter() {
+        let instance = &instances[instance_index];
         let material_index = instance.material_index as usize;
         let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
         let command_index = offsets[material_index] + counts[material_index];
@@ -685,6 +747,7 @@ impl DrawResources {
         &mut self,
         gl: &gl::Gl,
         profiling_context: &mut ProfilingContext,
+        culling_camera: CullingCamera,
         wld_to_ren_clp: Matrix4<f64>,
         wld_to_clu_cam: Matrix4<f64>,
         instances: &[scene_file::Instance],
@@ -715,7 +778,7 @@ impl DrawResources {
                 counts,
                 offsets,
                 buffer,
-            } = compute_draw_commands(instances, materials, mesh_descriptions);
+            } = compute_draw_commands(culling_camera, instances, transforms, materials, mesh_descriptions);
             self.draw_command_data = buffer;
             self.draw_counts = counts;
             self.draw_offsets = offsets;

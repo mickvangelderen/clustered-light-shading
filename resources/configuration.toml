@@ -49,12 +49,12 @@ path = "recording.bin"
 
 [profiling]
 # name = "not_auto_generated"
-display = false
+display = true
 record_events = true
 record_frames = false
 hide = [
-  "inst matrs",
-  "draw cmds",
+  # "inst matrs",
+  # "draw cmds",
 ]
 
 [window]

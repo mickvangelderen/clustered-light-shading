@@ -1290,9 +1290,25 @@ impl<'s> Context<'s> {
 
             let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
+            let light = self.point_lights[0];
             draw_resources.recompute(
                 &self.gl,
                 &mut self.profiling_context,
+                resources::CullingCamera {
+                    wld_to_cam: Matrix4::from_translation(-light.position.to_vec().cast::<f64>().unwrap()),
+                    frustum: {
+                        let r = light.attenuation.r1 as f64;
+                        Frustum {
+                            x0: -r,
+                            x1: r,
+                            y0: -r,
+                            y1: r,
+                            z0: -r,
+                            z1: r,
+                        }
+                    },
+                    projection_kind: resources::ProjectionKind::Orthographic,
+                },
                 Matrix4::identity(),
                 Matrix4::identity(),
                 &self.resources.scene_file.instances,
@@ -1610,6 +1626,11 @@ impl<'s> Context<'s> {
             draw_resources.recompute(
                 &self.gl,
                 &mut self.profiling_context,
+                resources::CullingCamera {
+                    wld_to_cam: main_params.camera.wld_to_cam,
+                    frustum: main_params.camera.frustum,
+                    projection_kind: resources::ProjectionKind::Perspective,
+                },
                 main_params.camera.wld_to_clp,
                 if let Some(cluster_resources_index) = cluster_resources_index {
                     self.cluster_resources_pool[cluster_resources_index]
