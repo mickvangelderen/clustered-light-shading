@@ -387,11 +387,50 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
             let mesh_index = file.mesh_descriptions.len() as u32;
             mesh_indices.push(mesh_index);
 
+            let bounding_box = {
+                let mut vertex_iter = mesh_builder.vertices.iter().map(|v| {
+                    Point3::from(v.pos_in_obj).map(FiniteF32::get)
+                });
+                let first = vertex_iter.next().unwrap();
+                let mut bounding_box = Box3 { p0: first, p1: first };
+                for vertex in vertex_iter {
+                    for axis in 0..3 {
+                        if vertex[axis] < bounding_box.p0[axis] {
+                            bounding_box.p0[axis] = vertex[axis];
+                        }
+                        if vertex[axis] > bounding_box.p1[axis] {
+                            bounding_box.p1[axis] = vertex[axis];
+                        }
+                    }
+                }
+                bounding_box
+            };
+
+            let bounding_sphere = {
+                let center = (bounding_box.p0 + bounding_box.p1.to_vec()) * 0.5;
+                let vertex_iter = mesh_builder.vertices.iter().map(|v| {
+                    Point3::from(v.pos_in_obj).map(FiniteF32::get)
+                });
+                let mut max_squared_distance: f32 = 0.0;
+                for vertex in vertex_iter {
+                    let squared_distance = (vertex - center).magnitude2();
+                    if squared_distance > max_squared_distance {
+                        max_squared_distance = squared_distance;
+                    }
+                }
+                Sphere3 {
+                    p: center,
+                    r: max_squared_distance.sqrt(),
+                }
+            };
+
             file.mesh_descriptions.push(MeshDescription {
                 triangle_offset: file.triangle_buffer.len() as u32,
                 triangle_count: mesh_builder.triangles.len() as u32,
                 vertex_offset: file.pos_in_obj_buffer.len() as u32,
                 vertex_count: mesh_builder.vertices.len() as u32,
+                bounding_box,
+                bounding_sphere,
             });
 
             file.pos_in_obj_buffer

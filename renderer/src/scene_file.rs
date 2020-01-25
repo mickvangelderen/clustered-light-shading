@@ -28,11 +28,27 @@ pub struct Vertex {
 
 #[derive(Debug)]
 #[repr(C)]
+pub struct Sphere3<T> {
+    pub p: Point3<T>,
+    pub r: T,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Box3<T> {
+    pub p0: Point3<T>,
+    pub p1: Point3<T>,
+}
+
+#[derive(Debug)]
+#[repr(C)]
 pub struct MeshDescription {
     pub triangle_offset: u32,
     pub triangle_count: u32,
     pub vertex_offset: u32,
     pub vertex_count: u32,
+    pub bounding_box: Box3<f32>,
+    pub bounding_sphere: Sphere3<f32>,
 }
 
 impl MeshDescription {
@@ -327,7 +343,7 @@ impl FiniteF32 {
     }
 
     #[inline]
-    pub fn get(&self) -> f32 {
+    pub fn get(self) -> f32 {
         self.0
     }
 }

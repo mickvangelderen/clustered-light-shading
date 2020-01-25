@@ -159,6 +159,11 @@ impl Context<'_> {
             draw_resources.recompute(
                 &self.gl,
                 &mut self.profiling_context,
+                resources::CullingCamera {
+                    wld_to_cam: camera_parameters.camera.wld_to_cam,
+                    frustum: camera_parameters.camera.frustum,
+                    projection_kind: resources::ProjectionKind::Perspective,
+                },
                 camera_parameters.camera.wld_to_clp,
                 cluster_resources.computed.wld_to_clu_cam,
                 &self.resources.scene_file.instances,
