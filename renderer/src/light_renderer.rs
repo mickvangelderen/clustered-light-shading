@@ -51,7 +51,7 @@ impl Context<'_> {
                     gl::MajorAxis::Column,
                     camera.cam_to_clp.cast().unwrap().as_ref(),
                 );
-                // gl.bind_texture_unit(SAMPLER_BINDING, textures[material.emissive_texture_index].name);
+
                 gl.depth_mask(gl::FALSE);
                 gl.enable(gl::BLEND);
                 gl.blend_func(gl::SRC_ALPHA, gl::ONE);
@@ -61,8 +61,7 @@ impl Context<'_> {
                     6,
                     gl::UNSIGNED_INT,
                     0,
-                    // light_resources.header.light_count as u32,
-                    1,
+                    light_resources.header.light_count as u32,
                     0,
                 );
 
