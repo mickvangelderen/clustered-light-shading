@@ -66,7 +66,8 @@ impl LightSampleIndices {
 #[repr(C)]
 pub struct LightBufferHeader {
     pub light_count: u32,
-    pub _pad0: [u32; 15],
+    pub virtual_light_count: u32,
+    pub _pad0: [u32; 14],
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -178,6 +179,7 @@ impl LightResources {
         profiling_context: &mut profiling::ProfilingContext,
         frame_index: FrameIndex,
         point_lights: &[PointLight],
+        virtual_light_count: u32,
     ) {
         let profiler_index = profiling_context.start(gl, self.sample_indices.total);
 
@@ -186,6 +188,7 @@ impl LightResources {
 
             self.header = light::LightBufferHeader {
                 light_count: std::convert::TryFrom::try_from(point_lights.len()).unwrap(),
+                virtual_light_count,
                 _pad0: Default::default(),
             };
 

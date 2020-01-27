@@ -37,7 +37,10 @@ mod compute {
             NOR_SAMPLER_BINDING = 1;
             TINT_SAMPLER_BINDING = 2;
         },
-        uniforms: {},
+        uniforms: {
+            TIME_LOC = 0;
+            SAMPLE_COUNT_LOC = 1;
+        },
     });
 }
 
@@ -57,7 +60,9 @@ impl Context<'_> {
         let draw_resources = &self.resources.draw_resources_pool[params.draw_resources_index];
 
         unsafe {
-            let profiler_index = self.profiling_context.start(gl, self.light_resources.shadow_map_profiler);
+            let profiler_index = self
+                .profiling_context
+                .start(gl, self.light_resources.shadow_map_profiler);
 
             renderer.opaque_program.update(&mut rendering_context!(self));
             renderer.masked_program.update(&mut rendering_context!(self));
@@ -180,31 +185,38 @@ impl Context<'_> {
             self.profiling_context.stop(gl, profiler_index);
         }
 
-        unsafe {
-            let profiler_index = self.profiling_context.start(gl, self.light_resources.virtual_light_profiler);
+        if self.configuration.light.virtual_light_count > 0 {
+            unsafe {
+                let profiler_index = self
+                    .profiling_context
+                    .start(gl, self.light_resources.virtual_light_profiler);
 
-            renderer.compute_program.update(&mut rendering_context!(self));
-            if let ProgramName::Linked(program) = renderer.compute_program.name {
-                gl.use_program(program);
+                renderer.compute_program.update(&mut rendering_context!(self));
+                if let ProgramName::Linked(program) = renderer.compute_program.name {
+                    gl.use_program(program);
 
-                gl.bind_buffer_base(
-                    gl::SHADER_STORAGE_BUFFER,
-                    compute::LIGHT_BUFFER_BINDING,
-                    self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
-                );
+                    gl.uniform_1f(compute::TIME_LOC, (self.frame_index.to_usize() % 3600) as f32 / 3600.0);
 
-                gl.bind_texture_unit(compute::DISTANCE_SAMPLER_BINDING, self.light_resources.distance_texture);
-                gl.bind_texture_unit(compute::NOR_SAMPLER_BINDING, self.light_resources.nor_texture);
-                gl.bind_texture_unit(compute::TINT_SAMPLER_BINDING, self.light_resources.tint_texture);
+                    gl.uniform_1ui(compute::SAMPLE_COUNT_LOC, self.configuration.light.virtual_light_count);
 
-                gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
-                gl.dispatch_compute(1, 1, 6);
-                gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                    gl.bind_buffer_base(
+                        gl::SHADER_STORAGE_BUFFER,
+                        compute::LIGHT_BUFFER_BINDING,
+                        self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
+                    );
+
+                    gl.bind_texture_unit(compute::DISTANCE_SAMPLER_BINDING, self.light_resources.distance_texture);
+                    gl.bind_texture_unit(compute::NOR_SAMPLER_BINDING, self.light_resources.nor_texture);
+                    gl.bind_texture_unit(compute::TINT_SAMPLER_BINDING, self.light_resources.tint_texture);
+
+                    gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE);
+                    gl.dispatch_compute((self.configuration.light.virtual_light_count + 127) / 128, 1, 1);
+                    gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
+                }
+
+                self.profiling_context.stop(gl, profiler_index);
             }
-
-            self.profiling_context.stop(gl, profiler_index);
         }
-
     }
 }
 
