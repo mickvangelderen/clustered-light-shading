@@ -1066,7 +1066,7 @@ impl<'s> Context<'s> {
                         let d = p1 - p0;
                         let dm = d.magnitude();
                         self.rain_drops[i0].velocity +=
-                            if dm > attraction_epsilon { 1.0 } else { -1.0 } * attraction_strength * d / dm;
+                            if dm > attraction_epsilon { 1.0 } else { 0.0 } * attraction_strength * d / dm;
                     }
                 }
 
