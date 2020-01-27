@@ -1,8 +1,8 @@
+use cgmath::*;
 pub(crate) use log::*;
 use renderer::configuration::{self, Configuration};
 use std::path::PathBuf;
 use std::process::Command;
-use cgmath::*;
 
 pub fn run_with_configuration(configuration_path: &str) {
     let _ = Command::new("cargo")
@@ -123,24 +123,26 @@ pub fn main() {
         .chain([16, 32, 64, 128].iter().map(|&n| Technique::Persp { size: n }))
         .collect();
 
-    for scene in scenes.iter() {
-        for lighting in lightings.iter() {
-            for technique in techniques.iter() {
-                let name = format!("{}_{:07}_{}", scene.short_name, lighting.count, technique.name());
-                info!("Profiling {}...", &name);
-                let mut cfg = base_cfg.clone();
-                cfg.global.mode = configuration::ApplicationMode::Replay;
-                cfg.global.scene_path = scene.scene_path.clone();
-                cfg.replay.path = scene.replay_path.clone();
-                cfg.profiling.name = Some(PathBuf::from(name.clone()));
+    if false {
+        for scene in scenes.iter() {
+            for lighting in lightings.iter() {
+                for technique in techniques.iter() {
+                    let name = format!("{}_{:07}_{}", scene.short_name, lighting.count, technique.name());
+                    info!("Profiling {}...", &name);
+                    let mut cfg = base_cfg.clone();
+                    cfg.global.mode = configuration::ApplicationMode::Replay;
+                    cfg.global.scene_path = scene.scene_path.clone();
+                    cfg.replay.path = scene.replay_path.clone();
+                    cfg.profiling.name = Some(PathBuf::from(name.clone()));
 
-                lighting.apply(&mut cfg);
-                technique.apply(&mut cfg);
+                    lighting.apply(&mut cfg);
+                    technique.apply(&mut cfg);
 
-                let profiling_dir = PathBuf::from("profiling").join(name);
-                let configuration_path = profiling_dir.join("configuration.toml");
-                cfg.write(&configuration_path).unwrap();
-                run_with_configuration(configuration_path.to_str().unwrap());
+                    let profiling_dir = PathBuf::from("profiling").join(name);
+                    let configuration_path = profiling_dir.join("configuration.toml");
+                    cfg.write(&configuration_path).unwrap();
+                    run_with_configuration(configuration_path.to_str().unwrap());
+                }
             }
         }
     }

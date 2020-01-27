@@ -17,19 +17,27 @@ sample_count = 0
 
 [light]
 display = true
+virtual_light_count = 0
+static_lights = true
+
+[light.shadows]
+enabled = false
+dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
 r0 = 0.10
 i = 10.0
-# i0 = 0.10
 i0 = 0.25
-# i0 = 0.50
-# i0 = 1.00
 
 [rain]
-max_count = 100
+max_count = 0
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
-bounds_max = { x = +80.0, y = +40.0, z = +60.0 }
+bounds_max = { x = +80.0, y = +60.0, z = +60.0 }
+drag = 0.99
+gravity = -0.04
+attraction_count = 8
+attraction_strength = 0.0
+attraction_epsilon = 5.0
 
 [record]
 path = "recording.bin"

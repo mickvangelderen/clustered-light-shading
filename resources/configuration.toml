@@ -61,7 +61,7 @@ vsync = false
 srgb = true
 rgb_bits = 24
 alpha_bits = 8
-width = 1080
+width = 1280
 height = 720
 
 [gl]
