@@ -25,18 +25,18 @@ enabled = true
 dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
-r0 = 0.10
-i = 6.0
-i0 = 0.10
+r0 = 0.01
+i = 8.0
+i0 = 0.25
 
 [rain]
-max_count = 0
+max_count = 10000
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +60.0, z = +60.0 }
 drag = 0.99
-gravity = -0.1
-attraction_count = 20
-attraction_strength = 1.0
+gravity = -0.04
+attraction_count = 8
+attraction_strength = 1.5
 attraction_epsilon = 5.0
 
 [record]
@@ -72,7 +72,7 @@ framebuffer_srgb = true
 fragment_counting_strategy = "Geometry"
 
 projection = "Orthographic"
-# projection = "Perspective"
+# projection = "    Perspective"
 
 # grouping = "Individual"
 grouping = "Enclosed"
