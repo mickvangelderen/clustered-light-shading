@@ -8,17 +8,17 @@ scene_path = "bistro/Bistro_Exterior.bin"
 # scene_path = "bistro/Bistro_Interior.bin"
 # scene_path = "sun_temple/SunTemple.bin"
 
-sample_count = 0
+# sample_count = 0
 # sample_count = 1
 # sample_count = 2
-# sample_count = 4
+sample_count = 4
 # sample_count = 8
 # sample_count = 16
 
 [light]
 display = true
-virtual_light_count = 0
-static_lights = true
+virtual_light_count = 1000
+static_lights = false
 
 [light.shadows]
 enabled = true
@@ -26,11 +26,11 @@ dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
 r0 = 0.01
-i = 8.0
-i0 = 0.25
+i = 2.0
+i0 = 0.05
 
 [rain]
-max_count = 10000
+max_count = 0
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +60.0, z = +60.0 }
 drag = 0.99
@@ -48,7 +48,7 @@ path = "recording.bin"
 
 [profiling]
 # name = "not_auto_generated"
-display = true
+display = false
 record_events = true
 record_frames = false
 hide = [
