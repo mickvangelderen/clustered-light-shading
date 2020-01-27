@@ -221,11 +221,23 @@ void main() {
     vec3 f_to_l = light.position - frag_pos_in_lgt;
     float f_to_l_mag = length(f_to_l);
 
-    color_accumulator +=
-      (light_index == 0 ? 0.0 : 1.0) *
-      point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
-      light.tint *
-      cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    if (light_index == 0) {
+      continue;
+    } else if (light_index < light_buffer.virtual_light_count) {
+      // float roughness = mix(0.0, light.r1, light._pad1)*ks.y;
+      float roughness = ks.y;
+      float metalness = ks.z;
+      color_accumulator +=
+        min(light.i, point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag)) *
+        light.tint *
+        cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, roughness, metalness);
+
+    } else {
+      color_accumulator +=
+        point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
+        light.tint *
+        cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    }
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
