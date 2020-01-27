@@ -37,7 +37,7 @@ macro_rules! glsl_defines {
         )*
 
         $(
-            pub const $uname: gl::UniformLocation = unsafe { gl::UniformLocation::from_i32_unchecked($uval) };
+            pub const $uname: gl_typed::UniformLocation = unsafe { gl_typed::UniformLocation::from_i32_unchecked($uval) };
         )*
 
         pub fn $fn() -> String {

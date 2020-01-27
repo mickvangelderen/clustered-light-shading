@@ -1244,12 +1244,31 @@ impl<'s> Context<'s> {
                         y: 1.0,
                         z: -4.0,
                     }),
-                attenuation,
+                attenuation: {
+                    let mut a = self.configuration.light.attenuation;
+                    a.i *= 2.0;
+                    light::AttenCoefs::from(a).cast().unwrap()
+                },
             });
 
-            for mut point_light in self.resources.point_lights.iter().copied() {
-                point_light.attenuation = attenuation;
-                self.point_lights.push(point_light);
+            for _ in 0..self.configuration.light.virtual_light_count {
+                self.point_lights.push(light::PointLight {
+                    tint: [0.0, 0.0, 0.0],
+                    position: Point3::origin(),
+                    attenuation: light::AttenCoefs {
+                        i: 0.0,
+                        i0: 0.0,
+                        r0: 0.0,
+                        r1: 0.0,
+                    },
+                });
+            }
+
+            if self.configuration.light.static_lights {
+                for mut point_light in self.resources.point_lights.iter().copied() {
+                    point_light.attenuation = attenuation;
+                    self.point_lights.push(point_light);
+                }
             }
 
             for rain_drop in self.rain_drops.iter() {
@@ -1267,7 +1286,83 @@ impl<'s> Context<'s> {
                 &mut self.profiling_context,
                 self.frame_index,
                 &self.point_lights,
+                self.configuration.light.virtual_light_count,
             );
+
+            if self.configuration.light.virtual_light_count > 0 || self.configuration.light.shadows.enabled {
+                let draw_resources_index = self.resources.draw_resources_pool.next({
+                    let gl = &self.gl;
+                    let profiling_context = &mut self.profiling_context;
+                    move || resources::DrawResources::new(gl, profiling_context)
+                });
+
+                let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
+
+                let light = self.point_lights[0];
+                draw_resources.recompute(
+                    &self.gl,
+                    &mut self.profiling_context,
+                    resources::CullingCamera {
+                        wld_to_cam: Matrix4::from_translation(-light.position.to_vec().cast::<f64>().unwrap()),
+                        frustum: {
+                            let r = light.attenuation.r1 as f64;
+                            Frustum {
+                                x0: -r,
+                                x1: r,
+                                y0: -r,
+                                y1: r,
+                                z0: -r,
+                                z1: r,
+                            }
+                        },
+                        projection_kind: resources::ProjectionKind::Orthographic,
+                    },
+                    Matrix4::identity(),
+                    Matrix4::identity(),
+                    &self.resources.scene_file.instances,
+                    &self.resources.materials,
+                    &self.resources.scene_file.transforms,
+                    &self.resources.scene_file.mesh_descriptions,
+                );
+
+                self.gl
+                    .bind_framebuffer(gl::FRAMEBUFFER, self.light_resources.framebuffer);
+                self.gl.viewport(
+                    0,
+                    0,
+                    self.configuration.light.shadows.dimensions.x as i32,
+                    self.configuration.light.shadows.dimensions.y as i32,
+                );
+
+                self.gl.enable(gl::DEPTH_TEST);
+                self.gl.depth_func(gl::GEQUAL);
+
+                self.gl.enable(gl::CULL_FACE);
+                self.gl.cull_face(gl::BACK);
+
+                self.gl
+                    .named_framebuffer_draw_buffers(self.light_resources.framebuffer, &[gl::COLOR_ATTACHMENT0.into()]);
+                self.gl.clear_color(
+                    std::f32::INFINITY,
+                    std::f32::INFINITY,
+                    std::f32::INFINITY,
+                    std::f32::INFINITY,
+                );
+                self.gl.clear_depth(0.0);
+                self.gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
+                self.gl.named_framebuffer_draw_buffers(
+                    self.light_resources.framebuffer,
+                    &[
+                        gl::COLOR_ATTACHMENT0.into(),
+                        gl::COLOR_ATTACHMENT1.into(),
+                        gl::COLOR_ATTACHMENT2.into(),
+                    ],
+                );
+
+                self.render_light_depth(light_depth_renderer::Parameters {
+                    draw_resources_index: draw_resources_index,
+                });
+            }
         }
 
         let mut cluster_resources_index = None;

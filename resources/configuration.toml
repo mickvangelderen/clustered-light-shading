@@ -17,21 +17,20 @@ sample_count = 0
 
 [light]
 display = true
+virtual_light_count = 0
+static_lights = true
 
 [light.shadows]
 enabled = true
-dimensions = { x = 512, y = 512 }
+dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
 r0 = 0.10
-i = 8.0
-# i0 = 0.10
-i0 = 0.25
-# i0 = 0.50
-# i0 = 1.00
+i = 6.0
+i0 = 0.10
 
 [rain]
-max_count = 10000
+max_count = 0
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +60.0, z = +60.0 }
 drag = 0.99
