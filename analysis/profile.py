@@ -19,6 +19,10 @@ def group_by(values, key):
             res[k] = [v]
     return res
 
+def single(values):
+    assert 1 == len(values)
+    return values[0]
+
 class Attenuation:
     def __init__(self, configuration):
         self.i = configuration["i"]
@@ -329,8 +333,78 @@ def generate_ortho_vs_persp_plots(profiles_0):
 
         fig.savefig('../../thesis/media/ortho_vs_persp_{}.pdf'.format(scene_name), format='pdf')
 
-generate_tune_plots(profiles_0)
-generate_stackplots(profiles_0)
-generate_ortho_vs_persp_plots(profiles_0)
+stereo_profile_dir_regex = re.compile(r"^stereo_(suntem|bistro)_\d{7}_(indi|encl)_(ortho|persp)_\d{4}$")
+stereo_profiles_0 = load_profiles("../profiling", stereo_profile_dir_regex)
+
+def generate_stereo_plots(profiles_0):
+    sample_names = [
+        "shading operations",
+        "cluster count",
+        "light indices",
+    ]
+
+    scenes = [
+        ("bistro", "bistro/Bistro_Exterior.bin"),
+        ("suntem", "sun_temple/SunTemple.bin"),
+    ]
+
+    projections = [
+        ClusteringProjectionPerspective(64, 64),
+        ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
+    ]
+
+    for (scene_name, scene_path) in scenes:
+        fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', sharey = 'row', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
+            gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
+        )
+
+        for row, sample_name in enumerate(sample_names):
+            for col, lighting in enumerate(lightings):
+                ax = axes[row, col]
+
+                if row == 0:
+                    ax.set_title("{} lights (r1 = {:.2f})".format(
+                        lighting.count,
+                        lighting.attenuation.r1
+                    ))
+
+                if row + 1 == len(sample_names):
+                    ax.set_xlabel("frame")
+
+                if col == 0:
+                    ax.set_ylabel(sample_name)
+
+                color_palette = plt.get_cmap("tab20c")
+
+                for color_base, projection in enumerate(tuned_projections):
+                    for color_offset, (linestyle, grouping) in enumerate([ ("-", "Individual"), ("--", "Enclosed") ]):
+                        profile = single([
+                            profile for profile in profiles_0
+                                if scene_path == profile.configuration["global"]["scene_path"]
+                                and lighting == Lighting(profile.configuration)
+                                and projection == ClusteringProjection.from_configuration(profile.configuration)
+                                and grouping == profile.configuration["clustered_light_shading"]["grouping"]
+                        ])
+
+                        if row == 0:
+                            samples = np.sum(profile.samples.basic_buffers[:, :, 1], 1)
+                        if row == 1:
+                            samples = np.sum(profile.samples.cluster_buffers[:, :, 0], 1)
+                        if row == 2:
+                            samples = np.sum(profile.samples.cluster_buffers[:, :, 1], 1)
+                        ax.plot(samples, color=color_palette(color_base * 4 + color_offset), linestyle=linestyle, label=projection.short_name())
+
+                if row == 0 and col == 0:
+                    ax.legend(loc = 'upper left')
+
+        fig.align_ylabels(axes)
+
+        fig.savefig('../../thesis/media/stereo_{}_atemporal.pdf'.format(scene_name), format='pdf')
+
+# generate_tune_plots(profiles_0)
+# generate_stackplots(profiles_0)
+# generate_ortho_vs_persp_plots(profiles_0)
+
+generate_stereo_plots(stereo_profiles_0)
 
 # plt.show()
