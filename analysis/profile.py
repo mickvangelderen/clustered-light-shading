@@ -69,9 +69,9 @@ class ClusteringProjectionOrthographic(ClusteringProjection):
 
     def short_name(self):
         if self.x == self.y and self.y == self.z:
-            return "ortho {}m$^3$".format(self.x)
+            return "ortho {}".format(self.x)
         else:
-            return "ortho {}x{}x{}m$^3$".format(self.x, self.y, self.z)
+            return "ortho {}x{}x{}".format(self.x, self.y, self.z)
 
     def __as_tuple(self):
         return (self.x, self.y, self.z)
@@ -90,9 +90,9 @@ class ClusteringProjectionPerspective(ClusteringProjection):
 
     def short_name(self):
         if self.x == self.y:
-            return "persp {}px$^2$".format(self.x)
+            return "persp {}".format(self.x)
         else:
-            return "persp {}x{}px$^2$".format(self.x, self.y)
+            return "persp {}x{}".format(self.x, self.y)
 
     def __as_tuple(self):
         return (self.x, self.y)
@@ -115,18 +115,15 @@ def load_profiles(profiling_directory, regex):
 
     return [Profile(directory) for directory in directories]
 
-def gridspec_box(l, r, b, t, w, h):
+def gridspec_box(l, r, b, t, w, h, ws, hs):
     return {
         "left": l/w,
         "right": (w - r)/w,
         "bottom": b/h,
         "top": (h - t)/h,
+        "wspace": ws/w,
+        "hspace": hs/h,
     }
-
-profile_dir_regex = re.compile(r"^(suntem|bistro)_[ \d]{7}_(ortho|persp)_[ \d]{4}$");
-profiles_0 = load_profiles("../profiling", profile_dir_regex);
-
-lightings = sorted({ Lighting(profile.configuration) for profile in profiles_0 }, key = lambda x: x.count)
 
 scenes = [
     ("bistro", "bistro/Bistro_Exterior.bin"),
@@ -134,97 +131,65 @@ scenes = [
 ]
 
 tuned_projections = [
-    ClusteringProjectionPerspective(64, 64),
     ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
+    ClusteringProjectionPerspective(64, 64),
 ]
 
-def generate_tune_plots(profiles_0):
-    sample_names = ["/frame", "/frame/cluster", "/frame/basic"]
+sample_tuples = [("Total", "/frame"), ("Clustering", "/frame/cluster"), ("Shading", "/frame/basic")]
+
+def generate_tune_plots(profiles):
+    techniques = [
+        ("ortho", "Orthographic", lambda profile: profile.configuration["clustered_light_shading"]["orthographic_sides"]["x"]),
+        ("persp", "Perspective", lambda profile: profile.configuration["clustered_light_shading"]["perspective_pixels"]["x"]),
+    ]
+    lightings = sorted({ Lighting(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     for (scene_name, scene_path) in scenes:
+        for (technique_short_name, technique_enum, technique_sort) in techniques:
+            figsize = (thesis.textwidth, thesis.textwidth *2/3)
+            fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+                gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 1.5, 0.2)
+            )
 
-        profiles_1 = [profile for profile in profiles_0 if
-                            profile.configuration["global"]["scene_path"] == scene_path]
+            for row, (sample_label, sample_path) in enumerate(sample_tuples):
+                for col, lighting in enumerate(lightings):
+                    ax = axes[row, col]
 
-        # ortho
+                    if row == 0:
+                        ax.set_title("{} lights (r1 = {:.2f})".format(
+                            lighting.count,
+                            lighting.attenuation.r1
+                        ))
 
-        fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
-        )
+                    if row + 1 == len(sample_tuples):
+                        ax.set_xlabel("frame")
+                    else:
+                        ax.tick_params(axis='x',bottom=False)
 
-        for row, sample_name in enumerate(sample_names):
-            for col, lighting in enumerate(lightings):
-                ax = axes[row, col]
+                    if col == 0:
+                        ax.set_ylabel("{} (ms)".format(sample_label))
 
-                if row == 0:
-                    ax.set_title("{} lights (r1 = {:.2f})".format(
-                        lighting.count,
-                        lighting.attenuation.r1
-                    ))
+                    profile_selection = sorted([
+                        profile for profile in profiles
+                        if profile.configuration["global"]["scene_path"] == scene_path
+                        and lighting == Lighting(profile.configuration)
+                        and profile.configuration["clustered_light_shading"]["projection"] == technique_enum
+                    ], key = technique_sort)
 
-                if row + 1 == len(sample_names):
-                    ax.set_xlabel("frame")
+                    color_palette = plt.cm.get_cmap('Blues', len(profile_selection)+1)
 
-                if col == 0:
-                    ax.set_ylabel("{} (ms)".format(sample_name))
+                    for color_index, profile in enumerate(profile_selection):
+                        samples = profile.samples.min_gpu_samples_by_name(sample_path)
+                        projection = ClusteringProjection.from_configuration(profile.configuration)
+                        ax.plot(samples, color=color_palette(color_index+1), label=projection.short_name())
+                        ax.set_xlim(0, len(samples) - 1)
 
-                profiles_2 = sorted([
-                    profile for profile in profiles_1
-                    if lighting == Lighting(profile.configuration)
-                    and profile.configuration["clustered_light_shading"]["projection"] == "Orthographic"
-                ], key = lambda profile: profile.configuration["clustered_light_shading"]["orthographic_sides"]["x"])
+                    if row == 0 and col == 0:
+                        ax.legend(loc = 'upper left')
 
-                for profile in profiles_2:
-                    samples = profile.samples.min_gpu_samples_by_name(sample_name)
-                    projection = ClusteringProjection.from_configuration(profile.configuration)
-                    ax.plot(samples, label=projection.short_name())
+            fig.align_ylabels(axes)
 
-                if row == 0 and col == 0:
-                    ax.legend(loc = 'upper left')
-
-        fig.align_ylabels(axes)
-
-        fig.savefig('../../thesis/media/tune_ortho_{}.pdf'.format(scene_name), format='pdf')
-
-        # persp
-
-        fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
-        )
-
-        for row, sample_name in enumerate(sample_names):
-            for col, lighting in enumerate(lightings):
-                ax = axes[row, col]
-
-                if row == 0:
-                    ax.set_title("{} lights (r1 = {:.2f})".format(
-                        lighting.count,
-                        lighting.attenuation.r1
-                    ))
-
-                if row + 1 == len(sample_names):
-                    ax.set_xlabel("frame")
-
-                if col == 0:
-                    ax.set_ylabel("{} (ms)".format(sample_name))
-
-                profiles_2 = sorted([
-                    profile for profile in profiles_1
-                    if lighting == Lighting(profile.configuration)
-                    and profile.configuration["clustered_light_shading"]["projection"] == "Perspective"
-                ], key = lambda p: p.configuration["clustered_light_shading"]["perspective_pixels"]["x"])
-
-                for profile in profiles_2:
-                    samples = profile.samples.min_gpu_samples_by_name(sample_name)
-                    projection = ClusteringProjection.from_configuration(profile.configuration)
-                    ax.plot(samples, label=projection.short_name())
-
-                if row == 0 and col == 0:
-                    ax.legend(loc = 'upper left')
-
-        fig.align_ylabels(axes)
-
-        fig.savefig('../../thesis/media/tune_persp_{}.pdf'.format(scene_name), format='pdf')
+            fig.savefig('../../thesis/media/tune_{}_{}.pdf'.format(technique_short_name, scene_name), format='pdf')
 
         for lighting in lightings:
             for (scene_name, frames) in [
@@ -232,33 +197,27 @@ def generate_tune_plots(profiles_0):
                 ("suntem", [250, 680]),
             ]:
                 for frame in frames:
-                    i = "../profiling/{}_{:07}_ortho_0400/frames/{}.bmp".format(scene_name, lighting.count, frame)
+                    i = "../profiling/{}_{:07}_ortho_0400/frames/{}.jpg".format(scene_name, lighting.count, frame)
                     o = "../../thesis/media/{}_{:07}_ortho_0400_{}.jpg".format(scene_name, lighting.count, frame)
-                    subprocess.run(["convert", "-format", "jpg", "-quality", "95", i, o])
+                    subprocess.run(["cp", i, o])
 
-def generate_stackplots(profiles_0):
+def generate_stackplots(profiles):
+    lightings = sorted({ Lighting(profile.configuration) for profile in profiles }, key = lambda x: x.count)
+
     for (scene_name, scene_path) in scenes:
-        fig, axes = plt.subplots(len(tuned_projections), len(lightings), sharex = 'col', sharey = 'all', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
+        figsize = (thesis.textwidth, thesis.textwidth * 2/3)
+        fig, axes = plt.subplots(len(tuned_projections), len(lightings), sharex = 'col', sharey = 'all', squeeze=False, figsize = figsize, dpi = thesis.dpi,
+            gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
         )
 
-        profiles_1 = [profile for profile in profiles_0 if
-                      profile.configuration["global"]["scene_path"] == scene_path]
-
         for row, projection in enumerate(tuned_projections):
-
-            profiles_2 = [profile for profile in profiles_1
-                          if projection == ClusteringProjection.from_configuration(profile.configuration)]
-
             for col, lighting in enumerate(lightings):
                 ax = axes[row, col]
 
-                profiles_3 = [profile for profile in profiles_2
-                              if lighting == Lighting(profile.configuration)]
-
-                assert 1 == len(profiles_3)
-
-                profile = profiles_3[0]
+                profile = single([profile for profile in profiles
+                    if profile.configuration["global"]["scene_path"] == scene_path
+                    and projection == ClusteringProjection.from_configuration(profile.configuration)
+                    and lighting == Lighting(profile.configuration)])
 
                 frame_samples = profile.samples.min_gpu_samples_by_name("/frame")
                 cluster_samples = profile.samples.min_gpu_samples_by_name("/frame/cluster")
@@ -271,34 +230,38 @@ def generate_stackplots(profiles_0):
                 x1 = stacked_samples.shape[1]
 
                 ax.stackplot(np.arange(x0, x1), stacked_samples, labels=stacked_labels)
-                ax.set_xlim(x0, x1)
+                ax.set_xlim(x0, x1 - 1)
+
+                if col == 0 and row == 0:
+                    ax.legend()
 
                 if col == 0:
-                    ax.legend(title = projection.short_name())
+                    ax.set_ylabel("{}\nGPU time (ms)".format(projection.short_name()))
+                else:
+                    ax.tick_params(axis='y',left=False)
 
                 if row == 0:
                     ax.set_title(lighting.short_name())
+
+                if row + 1 == len(tuned_projections):
+                    ax.set_xlabel("frame")
+                else:
+                    ax.tick_params(axis='x',bottom=False)
 
             fig.align_ylabels(axes)
 
             fig.savefig('../../thesis/media/stack_{}.pdf'.format(scene_name), format='pdf')
 
-def generate_ortho_vs_persp_plots(profiles_0):
-    sample_names = ["/frame", "/frame/cluster", "/frame/basic"]
+def generate_ortho_vs_persp_plots(profiles):
+    lightings = sorted({ Lighting(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
-    for (scene_name, scene_path) in [
-        ("bistro", "bistro/Bistro_Exterior.bin"),
-        ("suntem", "sun_temple/SunTemple.bin"),
-    ]:
-
-        profiles_1 = [profile for profile in profiles_0 if
-                            profile.configuration["global"]["scene_path"] == scene_path]
-
-        fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
+    for (scene_name, scene_path) in scenes:
+        figsize = (thesis.textwidth, thesis.textwidth * 2/3)
+        fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+            gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 1.5, 0.2)
         )
 
-        for row, sample_name in enumerate(sample_names):
+        for row, (sample_label, sample_path) in enumerate(sample_tuples):
             for col, lighting in enumerate(lightings):
                 ax = axes[row, col]
 
@@ -308,23 +271,24 @@ def generate_ortho_vs_persp_plots(profiles_0):
                         lighting.attenuation.r1
                     ))
 
-                if row + 1 == len(sample_names):
+                if row + 1 == len(sample_tuples):
                     ax.set_xlabel("frame")
+                else:
+                    ax.tick_params(axis='x',bottom=False)
 
                 if col == 0:
-                    ax.set_ylabel("{} (ms)".format(sample_name))
+                    ax.set_ylabel("{} (ms)".format(sample_label))
 
                 for projection in tuned_projections:
-                    profiles_2 = [profile for profile in profiles_1
-                                  if lighting == Lighting(profile.configuration)
-                                  and projection == ClusteringProjection.from_configuration(profile.configuration)]
+                    profile = single([profile for profile in profiles
+                        if profile.configuration["global"]["scene_path"] == scene_path
+                        and lighting == Lighting(profile.configuration)
+                        and projection == ClusteringProjection.from_configuration(profile.configuration)
+                    ])
 
-                    assert 1 == len(profiles_2)
-
-                    profile = profiles_2[0]
-
-                    samples = profile.samples.min_gpu_samples_by_name(sample_name)
+                    samples = profile.samples.min_gpu_samples_by_name(sample_path)
                     ax.plot(samples, label=projection.short_name())
+                    ax.set_xlim(0, len(samples) - 1)
 
                 if row == 0 and col == 0:
                     ax.legend(loc = 'upper left')
@@ -333,32 +297,22 @@ def generate_ortho_vs_persp_plots(profiles_0):
 
         fig.savefig('../../thesis/media/ortho_vs_persp_{}.pdf'.format(scene_name), format='pdf')
 
-stereo_profile_dir_regex = re.compile(r"^stereo_(suntem|bistro)_\d{7}_(indi|encl)_(ortho|persp)_\d{4}$")
-stereo_profiles_0 = load_profiles("../profiling", stereo_profile_dir_regex)
+def generate_stereo_plots(profiles):
+    lightings = sorted({ Lighting(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
-def generate_stereo_plots(profiles_0):
-    sample_names = [
+    sample_labels = [
         "shading operations",
         "cluster count",
         "light indices",
     ]
 
-    scenes = [
-        ("bistro", "bistro/Bistro_Exterior.bin"),
-        ("suntem", "sun_temple/SunTemple.bin"),
-    ]
-
-    projections = [
-        ClusteringProjectionPerspective(64, 64),
-        ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
-    ]
-
     for (scene_name, scene_path) in scenes:
-        fig, axes = plt.subplots(len(sample_names), len(lightings), sharex = 'col', sharey = 'row', squeeze=False, figsize = (thesis.textwidth, thesis.textwidth), dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.1, 0.5, 0.3, thesis.textwidth, thesis.textwidth)
+        figsize = (thesis.textwidth, thesis.textwidth * 2/3)
+        fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+            gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.2, 0.2)
         )
 
-        for row, sample_name in enumerate(sample_names):
+        for row, sample_label in enumerate(sample_labels):
             for col, lighting in enumerate(lightings):
                 ax = axes[row, col]
 
@@ -368,18 +322,18 @@ def generate_stereo_plots(profiles_0):
                         lighting.attenuation.r1
                     ))
 
-                if row + 1 == len(sample_names):
+                if row + 1 == len(sample_labels):
                     ax.set_xlabel("frame")
 
                 if col == 0:
-                    ax.set_ylabel(sample_name)
+                    ax.set_ylabel(sample_label)
 
                 color_palette = plt.get_cmap("tab20c")
 
                 for color_base, projection in enumerate(tuned_projections):
-                    for color_offset, (linestyle, grouping) in enumerate([ ("-", "Individual"), ("--", "Enclosed") ]):
+                    for color_offset, (linestyle, grouping) in enumerate([ ("-", "Individual"), (":", "Enclosed") ]):
                         profile = single([
-                            profile for profile in profiles_0
+                            profile for profile in profiles
                                 if scene_path == profile.configuration["global"]["scene_path"]
                                 and lighting == Lighting(profile.configuration)
                                 and projection == ClusteringProjection.from_configuration(profile.configuration)
@@ -392,19 +346,25 @@ def generate_stereo_plots(profiles_0):
                             samples = np.sum(profile.samples.cluster_buffers[:, :, 0], 1)
                         if row == 2:
                             samples = np.sum(profile.samples.cluster_buffers[:, :, 1], 1)
-                        ax.plot(samples, color=color_palette(color_base * 4 + color_offset), linestyle=linestyle, label=projection.short_name())
+                        ax.plot(samples, color=color_palette(color_base * 4 + color_offset), linestyle=linestyle, label="{} {}".format(grouping, projection.short_name()))
 
                 if row == 0 and col == 0:
                     ax.legend(loc = 'upper left')
 
         fig.align_ylabels(axes)
 
-        fig.savefig('../../thesis/media/stereo_{}_atemporal.pdf'.format(scene_name), format='pdf')
+        fig.savefig('../../thesis/media/stereo_atemporal_{}.pdf'.format(scene_name), format='pdf')
 
-# generate_tune_plots(profiles_0)
-# generate_stackplots(profiles_0)
-# generate_ortho_vs_persp_plots(profiles_0)
+profile_dir_regex = re.compile(r"^(suntem|bistro)_[ \d]{7}_(ortho|persp)_[ \d]{4}$");
+profiles_0 = load_profiles("../profiling", profile_dir_regex);
+
+generate_tune_plots(profiles_0)
+generate_stackplots(profiles_0)
+generate_ortho_vs_persp_plots(profiles_0)
+
+stereo_profile_dir_regex = re.compile(r"^stereo_(suntem|bistro)_\d{7}_(indi|encl)_(ortho|persp)_\d{4}$")
+stereo_profiles_0 = load_profiles("../profiling", stereo_profile_dir_regex)
 
 generate_stereo_plots(stereo_profiles_0)
 
-# plt.show()
+plt.show()
