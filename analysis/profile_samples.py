@@ -55,3 +55,15 @@ class ProfileSamples:
         frame_sample_index = self.sample_names.index(sample_name)
         samples = self.deltas[:, :, frame_sample_index, 1]
         return np.nanmin(samples, axis = 0) / 1000000.0
+
+    def sum_visible_clusters(self):
+        return np.sum(self.cluster_buffers[:, :, 0], axis=1)
+
+    def sum_light_indices(self):
+        return np.sum(self.cluster_buffers[:, :, 1], axis=1)
+
+    def sum_lighting_operations(self):
+        return np.sum(self.basic_buffers[:, :, 0], axis=1)
+
+    def sum_shading_operations(self):
+        return np.sum(self.basic_buffers[:, :, 1], axis=1)
