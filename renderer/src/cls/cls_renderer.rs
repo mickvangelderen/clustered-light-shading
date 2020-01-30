@@ -478,8 +478,7 @@ impl Context<'_> {
                 program.update(&mut rendering_context!(self));
                 if let ProgramName::Linked(name) = program.name {
                     gl.use_program(name);
-                    // NOTE(mickvangelderen): 32*8 is defined in the shader
-                    gl.dispatch_compute(cluster_count.ceiled_div(32 * 8), 1, 1);
+                    gl.dispatch_compute(cluster_count.ceiled_div(256), 1, 1);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
@@ -680,7 +679,6 @@ impl Context<'_> {
                         cluster_resources.compute_commands_buffer.name(),
                     );
                     gl.memory_barrier(gl::MemoryBarrierFlag::COMMAND);
-                    // NOTE: the compute command at offset 2 should be (x = active_cluster_count/(32*8), y = 1, z = 0).
                     gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 2);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
