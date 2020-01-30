@@ -26,11 +26,11 @@ dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
 r0 = 0.01
-i = 8.0
-i0 = 0.05
+i = 4.00
+i0 = 0.10
 
 [rain]
-max_count = 0
+max_count = 10000
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +60.0, z = +60.0 }
 drag = 0.99
@@ -48,7 +48,7 @@ path = "recording.bin"
 
 [profiling]
 # name = "not_auto_generated"
-display = false
+display = true
 record_events = true
 record_frames = false
 hide = [
@@ -68,8 +68,8 @@ height = 720
 framebuffer_srgb = true
 
 [clustered_light_shading]
-# fragment_counting_strategy = "Depth"
-fragment_counting_strategy = "Geometry"
+fragment_counting_strategy = "Depth"
+# fragment_counting_strategy = "Geometry"
 
 # projection = "Orthographic"
 projection = "Perspective"
