@@ -442,78 +442,52 @@ impl ClusterResources {
 
                         let p_max = planes.iter().max_by(|a, b| a.z.partial_cmp(&b.z).unwrap()).unwrap();
 
-                        let mut x0 = None;
-                        let mut x1 = None;
-                        let mut y0 = None;
-                        let mut y1 = None;
-                        let mut z0 = None;
-                        let mut z1 = None;
+                        let frustum = {
+                            let mut x0 = std::f64::INFINITY;
+                            let mut x1 = -std::f64::INFINITY;
+                            let mut y0 = std::f64::INFINITY;
+                            let mut y1 = -std::f64::INFINITY;
+                            let mut z0 = std::f64::INFINITY;
+                            let mut z1 = -std::f64::INFINITY;
 
-                        let origin = Point3::new(0.0, 0.0, p_max.z);
-                        for &p in far_pos_in_clu_ori.iter().chain(near_pos_in_clu_ori.iter()) {
-                            if match z0 {
-                                Some(z0) => p.z < z0,
-                                None => true,
-                            } {
-                                z0 = Some(p.z);
+                            fn min(a: f64, b: f64) -> f64 {
+                                if a < b { a } else { b }
                             }
 
-                            if match z1 {
-                                Some(z1) => p.z > z1,
-                                None => true,
-                            } {
-                                z1 = Some(p.z)
+                            fn max(a: f64, b: f64) -> f64 {
+                                if a > b { a } else { b }
                             }
 
-                            let o_to_p = p - origin;
-                            let mut all_nx = true;
-                            let mut all_px = true;
-                            let mut all_ny = true;
-                            let mut all_py = true;
-                            for &q in far_pos_in_clu_ori.iter().chain(near_pos_in_clu_ori.iter()) {
-                                let o_to_q = q - origin;
-                                let sign_x = take_xz(o_to_p).perp_dot(take_xz(o_to_q));
-                                if sign_x > 0.0 {
-                                    all_nx = false;
-                                }
-                                if sign_x < 0.0 {
-                                    all_px = false;
-                                }
-                                let sign_y = take_yz(o_to_p).perp_dot(take_yz(o_to_q));
-                                if sign_y > 0.0 {
-                                    all_ny = false;
-                                }
-                                if sign_y < 0.0 {
-                                    all_py = false;
-                                }
-                            }
-                            if all_nx {
-                                x0 = Some(o_to_p.x / o_to_p.z);
-                            }
-                            if all_px {
-                                x1 = Some(o_to_p.x / o_to_p.z);
-                            }
-                            if all_ny {
-                                y0 = Some(o_to_p.y / o_to_p.z);
-                            }
-                            if all_py {
-                                y1 = Some(o_to_p.y / o_to_p.z);
-                            }
-                        }
+                            // NOTE: We know that from the new origin,
+                            // all points should be enclosed if we take
+                            // the min an max tangents.
+                            for &p in far_pos_in_clu_ori.iter().chain(near_pos_in_clu_ori.iter()) {
+                                let frac_1_z = 1.0 / (p_max.z - p.z);
 
-                        let frustum = Frustum {
-                            x0: x0.unwrap(),
-                            x1: x1.unwrap(),
-                            y0: y0.unwrap(),
-                            y1: y1.unwrap(),
-                            z0: z0.unwrap() - origin.z,
-                            z1: z1.unwrap() - origin.z,
+                                let x = p.x * frac_1_z;
+                                x0 = min(x0, x);
+                                x1 = max(x1, x);
+
+                                let y = p.y * frac_1_z;
+                                y0 = min(y0, y);
+                                y1 = max(y1, y);
+
+                                z0 = min(z0, p.z);
+                                z1 = max(z1, p.z);
+                            }
+
+                            Frustum { x0, x1, y0, y1, z0, z1 }
                         };
 
-                        let Displacement { origin: origin_2, frustum } =
+                        let Displacement { origin, frustum } =
                             Displacement::compute(cfg.perspective_displacement, frustum);
 
-                        let origin = origin + origin_2.to_vec();
+                        let origin = origin
+                            + Vector3 {
+                                x: 0.0,
+                                y: 0.0,
+                                z: p_max.z,
+                            };
 
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
                         let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
