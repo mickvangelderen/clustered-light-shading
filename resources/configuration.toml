@@ -17,16 +17,16 @@ sample_count = 4
 
 [light]
 display = true
-virtual_light_count = 1000
-static_lights = false
+virtual_light_count = 0
+static_lights = true
 
 [light.shadows]
-enabled = true
+enabled = false
 dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
 r0 = 0.01
-i = 2.0
+i = 8.0
 i0 = 0.05
 
 [rain]
@@ -71,8 +71,8 @@ framebuffer_srgb = true
 # fragment_counting_strategy = "Depth"
 fragment_counting_strategy = "Geometry"
 
-projection = "Orthographic"
-# projection = "    Perspective"
+# projection = "Orthographic"
+projection = "Perspective"
 
 # grouping = "Individual"
 grouping = "Enclosed"
@@ -90,6 +90,8 @@ orthographic_sides = { x = 4.0, y = 4.0, z = 4.0 }
 # perspective_pixels = { x = 32, y = 32 }
 # perspective_pixels = { x = 48, y = 48 }
 perspective_pixels = { x = 64, y = 64 }
+perspective_align = true
+perspective_displacement = 0.0
 
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)

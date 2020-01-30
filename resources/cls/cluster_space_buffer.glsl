@@ -23,7 +23,7 @@ layout(std140,
   float clp_to_cam_ay;
   float clp_to_cam_by;
   float clp_to_cam_az;
-  float clp_to_cam_bz;
+  float clp_to_cam_bz; // add_d_1
   float _pad2;
   float _pad3;
 }
