@@ -1126,11 +1126,13 @@ impl<'s> Context<'s> {
         pub struct EyeData {
             tangents: FrustumTangents,
             cam_to_hmd: Matrix4<f64>,
+            hmd_to_cam: Matrix4<f64>,
         }
 
         struct StereoData {
             win_size: Vector2<i32>,
             hmd_to_bdy: Matrix4<f64>,
+            bdy_to_hmd: Matrix4<f64>,
             eyes: EyeMap<EyeData>,
         }
 
@@ -1150,18 +1152,22 @@ impl<'s> Context<'s> {
                 let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
                 assert!(hmd_pose.bPoseIsValid, "Received invalid pose from VR.");
                 let hmd_to_bdy = Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap();
+                let bdy_to_hmd = hmd_to_bdy.invert().unwrap();
 
                 StereoData {
                     win_size: Vector2::new(win_size.width, win_size.height).cast().unwrap(),
                     hmd_to_bdy,
+                    bdy_to_hmd,
                     eyes: EyeMap::new(|eye_key| {
                         let eye = Eye::from(eye_key);
                         let cam_to_hmd = Matrix4::from_hmd(vr.system().get_eye_to_head_transform(eye))
                             .cast()
                             .unwrap();
+                        let hmd_to_cam = cam_to_hmd.invert().unwrap();
                         EyeData {
                             tangents: FrustumTangents::from(vr.system().get_projection_raw(eye)),
-                            cam_to_hmd: cam_to_hmd,
+                            cam_to_hmd,
+                            hmd_to_cam,
                         }
                     }),
                 }
@@ -1175,26 +1181,36 @@ impl<'s> Context<'s> {
                             .cast::<f32>()
                             .unwrap();
 
+                        let hmd_to_bdy = Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0));
+                        let bdy_to_hmd = hmd_to_bdy.invert().unwrap();
+
                         Some(StereoData {
                             win_size: win_size.cast().unwrap(),
-                            hmd_to_bdy: Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0)),
+                            hmd_to_bdy,
+                            bdy_to_hmd,
                             eyes: EyeMap {
                                 left: {
+                                    let cam_to_hmd = Matrix4::from(configuration.virtual_stereo.l_mat);
+                                    let hmd_to_cam = cam_to_hmd.invert().unwrap();
                                     EyeData {
                                         tangents: {
                                             let [x0, x1, y0, y1] = configuration.virtual_stereo.l_tan;
                                             FrustumTangents { x0, x1, y0, y1 }
                                         },
-                                        cam_to_hmd: Matrix4::from(configuration.virtual_stereo.l_mat),
+                                        cam_to_hmd,
+                                        hmd_to_cam,
                                     }
                                 },
                                 right: {
+                                    let cam_to_hmd = Matrix4::from(configuration.virtual_stereo.r_mat);
+                                    let hmd_to_cam = cam_to_hmd.invert().unwrap();
                                     EyeData {
                                         tangents: {
                                             let [x0, x1, y0, y1] = configuration.virtual_stereo.r_tan;
                                             FrustumTangents { x0, x1, y0, y1 }
                                         },
-                                        cam_to_hmd: Matrix4::from(configuration.virtual_stereo.r_mat),
+                                        cam_to_hmd,
+                                        hmd_to_cam,
                                     }
                                 },
                             },
@@ -1371,15 +1387,22 @@ impl<'s> Context<'s> {
 
         struct C1 {
             camera: camera::Camera,
+            wld_to_hmd: Matrix4<f64>,
             hmd_to_wld: Matrix4<f64>,
         }
 
         impl C1 {
             #[inline]
-            pub fn new(camera: camera::Camera, hmd_to_bdy: Matrix4<f64>) -> Self {
+            pub fn new(camera: camera::Camera, bdy_to_hmd: Matrix4<f64>, hmd_to_bdy: Matrix4<f64>) -> Self {
                 let bdy_to_wld = camera.transform.pos_to_parent().cast::<f64>().unwrap();
+                let wld_to_bdy = camera.transform.pos_from_parent().cast::<f64>().unwrap();
                 let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                Self { camera, hmd_to_wld }
+                let wld_to_hmd = bdy_to_hmd * wld_to_bdy;
+                Self {
+                    camera,
+                    hmd_to_wld,
+                    wld_to_hmd,
+                }
             }
         }
 
@@ -1390,12 +1413,10 @@ impl<'s> Context<'s> {
 
         impl C2 {
             #[inline]
-            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>) -> Self {
+            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, hmd_to_cam: Matrix4<f64>) -> Self {
                 let cam_to_wld = c1.hmd_to_wld * cam_to_hmd;
-                Self {
-                    wld_to_cam: cam_to_wld.invert().unwrap(),
-                    cam_to_wld,
-                }
+                let wld_to_cam = hmd_to_cam * c1.wld_to_hmd;
+                Self { wld_to_cam, cam_to_wld }
             }
         }
 
@@ -1403,10 +1424,11 @@ impl<'s> Context<'s> {
             Some(StereoData {
                 win_size,
                 hmd_to_bdy,
+                bdy_to_hmd,
                 eyes,
             }) => {
-                let render_c1 = C1::new(self.transition_camera.current_camera, hmd_to_bdy);
-                let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), hmd_to_bdy);
+                let render_c1 = C1::new(self.transition_camera.current_camera, hmd_to_bdy, bdy_to_hmd);
+                let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), hmd_to_bdy, bdy_to_hmd);
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping
@@ -1417,16 +1439,21 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
+                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
                             clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
 
                 for &eye_key in EYE_KEYS.iter() {
-                    let EyeData { tangents, cam_to_hmd } = eyes[eye_key];
+                    let EyeData {
+                        tangents,
+                        cam_to_hmd,
+                        hmd_to_cam,
+                    } = eyes[eye_key];
 
                     let render_c3 = {
-                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, cam_to_hmd);
+                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, cam_to_hmd, hmd_to_cam);
                         CameraParameters::new(
                             wld_to_cam,
                             cam_to_wld,
@@ -1436,7 +1463,7 @@ impl<'s> Context<'s> {
                     };
 
                     let cluster_c3 = {
-                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, cam_to_hmd);
+                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, cam_to_hmd, hmd_to_cam);
                         CameraParameters::new(
                             wld_to_cam,
                             cam_to_wld,
@@ -1454,6 +1481,7 @@ impl<'s> Context<'s> {
                             &mut self.profiling_context,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
+                                wld_to_clu_ori: cluster_c3.wld_to_cam,
                                 clu_ori_to_wld: cluster_c3.cam_to_wld,
                             },
                         ));
@@ -1516,8 +1544,16 @@ impl<'s> Context<'s> {
             }
             None => {
                 let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
-                let render_c1 = C1::new(self.transition_camera.current_camera, Matrix4::identity());
-                let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), Matrix4::identity());
+                let render_c1 = C1::new(
+                    self.transition_camera.current_camera,
+                    Matrix4::identity(),
+                    Matrix4::identity(),
+                );
+                let cluster_c1 = C1::new(
+                    self.cameras.main.current_to_camera(),
+                    Matrix4::identity(),
+                    Matrix4::identity(),
+                );
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping
@@ -1528,13 +1564,14 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
+                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
                             clu_ori_to_wld: cluster_c1.hmd_to_wld,
                         },
                     ));
                 }
 
                 let render_c3 = {
-                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, Matrix4::identity());
+                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, Matrix4::identity(), Matrix4::identity());
                     CameraParameters::new(
                         wld_to_cam,
                         cam_to_wld,
@@ -1544,7 +1581,7 @@ impl<'s> Context<'s> {
                 };
 
                 let cluster_c3 = {
-                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, Matrix4::identity());
+                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, Matrix4::identity(), Matrix4::identity());
                     CameraParameters::new(
                         wld_to_cam,
                         cam_to_wld,
@@ -1562,6 +1599,7 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
+                            wld_to_clu_ori: cluster_c3.wld_to_cam,
                             clu_ori_to_wld: cluster_c3.cam_to_wld,
                         },
                     ));
