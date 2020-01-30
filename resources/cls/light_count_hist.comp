@@ -8,42 +8,37 @@
 // out
 #include "profiling_cluster_buffer.glsl"
 
-// NOTE(mickvangelderen): This whole shader expects local_size_z = 1
-// NOTE(mickvangelderen): We assume local_size_x equals the number of bins in the output histogram.
-layout(local_size_x = 32, local_size_y = 8) in;
+layout(local_size_x = 256) in;
 
-#define LOCAL_SIZE   (gl_WorkGroupSize.x * gl_WorkGroupSize.y)
-#define LOCAL_OFFSET  (gl_LocalInvocationID.y * gl_WorkGroupSize.x)
-#define LOCAL_INDEX  (LOCAL_OFFSET + gl_LocalInvocationID.x)
-#define GLOBAL_OFFSET (gl_WorkGroupID.x * LOCAL_SIZE)
-#define GLOBAL_INDEX (GLOBAL_OFFSET + LOCAL_INDEX)
-
-shared uint shared_light_counts[LOCAL_SIZE];
-shared uint shared_fragment_counts[LOCAL_SIZE];
+shared uint shared_light_counts[gl_WorkGroupSize.x];
+shared uint shared_fragment_counts[gl_WorkGroupSize.x];
 
 uint bin(uint value) {
-  return min(gl_WorkGroupSize.x - 1, value / 8);
+  return value/4;
 }
 
 void main() {
   uint item_count = compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_COUNT].work_group_x;
-  bool within_bounds = GLOBAL_INDEX < item_count;
+  uint active_cluster_index = gl_GlobalInvocationID.x;
+  bool within_bounds = active_cluster_index < item_count;
 
   // Read a block of data in one go.
-  shared_light_counts[LOCAL_INDEX] = within_bounds ? active_cluster_light_counts[GLOBAL_INDEX] : 0;
-  shared_fragment_counts[LOCAL_INDEX] = within_bounds ? cluster_fragment_counts[active_cluster_cluster_indices[GLOBAL_INDEX]] : 0;
+  shared_light_counts[gl_LocalInvocationID.x] = within_bounds ? active_cluster_light_counts[active_cluster_index] : 0;
+  uint cluster_index = active_cluster_cluster_indices[active_cluster_index];
+  shared_fragment_counts[gl_LocalInvocationID.x] = within_bounds ? cluster_fragment_counts[cluster_index] : 0;
   memoryBarrierShared();
   barrier();
 
   // Have every thread go over up to local_size_x values
-  uint local_end = min(LOCAL_OFFSET + gl_WorkGroupSize.x, item_count - GLOBAL_OFFSET);
   uint clus_acc = 0;
   uint frag_acc = 0;
-  for (uint i = LOCAL_OFFSET; i < local_end; i++) {
-    uint value = shared_light_counts[i];
-    if (bin(value) == gl_LocalInvocationID.x) {
+  int end = clamp(item_count - gl_WorkGroupID.x * gl_WorkGroupSize.x, 0, 256);
+  for (int i = 0; i < end; i++) {
+    uint light_count = shared_light_counts[i];
+    uint frag_count = shared_fragment_counts[i];
+    if (bin(light_count) == gl_LocalInvocationID.x) {
       clus_acc += 1;
-      frag_acc += shared_fragment_counts[i];
+      frag_acc += frag_count;
     }
   }
 
