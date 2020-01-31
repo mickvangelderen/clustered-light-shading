@@ -132,10 +132,14 @@ pub fn main() {
             size: n,
             displacement: 0.0,
         }))
-        .chain([1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0].iter().map(|&n| Technique::Persp {
-            size: 64,
-            displacement: n,
-        }))
+        .chain(
+            [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
+                .iter()
+                .map(|&n| Technique::Persp {
+                    size: 64,
+                    displacement: n,
+                }),
+        )
         .collect();
 
     for scene in scenes.iter() {
@@ -165,6 +169,10 @@ pub fn main() {
         Technique::Persp {
             size: 64,
             displacement: 0.0,
+        },
+        Technique::Persp {
+            size: 64,
+            displacement: 32.0,
         },
     ];
 
