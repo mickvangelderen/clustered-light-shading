@@ -75,13 +75,15 @@ class Lighting:
 
 class ClusteringProjection:
     def from_configuration(configuration):
-        projection = configuration["clustered_light_shading"]["projection"]
+        cls = configuration["clustered_light_shading"]
+        projection = cls["projection"]
         if projection == "Orthographic":
-            size = configuration["clustered_light_shading"]["orthographic_sides"]
+            size = cls["orthographic_sides"]
             return ClusteringProjectionOrthographic(size["x"], size["y"], size["z"])
         if projection == "Perspective":
-            size = configuration["clustered_light_shading"]["perspective_pixels"]
-            return ClusteringProjectionPerspective(size["x"], size["y"])
+            size = cls["perspective_pixels"]
+            displacement = cls["perspective_displacement"]
+            return ClusteringProjectionPerspective(size["x"], size["y"], displacement)
 
 class ClusteringProjectionOrthographic(ClusteringProjection):
     def __init__(self, x, y, z):
@@ -106,19 +108,19 @@ class ClusteringProjectionOrthographic(ClusteringProjection):
         return hash(self.__as_tuple())
 
 class ClusteringProjectionPerspective(ClusteringProjection):
-    def __init__(self, x, y):
+    def __init__(self, x, y, displacement):
         super().__init__()
         self.x = x
         self.y = y
+        self.displacement = displacement
 
     def short_name(self):
-        if self.x == self.y:
-            return "persp {}".format(self.x)
-        else:
-            return "persp {}x{}".format(self.x, self.y)
+        dimensions_string = "{}".format(self.x) if self.x == self.y else "{}x{}".format(self.x, self.y)
+        displacement_string = "" if self.displacement == 0.0 else "{:.0f}".format(self.displacement)
+        return "persp {} {}".format(dimensions_string, displacement_string)
 
     def __as_tuple(self):
-        return (self.x, self.y)
+        return (self.x, self.y, self.displacement)
 
     def __eq__(self, other):
         return isinstance(other, type(self)) and self.__as_tuple() == other.__as_tuple()
@@ -155,7 +157,7 @@ scenes = [
 
 tuned_projections = [
     ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
-    ClusteringProjectionPerspective(64, 64),
+    ClusteringProjectionPerspective(64, 64, 0.0),
 ]
 
 sample_tuples = [
@@ -165,14 +167,16 @@ sample_tuples = [
 ]
 
 def generate_tune_plots(profiles):
-    techniques = [
-        ("ortho", "Orthographic", lambda profile: profile.configuration["clustered_light_shading"]["orthographic_sides"]["x"]),
-        ("persp", "Perspective", lambda profile: profile.configuration["clustered_light_shading"]["perspective_pixels"]["x"]),
-    ]
+    technique_map = {
+        "ortho": [ClusteringProjectionOrthographic(side, side, side) for side in [1.0, 2.0, 4.0, 8.0, 16.0]],
+        "persp": [ClusteringProjectionPerspective(side, side, 0.0) for side in [16, 32, 64, 96, 128]],
+        "persp_displ": [ClusteringProjectionPerspective(64.0, 64.0, displacement) for displacement in [0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]] + [ClusteringProjectionOrthographic(4.0, 4.0, 4.0)],
+    }
+
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     for (scene_name, scene_path) in scenes:
-        for (technique_short_name, technique_enum, technique_sort) in techniques:
+        for technique_group, technique_list in technique_map.items():
             figsize = (thesis.textwidth, thesis.textwidth *2/3)
             fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', squeeze=False, figsize=figsize, dpi = thesis.dpi,
                 gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 1.5, 0.3)
@@ -196,18 +200,15 @@ def generate_tune_plots(profiles):
                     if col == 0:
                         ax.set_ylabel("{}".format(sample_label))
 
-                    profile_selection = sorted([
-                        profile for profile in profiles
-                        if profile.configuration["global"]["scene_path"] == scene_path
-                        and lighting == Lighting.from_configuration(profile.configuration)
-                        and profile.configuration["clustered_light_shading"]["projection"] == technique_enum
-                    ], key = technique_sort)
+                    color_palette = plt.cm.get_cmap('Blues', len(technique_list)+1)
 
-                    color_palette = plt.cm.get_cmap('Blues', len(profile_selection)+1)
-
-                    for color_index, profile in enumerate(profile_selection):
+                    for color_index, projection in enumerate(technique_list):
+                        profile = single([profile for profile in profiles
+                            if profile.configuration["global"]["scene_path"] == scene_path
+                            and projection == ClusteringProjection.from_configuration(profile.configuration)
+                            and lighting == Lighting.from_configuration(profile.configuration)
+                        ])
                         samples = profile.samples.min_gpu_samples_by_name(sample_path)
-                        projection = ClusteringProjection.from_configuration(profile.configuration)
                         ax.plot(samples, color=color_palette(color_index+1), label=projection.short_name())
                         ax.set_xlim(0, len(samples) - 1)
 
@@ -216,7 +217,7 @@ def generate_tune_plots(profiles):
 
             fig.align_ylabels(axes)
 
-            fig.savefig('../../thesis/media/tune_{}_{}.pdf'.format(technique_short_name, scene_name), format='pdf')
+            fig.savefig('../../thesis/media/tune_{}_{}.pdf'.format(technique_group, scene_name), format='pdf')
 
         for lighting in lightings:
             for (scene_name, frames) in [
@@ -524,13 +525,13 @@ def generate_heatmap(profiles):
 
             fig.align_ylabels(axes)
 
-profile_dir_regex = re.compile(r"^(suntem|bistro)_[ \d]{7}_(ortho|persp)_[ \d]{4}$");
+profile_dir_regex = re.compile(r"^(suntem|bistro)_\d{7}_(ortho|persp)_\d{4}(_\d{2})?$");
 profiles_0 = load_profiles("../profiling", profile_dir_regex);
 
-# generate_tune_plots(profiles_0)
+generate_tune_plots(profiles_0)
 # generate_stackplots(profiles_0)
 # generate_ortho_vs_persp_plots(profiles_0)
-generate_heatmap(profiles_0)
+# generate_heatmap(profiles_0)
 
 stereo_profile_dir_regex = re.compile(r"^stereo_(suntem|bistro)_\d{7}_(indi|encl)_(ortho|persp)_\d{4}$")
 stereo_profiles_0 = load_profiles("../profiling", stereo_profile_dir_regex)
