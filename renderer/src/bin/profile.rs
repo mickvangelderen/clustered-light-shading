@@ -132,7 +132,7 @@ pub fn main() {
             size: n,
             displacement: 0.0,
         }))
-        .chain([1.0, 2.0, 4.0, 8.0, 16.0].iter().map(|&n| Technique::Persp {
+        .chain([1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0].iter().map(|&n| Technique::Persp {
             size: 64,
             displacement: n,
         }))
