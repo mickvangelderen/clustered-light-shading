@@ -179,7 +179,7 @@ def generate_tune_plots(profiles):
     projection_map = {
         "ortho": [ClusteringProjectionOrthographic(side, side, side) for side in [1.0, 2.0, 4.0, 8.0, 16.0]],
         "persp": [ClusteringProjectionPerspective(side, side, 0.0) for side in [16, 32, 64, 96, 128]],
-        "persp_displ": [ClusteringProjectionPerspective(64, 64, displacement) for displacement in [0.0, 1.0, 4.0, 32.0, 256.0]] + [ClusteringProjectionOrthographic(4.0, 4.0, 4.0)],
+        "persp_displ": [ClusteringProjectionOrthographic(4.0, 4.0, 4.0)] + [ClusteringProjectionPerspective(64, 64, displacement) for displacement in [0.0, 1.0, 4.0, 32.0, 256.0]],
     }
 
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
