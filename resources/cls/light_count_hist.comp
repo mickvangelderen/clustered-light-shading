@@ -32,7 +32,7 @@ void main() {
   // Have every thread go over up to local_size_x values
   uint clus_acc = 0;
   uint frag_acc = 0;
-  int end = clamp(item_count - gl_WorkGroupID.x * gl_WorkGroupSize.x, 0, 256);
+  int end = clamp(int(item_count) - int(gl_WorkGroupID.x * gl_WorkGroupSize.x), 0, 256);
   for (int i = 0; i < end; i++) {
     uint light_count = shared_light_counts[i];
     uint frag_count = shared_fragment_counts[i];

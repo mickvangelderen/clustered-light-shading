@@ -17,7 +17,7 @@ uint bin(uint n) {
 }
 
 void main() {
-  bool within_bounds = GLOBAL_INDEX < cluster_space.cluster_count;
+  bool within_bounds = gl_GlobalInvocationID.x < cluster_space.cluster_count;
 
   // Read a block of data in one go.
   shared_values[gl_LocalInvocationID.x] = within_bounds ? cluster_fragment_counts[gl_GlobalInvocationID.x] : 0;
@@ -25,7 +25,7 @@ void main() {
   barrier();
 
   uint acc = 0;
-  int end = clamp(cluster_space.cluster_count - gl_WorkGroupID.x * gl_WorkGroupSize.x, 0, 256);
+  int end = clamp(int(cluster_space.cluster_count) - int(gl_WorkGroupID.x * gl_WorkGroupSize.x), 0, 256);
   for (int i = 0; i < end; i++) {
     uint value = shared_values[i];
     if (bin(value) == gl_LocalInvocationID.x) {
