@@ -14,7 +14,7 @@ shared uint shared_light_counts[gl_WorkGroupSize.x];
 shared uint shared_fragment_counts[gl_WorkGroupSize.x];
 
 uint bin(uint value) {
-  return value/4;
+  return value;
 }
 
 void main() {

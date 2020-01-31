@@ -458,25 +458,20 @@ def generate_indi_vs_encl(profiles):
 def generate_heatmap(profiles):
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
-    sample_labels = [
-        "Shading Operations",
-        "Visible Clusters",
-        "Light Indices",
+    samples_array = [
+        ("Fragments per Cluster", r"$\textrm{Bin} = \left\lfloor 8\log_2(\textrm{Count})\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,257:512]),
+        ("Lights per Cluster", r"$\textrm{Bin} = \left\lfloor\textrm{Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,512:768]),
+        ("Lights per Fragment", r"$\textrm{Bin} = \left\lfloor\textrm{Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,768:1024]),
     ]
 
     for (scene_name, scene_path) in scenes:
-        figsize = (thesis.textwidth, thesis.textwidth * 2/3)
-        fig, axes = plt.subplots(1, 3*len(tuned_projections), sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.2, 0.2)
-        )
+        for suptitle, bin_label, hist_sample_func in samples_array:
+            figsize = (thesis.textwidth, thesis.textwidth * 2/4)
+            fig, axes = plt.subplots(2, 2, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+                gridspec_kw = gridspec_box(0.8, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
+            )
+            fig.suptitle(suptitle)
 
-        samples_array = [
-            ("Frags/Clus", "log$_2$(count)", lambda samples: samples.cluster_buffers[:,0,256:512]),
-            ("Lights/Clus", "count/8", lambda samples: samples.cluster_buffers[:,0,512:768]),
-            ("Lights/Frag", "count/8", lambda samples: samples.cluster_buffers[:,0,768:1024]),
-        ]
-
-        for si, (label, xlabel, sample_func) in enumerate(samples_array):
             ortho_profile = single([
                 profile for profile in profiles
                     if scene_path == profile.configuration["global"]["scene_path"]
@@ -491,23 +486,43 @@ def generate_heatmap(profiles):
                     and tuned_projections[1] == ClusteringProjection.from_configuration(profile.configuration)
             ])
 
-            ortho_samples = sample_func(ortho_profile.samples)
-            persp_samples = sample_func(persp_profile.samples)
+            # Divide each frame by the sum.
+            ortho_hist = np.transpose(hist_sample_func(ortho_profile.samples))
+            ortho_fsum = np.sum(ortho_hist, axis = 0)
+            ortho_dist = ortho_hist/ortho_fsum
 
-            vmin = np.min(np.vstack([ortho_samples, persp_samples]))
-            vmax = np.max(np.vstack([ortho_samples, persp_samples]))
+            persp_hist = np.transpose(hist_sample_func(persp_profile.samples))
+            persp_fsum = np.sum(persp_hist, axis = 0)
+            persp_dist = persp_hist/persp_fsum
 
-            ax = axes[0, si*2]
-            im = ax.imshow(ortho_samples, aspect=1/4, interpolation='nearest', vmin=vmin, vmax=vmax)
+            vmin = np.min(np.vstack([ortho_dist, persp_dist]))
+            vmax = np.max(np.vstack([ortho_dist, persp_dist]))
 
-            ax = axes[0, si*2 + 1]
-            im = ax.imshow(persp_samples, aspect=1/4, interpolation='nearest', vmin=vmin, vmax=vmax)
+            ax = axes[0, 0]
+            ax.imshow(ortho_dist, origin='lower', vmin=vmin, vmax=vmax, cmap='hot')
+            ax.set_title(tuned_projections[0].short_name())
+            ax.set_xlim(0, len(ortho_fsum) - 1)
+            ax.set_ylabel(bin_label)
+            ax.tick_params(axis='x',bottom=False)
 
-            if si == 0:
-                ax.set_ylabel("frame")
+            ax = axes[0, 1]
+            ax.imshow(persp_dist, origin='lower', vmin=vmin, vmax=vmax, cmap='hot')
+            ax.set_title(tuned_projections[1].short_name())
+            ax.set_xlim(0, len(persp_fsum) - 1)
+            ax.tick_params(axis='x',bottom=False)
+            ax.tick_params(axis='y',left=False)
 
-            ax.set_xlabel(xlabel)
-            ax.set_title(label)
+            ax = axes[1, 0]
+            ax.plot(ortho_fsum)
+            ax.set_xlabel("Frame")
+            ax.set_ylabel("Sum")
+
+            ax = axes[1, 1]
+            ax.plot(persp_fsum)
+            ax.set_xlabel("Frame")
+            ax.tick_params(axis='y',left=False)
+
+            fig.align_ylabels(axes)
 
 profile_dir_regex = re.compile(r"^(suntem|bistro)_[ \d]{7}_(ortho|persp)_[ \d]{4}$");
 profiles_0 = load_profiles("../profiling", profile_dir_regex);
