@@ -252,25 +252,25 @@ impl ClusterResources {
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
                         let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
 
-                        let frame_dimensions = camera.parameters.frame_dims.cast::<f64>().unwrap();
-                        let pixels_per_cluster = cfg.perspective_pixels.cast::<f64>().unwrap();
-
                         let dimensions = {
-                            let Vector2 { x, y } = frame_dimensions.div_element_wise(pixels_per_cluster);
-                            let d = (frustum.dx() / x + frustum.dy() / y) * 0.5;
-                            let z = (frustum.z0 / frustum.z1).log(1.0 + d);
-                            Vector3 { x, y, z }.map(f64::ceil)
+                            let dimensions = compute_perspective_dimensions(cfg, camera);
+                            if cfg.perspective_displacement != 0.0 {
+                                let volume = compute_perspective_volume(frustum);
+                                compute_perspective_dimensions_with_volume(frustum, volume / dimensions.product())
+                            } else {
+                                dimensions
+                            }
                         };
 
                         // We adjust the frustum to make clusters line up nicely
                         // with pixels in the framebuffer..
                         let frustum = {
                             let mut frustum = frustum;
-                            if cfg.perspective_align {
+                            if cfg.perspective_displacement == 0.0 && cfg.perspective_align {
                                 let r = dimensions
                                     .truncate()
-                                    .mul_element_wise(pixels_per_cluster)
-                                    .div_element_wise(frame_dimensions);
+                                    .mul_element_wise(cfg.perspective_pixels.cast::<f64>().unwrap())
+                                    .div_element_wise(camera.parameters.frame_dims.cast::<f64>().unwrap());
                                 frustum.x1 = frustum.x0 + r.x * frustum.dx();
                                 frustum.y1 = frustum.y0 + r.y * frustum.dy();
                             }
@@ -278,7 +278,7 @@ impl ClusterResources {
                         };
 
                         ClusterComputed {
-                            dimensions: dimensions.map(f64::ceil).cast::<u32>().unwrap(),
+                            dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
                             wld_to_clu_cam: clu_ori_to_clu_cam * parameters.wld_to_clu_ori,
                             clu_cam_to_wld: parameters.clu_ori_to_wld * clu_cam_to_clu_ori,
@@ -451,11 +451,19 @@ impl ClusterResources {
                             let mut z1 = -std::f64::INFINITY;
 
                             fn min(a: f64, b: f64) -> f64 {
-                                if a < b { a } else { b }
+                                if a < b {
+                                    a
+                                } else {
+                                    b
+                                }
                             }
 
                             fn max(a: f64, b: f64) -> f64 {
-                                if a > b { a } else { b }
+                                if a > b {
+                                    a
+                                } else {
+                                    b
+                                }
                             }
 
                             // NOTE: We know that from the new origin,
@@ -472,8 +480,9 @@ impl ClusterResources {
                                 y0 = min(y0, y);
                                 y1 = max(y1, y);
 
-                                z0 = min(z0, p.z);
-                                z1 = max(z1, p.z);
+                                let z = p.z - p_max.z;
+                                z0 = min(z0, z);
+                                z1 = max(z1, z);
                             }
 
                             Frustum { x0, x1, y0, y1, z0, z1 }
@@ -492,43 +501,19 @@ impl ClusterResources {
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
                         let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
 
-                        let avg_x_per_c = {
-                            let sum: f64 = self
-                                .camera_resources_pool
-                                .used_slice()
-                                .iter()
-                                .map(|camera| {
-                                    let d = &camera.parameters.frame_dims;
-                                    let f = &camera.parameters.camera.frustum;
-                                    f.dx() / d.x as f64
-                                })
-                                .sum();
-                            sum / self.camera_resources_pool.used_slice().len() as f64
-                        } * cfg.perspective_pixels.x as f64;
+                        let cluster_volume = self
+                            .camera_resources_pool
+                            .used_slice()
+                            .iter()
+                            .map(|camera| {
+                                let dimensions = compute_perspective_dimensions(cfg, camera);
+                                let volume = compute_perspective_volume(camera.parameters.camera.frustum);
+                                volume / dimensions.product()
+                            })
+                            .sum::<f64>()
+                            / self.camera_resources_pool.used_slice().len() as f64;
 
-                        let avg_y_per_c = {
-                            let sum: f64 = self
-                                .camera_resources_pool
-                                .used_slice()
-                                .iter()
-                                .map(|camera| {
-                                    let d = &camera.parameters.frame_dims;
-                                    let f = &camera.parameters.camera.frustum;
-                                    f.dy() / d.y as f64
-                                })
-                                .sum();
-                            sum / self.camera_resources_pool.used_slice().len() as f64
-                        } * cfg.perspective_pixels.y as f64;
-
-                        let d_per_c = (avg_x_per_c + avg_y_per_c) * 0.5;
-
-                        let dimensions = Vector3 {
-                            x: frustum.dx() / avg_x_per_c,
-                            y: frustum.dy() / avg_y_per_c,
-                            z: (frustum.z0 / frustum.z1).log(1.0 + d_per_c),
-                        }
-                        .map(f64::ceil);
-
+                        let dimensions = compute_perspective_dimensions_with_volume(frustum, cluster_volume);
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
@@ -604,4 +589,54 @@ impl Displacement {
 
         Self { origin, frustum }
     }
+}
+
+fn compute_perspective_dimensions(
+    cfg: &configuration::ClusteredLightShadingConfiguration,
+    camera: &ClusterCameraResources,
+) -> Vector3<f64> {
+    let frustum = camera.parameters.camera.frustum;
+    let frame_dimensions = camera.parameters.frame_dims.cast::<f64>().unwrap();
+    let pixels_per_cluster = cfg.perspective_pixels.cast::<f64>().unwrap();
+    let Vector2 { x, y } = frame_dimensions.div_element_wise(pixels_per_cluster);
+    let d = (frustum.dx() / x + frustum.dy() / y) * 0.5;
+    let z = (frustum.z0 / frustum.z1).log(1.0 + d);
+    Vector3 { x, y, z }.map(f64::ceil)
+}
+
+fn compute_perspective_volume(frustum: Frustum<f64>) -> f64 {
+    frustum.dx() * frustum.dy() * (frustum.z1.powi(3) - frustum.z0.powi(3)) / 3.0
+}
+
+fn compute_perspective_dimensions_with_volume(frustum: Frustum<f64>, cluster_volume: f64) -> Vector3<f64> {
+    let Frustum { x0, x1, y0, y1, z0, z1 } = frustum;
+    // Solve
+    // 1. d = dx/X = dy/Y,
+    // 2. Z = ln(z0/z1)/ln(1 + d),
+    // 3. X*Y*Z = frustum_volume/cluster_volume.
+
+    let a = (3.0 * cluster_volume * (z0 / z1).ln()) / (z1.powi(3) - z0.powi(3));
+
+    // Approximate d with newton rhapson.
+
+    fn val(d: f64) -> f64 {
+        d * d * d.ln_1p()
+    }
+
+    fn der(d: f64) -> f64 {
+        d * (d / (1.0 + d) + 2.0 * d.ln_1p())
+    }
+
+    let d = (0..8).into_iter().fold(a.cbrt(), |d, _| d - (val(d) - a) / der(d));
+
+    if (val(d) - a).abs() >= 0.0000001 {
+        panic!("Failed to compute d.");
+    }
+
+    Vector3 {
+        x: (x1 - x0) / d,
+        y: (y1 - y0) / d,
+        z: (z0 / z1).ln() / d.ln_1p(),
+    }
+    .map(f64::ceil)
 }
