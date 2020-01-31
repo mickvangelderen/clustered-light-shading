@@ -48,7 +48,7 @@ path = "recording.bin"
 
 [profiling]
 # name = "not_auto_generated"
-display = true
+display = false
 record_events = true
 record_frames = false
 hide = [
@@ -91,7 +91,7 @@ orthographic_sides = { x = 4.0, y = 4.0, z = 4.0 }
 # perspective_pixels = { x = 48, y = 48 }
 perspective_pixels = { x = 64, y = 64 }
 perspective_align = true
-perspective_displacement = 0.0
+perspective_displacement = 16.0
 
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)

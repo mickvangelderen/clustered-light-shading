@@ -37,6 +37,8 @@ def group_by(values, key):
     return res
 
 def single(values):
+    if 1 != len(values):
+        print(values)
     assert 1 == len(values)
     return values[0]
 
@@ -98,6 +100,9 @@ class ClusteringProjectionOrthographic(ClusteringProjection):
         else:
             return "ortho {}x{}x{}".format(self.x, self.y, self.z)
 
+    def color_name(self):
+        return "Blues"
+
     def __as_tuple(self):
         return (self.x, self.y, self.z)
 
@@ -118,6 +123,9 @@ class ClusteringProjectionPerspective(ClusteringProjection):
         dimensions_string = "{}".format(self.x) if self.x == self.y else "{}x{}".format(self.x, self.y)
         displacement_string = "" if self.displacement == 0.0 else "{:.0f}".format(self.displacement)
         return "persp {} {}".format(dimensions_string, displacement_string)
+
+    def color_name(self):
+        return "Oranges" if self.displacement == 0.0 else "Greens"
 
     def __as_tuple(self):
         return (self.x, self.y, self.displacement)
@@ -158,6 +166,7 @@ scenes = [
 tuned_projections = [
     ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
     ClusteringProjectionPerspective(64, 64, 0.0),
+    ClusteringProjectionPerspective(64, 64, 32.0),
 ]
 
 sample_tuples = [
@@ -167,16 +176,16 @@ sample_tuples = [
 ]
 
 def generate_tune_plots(profiles):
-    technique_map = {
+    projection_map = {
         "ortho": [ClusteringProjectionOrthographic(side, side, side) for side in [1.0, 2.0, 4.0, 8.0, 16.0]],
         "persp": [ClusteringProjectionPerspective(side, side, 0.0) for side in [16, 32, 64, 96, 128]],
-        "persp_displ": [ClusteringProjectionPerspective(64.0, 64.0, displacement) for displacement in [0.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]] + [ClusteringProjectionOrthographic(4.0, 4.0, 4.0)],
+        "persp_displ": [ClusteringProjectionPerspective(64, 64, displacement) for displacement in [0.0, 1.0, 4.0, 32.0, 256.0]] + [ClusteringProjectionOrthographic(4.0, 4.0, 4.0)],
     }
 
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     for (scene_name, scene_path) in scenes:
-        for technique_group, technique_list in technique_map.items():
+        for projection_group, projection_list in projection_map.items():
             figsize = (thesis.textwidth, thesis.textwidth *2/3)
             fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', squeeze=False, figsize=figsize, dpi = thesis.dpi,
                 gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 1.5, 0.3)
@@ -200,16 +209,25 @@ def generate_tune_plots(profiles):
                     if col == 0:
                         ax.set_ylabel("{}".format(sample_label))
 
-                    color_palette = plt.cm.get_cmap('Blues', len(technique_list)+1)
+                    cmap_names, cmap_counts = np.unique([t.color_name() for t in projection_list], return_counts=True)
+                    cmaps = {
+                        n: plt.cm.get_cmap(n, c + 2) for n, c in zip(cmap_names, cmap_counts)
+                    }
+                    cmap_counts = { n: 0 for n in cmap_names }
 
-                    for color_index, projection in enumerate(technique_list):
+                    for color_index, projection in enumerate(projection_list):
                         profile = single([profile for profile in profiles
                             if profile.configuration["global"]["scene_path"] == scene_path
                             and projection == ClusteringProjection.from_configuration(profile.configuration)
                             and lighting == Lighting.from_configuration(profile.configuration)
                         ])
                         samples = profile.samples.min_gpu_samples_by_name(sample_path)
-                        ax.plot(samples, color=color_palette(color_index+1), label=projection.short_name())
+
+                        color_name = projection.color_name()
+                        cmap_counts[color_name] += 1
+                        color = cmaps[color_name](cmap_counts[color_name])
+
+                        ax.plot(samples, color=color, label=projection.short_name())
                         ax.set_xlim(0, len(samples) - 1)
 
                     if row == 0 and col == 0:
@@ -217,7 +235,7 @@ def generate_tune_plots(profiles):
 
             fig.align_ylabels(axes)
 
-            fig.savefig('../../thesis/media/tune_{}_{}.pdf'.format(technique_group, scene_name), format='pdf')
+            fig.savefig('../../thesis/media/tune_{}_{}.pdf'.format(projection_group, scene_name), format='pdf')
 
         for lighting in lightings:
             for (scene_name, frames) in [
@@ -233,7 +251,7 @@ def generate_stackplots(profiles):
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     for (scene_name, scene_path) in scenes:
-        figsize = (thesis.textwidth, thesis.textwidth * 2/3 * 2/3)
+        figsize = (thesis.textwidth, thesis.textwidth * 2/3)
         fig, axes = plt.subplots(len(tuned_projections), len(lightings), sharex = 'col', sharey = 'all', squeeze=False, figsize = figsize, dpi = thesis.dpi,
             gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
         )
@@ -429,7 +447,7 @@ def generate_indi_vs_encl(profiles):
 
                 color_palette = plt.get_cmap("tab20c")
 
-                for color_base, projection in enumerate(tuned_projections):
+                for color_base, projection in enumerate(tuned_projections[:2]):
                     for color_offset, (linestyle, grouping) in enumerate([ ("-", "Individual"), (":", "Enclosed") ]):
                         profile = single([
                             profile for profile in profiles
@@ -460,13 +478,13 @@ def generate_heatmap(profiles):
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     samples_array = [
-        ("Fragments per Cluster", r"$\textrm{Bin} = \left\lfloor 8\log_2(\textrm{Count})\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,257:512]),
-        ("Lights per Cluster", r"$\textrm{Bin} = \left\lfloor\textrm{Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,512:768]),
-        ("Lights per Fragment", r"$\textrm{Bin} = \left\lfloor\textrm{Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,768:1024]),
+        ("Fragments per Cluster", "Total Cluster Count", "Normalized Cluster Count\n" + r"$\textrm{Bin} = \left\lfloor 8\log_2(\textrm{Fragment Count})\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,257:512]),
+        ("Lights per Cluster", "Total Cluster Count", "Normalized Cluster Count\n" + r"$\textrm{Bin} = \left\lfloor\textrm{Light Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,512:768]),
+        ("Lights per Fragment", "Total Fragment Count", "Normalized Fragment Count\n" + r"$\textrm{Bin} = \left\lfloor\textrm{Light Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,768:1024]),
     ]
 
     for (scene_name, scene_path) in scenes:
-        for suptitle, bin_label, hist_sample_func in samples_array:
+        for suptitle, sum_label, bin_label, hist_sample_func in samples_array:
             figsize = (thesis.textwidth, thesis.textwidth * 2/4)
             fig, axes = plt.subplots(2, 2, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
                 gridspec_kw = gridspec_box(0.8, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
@@ -516,7 +534,7 @@ def generate_heatmap(profiles):
             ax = axes[1, 0]
             ax.plot(ortho_fsum)
             ax.set_xlabel("Frame")
-            ax.set_ylabel("Sum")
+            ax.set_ylabel(sum_label)
 
             ax = axes[1, 1]
             ax.plot(persp_fsum)
@@ -525,17 +543,17 @@ def generate_heatmap(profiles):
 
             fig.align_ylabels(axes)
 
-profile_dir_regex = re.compile(r"^(suntem|bistro)_\d{7}_(ortho|persp)_\d{4}(_\d{2})?$");
+profile_dir_regex = re.compile(r"^(suntem|bistro)_\d{7}_(ortho|persp)_\d{4}(_\d+)?$");
 profiles_0 = load_profiles("../profiling", profile_dir_regex);
 
 generate_tune_plots(profiles_0)
-# generate_stackplots(profiles_0)
-# generate_ortho_vs_persp_plots(profiles_0)
-# generate_heatmap(profiles_0)
+generate_stackplots(profiles_0)
+generate_ortho_vs_persp_plots(profiles_0)
+generate_heatmap(profiles_0)
 
 stereo_profile_dir_regex = re.compile(r"^stereo_(suntem|bistro)_\d{7}_(indi|encl)_(ortho|persp)_\d{4}$")
 stereo_profiles_0 = load_profiles("../profiling", stereo_profile_dir_regex)
 
-# generate_indi_vs_encl(stereo_profiles_0)
+generate_indi_vs_encl(stereo_profiles_0)
 
-plt.show()
+# plt.show()
