@@ -471,9 +471,9 @@ def generate_heatmap(profiles):
         )
 
         samples_array = [
-            ("Frags/Clus", "log$_2$(count)", lambda samples: samples.cluster_buffers[:,0,5:36]),
-            ("Lights/Clus", "count/8", lambda samples: samples.cluster_buffers[:,0,36:68]),
-            ("Lights/Frag", "count/8", lambda samples: samples.cluster_buffers[:,0,68:100]),
+            ("Frags/Clus", "log$_2$(count)", lambda samples: samples.cluster_buffers[:,0,256:512]),
+            ("Lights/Clus", "count/8", lambda samples: samples.cluster_buffers[:,0,512:768]),
+            ("Lights/Frag", "count/8", lambda samples: samples.cluster_buffers[:,0,768:1024]),
         ]
 
         for si, (label, xlabel, sample_func) in enumerate(samples_array):

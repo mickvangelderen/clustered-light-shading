@@ -206,9 +206,9 @@ class HistPlotWidget(QtWidgets.QWidget):
         pd = pds[self.pd_index]
 
         if self.hist_index == 0:
-            data = pd.cluster_buffers[:, 0, 5:36]
-            all_min = np.min([np.min(pd.cluster_buffers[:, 0, 5:36]) for pd in pds])
-            all_max = np.max([np.max(pd.cluster_buffers[:, 0, 5:36]) for pd in pds])
+            data = pd.cluster_buffers[:, 0, 256:512]
+            all_min = np.min([np.min(pd.cluster_buffers[:, 0, 256:512]) for pd in pds])
+            all_max = np.max([np.max(pd.cluster_buffers[:, 0, 256:512]) for pd in pds])
             x = np.arange(1, 33, dtype=np.uint64)
             y = data[self.frame_index, :]
             self._plot.setYRange(all_min, all_max)
@@ -216,9 +216,9 @@ class HistPlotWidget(QtWidgets.QWidget):
             self._plot.setLabel('bottom', 'log_2(Fragments)')
 
         elif self.hist_index == 1:
-            data = pd.cluster_buffers[:, 0, 36:68]
-            all_min = np.min([np.min(pd.cluster_buffers[:, 0, 36:68]) for pd in pds])
-            all_max = np.max([np.max(pd.cluster_buffers[:, 0, 36:68]) for pd in pds])
+            data = pd.cluster_buffers[:, 0, 512:768]
+            all_min = np.min([np.min(pd.cluster_buffers[:, 0, 512:768]) for pd in pds])
+            all_max = np.max([np.max(pd.cluster_buffers[:, 0, 512:768]) for pd in pds])
             x = 8 * np.arange(-0.5, 32.5)
             y = data[self.frame_index, :]
             self._plot.setYRange(all_min, all_max)
@@ -226,9 +226,9 @@ class HistPlotWidget(QtWidgets.QWidget):
             self._plot.setLabel('bottom', 'Light Count')
 
         elif self.hist_index == 2:
-            data = pd.cluster_buffers[:, 0, 68:100]
-            all_min = np.min([np.min(pd.cluster_buffers[:, 0, 68:100]) for pd in pds])
-            all_max = np.max([np.max(pd.cluster_buffers[:, 0, 68:100]) for pd in pds])
+            data = pd.cluster_buffers[:, 0, 768:1024]
+            all_min = np.min([np.min(pd.cluster_buffers[:, 0, 768:1024]) for pd in pds])
+            all_max = np.max([np.max(pd.cluster_buffers[:, 0, 768:1024]) for pd in pds])
             x = 8 * np.arange(-0.5, 32.5)
             y = data[self.frame_index, :]
             self._plot.setYRange(all_min, all_max)
@@ -242,7 +242,7 @@ class HistPlotWidget(QtWidgets.QWidget):
         self._light_indices_count_label.setText("{}".format(
             pd.cluster_buffers[self.frame_index, 0, 1]))
         self._fragment_count_label.setText("{}".format(
-            np.sum(pd.cluster_buffers[self.frame_index, 0, 68:100])))
+            np.sum(pd.cluster_buffers[self.frame_index, 0, 768:1024])))
 
     def set_frame_index(self, frame_index):
         self.frame_index = frame_index
