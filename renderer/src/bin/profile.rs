@@ -31,14 +31,20 @@ struct Scene {
 
 enum Technique {
     Ortho { size: f64 },
-    Persp { size: u32 },
+    Persp { size: u32, displacement: f64 },
 }
 
 impl Technique {
     pub fn name(&self) -> String {
         match *self {
             Self::Ortho { size } => format!("ortho_{:04.0}", size * 100.0),
-            Self::Persp { size } => format!("persp_{:04}", size),
+            Self::Persp { size, displacement } => {
+                if displacement == 0.0 {
+                    format!("persp_{:04}", size)
+                } else {
+                    format!("persp_{:04}_{:02.0}", size, displacement)
+                }
+            }
         }
     }
 
@@ -52,9 +58,11 @@ impl Technique {
                     z: size,
                 };
             }
-            Self::Persp { size } => {
+            Self::Persp { size, displacement } => {
                 cfg.clustered_light_shading.projection = configuration::ClusteringProjection::Perspective;
                 cfg.clustered_light_shading.perspective_pixels = Vector2 { x: size, y: size };
+                cfg.clustered_light_shading.perspective_align = displacement == 0.0;
+                cfg.clustered_light_shading.perspective_displacement = displacement;
             }
         }
     }
@@ -120,34 +128,45 @@ pub fn main() {
     let techniques: Vec<Technique> = [1.0, 2.0, 4.0, 8.0, 16.0]
         .iter()
         .map(|&n| Technique::Ortho { size: n })
-        .chain([16, 32, 64, 128].iter().map(|&n| Technique::Persp { size: n }))
+        .chain([16, 32, 64, 96, 128].iter().map(|&n| Technique::Persp {
+            size: n,
+            displacement: 0.0,
+        }))
+        .chain([1.0, 2.0, 4.0, 8.0, 16.0].iter().map(|&n| Technique::Persp {
+            size: 64,
+            displacement: n,
+        }))
         .collect();
 
-    if false {
-        for scene in scenes.iter() {
-            for lighting in lightings.iter() {
-                for technique in techniques.iter() {
-                    let name = format!("{}_{:07}_{}", scene.short_name, lighting.count, technique.name());
-                    info!("Profiling {}...", &name);
-                    let mut cfg = base_cfg.clone();
-                    cfg.global.mode = configuration::ApplicationMode::Replay;
-                    cfg.global.scene_path = scene.scene_path.clone();
-                    cfg.replay.path = scene.replay_path.clone();
-                    cfg.profiling.name = Some(PathBuf::from(name.clone()));
+    for scene in scenes.iter() {
+        for lighting in lightings.iter() {
+            for technique in techniques.iter() {
+                let name = format!("{}_{:07}_{}", scene.short_name, lighting.count, technique.name());
+                info!("Profiling {}...", &name);
+                let mut cfg = base_cfg.clone();
+                cfg.global.mode = configuration::ApplicationMode::Replay;
+                cfg.global.scene_path = scene.scene_path.clone();
+                cfg.replay.path = scene.replay_path.clone();
+                cfg.profiling.name = Some(PathBuf::from(name.clone()));
 
-                    lighting.apply(&mut cfg);
-                    technique.apply(&mut cfg);
+                lighting.apply(&mut cfg);
+                technique.apply(&mut cfg);
 
-                    let profiling_dir = PathBuf::from("profiling").join(name);
-                    let configuration_path = profiling_dir.join("configuration.toml");
-                    cfg.write(&configuration_path).unwrap();
-                    run_with_configuration(configuration_path.to_str().unwrap());
-                }
+                let profiling_dir = PathBuf::from("profiling").join(name);
+                let configuration_path = profiling_dir.join("configuration.toml");
+                cfg.write(&configuration_path).unwrap();
+                run_with_configuration(configuration_path.to_str().unwrap());
             }
         }
     }
 
-    let tuned_techniques = vec![Technique::Ortho { size: 4.0 }, Technique::Persp { size: 64 }];
+    let tuned_techniques = vec![
+        Technique::Ortho { size: 4.0 },
+        Technique::Persp {
+            size: 64,
+            displacement: 0.0,
+        },
+    ];
 
     let groupings = vec![
         ("indi", configuration::ClusteringGrouping::Individual),
