@@ -28,7 +28,7 @@ void main() {
   int end = clamp(int(cluster_space.cluster_count) - int(gl_WorkGroupID.x * gl_WorkGroupSize.x), 0, 256);
   for (int i = 0; i < end; i++) {
     uint value = shared_values[i];
-    if (bin(value) == gl_LocalInvocationID.x) {
+    if (value > 0 && bin(value) == gl_LocalInvocationID.x) {
       acc += 1;
     }
   }
