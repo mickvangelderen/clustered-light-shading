@@ -201,7 +201,7 @@ pub struct MainParameters {
     pub cluster_resources_index: Option<ClusterResourcesIndex>,
 
     pub dimensions: Vector2<i32>,
-    pub display_viewport: Viewport<i32>,
+    pub display_viewport: Option<Viewport<i32>>,
 }
 
 pub const RENDER_RANGE: Range3<f64> = Range3 {
@@ -1529,13 +1529,29 @@ impl<'s> Context<'s> {
                                 let w = self.win_size.width as i32;
                                 let h = self.win_size.height as i32;
 
-                                match eye_key {
-                                    vr::Eye::Left => {
-                                        Viewport::from_coordinates(Point2::new(0, 0), Point2::new(w / 2, h))
+                                match self.configuration.virtual_stereo.show {
+                                    configuration::VirtualStereoShow::Left => {
+                                        if let vr::Eye::Left = eye_key {
+                                            Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
+                                        } else {
+                                            None
+                                        }
                                     }
-                                    vr::Eye::Right => {
-                                        Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h))
+                                    configuration::VirtualStereoShow::Right => {
+                                        if let vr::Eye::Left = eye_key {
+                                            Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
+                                        } else {
+                                            None
+                                        }
                                     }
+                                    configuration::VirtualStereoShow::Both => Some(match eye_key {
+                                        vr::Eye::Left => {
+                                            Viewport::from_coordinates(Point2::origin(), Point2::new(w / 2, h))
+                                        }
+                                        vr::Eye::Right => {
+                                            Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h))
+                                        }
+                                    }),
                                 }
                             },
                         });
@@ -1643,7 +1659,7 @@ impl<'s> Context<'s> {
                         cluster_resources_index,
 
                         dimensions,
-                        display_viewport: Viewport::from_dimensions(dimensions),
+                        display_viewport: Some(Viewport::from_dimensions(dimensions)),
                     });
                 }
             }
@@ -1806,24 +1822,25 @@ impl<'s> Context<'s> {
                 }
             }
 
-            // Reborrow.
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
+            if let Some(viewport) = display_viewport {
+                let main_resources = &mut self.main_resources_pool[main_resources_index];
 
-            unsafe {
-                self.gl.blit_named_framebuffer(
-                    main_resources.framebuffer_name.into(),
-                    gl::FramebufferName::Default,
-                    0,
-                    0,
-                    dimensions.x,
-                    dimensions.y,
-                    display_viewport.p0().x,
-                    display_viewport.p0().y,
-                    display_viewport.p1().x,
-                    display_viewport.p1().y,
-                    gl::BlitMask::COLOR_BUFFER_BIT,
-                    gl::NEAREST,
-                );
+                unsafe {
+                    self.gl.blit_named_framebuffer(
+                        main_resources.framebuffer_name.into(),
+                        gl::FramebufferName::Default,
+                        0,
+                        0,
+                        dimensions.x,
+                        dimensions.y,
+                        viewport.p0().x,
+                        viewport.p0().y,
+                        viewport.p1().x,
+                        viewport.p1().y,
+                        gl::BlitMask::COLOR_BUFFER_BIT,
+                        gl::NEAREST,
+                    );
+                }
             }
         }
 
@@ -1835,51 +1852,53 @@ impl<'s> Context<'s> {
             self.overlay_textbox.clear();
         }
 
-        self.overlay_textbox.write(
-            &self.monospace,
-            &format!(
-                "\
-                 {}\
-                 Render Technique: {:<14} | \
-                 CLS Grouping:     {:<14} | \
-                 CLS Projection:   {:<14} | \
-                 CLS Size:         {:<14}\n\
-                 Attenuation Mode: {:<14} | \
-                 Light Count:      {:<14} | \
-                 Light Intensity:  {:<14} | \
-                 Light Radius:     {:<14}\n\
-                 ",
-                match self.configuration.global.mode {
-                    configuration::ApplicationMode::Normal => "".to_string(),
-                    configuration::ApplicationMode::Record =>
-                        format!("Frame {:>4} | Recording...\n", self.frame_index.to_usize()),
-                    configuration::ApplicationMode::Replay => format!(
-                        "Frame {:>4}/{} | Run {:>2}/{}\n",
-                        self.frame_index.to_usize(),
-                        self.replay_frame_events.as_ref().map(Vec::len).unwrap(),
-                        self.profiling_context.run_index().to_usize() + 1,
-                        self.configuration.replay.run_count,
-                    ),
-                },
-                format!("{:?}", self.shader_compiler.render_technique()),
-                format!("{:?}", self.configuration.clustered_light_shading.grouping),
-                format!("{:?}", self.configuration.clustered_light_shading.projection),
-                match self.configuration.clustered_light_shading.projection {
-                    configuration::ClusteringProjection::Perspective => {
-                        let size = self.configuration.clustered_light_shading.perspective_pixels;
-                        format!("{}x{}px", size.x, size.y)
-                    }
-                    configuration::ClusteringProjection::Orthographic => {
-                        let size = self.configuration.clustered_light_shading.orthographic_sides;
-                        format!("{:.2}x{:.2}x{:.2}m", size.x, size.y, size.z)
-                    }
-                },
-                format!("{:?}", self.shader_compiler.attenuation_mode()),
-                self.point_lights.len(),
-                self.configuration.light.attenuation.i,
-                format!("{:.2}", self.configuration.light.attenuation.r1()),
-            ),
-        );
+        if self.configuration.global.display_parameters {
+            self.overlay_textbox.write(
+                &self.monospace,
+                &format!(
+                    "\
+                    {}\
+                    Render Technique: {:<14} | \
+                    CLS Grouping:     {:<14} | \
+                    CLS Projection:   {:<14} | \
+                    CLS Size:         {:<14}\n\
+                    Attenuation Mode: {:<14} | \
+                    Light Count:      {:<14} | \
+                    Light Intensity:  {:<14} | \
+                    Light Radius:     {:<14}\n\
+                    ",
+                    match self.configuration.global.mode {
+                        configuration::ApplicationMode::Normal => "".to_string(),
+                        configuration::ApplicationMode::Record =>
+                            format!("Frame {:>4} | Recording...\n", self.frame_index.to_usize()),
+                        configuration::ApplicationMode::Replay => format!(
+                            "Frame {:>4}/{} | Run {:>2}/{}\n",
+                            self.frame_index.to_usize(),
+                            self.replay_frame_events.as_ref().map(Vec::len).unwrap(),
+                            self.profiling_context.run_index().to_usize() + 1,
+                            self.configuration.replay.run_count,
+                        ),
+                    },
+                    format!("{:?}", self.shader_compiler.render_technique()),
+                    format!("{:?}", self.configuration.clustered_light_shading.grouping),
+                    format!("{:?}", self.configuration.clustered_light_shading.projection),
+                    match self.configuration.clustered_light_shading.projection {
+                        configuration::ClusteringProjection::Perspective => {
+                            let size = self.configuration.clustered_light_shading.perspective_pixels;
+                            format!("{}x{}px", size.x, size.y)
+                        }
+                        configuration::ClusteringProjection::Orthographic => {
+                            let size = self.configuration.clustered_light_shading.orthographic_sides;
+                            format!("{:.2}x{:.2}x{:.2}m", size.x, size.y, size.z)
+                        }
+                    },
+                    format!("{:?}", self.shader_compiler.attenuation_mode()),
+                    self.point_lights.len(),
+                    self.configuration.light.attenuation.i,
+                    format!("{:.2}", self.configuration.light.attenuation.r1()),
+                ),
+            );
+        }
 
         let Self {
             ref mut overlay_textbox,

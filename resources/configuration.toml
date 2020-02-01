@@ -8,12 +8,14 @@ scene_path = "bistro/Bistro_Exterior.bin"
 # scene_path = "bistro/Bistro_Interior.bin"
 # scene_path = "sun_temple/SunTemple.bin"
 
-# sample_count = 0
+sample_count = 0
 # sample_count = 1
 # sample_count = 2
-sample_count = 4
+# sample_count = 4
 # sample_count = 8
 # sample_count = 16
+
+display_parameters = false
 
 [light]
 display = true
@@ -99,6 +101,7 @@ max_light_indices = 1048576 # 2^20 u32 4MB * (light index)
 
 [virtual_stereo]
 enabled = false
+show = "Left"
 l_mat = [
   [1.0, 0.0, 0.0, 0.0],
   [0.0, 1.0, 0.0, 0.0],

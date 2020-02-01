@@ -72,6 +72,7 @@ pub struct GlobalConfiguration {
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
+    pub display_parameters: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -102,8 +103,16 @@ pub struct RainConfiguration {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum VirtualStereoShow {
+    Left,
+    Right,
+    Both,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct VirtualStereoConfiguration {
     pub enabled: bool,
+    pub show: VirtualStereoShow,
     pub l_mat: [[f64; 4]; 4],
     pub l_tan: [f64; 4],
     pub r_mat: [[f64; 4]; 4],
