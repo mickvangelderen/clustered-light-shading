@@ -68,7 +68,6 @@ pub struct ReplayConfiguration {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GlobalConfiguration {
-    pub diffuse_srgb: bool,
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
