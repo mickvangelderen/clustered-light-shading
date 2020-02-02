@@ -46,21 +46,21 @@ void main() {
 
   vec3 n = texture(nor_sampler, dir).rgb;
   vec3 kd = texture(tint_sampler, dir).rgb;
-  vec3 new_tint = l.i*max(0.0, dot(-dir, n))*l.tint*kd;
+  vec3 new_tint = l.i*max(0.0, dot(-dir, n))*l.tint*kd*0.1;
   float new_i = max(max(new_tint.x, new_tint.y), new_tint.z);
-  float new_i0 = l.i0/4.0;
+  float new_i0 = l.i0;
   float new_r1 = sqrt(new_i/new_i0);
 
   if (new_r1 < l.r0) {
     return;
   }
 
-  light_buffer.point_lights[i].position = l.position + d * dir - 0.3*n;
-  light_buffer.point_lights[i]._pad1 = d;
-  // light_buffer.point_lights[i].normal = u8x3_to_u32(uvec3(clamp(n * 128.0 + 128.0, 0.0, 255.0)));
+  light_buffer.point_lights[i].position = l.position + d * dir + 0.0*n;
+  light_buffer.point_lights[i].normal = u8x3_to_u32(uvec3(clamp(n * 128.0 + 128.0, 0.0, 255.0)));
   light_buffer.point_lights[i].i = new_i;
   light_buffer.point_lights[i].i0 = new_i0;
   light_buffer.point_lights[i].r0 = l.r0;
   light_buffer.point_lights[i].r1 = new_r1;
-  light_buffer.point_lights[i].tint = new_tint;
+  light_buffer.point_lights[i].tint = new_tint/new_i;
+  atomicAdd(light_buffer.effective_virtual_light_count, 1);
 }
