@@ -1,5 +1,4 @@
 [global]
-diffuse_srgb = true
 # mode = "Normal"
 # mode = "Record"
 mode = "Replay"
