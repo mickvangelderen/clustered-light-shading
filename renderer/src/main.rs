@@ -75,6 +75,7 @@ use glutin_ext::*;
 use keyboard::*;
 use openvr as vr;
 use renderer::camera;
+use renderer::plane::Plane3;
 use renderer::profiling::*;
 use renderer::*;
 use std::fs;
@@ -328,6 +329,34 @@ pub struct MainContext {
     pub cluster_resources_pool: ClusterResourcesPool,
     pub main_resources_pool: MainResourcesPool,
     pub point_lights: Vec<light::PointLight>,
+}
+
+#[derive(Debug)]
+pub struct MirrorResources {
+    pub vertices: [Point3<f64>; 4],
+    pub plane: Plane3<f64>,
+    pub from_parent: Matrix4<f64>,
+    pub to_parent: Matrix4<f64>,
+}
+
+impl MirrorResources {
+    pub fn compute(configuration: &configuration::MirrorConfiguration) -> Self {
+        let [p0, p1, p2] = configuration.vertices;
+        let e01 = p1 - p0;
+        let e02 = p2 - p0;
+        let vertices = [p0, p1, p2, p0 + (p2 - p1)];
+        let normal = Vector3::cross(e01, e02).normalize();
+        let distance = Vector3::dot(p0.to_vec(), normal);
+        let plane = Plane3 { normal, distance };
+        let from_parent = plane.reflection_matrix();
+        let to_parent = from_parent.invert().unwrap();
+        Self {
+            vertices,
+            plane,
+            from_parent,
+            to_parent,
+          }
+    }
 }
 
 impl MainContext {
@@ -602,6 +631,7 @@ pub struct Context<'s> {
     pub cluster_resources_pool: &'s mut ClusterResourcesPool,
     pub main_resources_pool: &'s mut MainResourcesPool,
     pub point_lights: &'s mut Vec<light::PointLight>,
+    pub mirror_resources: Option<MirrorResources>,
 
     pub rng: StdRng,
     pub overlay_textbox: TextBox,
@@ -733,6 +763,7 @@ impl<'s> Context<'s> {
             cluster_resources_pool,
             main_resources_pool,
             point_lights,
+            mirror_resources: None,
 
             rng: SeedableRng::from_seed(SEED),
             running: true,
@@ -1240,6 +1271,11 @@ impl<'s> Context<'s> {
         self.cluster_resources_pool.reset();
         self.main_resources_pool.reset();
         self.resources.draw_resources_pool.reset();
+        self.mirror_resources = None;
+
+        if self.configuration.mirror.enabled {
+           self.mirror_resources = Some(MirrorResources::compute(&self.configuration.mirror));
+        }
 
         {
             self.point_lights.clear();
@@ -1393,9 +1429,18 @@ impl<'s> Context<'s> {
 
         impl C1 {
             #[inline]
-            pub fn new(camera: camera::Camera, bdy_to_hmd: Matrix4<f64>, hmd_to_bdy: Matrix4<f64>) -> Self {
-                let bdy_to_wld = camera.transform.pos_to_parent().cast::<f64>().unwrap();
-                let wld_to_bdy = camera.transform.pos_from_parent().cast::<f64>().unwrap();
+            pub fn new(
+                camera: camera::Camera,
+                bdy_to_hmd: Matrix4<f64>,
+                hmd_to_bdy: Matrix4<f64>,
+                reflection_plane: Plane3<f64>,
+            ) -> Self {
+                let flip = Matrix4::from_diagonal(Vector4::new(1.0, -1.0, 1.0, 1.0));
+                let wld_to_mir = flip * reflection_plane.reflection_matrix();
+                let mir_to_wld = wld_to_mir.invert().unwrap();
+
+                let bdy_to_wld = wld_to_mir * camera.transform.pos_to_parent().cast::<f64>().unwrap();
+                let wld_to_bdy = camera.transform.pos_from_parent().cast::<f64>().unwrap() * mir_to_wld;
                 let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
                 let wld_to_hmd = bdy_to_hmd * wld_to_bdy;
                 Self {
@@ -1427,8 +1472,18 @@ impl<'s> Context<'s> {
                 bdy_to_hmd,
                 eyes,
             }) => {
-                let render_c1 = C1::new(self.transition_camera.current_camera, hmd_to_bdy, bdy_to_hmd);
-                let cluster_c1 = C1::new(self.cameras.main.current_to_camera(), hmd_to_bdy, bdy_to_hmd);
+                let render_c1 = C1::new(
+                    self.transition_camera.current_camera,
+                    hmd_to_bdy,
+                    bdy_to_hmd,
+                    self.mirror_resources.as_ref().unwrap().plane,
+                );
+                let cluster_c1 = C1::new(
+                    self.cameras.main.current_to_camera(),
+                    hmd_to_bdy,
+                    bdy_to_hmd,
+                    self.mirror_resources.as_ref().unwrap().plane,
+                );
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping
@@ -1564,11 +1619,13 @@ impl<'s> Context<'s> {
                     self.transition_camera.current_camera,
                     Matrix4::identity(),
                     Matrix4::identity(),
+                    self.mirror_resources.as_ref().unwrap().plane,
                 );
                 let cluster_c1 = C1::new(
                     self.cameras.main.current_to_camera(),
                     Matrix4::identity(),
                     Matrix4::identity(),
+                    self.mirror_resources.as_ref().unwrap().plane,
                 );
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
