@@ -19,6 +19,7 @@ impl Attenuation {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct Configuration {
     pub global: GlobalConfiguration,
+    pub mirror: MirrorConfiguration,
     pub light: LightConfiguration,
     pub rain: RainConfiguration,
     pub window: crate::WindowConfiguration,
@@ -72,8 +73,12 @@ pub struct GlobalConfiguration {
     pub scene_path: PathBuf,
     pub sample_count: u32,
     pub display_parameters: bool,
-    pub reflection_normal: Vector3<f64>,
-    pub reflection_distance: f64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct MirrorConfiguration {
+    pub enabled: bool,
+    pub vertices: [Point3<f64>; 3],
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
