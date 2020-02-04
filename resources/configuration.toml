@@ -13,6 +13,8 @@ sample_count = 0
 # sample_count = 4
 # sample_count = 8
 # sample_count = 16
+reflection_normal = { x = 0.0, y = 1.0, z = 0.0 }
+reflection_distance = 0.0
 
 display_parameters = false
 

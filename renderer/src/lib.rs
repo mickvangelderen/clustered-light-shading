@@ -7,6 +7,7 @@ mod create_window;
 mod flatten;
 pub mod range;
 pub mod frustum;
+pub mod plane;
 pub mod profiling;
 pub mod profiling_by_value;
 pub mod scene_file;
