@@ -355,6 +355,7 @@ pub struct MainContext {
     pub cluster_resources_pool: ClusterResourcesPool,
     pub main_resources_pool: MainResourcesPool,
     pub point_lights: Vec<light::PointLight>,
+    pub world_transforms: resources::WorldTransforms,
 }
 
 #[derive(Debug)]
@@ -609,6 +610,7 @@ impl MainContext {
             cluster_resources_pool: ClusterResourcesPool::new(),
             main_resources_pool: MainResourcesPool::new(),
             point_lights: Vec::new(),
+            world_transforms: resources::WorldTransforms::new(&mut profiling_context),
             profiling_context,
         }
     }
@@ -657,6 +659,7 @@ pub struct Context<'s> {
     pub cluster_resources_pool: &'s mut ClusterResourcesPool,
     pub main_resources_pool: &'s mut MainResourcesPool,
     pub point_lights: &'s mut Vec<light::PointLight>,
+    pub world_transforms: &'s mut resources::WorldTransforms,
     pub mirror_resources: Option<MirrorResources>,
 
     pub rng: StdRng,
@@ -724,6 +727,7 @@ impl<'s> Context<'s> {
             ref mut light_resources,
             ref mut cluster_resources_pool,
             ref mut main_resources_pool,
+            ref mut world_transforms,
             ref mut point_lights,
             ..
         } = *context;
@@ -789,6 +793,7 @@ impl<'s> Context<'s> {
             cluster_resources_pool,
             main_resources_pool,
             point_lights,
+            world_transforms,
             mirror_resources: None,
 
             rng: SeedableRng::from_seed(SEED),
@@ -1334,6 +1339,9 @@ impl<'s> Context<'s> {
         self.resources.draw_resources_pool.reset();
         self.mirror_resources = None;
 
+        self.world_transforms
+            .recompute(&self.gl, &mut self.profiling_context, &self.resources.scene_file);
+
         if self.configuration.mirror.enabled {
             self.mirror_resources = Some(MirrorResources::compute(&self.configuration.mirror));
         }
@@ -1432,10 +1440,9 @@ impl<'s> Context<'s> {
                     },
                     Matrix4::identity(),
                     Matrix4::identity(),
-                    &self.resources.scene_file.instances,
+                    &self.world_transforms,
                     &self.resources.materials,
-                    &self.resources.scene_file.transforms,
-                    &self.resources.scene_file.mesh_descriptions,
+                    &self.resources.scene_file,
                 );
 
                 self.gl
@@ -1764,10 +1771,9 @@ impl<'s> Context<'s> {
                 } else {
                     Matrix4::identity()
                 },
-                &self.resources.scene_file.instances,
+                &self.world_transforms,
                 &self.resources.materials,
-                &self.resources.scene_file.transforms,
-                &self.resources.scene_file.mesh_descriptions,
+                &self.resources.scene_file,
             );
 
             // Ensure light resources are bound.
@@ -2249,7 +2255,8 @@ fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f6
     FrustumTangents::from_fov_dimensions(
         camera.transform.fovy.cast::<f64>().unwrap(),
         dimensions.cast::<f64>().unwrap(),
-    ).to_frustum(camera.properties.z0 as f64, camera.properties.z1 as f64)
+    )
+    .to_frustum(camera.properties.z0 as f64, camera.properties.z1 as f64)
 }
 
 fn stereo_frustum(camera: &camera::Camera, tangents: FrustumTangents) -> Frustum<f64> {
