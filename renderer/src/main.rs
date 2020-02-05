@@ -1615,7 +1615,7 @@ impl<'s> Context<'s> {
                                             Viewport::from_coordinates(Point2::origin(), Point2::new(w / 2, h))
                                         }
                                         vr::Eye::Right => {
-                                            Viewport::from_coordinates(Point2::new(w / 2, 0), Point2::new(w, h))
+                                            Viewport::from_coordinates(Point2::new(w - w / 2, 0), Point2::new(w, h))
                                         }
                                     }),
                                 }
