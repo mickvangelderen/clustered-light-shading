@@ -160,16 +160,13 @@ pub trait ArrayExt {
 
 impl <S> ArrayExt for Vector3<S> where S: PartialOrd {
     fn dominant_axis(self) -> usize {
-        let axis = if self.x > self.y {
-            0
-        } else {
-            1
-        };
-        if self.z > self[axis] {
-            2
-        } else {
-            axis
+        let mut dominant_axis = 0;
+        for axis in 1..3 {
+            if self[axis] > self[dominant_axis] {
+                dominant_axis = axis
+            }
         }
+        dominant_axis
     }
 }
 

@@ -26,18 +26,54 @@ pub struct Vertex {
     pub pos_in_tex: [FiniteF32; 2],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct Sphere3<T> {
     pub p: Point3<T>,
     pub r: T,
 }
 
-#[derive(Debug)]
+impl<T> Sphere3<T> where T: num_traits::Float {
+    #[inline]
+    pub fn cast<U>(self) -> Sphere3<U> where U: num_traits::Float {
+        Sphere3 {
+            p: self.p.cast().unwrap(),
+            r: num_traits::cast(self.r).unwrap(),
+        }
+    }
+
+    #[inline]
+    pub fn try_cast<U>(self) -> Option<Sphere3<U>> where U: num_traits::Float {
+        Some(Sphere3 {
+            p: self.p.cast()?,
+            r: num_traits::cast(self.r)?,
+        })
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 #[repr(C)]
 pub struct Box3<T> {
     pub p0: Point3<T>,
     pub p1: Point3<T>,
+}
+
+impl<T> Box3<T> where T: num_traits::Float {
+    #[inline]
+    pub fn cast<U>(self) -> Box3<U> where U: num_traits::Float {
+        Box3 {
+            p0: self.p0.cast().unwrap(),
+            p1: self.p1.cast().unwrap(),
+        }
+    }
+
+    #[inline]
+    pub fn try_cast<U>(self) -> Option<Box3<U>> where U: num_traits::Float {
+        Some(Box3 {
+            p0: self.p0.cast()?,
+            p1: self.p1.cast()?,
+        })
+    }
 }
 
 #[derive(Debug)]

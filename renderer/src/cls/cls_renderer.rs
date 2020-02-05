@@ -166,10 +166,9 @@ impl Context<'_> {
                 },
                 camera_parameters.camera.wld_to_clp,
                 cluster_resources.computed.wld_to_clu_cam,
-                &self.resources.scene_file.instances,
+                &self.world_transforms,
                 &self.resources.materials,
-                &self.resources.scene_file.transforms,
-                &self.resources.scene_file.mesh_descriptions,
+                &self.resources.scene_file,
             );
 
             let main_resources_index = self.main_resources_pool.next_unused(

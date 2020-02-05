@@ -524,6 +524,58 @@ impl Resources {
     }
 }
 
+fn clear_and_reserve<T>(v: &mut Vec<T>, n: usize) {
+    v.clear();
+    if v.capacity() < n {
+        v.reserve(n - v.capacity())
+    }
+}
+
+#[derive(Debug)]
+pub struct WorldTransforms {
+    pub obj_to_wld: Vec<Matrix4<f64>>,
+    pub wld_to_obj: Vec<Matrix4<f64>>,
+    pub compute_world_transforms_profiler: profiling::SampleIndex,
+}
+
+impl WorldTransforms {
+    pub fn new(profiling_context: &mut ProfilingContext) -> Self {
+        Self {
+            obj_to_wld: Default::default(),
+            wld_to_obj: Default::default(),
+            compute_world_transforms_profiler: profiling_context.add_sample("world transforms"),
+        }
+    }
+
+    pub fn recompute(
+        &mut self,
+        gl: &gl::Gl,
+        profiling_context: &mut ProfilingContext,
+        scene_file: &scene_file::SceneFile,
+    ) {
+        let profiler_index = profiling_context.start(gl, self.compute_world_transforms_profiler);
+
+        let scene_file::SceneFile {
+            ref instances,
+            ref transforms,
+            ..
+        } = *scene_file;
+
+        clear_and_reserve(&mut self.obj_to_wld, instances.len());
+        self.obj_to_wld.extend(instances.iter().map(|instance| {
+            let transform = &transforms[instance.transform_index as usize];
+            let obj_to_wld = transform.to_parent();
+            obj_to_wld
+        }));
+
+        clear_and_reserve(&mut self.wld_to_obj, instances.len());
+        self.wld_to_obj
+            .extend(self.obj_to_wld.iter().map(|obj_to_wld| obj_to_wld.invert().unwrap()));
+
+        profiling_context.stop(gl, profiler_index);
+    }
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct InstanceMatrices {
@@ -531,35 +583,6 @@ pub struct InstanceMatrices {
     pub obj_to_clu_cam: Matrix4<f32>,
     pub obj_to_lgt: Matrix4<f32>,
     pub obj_to_lgt_inv_tra: Matrix4<f32>,
-}
-
-pub fn compute_instance_matrices(
-    wld_to_ren_clp: Matrix4<f64>,
-    wld_to_clu_cam: Matrix4<f64>,
-    instances: &[scene_file::Instance],
-    transforms: &[scene_file::Transform],
-) -> Vec<InstanceMatrices> {
-    let instance_matrices: Vec<InstanceMatrices> = instances
-        .iter()
-        .map(|instance| {
-            let transform = &transforms[instance.transform_index as usize];
-            let obj_to_wld = transform.to_parent();
-            InstanceMatrices {
-                obj_to_ren_clp: (wld_to_ren_clp * obj_to_wld).cast().unwrap(),
-                obj_to_clu_cam: (wld_to_clu_cam * obj_to_wld).cast().unwrap(),
-                obj_to_lgt: obj_to_wld.cast().unwrap(),
-                obj_to_lgt_inv_tra: (obj_to_wld.invert().unwrap().transpose()).cast().unwrap(),
-            }
-        })
-        .collect();
-
-    instance_matrices
-}
-
-pub struct DrawCommandResources {
-    pub counts: Vec<usize>,
-    pub offsets: Vec<usize>,
-    pub buffer: Vec<DrawCommand>,
 }
 
 pub enum ProjectionKind {
@@ -601,116 +624,6 @@ fn intersect_sphere_box(sphere: scene_file::Sphere3<f64>, box3: scene_file::Box3
     r_sq_acc < sphere.r * sphere.r
 }
 
-pub fn compute_draw_commands(
-    culling_camera: CullingCamera,
-    instances: &[scene_file::Instance],
-    transforms: &[scene_file::Transform],
-    materials: &[Material],
-    mesh_descriptions: &[scene_file::MeshDescription],
-) -> DrawCommandResources {
-    let visible_instance_indices: Vec<usize> = instances
-        .iter()
-        .enumerate()
-        .filter_map(|(instance_index, instance)| {
-            let transform = &transforms[instance.transform_index as usize];
-            let obj_to_wld = transform.to_parent();
-
-            let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
-            let p_obj = mesh_description.bounding_sphere.p.cast::<f64>().unwrap();
-            let r_obj = Vector3::new(
-                mesh_description.bounding_sphere.r as f64,
-                mesh_description.bounding_sphere.r as f64,
-                mesh_description.bounding_sphere.r as f64,
-            );
-
-            let p_cam = culling_camera
-                .wld_to_cam
-                .transform_point(obj_to_wld.transform_point(p_obj));
-            let r_cam = culling_camera
-                .wld_to_cam
-                .transform_vector(obj_to_wld.transform_vector(r_obj)).map(f64::abs);
-
-            let sphere = scene_file::Sphere3 {
-                p: p_cam,
-                r: r_cam[r_cam.dominant_axis()],
-            };
-            if match culling_camera.projection_kind {
-                ProjectionKind::Orthographic => intersect_sphere_box(sphere, {
-                    let Frustum { x0, x1, y0, y1, z0, z1 } = culling_camera.frustum;
-                    scene_file::Box3 {
-                        p0: Point3::new(x0, y0, z0),
-                        p1: Point3::new(x1, y1, z1),
-                    }
-                }),
-
-                ProjectionKind::Perspective => intersect_sphere_enlarged_frustum(sphere, culling_camera.frustum),
-            } {
-                Some(instance_index)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Prefix sum draw counts per material.
-    let mut counts: Vec<usize> =
-        visible_instance_indices
-            .iter()
-            .fold(materials.iter().map(|_| 0).collect(), |mut counts, &instance_index| {
-                let instance = &instances[instance_index];
-                counts[instance.material_index as usize] += 1;
-                counts
-            });
-
-    let offsets: Vec<usize> = counts
-        .iter()
-        .scan(0, |offset, &count| {
-            let result = Some(*offset);
-            *offset += count;
-            result
-        })
-        .collect();
-
-    // Clear counts and initialize buffer.
-
-    for draw_count in counts.iter_mut() {
-        *draw_count = 0;
-    }
-
-    let mut buffer: Vec<DrawCommand> = std::iter::repeat(DrawCommand {
-        count: 0,
-        prim_count: 0,
-        first_index: 0,
-        base_vertex: 0,
-        base_instance: 0,
-    })
-    .take(visible_instance_indices.len())
-    .collect();
-
-    // Fill out the buffer.
-
-    for &instance_index in visible_instance_indices.iter() {
-        let instance = &instances[instance_index];
-        let material_index = instance.material_index as usize;
-        let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
-        let command_index = offsets[material_index] + counts[material_index];
-        buffer[command_index] = DrawCommand {
-            count: mesh_description.element_count(),
-            prim_count: 1,
-            first_index: mesh_description.element_offset(),
-            base_vertex: mesh_description.vertex_offset,
-            base_instance: instance_index as u32,
-        };
-        counts[material_index] += 1;
-    }
-
-    DrawCommandResources {
-        counts,
-        offsets,
-        buffer,
-    }
-}
-
 pub struct DrawResources {
     // GPU
     pub instance_matrices_buffer: gl::BufferName,
@@ -750,16 +663,34 @@ impl DrawResources {
         culling_camera: CullingCamera,
         wld_to_ren_clp: Matrix4<f64>,
         wld_to_clu_cam: Matrix4<f64>,
-        instances: &[scene_file::Instance],
+        world_transforms: &WorldTransforms,
         materials: &[Material],
-        transforms: &[scene_file::Transform],
-        mesh_descriptions: &[scene_file::MeshDescription],
+        scene_file: &scene_file::SceneFile,
     ) {
+        let scene_file::SceneFile {
+            ref instances,
+            ref mesh_descriptions,
+            ..
+        } = *scene_file;
+
         {
             let profiler_index = profiling_context.start(gl, self.compute_instance_matrices_profiler);
 
-            self.instance_matrices_data =
-                compute_instance_matrices(wld_to_ren_clp, wld_to_clu_cam, instances, transforms);
+            let instance_count = instances.len();
+
+            clear_and_reserve(&mut self.instance_matrices_data, instance_count);
+            self.instance_matrices_data
+                .extend((0..instance_count).into_iter().map(|instance_index| {
+                    let obj_to_wld = world_transforms.obj_to_wld[instance_index];
+                    let wld_to_obj = world_transforms.wld_to_obj[instance_index];
+                    InstanceMatrices {
+                        obj_to_ren_clp: (wld_to_ren_clp * obj_to_wld).cast().unwrap(),
+                        obj_to_clu_cam: (wld_to_clu_cam * obj_to_wld).cast().unwrap(),
+                        obj_to_lgt: obj_to_wld.cast().unwrap(),
+                        obj_to_lgt_inv_tra: wld_to_obj.transpose().cast().unwrap(),
+                    }
+                }));
+
             unsafe {
                 gl.named_buffer_data(
                     self.instance_matrices_buffer,
@@ -774,14 +705,96 @@ impl DrawResources {
         {
             let profiler_index = profiling_context.start(gl, self.compute_draw_commands_profiler);
 
-            let DrawCommandResources {
-                counts,
-                offsets,
-                buffer,
-            } = compute_draw_commands(culling_camera, instances, transforms, materials, mesh_descriptions);
-            self.draw_command_data = buffer;
-            self.draw_counts = counts;
-            self.draw_offsets = offsets;
+            let visible_instance_indices: Vec<usize> = instances
+                .iter()
+                .enumerate()
+                .filter_map(|(instance_index, instance)| {
+                    let obj_to_cam = culling_camera.wld_to_cam * world_transforms.obj_to_wld[instance_index];
+
+                    let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
+                    let sphere_obj = mesh_description.bounding_sphere.cast::<f64>();
+
+                    let sphere_cam = scene_file::Sphere3 {
+                        p: obj_to_cam.transform_point(sphere_obj.p),
+                        r: {
+                            let r_cam = obj_to_cam
+                                .transform_vector(Vector3::from_value(sphere_obj.r))
+                                .map(f64::abs);
+                            r_cam[r_cam.dominant_axis()]
+                        },
+                    };
+
+                    if match culling_camera.projection_kind {
+                        ProjectionKind::Orthographic => intersect_sphere_box(sphere_cam, {
+                            let Frustum { x0, x1, y0, y1, z0, z1 } = culling_camera.frustum;
+                            scene_file::Box3 {
+                                p0: Point3::new(x0, y0, z0),
+                                p1: Point3::new(x1, y1, z1),
+                            }
+                        }),
+
+                        ProjectionKind::Perspective => {
+                            intersect_sphere_enlarged_frustum(sphere_cam, culling_camera.frustum)
+                        }
+                    } {
+                        Some(instance_index)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Prefix sum draw counts per material.
+            clear_and_reserve(&mut self.draw_counts, materials.len());
+            self.draw_counts.extend(std::iter::repeat(0).take(materials.len()));
+
+            for &instance_index in visible_instance_indices.iter() {
+                let material_index = instances[instance_index].material_index;
+                self.draw_counts[material_index as usize] += 1;
+            }
+
+            clear_and_reserve(&mut self.draw_offsets, materials.len());
+            self.draw_offsets
+                .extend(self.draw_counts.iter().scan(0, |offset, &count| {
+                    let result = Some(*offset);
+                    *offset += count;
+                    result
+                }));
+
+            // Clear counts and initialize draw command buffer.
+            for draw_count in self.draw_counts.iter_mut() {
+                *draw_count = 0;
+            }
+
+            clear_and_reserve(&mut self.draw_command_data, visible_instance_indices.len());
+            self.draw_command_data.extend(
+                std::iter::repeat(DrawCommand {
+                    count: 0,
+                    prim_count: 0,
+                    first_index: 0,
+                    base_vertex: 0,
+                    base_instance: 0,
+                })
+                .take(visible_instance_indices.len()),
+            );
+
+            // Fill out the buffer.
+
+            for &instance_index in visible_instance_indices.iter() {
+                let instance = &instances[instance_index];
+                let material_index = instance.material_index as usize;
+                let mesh_description = &mesh_descriptions[instance.mesh_index as usize];
+                let command_index = self.draw_offsets[material_index] + self.draw_counts[material_index];
+                self.draw_command_data[command_index] = DrawCommand {
+                    count: mesh_description.element_count(),
+                    prim_count: 1,
+                    first_index: mesh_description.element_offset(),
+                    base_vertex: mesh_description.vertex_offset,
+                    base_instance: instance_index as u32,
+                };
+                self.draw_counts[material_index] += 1;
+            }
+
             unsafe {
                 gl.named_buffer_data(
                     self.draw_command_buffer,
