@@ -10,7 +10,6 @@ pub struct MainResources {
     pub framebuffer_name: gl::NonDefaultFramebufferName,
     pub color_texture: gl::TextureName,
     pub depth_texture: gl::TextureName,
-    pub cluster_depth_texture: Option<gl::TextureName>,
 
     // Profiling
     pub depth_profiler: SampleIndex,
@@ -68,27 +67,10 @@ impl MainResources {
 
             let depth_texture = create_texture(gl, DEPTH_FORMAT, dimensions, sample_count);
             let color_texture = create_texture(gl, COLOR_FORMAT, dimensions, sample_count);
-            let cluster_depth_texture = if sample_count > 0 {
-                Some(create_texture(gl, gl::R32F, dimensions, sample_count))
-            } else {
-                None
-            };
 
             gl.named_framebuffer_texture(framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture, 0);
             gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, color_texture, 0);
-            if let Some(cluster_depth_texture) = cluster_depth_texture {
-                gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT1, cluster_depth_texture, 0);
-            }
-
-            let c01 = [gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()];
-            let c0 = [gl::COLOR_ATTACHMENT0.into()];
-            gl.named_framebuffer_draw_buffers(
-                framebuffer_name,
-                match cluster_depth_texture {
-                    Some(_) => &c01,
-                    None => &c0,
-                },
-            );
+            gl.named_framebuffer_draw_buffers(framebuffer_name, &[gl::COLOR_ATTACHMENT0.into()]);
 
             MainResources {
                 dimensions,
@@ -97,7 +79,6 @@ impl MainResources {
                 framebuffer_name,
                 color_texture,
                 depth_texture,
-                cluster_depth_texture,
 
                 depth_profiler: profiling_context.add_sample("depth"),
                 depth_opaque_profiler: profiling_context.add_sample("opaque"),
@@ -126,36 +107,18 @@ impl MainResources {
                 let framebuffer_name = gl.create_framebuffer();
                 let depth_texture = create_texture(gl, DEPTH_FORMAT, dimensions, sample_count);
                 let color_texture = create_texture(gl, COLOR_FORMAT, dimensions, sample_count);
-                let cluster_depth_texture = if sample_count > 0 {
-                    Some(create_texture(gl, gl::R32F, dimensions, sample_count))
-                } else {
-                    None
-                };
 
                 gl.named_framebuffer_texture(framebuffer_name, gl::DEPTH_STENCIL_ATTACHMENT, depth_texture, 0);
                 gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT0, color_texture, 0);
-                if let Some(cluster_depth_texture) = cluster_depth_texture {
-                    gl.named_framebuffer_texture(framebuffer_name, gl::COLOR_ATTACHMENT1, cluster_depth_texture, 0);
-                }
 
-                let c01 = [gl::COLOR_ATTACHMENT0.into(), gl::COLOR_ATTACHMENT1.into()];
-                let c0 = [gl::COLOR_ATTACHMENT0.into()];
                 gl.named_framebuffer_draw_buffers(
                     framebuffer_name,
-                    match cluster_depth_texture {
-                        Some(_) => &c01,
-                        None => &c0,
-                    },
+                    &[gl::COLOR_ATTACHMENT0.into()],
                 );
 
                 gl.delete_framebuffer(std::mem::replace(&mut self.framebuffer_name, framebuffer_name));
                 gl.delete_texture(std::mem::replace(&mut self.depth_texture, depth_texture));
                 gl.delete_texture(std::mem::replace(&mut self.color_texture, color_texture));
-                if let Some(cluster_depth_texture) =
-                    std::mem::replace(&mut self.cluster_depth_texture, cluster_depth_texture)
-                {
-                    gl.delete_texture(cluster_depth_texture);
-                }
             }
         }
     }
@@ -165,9 +128,6 @@ impl MainResources {
             gl.delete_framebuffer(self.framebuffer_name);
             gl.delete_texture(self.depth_texture);
             gl.delete_texture(self.color_texture);
-            if let Some(cluster_depth_texture) = std::mem::replace(&mut self.cluster_depth_texture, None) {
-                gl.delete_texture(cluster_depth_texture);
-            }
         }
     }
 }
