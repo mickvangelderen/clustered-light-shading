@@ -156,6 +156,32 @@ impl From<vr::RawProjection> for FrustumTangents {
     }
 }
 
+impl FrustumTangents {
+    #[inline]
+    pub fn from_fov_dimensions(fov: Rad<f64>, dimensions: Vector2<f64>) -> Self {
+        let tpp = fov.tan()
+            / if dimensions.x > dimensions.y {
+                dimensions.x
+            } else {
+                dimensions.y
+            };
+        let x1 = dimensions.x as f64 * tpp;
+        let y1 = dimensions.y as f64 * tpp;
+        Self {
+            x0: -x1,
+            x1,
+            y0: -y1,
+            y1,
+        }
+    }
+
+    #[inline]
+    pub fn to_frustum(&self, z0: f64, z1: f64) -> Frustum<f64> {
+        let Self { x0, x1, y0, y1 } = *self;
+        Frustum { x0, x1, y0, y1, z0, z1 }
+    }
+}
+
 #[derive(Debug)]
 pub struct CameraParameters {
     pub frustum: Frustum<f64>,
@@ -355,7 +381,7 @@ impl MirrorResources {
             plane,
             from_parent,
             to_parent,
-          }
+        }
     }
 }
 
@@ -1153,18 +1179,61 @@ impl<'s> Context<'s> {
         self.profiling_context.begin_frame(self.gl, self.frame_index);
         let profiler_index = self.profiling_context.start(self.gl, self.sample_indices.frame);
 
+        #[derive(Debug, Copy, Clone)]
+        pub struct HmdCam {
+            hmd_to_cam: Matrix4<f64>,
+            cam_to_hmd: Matrix4<f64>,
+        }
+
+        impl HmdCam {
+            pub fn from_cam_to_hmd(cam_to_hmd: Matrix4<f64>) -> Self {
+                Self {
+                    hmd_to_cam: cam_to_hmd.invert().unwrap(),
+                    cam_to_hmd,
+                }
+            }
+        }
+
         #[derive(Copy, Clone)]
         pub struct EyeData {
             tangents: FrustumTangents,
-            cam_to_hmd: Matrix4<f64>,
-            hmd_to_cam: Matrix4<f64>,
+            hmd_cam: HmdCam,
+        }
+
+        #[derive(Debug, Copy, Clone)]
+        pub struct BdyHmd {
+            bdy_to_hmd: Matrix4<f64>,
+            hmd_to_bdy: Matrix4<f64>,
+        }
+
+        impl BdyHmd {
+            pub fn from_hmd_to_bdy(hmd_to_bdy: Matrix4<f64>) -> Self {
+                Self {
+                    bdy_to_hmd: hmd_to_bdy.invert().unwrap(),
+                    hmd_to_bdy,
+                }
+            }
         }
 
         struct StereoData {
             win_size: Vector2<i32>,
-            hmd_to_bdy: Matrix4<f64>,
-            bdy_to_hmd: Matrix4<f64>,
+            bdy_hmd: BdyHmd,
             eyes: EyeMap<EyeData>,
+        }
+
+        #[derive(Debug, Copy, Clone)]
+        pub struct BdyCam {
+            bdy_to_cam: Matrix4<f64>,
+            cam_to_bdy: Matrix4<f64>,
+        }
+
+        impl BdyCam {
+            pub fn new(bdy_hmd: &BdyHmd, hmd_cam: &HmdCam) -> Self {
+                Self {
+                    bdy_to_cam: hmd_cam.hmd_to_cam * bdy_hmd.bdy_to_hmd,
+                    cam_to_bdy: bdy_hmd.hmd_to_bdy * hmd_cam.cam_to_hmd,
+                }
+            }
         }
 
         let stereo_data = self
@@ -1182,23 +1251,21 @@ impl<'s> Context<'s> {
 
                 let hmd_pose = poses[vr::sys::k_unTrackedDeviceIndex_Hmd as usize];
                 assert!(hmd_pose.bPoseIsValid, "Received invalid pose from VR.");
-                let hmd_to_bdy = Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap();
-                let bdy_to_hmd = hmd_to_bdy.invert().unwrap();
+                let bdy_hmd =
+                    BdyHmd::from_hmd_to_bdy(Matrix4::from_hmd(hmd_pose.mDeviceToAbsoluteTracking.m).cast().unwrap());
 
                 StereoData {
                     win_size: Vector2::new(win_size.width, win_size.height).cast().unwrap(),
-                    hmd_to_bdy,
-                    bdy_to_hmd,
+                    bdy_hmd,
                     eyes: EyeMap::new(|eye_key| {
                         let eye = Eye::from(eye_key);
                         let cam_to_hmd = Matrix4::from_hmd(vr.system().get_eye_to_head_transform(eye))
                             .cast()
                             .unwrap();
-                        let hmd_to_cam = cam_to_hmd.invert().unwrap();
+                        let hmd_cam = HmdCam::from_cam_to_hmd(cam_to_hmd);
                         EyeData {
                             tangents: FrustumTangents::from(vr.system().get_projection_raw(eye)),
-                            cam_to_hmd,
-                            hmd_to_cam,
+                            hmd_cam,
                         }
                     }),
                 }
@@ -1212,36 +1279,30 @@ impl<'s> Context<'s> {
                             .cast::<f32>()
                             .unwrap();
 
-                        let hmd_to_bdy = Matrix4::from_translation(Vector3::new(0.0, 0.2, 0.0));
-                        let bdy_to_hmd = hmd_to_bdy.invert().unwrap();
-
                         Some(StereoData {
                             win_size: win_size.cast().unwrap(),
-                            hmd_to_bdy,
-                            bdy_to_hmd,
+                            bdy_hmd: BdyHmd::from_hmd_to_bdy(Matrix4::identity()),
                             eyes: EyeMap {
                                 left: {
-                                    let cam_to_hmd = Matrix4::from(configuration.virtual_stereo.l_mat);
-                                    let hmd_to_cam = cam_to_hmd.invert().unwrap();
                                     EyeData {
                                         tangents: {
                                             let [x0, x1, y0, y1] = configuration.virtual_stereo.l_tan;
                                             FrustumTangents { x0, x1, y0, y1 }
                                         },
-                                        cam_to_hmd,
-                                        hmd_to_cam,
+                                        hmd_cam: HmdCam::from_cam_to_hmd(Matrix4::from(
+                                            configuration.virtual_stereo.l_mat,
+                                        )),
                                     }
                                 },
                                 right: {
-                                    let cam_to_hmd = Matrix4::from(configuration.virtual_stereo.r_mat);
-                                    let hmd_to_cam = cam_to_hmd.invert().unwrap();
                                     EyeData {
                                         tangents: {
                                             let [x0, x1, y0, y1] = configuration.virtual_stereo.r_tan;
                                             FrustumTangents { x0, x1, y0, y1 }
                                         },
-                                        cam_to_hmd,
-                                        hmd_to_cam,
+                                        hmd_cam: HmdCam::from_cam_to_hmd(Matrix4::from(
+                                            configuration.virtual_stereo.r_mat,
+                                        )),
                                     }
                                 },
                             },
@@ -1274,7 +1335,7 @@ impl<'s> Context<'s> {
         self.mirror_resources = None;
 
         if self.configuration.mirror.enabled {
-           self.mirror_resources = Some(MirrorResources::compute(&self.configuration.mirror));
+            self.mirror_resources = Some(MirrorResources::compute(&self.configuration.mirror));
         }
 
         {
@@ -1421,69 +1482,19 @@ impl<'s> Context<'s> {
 
         let gl = &self.gl;
 
-        struct C1 {
-            camera: camera::Camera,
-            wld_to_hmd: Matrix4<f64>,
-            hmd_to_wld: Matrix4<f64>,
-        }
-
-        impl C1 {
-            #[inline]
-            pub fn new(
-                camera: camera::Camera,
-                bdy_to_hmd: Matrix4<f64>,
-                hmd_to_bdy: Matrix4<f64>,
-                reflection_plane: Plane3<f64>,
-            ) -> Self {
-                let flip = Matrix4::from_diagonal(Vector4::new(1.0, -1.0, 1.0, 1.0));
-                let wld_to_mir = flip * reflection_plane.reflection_matrix();
-                let mir_to_wld = wld_to_mir.invert().unwrap();
-
-                let bdy_to_wld = wld_to_mir * camera.transform.pos_to_parent().cast::<f64>().unwrap();
-                let wld_to_bdy = camera.transform.pos_from_parent().cast::<f64>().unwrap() * mir_to_wld;
-                let hmd_to_wld = bdy_to_wld * hmd_to_bdy;
-                let wld_to_hmd = bdy_to_hmd * wld_to_bdy;
-                Self {
-                    camera,
-                    hmd_to_wld,
-                    wld_to_hmd,
-                }
-            }
-        }
-
-        struct C2 {
-            wld_to_cam: Matrix4<f64>,
-            cam_to_wld: Matrix4<f64>,
-        }
-
-        impl C2 {
-            #[inline]
-            pub fn new(c1: &C1, cam_to_hmd: Matrix4<f64>, hmd_to_cam: Matrix4<f64>) -> Self {
-                let cam_to_wld = c1.hmd_to_wld * cam_to_hmd;
-                let wld_to_cam = hmd_to_cam * c1.wld_to_hmd;
-                Self { wld_to_cam, cam_to_wld }
-            }
-        }
-
         match stereo_data {
             Some(StereoData {
                 win_size,
-                hmd_to_bdy,
-                bdy_to_hmd,
+                ref bdy_hmd,
                 eyes,
             }) => {
-                let render_c1 = C1::new(
-                    self.transition_camera.current_camera,
-                    hmd_to_bdy,
-                    bdy_to_hmd,
-                    self.mirror_resources.as_ref().unwrap().plane,
-                );
-                let cluster_c1 = C1::new(
-                    self.cameras.main.current_to_camera(),
-                    hmd_to_bdy,
-                    bdy_to_hmd,
-                    self.mirror_resources.as_ref().unwrap().plane,
-                );
+                let render_camera = self.transition_camera.current_camera;
+                let render_wld_to_bdy = render_camera.transform.pos_from_parent().cast::<f64>().unwrap();
+                let render_bdy_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
+
+                let cluster_camera = self.cameras.main.current_to_camera();
+                let cluster_wld_to_bdy = cluster_camera.transform.pos_from_parent().cast::<f64>().unwrap();
+                let cluster_bdy_to_wld = cluster_camera.transform.pos_to_parent().cast::<f64>().unwrap();
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping
@@ -1494,35 +1505,35 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
-                            clu_ori_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_clu_ori: bdy_hmd.bdy_to_hmd * cluster_wld_to_bdy,
+                            clu_ori_to_wld: cluster_bdy_to_wld * bdy_hmd.hmd_to_bdy,
                         },
                     ));
                 }
 
                 for &eye_key in EYE_KEYS.iter() {
-                    let EyeData {
-                        tangents,
-                        cam_to_hmd,
-                        hmd_to_cam,
-                    } = eyes[eye_key];
+                    let EyeData { tangents, ref hmd_cam } = eyes[eye_key];
+
+                    let BdyCam { bdy_to_cam, cam_to_bdy } = BdyCam::new(bdy_hmd, hmd_cam);
 
                     let render_c3 = {
-                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, cam_to_hmd, hmd_to_cam);
+                        let wld_to_cam = bdy_to_cam * render_wld_to_bdy;
+                        let cam_to_wld = render_bdy_to_wld * cam_to_bdy;
                         CameraParameters::new(
                             wld_to_cam,
                             cam_to_wld,
-                            stereo_frustum(&render_c1.camera.properties, tangents),
+                            stereo_frustum(&render_camera, tangents),
                             RENDER_RANGE,
                         )
                     };
 
                     let cluster_c3 = {
-                        let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, cam_to_hmd, hmd_to_cam);
+                        let wld_to_cam = bdy_to_cam * cluster_wld_to_bdy;
+                        let cam_to_wld = cluster_bdy_to_wld * cam_to_bdy;
                         CameraParameters::new(
                             wld_to_cam,
                             cam_to_wld,
-                            stereo_frustum(&cluster_c1.camera.properties, tangents),
+                            stereo_frustum(&cluster_camera, tangents),
                             RENDER_RANGE,
                         )
                     };
@@ -1615,18 +1626,14 @@ impl<'s> Context<'s> {
             }
             None => {
                 let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
-                let render_c1 = C1::new(
-                    self.transition_camera.current_camera,
-                    Matrix4::identity(),
-                    Matrix4::identity(),
-                    self.mirror_resources.as_ref().unwrap().plane,
-                );
-                let cluster_c1 = C1::new(
-                    self.cameras.main.current_to_camera(),
-                    Matrix4::identity(),
-                    Matrix4::identity(),
-                    self.mirror_resources.as_ref().unwrap().plane,
-                );
+
+                let render_camera = self.transition_camera.current_camera;
+                let render_wld_to_cam = render_camera.transform.pos_from_parent().cast::<f64>().unwrap();
+                let render_cam_to_wld = render_camera.transform.pos_to_parent().cast::<f64>().unwrap();
+
+                let cluster_camera = self.cameras.main.current_to_camera();
+                let cluster_wld_to_cam = cluster_camera.transform.pos_from_parent().cast::<f64>().unwrap();
+                let cluster_cam_to_wld = cluster_camera.transform.pos_to_parent().cast::<f64>().unwrap();
 
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered
                     && self.configuration.clustered_light_shading.grouping
@@ -1637,28 +1644,26 @@ impl<'s> Context<'s> {
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
-                            wld_to_clu_ori: cluster_c1.wld_to_hmd,
-                            clu_ori_to_wld: cluster_c1.hmd_to_wld,
+                            wld_to_clu_ori: cluster_wld_to_cam,
+                            clu_ori_to_wld: cluster_cam_to_wld,
                         },
                     ));
                 }
 
                 let render_c3 = {
-                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&render_c1, Matrix4::identity(), Matrix4::identity());
                     CameraParameters::new(
-                        wld_to_cam,
-                        cam_to_wld,
-                        mono_frustum(&render_c1.camera, dimensions),
+                        render_wld_to_cam,
+                        render_cam_to_wld,
+                        mono_frustum(&render_camera, dimensions),
                         RENDER_RANGE,
                     )
                 };
 
                 let cluster_c3 = {
-                    let C2 { wld_to_cam, cam_to_wld } = C2::new(&cluster_c1, Matrix4::identity(), Matrix4::identity());
                     CameraParameters::new(
-                        wld_to_cam,
-                        cam_to_wld,
-                        mono_frustum(&cluster_c1.camera, dimensions),
+                        cluster_wld_to_cam,
+                        cluster_cam_to_wld,
+                        mono_frustum(&cluster_camera, dimensions),
                         RENDER_RANGE,
                     )
                 };
@@ -2241,26 +2246,12 @@ fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
 }
 
 fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f64> {
-    let dy = Rad::tan(Rad(Rad::from(camera.transform.fovy).0 as f64) / 2.0);
-    let dx = dy * dimensions.x as f64 / dimensions.y as f64;
-    Frustum {
-        x0: -dx,
-        x1: dx,
-        y0: -dy,
-        y1: dy,
-        z0: camera.properties.z0 as f64,
-        z1: camera.properties.z1 as f64,
-    }
+    FrustumTangents::from_fov_dimensions(
+        camera.transform.fovy.cast::<f64>().unwrap(),
+        dimensions.cast::<f64>().unwrap(),
+    ).to_frustum(camera.properties.z0 as f64, camera.properties.z1 as f64)
 }
 
-fn stereo_frustum(camera_properties: &camera::CameraProperties, tangents: FrustumTangents) -> Frustum<f64> {
-    let FrustumTangents { x0, x1, y0, y1 } = tangents;
-    Frustum {
-        x0,
-        x1,
-        y0,
-        y1,
-        z0: camera_properties.z0 as f64,
-        z1: camera_properties.z1 as f64,
-    }
+fn stereo_frustum(camera: &camera::Camera, tangents: FrustumTangents) -> Frustum<f64> {
+    tangents.to_frustum(camera.properties.z0 as f64, camera.properties.z1 as f64)
 }
