@@ -117,7 +117,7 @@ impl Context<'_> {
         // Reborrow
         let gl = &self.gl;
         let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
-        cluster_resources.recompute();
+        cluster_resources.recompute(&self.main_resources_pool);
 
         let cluster_profiler_index = self.profiling_context.start(gl, cluster_resources.profilers.cluster);
 
@@ -141,51 +141,17 @@ impl Context<'_> {
 
         // NOTE: Work around borrow checker.
         for camera_resources_index in cluster_resources.camera_resources_pool.used_index_iter() {
-            let draw_resources_index = self.resources.draw_resources_pool.next({
-                let gl = &self.gl;
-                let profiling_context = &mut self.profiling_context;
-                move || resources::DrawResources::new(gl, profiling_context)
-            });
-
-            // Reborrow.
-            let gl = &self.gl;
             let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
             let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
-            let camera_parameters = &camera_resources.parameters;
-            let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
+            let main_resources = &mut self.main_resources_pool[camera_resources.parameters.main_resources_index];
+            let draw_resources_index = main_resources.draw_resources_index;
 
             let camera_profiler_index = self.profiling_context.start(gl, camera_resources.profilers.camera);
 
-            draw_resources.recompute(
-                &self.gl,
-                &mut self.profiling_context,
-                resources::CullingCamera {
-                    wld_to_cam: camera_parameters.camera.wld_to_cam,
-                    frustum: camera_parameters.camera.frustum,
-                    projection_kind: resources::ProjectionKind::Perspective,
-                },
-                camera_parameters.camera.wld_to_clp,
-                &self.world_transforms,
-                &self.resources.materials,
-                &self.resources.scene_file,
-            );
-
-            let main_resources_index = self.main_resources_pool.next_unused(
-                gl,
-                &mut self.profiling_context,
-                camera_parameters.frame_dims,
-                self.configuration.global.sample_count,
-            );
-
-            self.clear_and_render_depth(main_resources_index, draw_resources_index);
-
-            // Reborrow.
-            let gl = &self.gl;
-            let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
-            let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
+            // FIXME: assert that depth has been renderered.
+            // self.clear_and_render_depth(main_resources_index);
 
             let camera_parameters = &camera_resources.parameters;
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
 
             let ren_clp_to_clu_cam = (cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld)
                 .cast::<f32>()
@@ -220,7 +186,7 @@ impl Context<'_> {
                             if let ProgramName::Linked(name) = program.name {
                                 gl.use_program(name);
 
-                                let dimensions = main_resources.dimensions.cast::<f32>().unwrap();
+                                let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
                                 gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
 
                                 gl.uniform_matrix4f(
@@ -229,7 +195,7 @@ impl Context<'_> {
                                     ren_clp_to_clu_cam.as_ref(),
                                 );
 
-                                gl.bind_texture_unit(0, main_resources.depth_texture);
+                                gl.bind_texture_unit(0, main_resources.framebuffer.depth_texture_name);
 
                                 gl.memory_barrier(
                                     gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
@@ -245,8 +211,8 @@ impl Context<'_> {
                                 };
 
                                 gl.dispatch_compute(
-                                    main_resources.dimensions.x.ceiled_div(lx) as u32,
-                                    main_resources.dimensions.y.ceiled_div(ly) as u32,
+                                    main_resources.framebuffer.dimensions.x.ceiled_div(lx) as u32,
+                                    main_resources.framebuffer.dimensions.y.ceiled_div(ly) as u32,
                                     1,
                                 );
 
@@ -308,7 +274,7 @@ impl Context<'_> {
 
                                     gl.use_program(program);
 
-                                    let dimensions = main_resources.dimensions.cast::<f32>().unwrap();
+                                    let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
                                     gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
 
                                     gl.uniform_matrix4f(
@@ -409,7 +375,7 @@ impl Context<'_> {
 
                             gl.use_program(program);
 
-                            let dimensions = main_resources.dimensions.cast::<f32>().unwrap();
+                            let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
                             gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
 
                             gl.uniform_matrix4f(

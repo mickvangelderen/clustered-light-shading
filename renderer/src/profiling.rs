@@ -261,7 +261,8 @@ impl Context {
                         profilers_used += 1;
                         debug_assert!(
                             samples[sample_index.to_usize()].is_none(),
-                            "{:?} is writen to more than once",
+                            "{} ({:?}) is written to more than once",
+                            self.sample_names[sample_index.to_usize()],
                             sample_index
                         );
                         let sample = context.profilers[profiler_index].read(gl).unwrap();
