@@ -172,3 +172,14 @@ impl <S> ArrayExt for Vector3<S> where S: PartialOrd {
         }
     }
 }
+
+pub trait RadExt {
+    fn cast<U>(self) -> Option<Rad<U>> where U: num_traits::Float;
+}
+
+impl<S> RadExt for Rad<S> where S: num_traits::Float {
+    #[inline]
+    fn cast<U>(self) -> Option<Rad<U>> where U: num_traits::Float {
+        Some(Self(num_traits::cast(self.0)?))
+    }
+}
