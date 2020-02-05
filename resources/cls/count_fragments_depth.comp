@@ -11,7 +11,7 @@ layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2D depth_sampler;
 #else
 layout(binding = DEPTH_SAMPLER_LOC) uniform sampler2DMS depth_sampler;
 #endif
-layout(location = DEPTH_DIMENSIONS_LOC) uniform ivec2 depth_dimensions;
+layout(location = VIEWPORT_LOC) uniform vec4 viewport;
 layout(location = REN_CLP_TO_CLU_CAM_LOC) uniform mat4 ren_clp_to_clu_cam;
 
 #if SAMPLE_COUNT == 0 || SAMPLE_COUNT == 1
@@ -29,22 +29,21 @@ layout(local_size_x =  4, local_size_y =  4, local_size_z = SAMPLE_COUNT) in;
 #endif
 
 void main() {
-  if (any(greaterThanEqual(gl_GlobalInvocationID.xy, depth_dimensions))) {
+  if (any(greaterThanEqual(gl_GlobalInvocationID.xy, viewport.zw))) {
     // Out of texture bounds.
     return;
   }
 
-  // pos_in_ndc is known.
-  vec2 xy_ndc = vec2(ivec2(gl_GlobalInvocationID.xy) * 2 + 1 - depth_dimensions) / vec2(depth_dimensions);
-  float z_ndc = texelFetch(depth_sampler, ivec2(gl_GlobalInvocationID.xy), int(gl_LocalInvocationID.z)).r;
-
-  if (z_ndc == 0.0) {
-    // Infinitely far (reverse z)
-    return;
-  }
-
-  vec3 pos_in_cls = cluster_cam_to_clp(from_homogeneous(
-      ren_clp_to_clu_cam * to_homogeneous(vec3(xy_ndc, z_ndc))));
+  vec3 frag_pos_in_clu_cam = from_homogeneous(ren_clp_to_clu_cam * vec4(
+    (2.0 * vec2(gl_GlobalInvocationID.xy) + vec2(1.0) - viewport.zw)/viewport.zw,
+    texelFetch(
+      depth_sampler,
+      ivec2(viewport.xy) + ivec2(gl_GlobalInvocationID.xy),
+      int(gl_LocalInvocationID.z)
+    ).r,
+    1.0
+  ));
+  vec3 pos_in_cls = cluster_cam_to_clp(frag_pos_in_clu_cam);
 
   if (all(greaterThanEqual(pos_in_cls, vec3(0.0))) &&
       all(lessThan(pos_in_cls, vec3(cluster_space.dimensions)))) {

@@ -74,14 +74,16 @@ layout(binding = SHADOW_SAMPLER_BINDING_3) uniform samplerCube shadow_sampler_3;
 
 layout(location = CAM_POS_IN_LGT_LOC) uniform vec3 cam_pos_in_lgt;
 
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+layout(location = VIEWPORT_LOC) uniform vec4 viewport;
+layout(location = REN_CLP_TO_CLU_CAM_LOC) uniform mat4 ren_clp_to_clu_cam;
+#endif
+
 in vec3 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
 in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
-#if defined(RENDER_TECHNIQUE_CLUSTERED)
-in vec3 fs_pos_in_clu_cam;
-#endif
 
 layout(location = 0) out vec4 frag_color;
 
@@ -156,7 +158,12 @@ void main() {
   //   cook_torrance(l_to_f/(-l_to_f_mag), frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
   // }
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-  vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
+  vec3 frag_pos_in_clu_cam = from_homogeneous(ren_clp_to_clu_cam * vec4(
+    gl_FragCoord.xy/viewport.zw * 2.0 - 1.0,
+    gl_FragCoord.z,
+    1.0
+  ));
+  vec3 pos_in_cls = cluster_cam_to_clp(frag_pos_in_clu_cam);
   uvec3 idx_in_cls = uvec3(pos_in_cls);
   // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
 

@@ -580,7 +580,6 @@ impl WorldTransforms {
 #[repr(C)]
 pub struct InstanceMatrices {
     pub obj_to_ren_clp: Matrix4<f32>,
-    pub obj_to_clu_cam: Matrix4<f32>,
     pub obj_to_lgt: Matrix4<f32>,
     pub obj_to_lgt_inv_tra: Matrix4<f32>,
 }
@@ -662,7 +661,6 @@ impl DrawResources {
         profiling_context: &mut ProfilingContext,
         culling_camera: CullingCamera,
         wld_to_ren_clp: Matrix4<f64>,
-        wld_to_clu_cam: Matrix4<f64>,
         world_transforms: &WorldTransforms,
         materials: &[Material],
         scene_file: &scene_file::SceneFile,
@@ -685,7 +683,6 @@ impl DrawResources {
                     let wld_to_obj = world_transforms.wld_to_obj[instance_index];
                     InstanceMatrices {
                         obj_to_ren_clp: (wld_to_ren_clp * obj_to_wld).cast().unwrap(),
-                        obj_to_clu_cam: (wld_to_clu_cam * obj_to_wld).cast().unwrap(),
                         obj_to_lgt: obj_to_wld.cast().unwrap(),
                         obj_to_lgt_inv_tra: wld_to_obj.transpose().cast().unwrap(),
                     }
