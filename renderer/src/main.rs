@@ -1439,7 +1439,6 @@ impl<'s> Context<'s> {
                         projection_kind: resources::ProjectionKind::Orthographic,
                     },
                     Matrix4::identity(),
-                    Matrix4::identity(),
                     &self.world_transforms,
                     &self.resources.materials,
                     &self.resources.scene_file,
@@ -1746,7 +1745,6 @@ impl<'s> Context<'s> {
 
             let MainParameters {
                 draw_resources_index,
-                cluster_resources_index,
 
                 dimensions,
                 display_viewport,
@@ -1764,13 +1762,6 @@ impl<'s> Context<'s> {
                     projection_kind: resources::ProjectionKind::Perspective,
                 },
                 main_params.camera.wld_to_clp,
-                if let Some(cluster_resources_index) = cluster_resources_index {
-                    self.cluster_resources_pool[cluster_resources_index]
-                        .computed
-                        .wld_to_clu_cam
-                } else {
-                    Matrix4::identity()
-                },
                 &self.world_transforms,
                 &self.resources.materials,
                 &self.resources.scene_file,

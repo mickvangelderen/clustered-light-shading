@@ -21,9 +21,6 @@ out vec3 fs_nor_in_lgt;
 out vec3 fs_bin_in_lgt;
 out vec3 fs_tan_in_lgt;
 out vec2 fs_pos_in_tex;
-#if defined(RENDER_TECHNIQUE_CLUSTERED)
-out vec3 fs_pos_in_clu_cam;
-#endif
 
 void main() {
   InstanceMatrices m = instance_matrices_buffer[vs_instance_index];
@@ -36,7 +33,4 @@ void main() {
   fs_tan_in_lgt = normalize(mat3(m.obj_to_lgt) * vs_tan_in_obj);
   // NOTE(mickvangelderen): TOO LAZY TO CHANGE IMAGE ORIGIN.
   fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
-#if defined(RENDER_TECHNIQUE_CLUSTERED)
-  fs_pos_in_clu_cam = mat4x3(m.obj_to_clu_cam) * pos_in_obj;
-#endif
 }

@@ -46,7 +46,7 @@ glsl_defines!(fixed_header {
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
-        DEPTH_DIMENSIONS_LOC = 1;
+        VIEWPORT_LOC = 1;
         REN_CLP_TO_CLU_CAM_LOC = 2;
         ITEM_COUNT_LOC = 3;
         LGT_TO_CLU_CAM_LOC = 4;
@@ -165,7 +165,6 @@ impl Context<'_> {
                     projection_kind: resources::ProjectionKind::Perspective,
                 },
                 camera_parameters.camera.wld_to_clp,
-                cluster_resources.computed.wld_to_clu_cam,
                 &self.world_transforms,
                 &self.resources.materials,
                 &self.resources.scene_file,
@@ -187,6 +186,10 @@ impl Context<'_> {
 
             let camera_parameters = &camera_resources.parameters;
             let main_resources = &mut self.main_resources_pool[main_resources_index];
+
+            let ren_clp_to_clu_cam = (cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld)
+                .cast::<f32>()
+                .unwrap();
 
             // Re-bind buffers.
             unsafe {
@@ -217,25 +220,20 @@ impl Context<'_> {
                             if let ProgramName::Linked(name) = program.name {
                                 gl.use_program(name);
 
+                                let dimensions = main_resources.dimensions.cast::<f32>().unwrap();
+                                gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
+
+                                gl.uniform_matrix4f(
+                                    cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
+                                    gl::MajorAxis::Column,
+                                    ren_clp_to_clu_cam.as_ref(),
+                                );
+
                                 gl.bind_texture_unit(
                                     0,
                                     main_resources
                                         .cluster_depth_texture
                                         .unwrap_or(main_resources.depth_texture),
-                                );
-
-                                gl.uniform_2i(
-                                    cls_renderer::DEPTH_DIMENSIONS_LOC,
-                                    main_resources.dimensions.cast::<i32>().unwrap().into(),
-                                );
-
-                                let ren_clp_to_clu_cam =
-                                    cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld;
-
-                                gl.uniform_matrix4f(
-                                    cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
-                                    gl::MajorAxis::Column,
-                                    ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
                                 );
 
                                 gl.memory_barrier(
@@ -304,8 +302,6 @@ impl Context<'_> {
                                 {
                                     let profiler_index = self.profiling_context.start(gl, profiler);
 
-                                    gl.use_program(program);
-
                                     gl.depth_func(gl::GEQUAL);
                                     gl.depth_mask(gl::WriteMask::Disabled);
                                     gl.color_mask(
@@ -313,6 +309,17 @@ impl Context<'_> {
                                         gl::WriteMask::Disabled,
                                         gl::WriteMask::Disabled,
                                         gl::WriteMask::Disabled,
+                                    );
+
+                                    gl.use_program(program);
+
+                                    let dimensions = main_resources.dimensions.cast::<f32>().unwrap();
+                                    gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
+
+                                    gl.uniform_matrix4f(
+                                        cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
+                                        gl::MajorAxis::Column,
+                                        ren_clp_to_clu_cam.as_ref(),
                                     );
 
                                     for (material_index, material) in self
@@ -394,8 +401,6 @@ impl Context<'_> {
                         {
                             let profiler_index = self.profiling_context.start(gl, profiler);
 
-                            gl.use_program(program);
-
                             gl.depth_func(gl::GEQUAL);
                             gl.depth_mask(gl::WriteMask::Disabled);
                             gl.color_mask(
@@ -403,6 +408,17 @@ impl Context<'_> {
                                 gl::WriteMask::Disabled,
                                 gl::WriteMask::Disabled,
                                 gl::WriteMask::Disabled,
+                            );
+
+                            gl.use_program(program);
+
+                            let dimensions = main_resources.dimensions.cast::<f32>().unwrap();
+                            gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
+
+                            gl.uniform_matrix4f(
+                                cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
+                                gl::MajorAxis::Column,
+                                ren_clp_to_clu_cam.as_ref(),
                             );
 
                             for (material_index, material) in self
@@ -437,10 +453,10 @@ impl Context<'_> {
                                 gl::WriteMask::Enabled,
                             );
 
+                            gl.unuse_program();
+
                             self.profiling_context.stop(gl, profiler_index);
                         }
-
-                        gl.unuse_program();
 
                         gl.unbind_vertex_array();
                     }

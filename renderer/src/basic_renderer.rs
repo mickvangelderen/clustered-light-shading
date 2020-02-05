@@ -42,6 +42,8 @@ glsl_defines!(fixed_header {
     },
     uniforms: {
         CAM_POS_IN_LGT_LOC = 0;
+        VIEWPORT_LOC = 1;
+        REN_CLP_TO_CLU_CAM_LOC = 2;
     },
 });
 
@@ -151,7 +153,23 @@ impl Context<'_> {
 
                     gl.use_program(program);
 
+                    if let Some(cluster_resources_index) = cluster_resources_index {
+                        let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
+
+                        let dimensions = main_parameters.dimensions.cast::<f32>().unwrap();
+                        gl.uniform_4f(VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
+
+                        let ren_clp_to_clu_cam =
+                            cluster_resources.computed.wld_to_clu_cam * main_parameters.camera.clp_to_wld;
+                        gl.uniform_matrix4f(
+                            REN_CLP_TO_CLU_CAM_LOC,
+                            gl::MajorAxis::Column,
+                            ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
+                        );
+                    }
+
                     gl.uniform_3f(CAM_POS_IN_LGT_LOC, cam_pos_in_lgt.cast().unwrap().into());
+
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING, self.light_resources.distance_texture);
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_2, self.light_resources.nor_texture);
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_3, self.light_resources.tint_texture);
