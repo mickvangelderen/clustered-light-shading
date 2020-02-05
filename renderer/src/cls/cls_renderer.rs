@@ -369,7 +369,7 @@ impl Context<'_> {
                     renderer
                         .count_fragments_transparent_program
                         .update(&mut rendering_context!(self));
-                    if let &ProgramName::Linked(transparent_program) = &renderer.count_fragments_opaque_program.name {
+                    if let &ProgramName::Linked(transparent_program) = &renderer.count_fragments_transparent_program.name {
                         let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
 
                         gl.bind_buffer_base(
