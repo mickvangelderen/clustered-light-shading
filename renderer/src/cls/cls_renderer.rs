@@ -229,12 +229,7 @@ impl Context<'_> {
                                     ren_clp_to_clu_cam.as_ref(),
                                 );
 
-                                gl.bind_texture_unit(
-                                    0,
-                                    main_resources
-                                        .cluster_depth_texture
-                                        .unwrap_or(main_resources.depth_texture),
-                                );
+                                gl.bind_texture_unit(0, main_resources.depth_texture);
 
                                 gl.memory_barrier(
                                     gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
@@ -376,7 +371,9 @@ impl Context<'_> {
                     renderer
                         .count_fragments_transparent_program
                         .update(&mut rendering_context!(self));
-                    if let &ProgramName::Linked(transparent_program) = &renderer.count_fragments_transparent_program.name {
+                    if let &ProgramName::Linked(transparent_program) =
+                        &renderer.count_fragments_transparent_program.name
+                    {
                         let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
 
                         gl.bind_buffer_base(
