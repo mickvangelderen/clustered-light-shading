@@ -8,8 +8,7 @@ pub struct Renderer {
 
 pub struct Parameters {
     pub mode: u32,
-    pub main_resources_index: MainResourcesIndex,
-    pub main_parameters_index: usize,
+    pub main_resources_index: usize,
 }
 
 glsl_defines!(fixed_header {
@@ -57,11 +56,12 @@ impl Context<'_> {
 
         let main_resources = &self.main_resources_pool[params.main_resources_index];
 
-        let profiler_index = self.profiling_context.start(gl, main_resources.basic_profiler);
+        let profiler_index = self
+            .profiling_context
+            .start(gl, main_resources.profilers.basic_profiler);
 
-        let main_parameters = &self.main_parameters_vec[params.main_parameters_index];
-        let cam_pos_in_lgt = main_parameters.cam_pos_in_lgt;
-        let cluster_resources_index = main_parameters.cluster_resources_index;
+        let cam_pos_in_lgt = main_resources.camera.cam_pos_in_wld();
+        let cluster_resources_index = main_resources.cluster_resources_index;
 
         unsafe {
             basic_renderer.opaque_program.update(&mut rendering_context!(self));
@@ -115,7 +115,7 @@ impl Context<'_> {
                     );
                 }
 
-                let draw_resources = &self.resources.draw_resources_pool[main_parameters.draw_resources_index];
+                let draw_resources = &self.resources.draw_resources_pool[main_resources.draw_resources_index];
 
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
@@ -134,17 +134,17 @@ impl Context<'_> {
                     (
                         opaque_program,
                         resources::MaterialKind::Opaque,
-                        main_resources.basic_opaque_profiler,
+                        main_resources.profilers.basic_opaque_profiler,
                     ),
                     (
                         masked_program,
                         resources::MaterialKind::Masked,
-                        main_resources.basic_masked_profiler,
+                        main_resources.profilers.basic_masked_profiler,
                     ),
                     (
                         transparent_program,
                         resources::MaterialKind::Transparent,
-                        main_resources.basic_transparent_profiler,
+                        main_resources.profilers.basic_transparent_profiler,
                     ),
                 ]
                 .iter()
@@ -156,11 +156,11 @@ impl Context<'_> {
                     if let Some(cluster_resources_index) = cluster_resources_index {
                         let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
 
-                        let dimensions = main_parameters.dimensions.cast::<f32>().unwrap();
+                        let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
                         gl.uniform_4f(VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
 
                         let ren_clp_to_clu_cam =
-                            cluster_resources.computed.wld_to_clu_cam * main_parameters.camera.clp_to_wld;
+                            cluster_resources.computed.wld_to_clu_cam * main_resources.camera.clp_to_wld;
                         gl.uniform_matrix4f(
                             REN_CLP_TO_CLU_CAM_LOC,
                             gl::MajorAxis::Column,
@@ -174,10 +174,23 @@ impl Context<'_> {
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_2, self.light_resources.nor_texture);
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_3, self.light_resources.tint_texture);
 
-                    if material_kind == resources::MaterialKind::Transparent {
-                        gl.depth_mask(gl::WriteMask::Disabled);
-                        gl.enable(gl::BLEND);
-                        gl.blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                    match material_kind {
+                        resources::MaterialKind::Opaque | resources::MaterialKind::Masked => {
+                            if main_resources.depth_available {
+                                self.gl.depth_func(gl::GEQUAL);
+                                self.gl.depth_mask(gl::WriteMask::Disabled);
+                            } else {
+                                self.gl.depth_func(gl::GREATER);
+                                self.gl.depth_mask(gl::WriteMask::Enabled);
+                            }
+                            self.gl.disable(gl::BLEND);
+                        },
+                        resources::MaterialKind::Transparent => {
+                            self.gl.depth_func(gl::GREATER);
+                            self.gl.depth_mask(gl::WriteMask::Disabled);
+                            self.gl.enable(gl::BLEND);
+                            self.gl.blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+                        }
                     }
 
                     for (material_index, material) in self
@@ -203,11 +216,6 @@ impl Context<'_> {
                             draw_counts[material_index] as i32,
                             std::mem::size_of::<DrawCommand>() as i32,
                         );
-                    }
-
-                    if material_kind == resources::MaterialKind::Transparent {
-                        gl.depth_mask(gl::WriteMask::Enabled);
-                        gl.disable(gl::BLEND);
                     }
 
                     self.profiling_context.stop(gl, profiler_index);

@@ -217,18 +217,10 @@ impl CameraParameters {
             clp_to_wld: cam_to_wld * clp_to_cam,
         }
     }
-}
 
-pub struct MainParameters {
-    pub camera: CameraParameters,
-
-    pub cam_pos_in_lgt: Point3<f64>,
-
-    pub draw_resources_index: usize,
-    pub cluster_resources_index: Option<ClusterResourcesIndex>,
-
-    pub dimensions: Vector2<i32>,
-    pub display_viewport: Option<Viewport<i32>>,
+    pub fn cam_pos_in_wld(&self) -> Point3<f64> {
+        Point3::from_vec(self.cam_to_wld[3].truncate())
+    }
 }
 
 pub const RENDER_RANGE: Range3<f64> = Range3 {
@@ -349,11 +341,10 @@ pub struct MainContext {
     // Per-frame resources
     pub sample_indices: MainSampleIndices,
 
-    pub main_parameters_vec: Vec<MainParameters>,
     pub camera_buffer_pool: BufferPool,
     pub light_resources: light::LightResources,
     pub cluster_resources_pool: ClusterResourcesPool,
-    pub main_resources_pool: MainResourcesPool,
+    pub main_resources_pool: Pool<MainResources>,
     pub point_lights: Vec<light::PointLight>,
     pub world_transforms: resources::WorldTransforms,
 }
@@ -606,9 +597,8 @@ impl MainContext {
             sample_indices: MainSampleIndices::new(&mut profiling_context),
             camera_buffer_pool: BufferPool::new(),
             light_resources,
-            main_parameters_vec: Vec::new(),
             cluster_resources_pool: ClusterResourcesPool::new(),
-            main_resources_pool: MainResourcesPool::new(),
+            main_resources_pool: Default::default(),
             point_lights: Vec::new(),
             world_transforms: resources::WorldTransforms::new(&mut profiling_context),
             profiling_context,
@@ -653,11 +643,10 @@ pub struct Context<'s> {
 
     // Per-frame resources
     pub sample_indices: MainSampleIndices,
-    pub main_parameters_vec: &'s mut Vec<MainParameters>,
     pub camera_buffer_pool: &'s mut BufferPool,
     pub light_resources: &'s mut light::LightResources,
     pub cluster_resources_pool: &'s mut ClusterResourcesPool,
-    pub main_resources_pool: &'s mut MainResourcesPool,
+    pub main_resources_pool: &'s mut Pool<MainResources>,
     pub point_lights: &'s mut Vec<light::PointLight>,
     pub world_transforms: &'s mut resources::WorldTransforms,
     pub mirror_resources: Option<MirrorResources>,
@@ -722,7 +711,6 @@ impl<'s> Context<'s> {
             ref mut resources,
             ref mut frame_downloader,
             sample_indices,
-            ref mut main_parameters_vec,
             ref mut camera_buffer_pool,
             ref mut light_resources,
             ref mut cluster_resources_pool,
@@ -787,7 +775,6 @@ impl<'s> Context<'s> {
 
             // Per-frame resources
             sample_indices,
-            main_parameters_vec,
             camera_buffer_pool,
             light_resources,
             cluster_resources_pool,
@@ -884,11 +871,10 @@ impl<'s> Context<'s> {
                 .replace_sample_count(&mut self.current, self.configuration.global.sample_count);
 
             unsafe {
-                let gl = &self.gl;
                 if self.configuration.gl.framebuffer_srgb {
-                    gl.enable(gl::FRAMEBUFFER_SRGB);
+                    self.gl.enable(gl::FRAMEBUFFER_SRGB);
                 } else {
-                    gl.disable(gl::FRAMEBUFFER_SRGB);
+                    self.gl.disable(gl::FRAMEBUFFER_SRGB);
                 }
             }
         }
@@ -1333,7 +1319,6 @@ impl<'s> Context<'s> {
         //  - hmd --[clustered light shading dimensions]--> cls
         //  - cam --[projection]--> clp
 
-        self.main_parameters_vec.clear();
         self.cluster_resources_pool.reset();
         self.main_resources_pool.reset();
         self.resources.draw_resources_pool.reset();
@@ -1411,12 +1396,11 @@ impl<'s> Context<'s> {
             );
 
             if self.configuration.light.virtual_light_count > 0 || self.configuration.light.shadows.enabled {
-                let draw_resources_index = self.resources.draw_resources_pool.next({
-                    let gl = &self.gl;
-                    let profiling_context = &mut self.profiling_context;
-                    move || resources::DrawResources::new(gl, profiling_context)
-                });
-
+                let draw_resources_index = next_draw_resources(
+                    &mut self.resources.draw_resources_pool,
+                    &self.gl,
+                    &mut self.profiling_context,
+                );
                 let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
 
                 let light = self.point_lights[0];
@@ -1486,8 +1470,6 @@ impl<'s> Context<'s> {
 
         let mut cluster_resources_index = None;
 
-        let gl = &self.gl;
-
         match stereo_data {
             Some(StereoData {
                 win_size,
@@ -1507,7 +1489,7 @@ impl<'s> Context<'s> {
                         == configuration::ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
-                        gl,
+                        &self.gl,
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
@@ -1549,7 +1531,7 @@ impl<'s> Context<'s> {
                             == configuration::ClusteringGrouping::Individual
                     {
                         cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
-                            gl,
+                            &self.gl,
                             &mut self.profiling_context,
                             ClusterParameters {
                                 configuration: self.configuration.clustered_light_shading,
@@ -1559,74 +1541,63 @@ impl<'s> Context<'s> {
                         ));
                     }
 
+                    let draw_resources_index = next_draw_resources(
+                        &mut self.resources.draw_resources_pool,
+                        &self.gl,
+                        &mut self.profiling_context,
+                    );
+                    let main_resources_parameters = MainResourcesParameters {
+                        gl: &self.gl,
+                        profiling_context: &mut self.profiling_context,
+                        camera: render_c3,
+                        draw_resources_index,
+                        cluster_resources_index,
+                        dimensions: win_size,
+                        sample_count: self.configuration.global.sample_count,
+                        display_viewport: {
+                            let w = self.win_size.width as i32;
+                            let h = self.win_size.height as i32;
+
+                            match self.configuration.virtual_stereo.show {
+                                configuration::VirtualStereoShow::Left => {
+                                    if let vr::Eye::Left = eye_key {
+                                        Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                configuration::VirtualStereoShow::Right => {
+                                    if let vr::Eye::Left = eye_key {
+                                        Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                configuration::VirtualStereoShow::Both => Some(match eye_key {
+                                    vr::Eye::Left => {
+                                        Viewport::from_coordinates(Point2::origin(), Point2::new(w / 2, h))
+                                    }
+                                    vr::Eye::Right => {
+                                        Viewport::from_coordinates(Point2::new(w - w / 2, 0), Point2::new(w, h))
+                                    }
+                                }),
+                            }
+                        },
+                    };
+
+                    let main_resources_index =
+                        next_main_resources(&mut self.main_resources_pool, main_resources_parameters);
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-
-                        let draw_resources_index = self.resources.draw_resources_pool.next({
-                            let gl = &self.gl;
-                            let profiling_context = &mut self.profiling_context;
-                            move || resources::DrawResources::new(gl, profiling_context)
-                        });
-
                         let _ = camera_resources_pool.next_unused(
-                            gl,
+                            &self.gl,
                             &mut self.profiling_context,
                             ClusterCameraParameters {
-                                frame_dims: win_size,
-                                draw_resources_index,
+                                main_resources_index,
                                 camera: cluster_c3,
                             },
                         );
-                    }
-
-                    {
-                        let cam_pos_in_wld = Point3::from_vec(render_c3.cam_to_wld[3].truncate());
-
-                        self.main_parameters_vec.push(MainParameters {
-                            camera: render_c3,
-
-                            cam_pos_in_lgt: cam_pos_in_wld,
-
-                            draw_resources_index: self.resources.draw_resources_pool.next({
-                                let gl = &self.gl;
-                                let profiling_context = &mut self.profiling_context;
-                                move || resources::DrawResources::new(gl, profiling_context)
-                            }),
-
-                            cluster_resources_index,
-
-                            dimensions: win_size,
-                            display_viewport: {
-                                let w = self.win_size.width as i32;
-                                let h = self.win_size.height as i32;
-
-                                match self.configuration.virtual_stereo.show {
-                                    configuration::VirtualStereoShow::Left => {
-                                        if let vr::Eye::Left = eye_key {
-                                            Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                    configuration::VirtualStereoShow::Right => {
-                                        if let vr::Eye::Left = eye_key {
-                                            Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                    configuration::VirtualStereoShow::Both => Some(match eye_key {
-                                        vr::Eye::Left => {
-                                            Viewport::from_coordinates(Point2::origin(), Point2::new(w / 2, h))
-                                        }
-                                        vr::Eye::Right => {
-                                            Viewport::from_coordinates(Point2::new(w - w / 2, 0), Point2::new(w, h))
-                                        }
-                                    }),
-                                }
-                            },
-                        });
                     }
                 }
             }
@@ -1646,7 +1617,7 @@ impl<'s> Context<'s> {
                         == configuration::ClusteringGrouping::Enclosed
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
-                        gl,
+                        &self.gl,
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
@@ -1679,7 +1650,7 @@ impl<'s> Context<'s> {
                         == configuration::ClusteringGrouping::Individual
                 {
                     cluster_resources_index = Some(self.cluster_resources_pool.next_unused(
-                        gl,
+                        &self.gl,
                         &mut self.profiling_context,
                         ClusterParameters {
                             configuration: self.configuration.clustered_light_shading,
@@ -1689,47 +1660,64 @@ impl<'s> Context<'s> {
                     ));
                 }
 
+                let draw_resources_index = next_draw_resources(
+                    &mut self.resources.draw_resources_pool,
+                    &self.gl,
+                    &mut self.profiling_context,
+                );
+
+                let main_resources_parameters = MainResourcesParameters {
+                    gl: &self.gl,
+                    profiling_context: &mut self.profiling_context,
+                    camera: render_c3,
+                    draw_resources_index,
+                    cluster_resources_index,
+                    dimensions,
+                    sample_count: self.configuration.global.sample_count,
+                    display_viewport: Some(Viewport::from_dimensions(dimensions)),
+                };
+
+                let main_resources_index =
+                    next_main_resources(&mut self.main_resources_pool, main_resources_parameters);
+
                 if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
-                    let draw_resources_index = self.resources.draw_resources_pool.next({
-                        let gl = &self.gl;
-                        let profiling_context = &mut self.profiling_context;
-                        move || resources::DrawResources::new(gl, profiling_context)
-                    });
 
                     let _ = camera_resources_pool.next_unused(
-                        gl,
+                        &self.gl,
                         &mut self.profiling_context,
                         ClusterCameraParameters {
-                            frame_dims: dimensions,
-                            draw_resources_index,
+                            main_resources_index,
                             camera: cluster_c3,
                         },
                     );
                 }
+            }
+        }
 
-                {
-                    let cam_pos_in_wld = Point3::from_vec(render_c3.cam_to_wld[3].truncate());
+        for main_resources_index in 0..self.main_resources_pool.len() {
+            let main_resources = &self.main_resources_pool[main_resources_index];
+            let draw_resources = &mut self.resources.draw_resources_pool[main_resources.draw_resources_index];
+            draw_resources.recompute(
+                &self.gl,
+                &mut self.profiling_context,
+                resources::CullingCamera {
+                    wld_to_cam: main_resources.camera.wld_to_cam,
+                    frustum: main_resources.camera.frustum,
+                    projection_kind: resources::ProjectionKind::Perspective,
+                },
+                main_resources.camera.wld_to_clp,
+                &self.world_transforms,
+                &self.resources.materials,
+                &self.resources.scene_file,
+            );
 
-                    let draw_resources_index = self.resources.draw_resources_pool.next({
-                        let gl = &self.gl;
-                        let profiling_context = &mut self.profiling_context;
-                        move || resources::DrawResources::new(gl, profiling_context)
-                    });
+            self.clear_main(main_resources_index);
 
-                    self.main_parameters_vec.push(MainParameters {
-                        camera: render_c3,
-
-                        cam_pos_in_lgt: cam_pos_in_wld,
-
-                        draw_resources_index,
-                        cluster_resources_index,
-
-                        dimensions,
-                        display_viewport: Some(Viewport::from_dimensions(dimensions)),
-                    });
-                }
+            let main_resources = &self.main_resources_pool[main_resources_index];
+            if self.shader_compiler.depth_prepass() || main_resources.cluster_resources_index.is_some() {
+                self.render_depth(depth_renderer::Parameters { main_resources_index });
             }
         }
 
@@ -1737,53 +1725,22 @@ impl<'s> Context<'s> {
             self.compute_clustering(cluster_resources_index)
         }
 
-        for main_parameters_index in 0..self.main_parameters_vec.len() {
-            let main_params = &self.main_parameters_vec[main_parameters_index];
-
-            // Reborrow.
-            let gl = &self.gl;
-
-            let MainParameters {
-                draw_resources_index,
-
-                dimensions,
-                display_viewport,
-                ..
-            } = *main_params;
-
-            let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
-
-            draw_resources.recompute(
-                &self.gl,
-                &mut self.profiling_context,
-                resources::CullingCamera {
-                    wld_to_cam: main_params.camera.wld_to_cam,
-                    frustum: main_params.camera.frustum,
-                    projection_kind: resources::ProjectionKind::Perspective,
-                },
-                main_params.camera.wld_to_clp,
-                &self.world_transforms,
-                &self.resources.materials,
-                &self.resources.scene_file,
-            );
-
+        for main_resources_index in 0..self.main_resources_pool.len() {
             // Ensure light resources are bound.
             unsafe {
                 // TODO: Make this less global. Should be in basic renderer.
-                gl.bind_buffer_base(
+                &self.gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     basic_renderer::LIGHT_BUFFER_BINDING,
                     self.light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
             }
 
-            let gl = &self.gl;
-
             let profiling_basic_buffer = match self.profiling_context.time_sensitive() {
                 true => None,
                 false => unsafe {
-                    let view = self.profiling_context.begin_basic_buffer(gl);
-                    gl.bind_buffer_range(
+                    let view = self.profiling_context.begin_basic_buffer(&self.gl);
+                    self.gl.bind_buffer_range(
                         gl::ATOMIC_COUNTER_BUFFER,
                         basic_renderer::BASIC_ATOMIC_BINDING,
                         view.name(),
@@ -1794,14 +1751,13 @@ impl<'s> Context<'s> {
                 },
             };
 
-            let main_resources_index = self.main_resources_pool.next_unused(
-                gl,
-                &mut self.profiling_context,
-                dimensions,
-                self.configuration.global.sample_count,
-            );
-
-            self.clear_and_render_main(main_resources_index, main_parameters_index);
+            self.render_main(&basic_renderer::Parameters {
+                mode: match self.target_camera_key {
+                    CameraKey::Main => 0,
+                    CameraKey::Debug => self.display_mode,
+                },
+                main_resources_index,
+            });
 
             if let Some(view) = profiling_basic_buffer {
                 unsafe {
@@ -1810,7 +1766,7 @@ impl<'s> Context<'s> {
             }
 
             if self.configuration.light.display {
-                self.render_lights(&light_renderer::Parameters { main_parameters_index });
+                self.render_lights(&light_renderer::Parameters { main_resources_index });
             }
 
             if self.target_camera_key == CameraKey::Debug {
@@ -1821,10 +1777,7 @@ impl<'s> Context<'s> {
                     .collect();
 
                 for cluster_resources_index in self.cluster_resources_pool.used_index_iter() {
-                    // Reborrow
-                    let main_params = &self.main_parameters_vec[main_parameters_index];
-                    let camera = &main_params.camera;
-
+                    let main_resources = &self.main_resources_pool[main_resources_index];
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
                     for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
                         self.line_renderer.render(
@@ -1832,7 +1785,8 @@ impl<'s> Context<'s> {
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &RENDER_RANGE.line_mesh_indices(),
-                                obj_to_clp: &(camera.wld_to_clp * camera_resources.parameters.camera.clp_to_wld),
+                                obj_to_clp: &(main_resources.camera.wld_to_clp
+                                    * camera_resources.parameters.camera.clp_to_wld),
                                 color: color::GREEN,
                             },
                         );
@@ -1864,13 +1818,13 @@ impl<'s> Context<'s> {
                             &line_renderer::Parameters {
                                 vertices: &vertices,
                                 indices: &cluster_range.line_mesh_indices(),
-                                obj_to_clp: &(camera.wld_to_clp * clu_clp_to_wld),
+                                obj_to_clp: &(main_resources.camera.wld_to_clp * clu_clp_to_wld),
                                 color: color::RED,
                             },
                         );
                     }
 
-                    let clu_cam_to_ren_clp = &(camera.wld_to_clp
+                    let clu_cam_to_ren_clp = &(main_resources.camera.wld_to_clp
                         * self.cluster_resources_pool[cluster_resources_index]
                             .computed
                             .clu_cam_to_wld);
@@ -1881,17 +1835,16 @@ impl<'s> Context<'s> {
                 }
             }
 
-            if let Some(viewport) = display_viewport {
-                let main_resources = &mut self.main_resources_pool[main_resources_index];
-
+            let main_resources = &self.main_resources_pool[main_resources_index];
+            if let Some(viewport) = main_resources.display_viewport {
                 unsafe {
                     self.gl.blit_named_framebuffer(
-                        main_resources.framebuffer_name.into(),
+                        main_resources.framebuffer.framebuffer_name.into(),
                         gl::FramebufferName::Default,
                         0,
                         0,
-                        dimensions.x,
-                        dimensions.y,
+                        main_resources.framebuffer.dimensions.x,
+                        main_resources.framebuffer.dimensions.y,
                         viewport.p0().x,
                         viewport.p0().y,
                         viewport.p1().x,
@@ -2084,7 +2037,7 @@ impl<'s> Context<'s> {
         }
     }
 
-    fn clear_and_render_depth(&mut self, main_resources_index: MainResourcesIndex, draw_resources_index: usize) {
+    fn clear_main(&mut self, main_resources_index: usize) {
         let Self {
             ref gl,
             ref clear_color,
@@ -2095,8 +2048,13 @@ impl<'s> Context<'s> {
         let main_resources = &mut main_resources_pool[main_resources_index];
 
         unsafe {
-            gl.viewport(0, 0, main_resources.dimensions.x, main_resources.dimensions.y);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
+            gl.viewport(
+                0,
+                0,
+                main_resources.framebuffer.dimensions.x,
+                main_resources.framebuffer.dimensions.y,
+            );
+            gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
             gl.clear_color(clear_color[0], clear_color[1], clear_color[2], 1.0);
             // Reverse-Z.
             gl.clear_depth(0.0);
@@ -2104,63 +2062,6 @@ impl<'s> Context<'s> {
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
             gl.cull_face(gl::BACK);
-        }
-
-        self.render_depth(depth_renderer::Parameters {
-            main_resources_index,
-            draw_resources_index,
-        });
-    }
-
-    fn clear_and_render_main(&mut self, main_resources_index: MainResourcesIndex, main_parameters_index: usize) {
-        let Self {
-            ref gl,
-            ref clear_color,
-            ..
-        } = *self;
-
-        let main_resources = &mut self.main_resources_pool[main_resources_index];
-
-        unsafe {
-            gl.viewport(0, 0, main_resources.dimensions.x, main_resources.dimensions.y);
-            gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer_name);
-            gl.clear_color(clear_color[0], clear_color[1], clear_color[2], 1.0);
-            // Reverse-Z.
-            gl.clear_depth(0.0);
-            gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
-            gl.enable(gl::DEPTH_TEST);
-            gl.enable(gl::CULL_FACE);
-            gl.cull_face(gl::BACK);
-        }
-
-        if self.depth_prepass {
-            self.render_depth(depth_renderer::Parameters {
-                main_resources_index,
-                draw_resources_index: self.main_parameters_vec[main_parameters_index].draw_resources_index,
-            });
-
-            unsafe {
-                let gl = &self.gl;
-                gl.depth_func(gl::GEQUAL);
-                gl.depth_mask(gl::FALSE);
-            }
-        }
-
-        self.render_main(&basic_renderer::Parameters {
-            mode: match self.target_camera_key {
-                CameraKey::Main => 0,
-                CameraKey::Debug => self.display_mode,
-            },
-            main_resources_index,
-            main_parameters_index,
-        });
-
-        if self.depth_prepass {
-            unsafe {
-                let gl = &self.gl;
-                gl.depth_func(gl::GREATER);
-                gl.depth_mask(gl::TRUE);
-            }
         }
     }
 }
@@ -2252,4 +2153,25 @@ fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f6
 
 fn stereo_frustum(camera: &camera::Camera, tangents: FrustumTangents) -> Frustum<f64> {
     tangents.to_frustum(camera.properties.z0 as f64, camera.properties.z1 as f64)
+}
+
+fn next_draw_resources(
+    pool: &mut Pool<resources::DrawResources>,
+    gl: &gl::Gl,
+    profiling_context: &mut profiling::ProfilingContext,
+) -> usize {
+    match pool.next() {
+        Some(index) => index,
+        None => pool.push(resources::DrawResources::new(gl, profiling_context)),
+    }
+}
+
+fn next_main_resources(pool: &mut Pool<MainResources>, parameters: MainResourcesParameters) -> usize {
+    match pool.next() {
+        Some(index) => {
+            pool[index].reconcile(parameters);
+            index
+        }
+        None => pool.push(MainResources::new(parameters)),
+    }
 }

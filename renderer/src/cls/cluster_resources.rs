@@ -206,7 +206,7 @@ impl ClusterResources {
         }
     }
 
-    pub fn recompute(&mut self) {
+    pub fn recompute(&mut self, main_resources_pool: &Pool<MainResources>) {
         let parameters = &self.parameters;
         let cfg = &parameters.configuration;
 
@@ -251,9 +251,15 @@ impl ClusterResources {
 
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
                         let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
+                        let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                        let frame_dimensions = main_resources.framebuffer.dimensions.cast::<f64>().unwrap();
 
                         let dimensions = {
-                            let dimensions = compute_perspective_dimensions(cfg, camera);
+                            let dimensions = compute_perspective_dimensions(
+                                cfg,
+                                &camera.parameters.camera.frustum,
+                                frame_dimensions,
+                            );
                             if cfg.perspective_displacement != 0.0 {
                                 let volume = compute_perspective_volume(frustum);
                                 compute_perspective_dimensions_with_volume(frustum, volume / dimensions.product())
@@ -270,7 +276,7 @@ impl ClusterResources {
                                 let r = dimensions
                                     .truncate()
                                     .mul_element_wise(cfg.perspective_pixels.cast::<f64>().unwrap())
-                                    .div_element_wise(camera.parameters.frame_dims.cast::<f64>().unwrap());
+                                    .div_element_wise(frame_dimensions);
                                 frustum.x1 = frustum.x0 + r.x * frustum.dx();
                                 frustum.y1 = frustum.y0 + r.y * frustum.dy();
                             }
@@ -506,7 +512,12 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .map(|camera| {
-                                let dimensions = compute_perspective_dimensions(cfg, camera);
+                                let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                                let dimensions = compute_perspective_dimensions(
+                                    cfg,
+                                    &camera.parameters.camera.frustum,
+                                    main_resources.framebuffer.dimensions.cast::<f64>().unwrap(),
+                                );
                                 let volume = compute_perspective_volume(camera.parameters.camera.frustum);
                                 volume / dimensions.product()
                             })
@@ -593,12 +604,11 @@ impl Displacement {
 
 fn compute_perspective_dimensions(
     cfg: &configuration::ClusteredLightShadingConfiguration,
-    camera: &ClusterCameraResources,
+    frustum: &Frustum<f64>,
+    dimensions: Vector2<f64>,
 ) -> Vector3<f64> {
-    let frustum = camera.parameters.camera.frustum;
-    let frame_dimensions = camera.parameters.frame_dims.cast::<f64>().unwrap();
     let pixels_per_cluster = cfg.perspective_pixels.cast::<f64>().unwrap();
-    let Vector2 { x, y } = frame_dimensions.div_element_wise(pixels_per_cluster);
+    let Vector2 { x, y } = dimensions.div_element_wise(pixels_per_cluster);
     let d = (frustum.dx() / x + frustum.dy() / y) * 0.5;
     let z = (frustum.z0 / frustum.z1).log(1.0 + d);
     Vector3 { x, y, z }.map(f64::ceil)
