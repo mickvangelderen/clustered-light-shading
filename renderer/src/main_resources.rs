@@ -123,6 +123,7 @@ pub struct MainResourcesParameters<'a> {
     pub dimensions: Vector2<i32>,
     pub sample_count: u32,
     pub display_viewport: Option<Viewport<i32>>,
+    pub should_render: bool,
 }
 
 pub struct MainResources {
@@ -131,6 +132,7 @@ pub struct MainResources {
     pub cluster_resources_index: Option<ClusterResourcesIndex>,
     pub display_viewport: Option<Viewport<i32>>,
     pub depth_available: bool,
+    pub should_render: bool,
     pub framebuffer: MainFramebuffer,
     pub profilers: MainProfilers,
 }
@@ -146,12 +148,14 @@ impl MainResources {
             dimensions,
             sample_count,
             display_viewport,
+            should_render,
         } = parameters;
         Self {
             camera,
             draw_resources_index,
             cluster_resources_index,
             display_viewport,
+            should_render,
             depth_available: false,
             framebuffer: MainFramebuffer::new(gl, dimensions, sample_count),
             profilers: MainProfilers::new(profiling_context),
@@ -168,12 +172,14 @@ impl MainResources {
             dimensions,
             sample_count,
             display_viewport,
+            should_render,
         } = parameters;
         self.camera = camera;
         self.draw_resources_index = draw_resources_index;
         self.cluster_resources_index = cluster_resources_index;
         self.display_viewport = display_viewport;
         self.depth_available = false;
+        self.should_render = should_render;
         self.framebuffer.reconcile(gl, dimensions, sample_count);
     }
 }

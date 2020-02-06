@@ -148,17 +148,16 @@ impl Context<'_> {
 
             let camera_profiler_index = self.profiling_context.start(gl, camera_resources.profilers.camera);
 
-            // FIXME: assert that depth has been renderered.
-            // self.clear_and_render_depth(main_resources_index);
-
-            let camera_parameters = &camera_resources.parameters;
-
-            let ren_clp_to_clu_cam = (cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld)
+            let ren_clp_to_clu_cam = (cluster_resources.computed.wld_to_clu_cam * main_resources.camera.clp_to_wld)
                 .cast::<f32>()
                 .unwrap();
 
+            assert_eq!(true, main_resources.depth_available);
+
             // Re-bind buffers.
             unsafe {
+                gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
+
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,

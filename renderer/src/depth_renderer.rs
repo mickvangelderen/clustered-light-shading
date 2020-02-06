@@ -37,6 +37,12 @@ impl Context<'_> {
                 .bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
             self.gl.depth_func(gl::GREATER);
             self.gl.depth_mask(gl::WriteMask::Enabled);
+            self.gl.color_mask(
+                gl::WriteMask::Disabled,
+                gl::WriteMask::Disabled,
+                gl::WriteMask::Disabled,
+                gl::WriteMask::Disabled,
+            );
             self.gl.disable(gl::BLEND);
 
             depth_renderer.opaque_program.update(&mut rendering_context!(self));
