@@ -1,7 +1,7 @@
 use crate::clamp::*;
 use cgmath::*;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
 pub struct CameraTransform {
     pub position: Point3<f32>,
@@ -83,7 +83,7 @@ pub struct CameraCorrection {
     pub delta_yaw: Rad<f32>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
 pub struct CameraProperties {
     pub z0: f32,
@@ -102,7 +102,7 @@ pub struct CameraDelta {
     pub fovy: Rad<f32>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(C)]
 pub struct Camera {
     pub properties: CameraProperties,

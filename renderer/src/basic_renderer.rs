@@ -64,6 +64,8 @@ impl Context<'_> {
         let cluster_resources_index = main_resources.cluster_resources_index;
 
         unsafe {
+            self.gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
+
             basic_renderer.opaque_program.update(&mut rendering_context!(self));
             basic_renderer.masked_program.update(&mut rendering_context!(self));
             basic_renderer.transparent_program.update(&mut rendering_context!(self));
@@ -192,6 +194,12 @@ impl Context<'_> {
                             self.gl.blend_func(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
                         }
                     }
+                    self.gl.color_mask(
+                        gl::WriteMask::Enabled,
+                        gl::WriteMask::Enabled,
+                        gl::WriteMask::Enabled,
+                        gl::WriteMask::Enabled,
+                    );
 
                     for (material_index, material) in self
                         .resources

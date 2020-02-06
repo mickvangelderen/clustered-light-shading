@@ -216,7 +216,8 @@ impl ClusterResources {
                 let corners_in_clp = RENDER_RANGE.vertices();
                 let range = Range3::<f64>::from_points({
                     self.camera_resources_pool.used_slice().iter().flat_map(|camera| {
-                        let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * camera.parameters.camera.clp_to_wld;
+                        let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                        let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * main_resources.camera.clp_to_wld;
                         corners_in_clp
                             .iter()
                             .map(move |&p| ren_clp_to_clu_ori.transform_point(p))
@@ -243,23 +244,20 @@ impl ClusterResources {
                 match cameras.len() {
                     1 => {
                         let camera = &cameras[0];
+                        let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
 
-                        cgmath::assert_relative_eq!(camera.parameters.camera.cam_to_wld, parameters.clu_ori_to_wld);
+                        cgmath::assert_relative_eq!(main_resources.camera.cam_to_wld, parameters.clu_ori_to_wld);
 
                         let Displacement { origin, frustum } =
-                            Displacement::compute(cfg.perspective_displacement, camera.parameters.camera.frustum);
+                            Displacement::compute(cfg.perspective_displacement, main_resources.camera.frustum);
 
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
                         let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
-                        let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
                         let frame_dimensions = main_resources.framebuffer.dimensions.cast::<f64>().unwrap();
 
                         let dimensions = {
-                            let dimensions = compute_perspective_dimensions(
-                                cfg,
-                                &camera.parameters.camera.frustum,
-                                frame_dimensions,
-                            );
+                            let dimensions =
+                                compute_perspective_dimensions(cfg, &main_resources.camera.frustum, frame_dimensions);
                             if cfg.perspective_displacement != 0.0 {
                                 let volume = compute_perspective_volume(frustum);
                                 compute_perspective_dimensions_with_volume(frustum, volume / dimensions.product())
@@ -301,8 +299,8 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori =
-                                    parameters.wld_to_clu_ori * camera.parameters.camera.clp_to_wld;
+                                let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                                let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * main_resources.camera.clp_to_wld;
                                 far_pos_in_clp
                                     .iter()
                                     .map(move |&pos_in_clp| ren_clp_to_clu_ori.transform_point(pos_in_clp))
@@ -314,8 +312,8 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori =
-                                    parameters.wld_to_clu_ori * camera.parameters.camera.clp_to_wld;
+                                let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                                let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * main_resources.camera.clp_to_wld;
                                 near_pos_in_clp
                                     .iter()
                                     .map(move |&pos_in_clp| ren_clp_to_clu_ori.transform_point(pos_in_clp))
@@ -515,10 +513,10 @@ impl ClusterResources {
                                 let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
                                 let dimensions = compute_perspective_dimensions(
                                     cfg,
-                                    &camera.parameters.camera.frustum,
+                                    &main_resources.camera.frustum,
                                     main_resources.framebuffer.dimensions.cast::<f64>().unwrap(),
                                 );
-                                let volume = compute_perspective_volume(camera.parameters.camera.frustum);
+                                let volume = compute_perspective_volume(main_resources.camera.frustum);
                                 volume / dimensions.product()
                             })
                             .sum::<f64>()

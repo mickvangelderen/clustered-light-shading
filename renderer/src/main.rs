@@ -1546,6 +1546,7 @@ impl<'s> Context<'s> {
                         &self.gl,
                         &mut self.profiling_context,
                     );
+
                     let main_resources_parameters = MainResourcesParameters {
                         gl: &self.gl,
                         profiling_context: &mut self.profiling_context,
@@ -1583,19 +1584,45 @@ impl<'s> Context<'s> {
                                 }),
                             }
                         },
+                        should_render: true,
                     };
 
                     let main_resources_index =
                         next_main_resources(&mut self.main_resources_pool, main_resources_parameters);
+
                     if self.shader_compiler.render_technique() == RenderTechnique::Clustered {
                         let camera_resources_pool =
                             &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
+
+                        let main_resources_index = if render_camera == cluster_camera {
+                            main_resources_index
+                        } else {
+                            let draw_resources_index = next_draw_resources(
+                                &mut self.resources.draw_resources_pool,
+                                &self.gl,
+                                &mut self.profiling_context,
+                            );
+
+                            let main_resources_parameters = MainResourcesParameters {
+                                gl: &self.gl,
+                                profiling_context: &mut self.profiling_context,
+                                camera: cluster_c3,
+                                draw_resources_index,
+                                cluster_resources_index,
+                                dimensions: win_size,
+                                sample_count: self.configuration.global.sample_count,
+                                display_viewport: None,
+                                should_render: false,
+                            };
+
+                            next_main_resources(&mut self.main_resources_pool, main_resources_parameters)
+                        };
+
                         let _ = camera_resources_pool.next_unused(
                             &self.gl,
                             &mut self.profiling_context,
                             ClusterCameraParameters {
                                 main_resources_index,
-                                camera: cluster_c3,
                             },
                         );
                     }
@@ -1675,6 +1702,7 @@ impl<'s> Context<'s> {
                     dimensions,
                     sample_count: self.configuration.global.sample_count,
                     display_viewport: Some(Viewport::from_dimensions(dimensions)),
+                    should_render: true,
                 };
 
                 let main_resources_index =
@@ -1684,13 +1712,34 @@ impl<'s> Context<'s> {
                     let camera_resources_pool =
                         &mut self.cluster_resources_pool[cluster_resources_index.unwrap()].camera_resources_pool;
 
+                    let main_resources_index = if render_camera == cluster_camera {
+                        main_resources_index
+                    } else {
+                        let draw_resources_index = next_draw_resources(
+                            &mut self.resources.draw_resources_pool,
+                            &self.gl,
+                            &mut self.profiling_context,
+                        );
+
+                        let main_resources_parameters = MainResourcesParameters {
+                            gl: &self.gl,
+                            profiling_context: &mut self.profiling_context,
+                            camera: cluster_c3,
+                            draw_resources_index,
+                            cluster_resources_index,
+                            dimensions,
+                            sample_count: self.configuration.global.sample_count,
+                            display_viewport: None,
+                            should_render: false,
+                        };
+
+                        next_main_resources(&mut self.main_resources_pool, main_resources_parameters)
+                    };
+
                     let _ = camera_resources_pool.next_unused(
                         &self.gl,
                         &mut self.profiling_context,
-                        ClusterCameraParameters {
-                            main_resources_index,
-                            camera: cluster_c3,
-                        },
+                        ClusterCameraParameters { main_resources_index },
                     );
                 }
             }
@@ -1726,6 +1775,12 @@ impl<'s> Context<'s> {
         }
 
         for main_resources_index in 0..self.main_resources_pool.len() {
+            let main_resources = &self.main_resources_pool[main_resources_index];
+
+            if !main_resources.should_render {
+                continue;
+            }
+
             // Ensure light resources are bound.
             unsafe {
                 // TODO: Make this less global. Should be in basic renderer.
@@ -1780,13 +1835,15 @@ impl<'s> Context<'s> {
                     let main_resources = &self.main_resources_pool[main_resources_index];
                     let cluster_resources = &self.cluster_resources_pool[cluster_resources_index];
                     for camera_resources in cluster_resources.camera_resources_pool.used_slice().iter() {
+                        let cluster_main_resources =
+                            &self.main_resources_pool[camera_resources.parameters.main_resources_index];
                         self.line_renderer.render(
                             &mut rendering_context!(self),
                             &line_renderer::Parameters {
                                 vertices: &vertices[..],
                                 indices: &RENDER_RANGE.line_mesh_indices(),
                                 obj_to_clp: &(main_resources.camera.wld_to_clp
-                                    * camera_resources.parameters.camera.clp_to_wld),
+                                    * cluster_main_resources.camera.clp_to_wld),
                                 color: color::GREEN,
                             },
                         );

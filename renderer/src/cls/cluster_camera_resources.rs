@@ -30,7 +30,6 @@ impl CameraStage {
 #[derive(Debug)]
 pub struct ClusterCameraParameters {
     pub main_resources_index: usize,
-    pub camera: CameraParameters,
 }
 
 pub struct ClusterCameraResources {
