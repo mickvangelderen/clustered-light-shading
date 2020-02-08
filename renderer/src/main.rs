@@ -455,7 +455,7 @@ impl MainContext {
             position: Point3::new(0.0, 1.0, 1.5),
             yaw: Rad(0.0),
             pitch: Rad(0.0),
-            fovy: Deg(90.0).into(),
+            fov: Deg(90.0).into(),
         };
 
         let mut initial_cameras = CameraMap::new(|key| camera::Camera {
@@ -1062,7 +1062,7 @@ impl<'s> Context<'s> {
                 },
                 yaw: Rad(if is_target && self.focus { -mouse_dx as f32 } else { 0.0 }),
                 pitch: Rad(if is_target && self.focus { -mouse_dy as f32 } else { 0.0 }),
-                fovy: Rad(if is_target && self.focus {
+                fov: Rad(if is_target && self.focus {
                     mouse_dscroll as f32
                 } else {
                     0.0
@@ -1621,9 +1621,7 @@ impl<'s> Context<'s> {
                         let _ = camera_resources_pool.next_unused(
                             &self.gl,
                             &mut self.profiling_context,
-                            ClusterCameraParameters {
-                                main_resources_index,
-                            },
+                            ClusterCameraParameters { main_resources_index },
                         );
                     }
                 }
@@ -2202,7 +2200,7 @@ fn gen_texture_t(name: gl::TextureName) -> vr::sys::Texture_t {
 
 fn mono_frustum(camera: &camera::Camera, dimensions: Vector2<i32>) -> Frustum<f64> {
     FrustumTangents::from_fov_dimensions(
-        camera.transform.fovy.cast::<f64>().unwrap(),
+        camera.transform.fov.cast::<f64>().unwrap(),
         dimensions.cast::<f64>().unwrap(),
     )
     .to_frustum(camera.properties.z0 as f64, camera.properties.z1 as f64)

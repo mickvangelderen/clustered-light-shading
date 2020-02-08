@@ -7,7 +7,7 @@ pub struct CameraTransform {
     pub position: Point3<f32>,
     pub yaw: Rad<f32>,
     pub pitch: Rad<f32>,
-    pub fovy: Rad<f32>,
+    pub fov: Rad<f32>,
 }
 
 impl CameraTransform {
@@ -17,7 +17,7 @@ impl CameraTransform {
             position: EuclideanSpace::from_vec(self.position.to_vec() * s + other.position.to_vec() * t),
             yaw: self.yaw * s + other.yaw * t,
             pitch: self.pitch * s + other.pitch * t,
-            fovy: self.fovy * s + other.fovy * t,
+            fov: self.fov * s + other.fov * t,
         }
     }
 
@@ -27,7 +27,7 @@ impl CameraTransform {
     }
 
     #[inline]
-    fn fovy_range() -> (Rad<f32>, Rad<f32>) {
+    fn fov_range() -> (Rad<f32>, Rad<f32>) {
         (Rad::from(Deg(10.0)), Rad::from(Deg(120.0)))
     }
 
@@ -39,7 +39,7 @@ impl CameraTransform {
                 + Quaternion::from_axis_angle(Vector3::unit_y(), self.yaw) * delta.position * delta.time,
             yaw: (self.yaw + delta.yaw * delta.time),
             pitch: (self.pitch + delta.pitch * delta.time).clamp_range(Self::pitch_range()),
-            fovy: (self.fovy + delta.fovy * delta.time).clamp_range(Self::fovy_range()),
+            fov: (self.fov + delta.fov * delta.time).clamp_range(Self::fov_range()),
         };
     }
 
@@ -99,7 +99,7 @@ pub struct CameraDelta {
     pub position: Vector3<f32>,
     pub yaw: Rad<f32>,
     pub pitch: Rad<f32>,
-    pub fovy: Rad<f32>,
+    pub fov: Rad<f32>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -117,7 +117,7 @@ impl Camera {
             position: delta.position * self.properties.positional_velocity,
             yaw: delta.yaw * self.properties.angular_velocity,
             pitch: delta.pitch * self.properties.angular_velocity,
-            fovy: delta.fovy * self.properties.zoom_velocity,
+            fov: delta.fov * self.properties.zoom_velocity,
         })
     }
 
@@ -148,7 +148,7 @@ impl SmoothCamera {
             position: delta.position * self.properties.positional_velocity,
             yaw: delta.yaw * self.properties.angular_velocity,
             pitch: delta.pitch * self.properties.angular_velocity,
-            fovy: delta.fovy * self.properties.zoom_velocity,
+            fov: delta.fov * self.properties.zoom_velocity,
         });
 
         let correction = self.target_transform.correction();
