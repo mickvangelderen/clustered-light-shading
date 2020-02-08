@@ -159,7 +159,7 @@ impl From<vr::RawProjection> for FrustumTangents {
 impl FrustumTangents {
     #[inline]
     pub fn from_fov_dimensions(fov: Rad<f64>, dimensions: Vector2<f64>) -> Self {
-        let tpp = fov.tan()
+        let tpp = (fov * 0.5).tan()
             / if dimensions.x > dimensions.y {
                 dimensions.x
             } else {
