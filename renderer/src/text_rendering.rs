@@ -196,27 +196,36 @@ impl FontContext {
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            let buffer_binding = gl::VertexArrayBufferBindingIndex::from_u32(0);
+            pub struct Field {
+                format: gl::AttributeFormat,
+                location: gl::AttributeLocation,
+                buffer_binding_index: gl::VertexArrayBufferBindingIndex,
+            }
 
-            // Set up attributes.
-            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_OBJ_LOC, 2, gl::FLOAT, false, 0);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, buffer_binding);
+            let fields = [
+                Field {
+                    format: resources::F32_2,
+                    location: VS_POS_IN_OBJ_LOC,
+                    buffer_binding_index: resources::BBI_00,
+                },
+                Field {
+                    format: resources::F32_2,
+                    location: VS_POS_IN_TEX_LOC,
+                    buffer_binding_index: resources::BBI_00,
+                },
+            ];
 
-            gl.vertex_array_attrib_format(
-                vao,
-                rendering::VS_POS_IN_TEX_LOC,
-                2,
-                gl::FLOAT,
-                false,
-                std::mem::size_of::<[f32; 2]>() as u32,
-            );
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, buffer_binding);
+            let mut offset = 0;
+            for field in fields.iter() {
+                gl.vertex_array_attrib_format(vao, field.location, field.format, offset);
+                gl.enable_vertex_array_attrib(vao, field.location);
+                gl.vertex_array_attrib_binding(vao, field.location, field.buffer_binding_index);
+                offset += field.format.byte_size();
+            }
+            let stride = offset;
+            assert_eq!(stride as usize, std::mem::size_of::<TextVertex>());
 
-            // Bind buffers to vao.
-            let stride = std::mem::size_of::<[f32; 4]>() as u32;
-            gl.vertex_array_vertex_buffer(vao, buffer_binding, vb, 0, stride);
+            gl.vertex_array_vertex_buffer(vao, resources::BBI_00, vb, 0, stride);
             gl.vertex_array_element_buffer(vao, eb);
 
             (vao, vb, eb)

@@ -10,50 +10,41 @@ pub struct Vertex {
 
 impl Vertex {
     pub unsafe fn set_format(gl: &gl::Gl, vao: gl::VertexArrayName, vb: gl::BufferName, eb: gl::BufferName) {
-        let stride = std::mem::size_of::<Self>() as u32;
+        pub struct Field {
+            format: gl::AttributeFormat,
+            location: gl::AttributeLocation,
+            buffer_binding_index: gl::VertexArrayBufferBindingIndex,
+        }
 
-        let pos_in_obj_offset = 0u32;
-        let nor_in_obj_offset = pos_in_obj_offset + std::mem::size_of::<[f32; 3]>() as u32;
-        let pos_in_tex_offset = nor_in_obj_offset + std::mem::size_of::<[f32; 3]>() as u32;
+        let fields = [
+            Field {
+                format: resources::F32_3,
+                location: VS_POS_IN_OBJ_LOC,
+                buffer_binding_index: resources::BBI_00,
+            },
+            Field {
+                format: resources::F32_3,
+                location: VS_NOR_IN_OBJ_LOC,
+                buffer_binding_index: resources::BBI_00,
+            },
+            Field {
+                format: resources::F32_2,
+                location: VS_POS_IN_TEX_LOC,
+                buffer_binding_index: resources::BBI_00,
+            },
+        ];
 
-        // Attribute layout specification.
-        gl.vertex_array_attrib_format(
-            vao,
-            rendering::VS_POS_IN_OBJ_LOC,
-            3,
-            gl::FLOAT,
-            false,
-            pos_in_obj_offset,
-        );
-        gl.vertex_array_attrib_format(
-            vao,
-            rendering::VS_NOR_IN_OBJ_LOC,
-            3,
-            gl::FLOAT,
-            false,
-            nor_in_obj_offset,
-        );
-        gl.vertex_array_attrib_format(
-            vao,
-            rendering::VS_POS_IN_TEX_LOC,
-            2,
-            gl::FLOAT,
-            false,
-            pos_in_tex_offset,
-        );
-
-        gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
-        gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
-        gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
-
-        // Attribute source specification.
-        gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, resources::BBI_00);
-        gl.vertex_array_attrib_binding(vao, rendering::VS_NOR_IN_OBJ_LOC, resources::BBI_00);
-        gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, resources::BBI_00);
+        let mut offset = 0;
+        for field in fields.iter() {
+            gl.vertex_array_attrib_format(vao, field.location, field.format, offset);
+            gl.enable_vertex_array_attrib(vao, field.location);
+            gl.vertex_array_attrib_binding(vao, field.location, field.buffer_binding_index);
+            offset += field.format.byte_size();
+        }
+        let stride = offset;
+        assert_eq!(stride as usize, std::mem::size_of::<Self>());
 
         gl.vertex_array_vertex_buffer(vao, resources::BBI_00, vb, 0, stride);
-
-        // Element buffer.
         gl.vertex_array_element_buffer(vao, eb);
     }
 }
