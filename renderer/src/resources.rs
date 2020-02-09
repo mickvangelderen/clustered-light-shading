@@ -113,6 +113,10 @@ pub const BBI_03: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindi
 pub const BBI_04: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(4);
 pub const BBI_05: gl::VertexArrayBufferBindingIndex = gl::VertexArrayBufferBindingIndex::from_u32(5);
 
+pub const F32_3: gl::AttributeFormat = gl::AttributeFormat::F(gl::AttributeFormatF::F32(gl::ComponentCount::P3));
+pub const F32_2: gl::AttributeFormat = gl::AttributeFormat::F(gl::AttributeFormatF::F32(gl::ComponentCount::P2));
+pub const U32_1: gl::AttributeFormat = gl::AttributeFormat::I(gl::AttributeFormatI::U32(gl::ComponentCount::P1));
+
 fn load_dds_texture(gl: &gl::Gl, file_path: impl AsRef<Path>, srgb: bool) -> io::Result<Texture> {
     let file = std::fs::File::open(file_path).unwrap();
     let mut reader = std::io::BufReader::new(file);
@@ -257,36 +261,9 @@ impl Resources {
             let vb = gl.create_buffer();
             let eb = gl.create_buffer();
 
-            fn align_16(n: usize) -> usize {
-                ((n + 15) / 16) * 16
+            fn align_256(n: usize) -> usize {
+                ((n + 255) / 256) * 256
             }
-
-            let mut total_byte_length = 0;
-
-            let pos_in_obj_bytes = scene_file.pos_in_obj_buffer.vec_as_bytes();
-            let pos_in_obj_byte_length = pos_in_obj_bytes.len();
-            let pos_in_obj_byte_offset = total_byte_length;
-            total_byte_length = align_16(total_byte_length + pos_in_obj_byte_length);
-
-            let nor_in_obj_bytes = scene_file.nor_in_obj_buffer.vec_as_bytes();
-            let nor_in_obj_byte_length = nor_in_obj_bytes.len();
-            let nor_in_obj_byte_offset = total_byte_length;
-            total_byte_length = align_16(total_byte_length + nor_in_obj_byte_length);
-
-            let bin_in_obj_bytes = scene_file.bin_in_obj_buffer.vec_as_bytes();
-            let bin_in_obj_byte_length = bin_in_obj_bytes.len();
-            let bin_in_obj_byte_offset = total_byte_length;
-            total_byte_length = align_16(total_byte_length + bin_in_obj_byte_length);
-
-            let tan_in_obj_bytes = scene_file.tan_in_obj_buffer.vec_as_bytes();
-            let tan_in_obj_byte_length = tan_in_obj_bytes.len();
-            let tan_in_obj_byte_offset = total_byte_length;
-            total_byte_length = align_16(total_byte_length + tan_in_obj_byte_length);
-
-            let pos_in_tex_bytes = scene_file.pos_in_tex_buffer.vec_as_bytes();
-            let pos_in_tex_byte_length = pos_in_tex_bytes.len();
-            let pos_in_tex_byte_offset = total_byte_length;
-            total_byte_length = align_16(total_byte_length + pos_in_tex_byte_length);
 
             let instance_index_buffer: Vec<u32> = scene_file
                 .instances
@@ -294,95 +271,78 @@ impl Resources {
                 .enumerate()
                 .map(|(index, _)| index as u32)
                 .collect();
-            let instance_index_bytes = instance_index_buffer.vec_as_bytes();
-            let instance_index_byte_length = instance_index_bytes.len();
-            let instance_index_byte_offset = total_byte_length;
-            total_byte_length = align_16(total_byte_length + instance_index_byte_length);
 
-            // Upload data.
-            gl.named_buffer_reserve(vb, total_byte_length, gl::STATIC_DRAW);
-            gl.named_buffer_sub_data(vb, pos_in_obj_byte_offset, pos_in_obj_bytes);
-            gl.named_buffer_sub_data(vb, nor_in_obj_byte_offset, nor_in_obj_bytes);
-            gl.named_buffer_sub_data(vb, bin_in_obj_byte_offset, bin_in_obj_bytes);
-            gl.named_buffer_sub_data(vb, tan_in_obj_byte_offset, tan_in_obj_bytes);
-            gl.named_buffer_sub_data(vb, pos_in_tex_byte_offset, pos_in_tex_bytes);
-            gl.named_buffer_sub_data(vb, instance_index_byte_offset, instance_index_bytes);
+            let spec = [
+                (
+                    rendering::VS_POS_IN_OBJ_LOC,
+                    F32_3,
+                    None,
+                    BBI_00,
+                    scene_file.pos_in_obj_buffer.vec_as_bytes(),
+                ),
+                (
+                    rendering::VS_NOR_IN_OBJ_LOC,
+                    F32_3,
+                    None,
+                    BBI_01,
+                    scene_file.nor_in_obj_buffer.vec_as_bytes(),
+                ),
+                (
+                    rendering::VS_BIN_IN_OBJ_LOC,
+                    F32_3,
+                    None,
+                    BBI_02,
+                    scene_file.bin_in_obj_buffer.vec_as_bytes(),
+                ),
+                (
+                    rendering::VS_TAN_IN_OBJ_LOC,
+                    F32_3,
+                    None,
+                    BBI_03,
+                    scene_file.tan_in_obj_buffer.vec_as_bytes(),
+                ),
+                (
+                    rendering::VS_POS_IN_TEX_LOC,
+                    F32_2,
+                    None,
+                    BBI_04,
+                    scene_file.pos_in_tex_buffer.vec_as_bytes(),
+                ),
+                (
+                    rendering::VS_INSTANCE_INDEX_LOC,
+                    U32_1,
+                    Some(1),
+                    BBI_05,
+                    instance_index_buffer.vec_as_bytes(),
+                ),
+            ];
+
+            let mut capacity = 0;
+            for &(_, _, _, _, bytes) in spec.iter() {
+                capacity = align_256(capacity + bytes.len());
+            }
+            gl.named_buffer_reserve(vb, capacity, gl::STATIC_DRAW);
+
+            let mut offset = 0;
+            for &(location, format, divisor, binding, bytes) in spec.iter() {
+                // Upload bytes to buffer.
+                gl.named_buffer_sub_data(vb, offset, bytes);
+
+                // Specify format.
+                gl.vertex_array_attrib_format(vao, location, format, 0);
+                if let Some(divisor) = divisor {
+                    gl.vertex_array_binding_divisor(vao, binding, divisor);
+                }
+                gl.enable_vertex_array_attrib(vao, location);
+                gl.vertex_array_attrib_binding(vao, location, binding);
+
+                // Connect format and buffer.
+                gl.vertex_array_vertex_buffer(vao, binding, vb, offset, format.byte_size());
+
+                offset = align_256(offset + bytes.len());
+            }
+
             gl.named_buffer_data(eb, scene_file.triangle_buffer.vec_as_bytes(), gl::STATIC_DRAW);
-
-            // Attribute layout specification.
-            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
-            gl.vertex_array_attrib_format(vao, rendering::VS_NOR_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
-            gl.vertex_array_attrib_format(vao, rendering::VS_BIN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
-            gl.vertex_array_attrib_format(vao, rendering::VS_TAN_IN_OBJ_LOC, 3, gl::FLOAT, false, 0);
-            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
-            gl.vertex_array_attrib_i_format(vao, rendering::VS_INSTANCE_INDEX_LOC, 1, gl::UNSIGNED_INT, 0);
-
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_OBJ_LOC);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_NOR_IN_OBJ_LOC);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_BIN_IN_OBJ_LOC);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_TAN_IN_OBJ_LOC);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
-            gl.enable_vertex_array_attrib(vao, rendering::VS_INSTANCE_INDEX_LOC);
-
-            // Attribute source specification.
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_OBJ_LOC, BBI_00);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_NOR_IN_OBJ_LOC, BBI_01);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_BIN_IN_OBJ_LOC, BBI_02);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_TAN_IN_OBJ_LOC, BBI_03);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_04);
-            gl.vertex_array_attrib_binding(vao, rendering::VS_INSTANCE_INDEX_LOC, BBI_05);
-
-            gl.vertex_array_binding_divisor(vao, BBI_05, 1);
-
-            gl.vertex_array_vertex_buffer(
-                vao,
-                BBI_00,
-                vb,
-                pos_in_obj_byte_offset,
-                std::mem::size_of::<[f32; 3]>() as u32,
-            );
-
-            gl.vertex_array_vertex_buffer(
-                vao,
-                BBI_01,
-                vb,
-                nor_in_obj_byte_offset,
-                std::mem::size_of::<[f32; 3]>() as u32,
-            );
-
-            gl.vertex_array_vertex_buffer(
-                vao,
-                BBI_02,
-                vb,
-                bin_in_obj_byte_offset,
-                std::mem::size_of::<[f32; 3]>() as u32,
-            );
-
-            gl.vertex_array_vertex_buffer(
-                vao,
-                BBI_03,
-                vb,
-                tan_in_obj_byte_offset,
-                std::mem::size_of::<[f32; 3]>() as u32,
-            );
-
-            gl.vertex_array_vertex_buffer(
-                vao,
-                BBI_04,
-                vb,
-                pos_in_tex_byte_offset,
-                std::mem::size_of::<[f32; 2]>() as u32,
-            );
-
-            gl.vertex_array_vertex_buffer(
-                vao,
-                BBI_05,
-                vb,
-                instance_index_byte_offset,
-                std::mem::size_of::<u32>() as u32,
-            );
-
-            // Element buffer.
             gl.vertex_array_element_buffer(vao, eb);
 
             (vao, vb, eb)
@@ -410,7 +370,7 @@ impl Resources {
             let eb = gl.create_buffer();
 
             // Set up attributes.
-            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, F32_2, 0);
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
             gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_00);
 
@@ -444,7 +404,7 @@ impl Resources {
             let eb = gl.create_buffer();
 
             // Set up attributes.
-            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, 2, gl::FLOAT, false, 0);
+            gl.vertex_array_attrib_format(vao, rendering::VS_POS_IN_TEX_LOC, F32_2, 0);
             gl.enable_vertex_array_attrib(vao, rendering::VS_POS_IN_TEX_LOC);
             gl.vertex_array_attrib_binding(vao, rendering::VS_POS_IN_TEX_LOC, BBI_00);
 
