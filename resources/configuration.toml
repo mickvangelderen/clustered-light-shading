@@ -16,6 +16,10 @@ sample_count = 4
 
 display_parameters = false
 
+# debug_clusters = "Disabled"
+# debug_clusters = "Opaque"
+debug_clusters = "Additive"
+
 [mirror]
 enabled = false
 vertices = [
