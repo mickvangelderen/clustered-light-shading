@@ -606,6 +606,12 @@ impl MainContext {
     }
 }
 
+pub enum ExportStopCondition {
+    Single,
+    AllLights,
+    CameraTransitionComplete,
+}
+
 pub struct Context<'s> {
     // From MainContext
     pub paths: &'s Paths,
@@ -660,8 +666,9 @@ pub struct Context<'s> {
     pub event_index: usize,
     pub frame_index: FrameIndex,
     pub keyboard_state: KeyboardState,
-    pub export_frames: Option<u32>,
+    pub export_frames: Option<ExportStopCondition>,
     pub export_index: usize,
+    pub export_count: usize,
     pub win_dpi: f64,
     pub win_size: glutin::dpi::PhysicalSize,
     pub clear_color: [f32; 3],
@@ -795,6 +802,7 @@ impl<'s> Context<'s> {
             keyboard_state: Default::default(),
             export_frames: None,
             export_index: 0,
+            export_count: 0,
             win_dpi: initial_win_dpi,
             win_size: initial_win_size,
             clear_color: [0.0; 3],
@@ -982,8 +990,27 @@ impl<'s> Context<'s> {
                                 VirtualKeyCode::R => {
                                     reset_debug_camera = true;
                                 }
+                                VirtualKeyCode::I => {
+                                    if self.export_frames.is_some() {
+                                        self.export_index = 0;
+                                        self.export_count += 1;
+                                    }
+                                    self.export_frames = Some(ExportStopCondition::Single);
+                                },
                                 VirtualKeyCode::P => {
-                                    self.export_frames = Some(0);
+                                    if self.export_frames.is_some() {
+                                        self.export_index = 0;
+                                        self.export_count += 1;
+                                    }
+                                    self.export_frames = Some(ExportStopCondition::AllLights);
+                                }
+                                VirtualKeyCode::O => {
+                                    if self.export_frames.is_some() {
+                                        self.export_index = 0;
+                                        self.export_count += 1;
+                                    }
+                                    new_target_camera_key.wrapping_next_assign();
+                                    self.export_frames = Some(ExportStopCondition::CameraTransitionComplete);
                                 }
                                 VirtualKeyCode::Backslash => {
                                     self.configuration.virtual_stereo.enabled =
@@ -1338,6 +1365,7 @@ impl<'s> Context<'s> {
             self.mirror_resources = Some(MirrorResources::compute(&self.configuration.mirror));
         }
 
+        let mut export_complete = false;
         {
             self.point_lights.clear();
 
@@ -1394,16 +1422,12 @@ impl<'s> Context<'s> {
                 });
             }
 
-            self.export_frames = match self.export_frames {
-                Some(count) => {
-                    if (count as usize) < self.point_lights.len() {
-                        self.point_lights.truncate(count as usize + 1);
-                        Some(count + 1)
-                    } else {
-                        None
-                    }
+            if let Some(ExportStopCondition::AllLights) = self.export_frames {
+                if self.export_index < self.point_lights.len() {
+                    self.point_lights.truncate(self.export_index);
+                } else {
+                    export_complete = true;
                 }
-                None => None
             }
         }
 
@@ -2069,29 +2093,50 @@ impl<'s> Context<'s> {
             let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
             self.gl.viewport(0, 0, dimensions.x, dimensions.y);
             self.gl.bind_framebuffer(gl::FRAMEBUFFER, gl::FramebufferName::Default);
-
             self.render_text();
         }
 
         self.frame_downloader.process_transfers(&self.gl, self.frame_index);
 
         if self.export_frames.is_some() {
-            self.frame_downloader.record_frame(
-                self.gl,
-                self.frame_index,
-                self.paths.frames_dir.join(format!("export-{}.jpg", self.export_index)),
-                self.win_size.width as u32,
-                self.win_size.height as u32,
-                frame_downloader::Format::RGBA,
-            );
+            if self.export_index % 4 == 0 {
+                self.frame_downloader.record_frame(
+                    self.gl,
+                    self.frame_index,
+                    self.paths.frames_dir.join(format!("export-{}-{}.jpg", self.export_count, self.export_index)),
+                    self.win_size.width as u32,
+                    self.win_size.height as u32,
+                    frame_downloader::Format::RGBA,
+                );
+            }
             self.export_index += 1;
+        }
+
+        match self.export_frames {
+            Some(ExportStopCondition::CameraTransitionComplete) => {
+                if self.transition_camera.progress == 1.0 {
+                    export_complete = true
+                }
+            },
+            Some(ExportStopCondition::Single) => {
+                export_complete = true
+            }
+            _ => {}
+        }
+
+        if export_complete {
+            self.export_frames = None;
+            self.export_index = 0;
+            self.export_count += 1;
         }
 
         if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames {
             self.frame_downloader.record_frame(
                 self.gl,
                 self.frame_index,
-                self.paths.frames_dir.join(format!("{}.jpg", self.frame_index.to_usize())),
+                self.paths
+                    .frames_dir
+                    .join(format!("{}.jpg", self.frame_index.to_usize())),
                 self.win_size.width as u32,
                 self.win_size.height as u32,
                 frame_downloader::Format::RGBA,
