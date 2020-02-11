@@ -1904,9 +1904,11 @@ impl<'s> Context<'s> {
                         * self.cluster_resources_pool[cluster_resources_index]
                             .computed
                             .clu_cam_to_wld);
+
                     self.render_debug_clusters(&cluster_renderer::Parameters {
                         cluster_resources_index,
                         clu_cam_to_ren_clp,
+                        configuration: self.configuration.global.debug_clusters,
                     });
                 }
             }

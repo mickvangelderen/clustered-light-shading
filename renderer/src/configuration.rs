@@ -67,12 +67,20 @@ pub struct ReplayConfiguration {
     pub path: PathBuf,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum DebugClusters {
+    Disabled,
+    Opaque,
+    Additive,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GlobalConfiguration {
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
     pub display_parameters: bool,
+    pub debug_clusters: DebugClusters,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

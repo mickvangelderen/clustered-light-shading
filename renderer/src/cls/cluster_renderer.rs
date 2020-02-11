@@ -24,10 +24,14 @@ glsl_defines! {
 pub struct Parameters<'a> {
     pub cluster_resources_index: ClusterResourcesIndex,
     pub clu_cam_to_ren_clp: &'a Matrix4<f64>,
+    pub configuration: configuration::DebugClusters,
 }
 
 impl Context<'_> {
     pub fn render_debug_clusters(&mut self, params: &Parameters) {
+        if params.configuration == configuration::DebugClusters::Disabled {
+            return;
+        }
         unsafe {
             let Self {
                 ref gl,
@@ -85,17 +89,21 @@ impl Context<'_> {
 
                 let clu_cam_to_ren_clp = params.clu_cam_to_ren_clp.cast::<f32>().unwrap();
                 gl.uniform_matrix4f(CLU_CAM_TO_REN_CLP_LOC, gl::MajorAxis::Column, clu_cam_to_ren_clp.as_ref());
+
+                // Draw opaque regardless.
+                gl.enable(gl::DEPTH_TEST);
+                gl.depth_func(gl::GREATER);
+                gl.depth_mask(gl::TRUE);
                 gl.uniform_1ui(PASS_LOC, 0);
-
                 gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
 
-                gl.depth_mask(gl::FALSE);
-                gl.enable(gl::BLEND);
-                gl.blend_func(gl::SRC_ALPHA, gl::ONE);
-
-                gl.uniform_1ui(PASS_LOC, 1);
-
-                gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
+                if params.configuration == configuration::DebugClusters::Additive {
+                        gl.depth_mask(gl::FALSE);
+                        gl.enable(gl::BLEND);
+                        gl.blend_func(gl::SRC_ALPHA, gl::ONE);
+                        gl.uniform_1ui(PASS_LOC, 1);
+                        gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
+                }
 
                 gl.depth_mask(gl::TRUE);
                 gl.disable(gl::BLEND);
