@@ -16,6 +16,9 @@ impl Context<'_> {
             overlay_textbox: ref textbox,
             ..
         } = *self;
+        if textbox.indices.len() == 0 {
+            return;
+        }
 
         unsafe {
             gl.named_buffer_data(font.vb, textbox.vertices.vec_as_bytes(), gl::STREAM_DRAW);
