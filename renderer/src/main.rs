@@ -1343,7 +1343,7 @@ impl<'s> Context<'s> {
                 .cast()
                 .unwrap();
 
-            if self.configuration.light.shadows.enabled {
+            if self.configuration.light.head_light {
                 self.point_lights.push(light::PointLight {
                     tint: [1.0, 1.0, 0.8],
                     position: self

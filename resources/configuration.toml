@@ -28,6 +28,7 @@ vertices = [
 display = true
 virtual_light_count = 0
 static_lights = true
+head_light = true
 
 [light.shadows]
 enabled = false

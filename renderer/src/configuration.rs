@@ -86,6 +86,7 @@ pub struct LightConfiguration {
     pub display: bool,
     pub virtual_light_count: u32,
     pub static_lights: bool,
+    pub head_light: bool,
     pub attenuation: Attenuation,
     pub shadows: LightShadowsConfiguration,
 }
