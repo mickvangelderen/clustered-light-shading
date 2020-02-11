@@ -660,6 +660,7 @@ pub struct Context<'s> {
     pub event_index: usize,
     pub frame_index: FrameIndex,
     pub keyboard_state: KeyboardState,
+    pub export_frames: Option<u32>,
     pub win_dpi: f64,
     pub win_size: glutin::dpi::PhysicalSize,
     pub clear_color: [f32; 3],
@@ -791,6 +792,7 @@ impl<'s> Context<'s> {
             event_index: 0,
             frame_index: FrameIndex::from_usize(0),
             keyboard_state: Default::default(),
+            export_frames: None,
             win_dpi: initial_win_dpi,
             win_size: initial_win_size,
             clear_color: [0.0; 3],
@@ -977,6 +979,9 @@ impl<'s> Context<'s> {
                                 }
                                 VirtualKeyCode::R => {
                                     reset_debug_camera = true;
+                                }
+                                VirtualKeyCode::P => {
+                                    self.export_frames = Some(0);
                                 }
                                 VirtualKeyCode::Backslash => {
                                     self.configuration.virtual_stereo.enabled =
@@ -1338,24 +1343,26 @@ impl<'s> Context<'s> {
                 .cast()
                 .unwrap();
 
-            self.point_lights.push(light::PointLight {
-                tint: [1.0, 1.0, 0.8],
-                position: self
-                    .cameras
-                    .main
-                    .current_transform
-                    .pos_to_parent()
-                    .transform_point(Point3 {
-                        x: 0.0,
-                        y: 1.0,
-                        z: -4.0,
-                    }),
-                attenuation: {
-                    let mut a = self.configuration.light.attenuation;
-                    a.i *= 2.0;
-                    light::AttenCoefs::from(a).cast().unwrap()
-                },
-            });
+            if self.configuration.light.shadows.enabled {
+                self.point_lights.push(light::PointLight {
+                    tint: [1.0, 1.0, 0.8],
+                    position: self
+                        .cameras
+                        .main
+                        .current_transform
+                        .pos_to_parent()
+                        .transform_point(Point3 {
+                            x: 0.0,
+                            y: 1.0,
+                            z: -4.0,
+                        }),
+                    attenuation: {
+                        let mut a = self.configuration.light.attenuation;
+                        a.i *= 2.0;
+                        light::AttenCoefs::from(a).cast().unwrap()
+                    },
+                });
+            }
 
             for _ in 0..self.configuration.light.virtual_light_count {
                 self.point_lights.push(light::PointLight {
@@ -1383,6 +1390,18 @@ impl<'s> Context<'s> {
                     position: rain_drop.position,
                     attenuation,
                 });
+            }
+
+            self.export_frames = match self.export_frames {
+                Some(count) => {
+                    if (count as usize) < self.point_lights.len() {
+                        self.point_lights.truncate(count as usize + 1);
+                        Some(count + 1)
+                    } else {
+                        None
+                    }
+                }
+                None => None
             }
         }
 
@@ -2050,7 +2069,7 @@ impl<'s> Context<'s> {
             self.render_text();
         }
 
-        if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames {
+        if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames  || self.export_frames.is_some() {
             self.frame_downloader.record_frame(
                 &self.paths.frames_dir,
                 self.gl,
