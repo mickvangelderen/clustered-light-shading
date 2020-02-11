@@ -129,10 +129,10 @@ void main() {
   vec3 frag_nor_in_lgt = normalize(tbn * frag_nor_in_tan);
   vec3 frag_to_cam_nor = normalize(cam_pos_in_lgt - frag_pos_in_lgt);
 
-  vec3 color_accumulator = vec3(ke.xyz);
+  vec3 color_accumulator = vec3(0.0);
 #if defined(RENDER_TECHNIQUE_NAIVE)
   // Indirect
-  for (uint i = 0; i < light_buffer.light_count.x; i += 1) {
+  for (uint i = 1; i < light_buffer.light_count.x; i += 1) {
     PointLight light = light_buffer.point_lights[i];
     vec3 f_to_l = light.position - frag_pos_in_lgt;
     float f_to_l_mag = length(f_to_l);
