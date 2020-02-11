@@ -1440,7 +1440,7 @@ impl<'s> Context<'s> {
                 self.configuration.light.virtual_light_count,
             );
 
-            if self.configuration.light.virtual_light_count > 0 || self.configuration.light.shadows.enabled {
+            if self.configuration.light.virtual_light_count > 0 || self.configuration.light.shadows.enabled && self.point_lights.len() > 0 {
                 let draw_resources_index = next_draw_resources(
                     &mut self.resources.draw_resources_pool,
                     &self.gl,
