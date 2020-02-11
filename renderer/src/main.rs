@@ -2204,8 +2204,10 @@ impl<'s> Context<'s> {
             );
             gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
             gl.clear_color(clear_color[0], clear_color[1], clear_color[2], 1.0);
+            gl.color_mask(gl::WriteMask::Enabled, gl::WriteMask::Enabled, gl::WriteMask::Enabled, gl::WriteMask::Enabled);
             // Reverse-Z.
             gl.clear_depth(0.0);
+            gl.depth_mask(gl::WriteMask::Enabled);
             gl.clear(gl::ClearFlag::COLOR_BUFFER | gl::ClearFlag::DEPTH_BUFFER);
             gl.enable(gl::DEPTH_TEST);
             gl.enable(gl::CULL_FACE);
