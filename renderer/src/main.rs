@@ -551,7 +551,7 @@ impl MainContext {
         drop(rendering_context);
 
         let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
-        let frame_downloader = FrameDownloader::new(&gl);
+        let frame_downloader = FrameDownloader::new();
 
         let initial_win_dpi = gl_window.get_hidpi_factor();
         let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
@@ -661,6 +661,7 @@ pub struct Context<'s> {
     pub frame_index: FrameIndex,
     pub keyboard_state: KeyboardState,
     pub export_frames: Option<u32>,
+    pub export_index: usize,
     pub win_dpi: f64,
     pub win_size: glutin::dpi::PhysicalSize,
     pub clear_color: [f32; 3],
@@ -793,6 +794,7 @@ impl<'s> Context<'s> {
             frame_index: FrameIndex::from_usize(0),
             keyboard_state: Default::default(),
             export_frames: None,
+            export_index: 0,
             win_dpi: initial_win_dpi,
             win_size: initial_win_size,
             clear_color: [0.0; 3],
@@ -2069,11 +2071,25 @@ impl<'s> Context<'s> {
             self.render_text();
         }
 
-        if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames  || self.export_frames.is_some() {
+        self.frame_downloader.process_transfers(&self.gl, self.frame_index);
+
+        if self.export_frames.is_some() {
             self.frame_downloader.record_frame(
-                &self.paths.frames_dir,
                 self.gl,
                 self.frame_index,
+                self.paths.frames_dir.join(format!("export-{}.jpg", self.export_index)),
+                self.win_size.width as u32,
+                self.win_size.height as u32,
+                frame_downloader::Format::RGBA,
+            );
+            self.export_index += 1;
+        }
+
+        if self.profiling_context.run_index().to_usize() == 0 && self.configuration.profiling.record_frames {
+            self.frame_downloader.record_frame(
+                self.gl,
+                self.frame_index,
+                self.paths.frames_dir.join(format!("{}.jpg", self.frame_index.to_usize())),
                 self.win_size.width as u32,
                 self.win_size.height as u32,
                 frame_downloader::Format::RGBA,
