@@ -176,6 +176,7 @@ impl Context<'_> {
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_2, self.light_resources.nor_texture);
                     gl.bind_texture_unit(SHADOW_SAMPLER_BINDING_3, self.light_resources.tint_texture);
 
+                    self.gl.enable(gl::DEPTH_TEST);
                     match material_kind {
                         resources::MaterialKind::Opaque | resources::MaterialKind::Masked => {
                             if main_resources.depth_available {
