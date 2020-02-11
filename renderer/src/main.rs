@@ -1808,7 +1808,7 @@ impl<'s> Context<'s> {
             self.clear_main(main_resources_index);
 
             let main_resources = &self.main_resources_pool[main_resources_index];
-            if self.shader_compiler.depth_prepass() || main_resources.cluster_resources_index.is_some() {
+            if main_resources.cluster_resources_index.is_some() {
                 self.render_depth(depth_renderer::Parameters { main_resources_index });
             }
         }
@@ -1818,10 +1818,19 @@ impl<'s> Context<'s> {
         }
 
         for main_resources_index in 0..self.main_resources_pool.len() {
-            let main_resources = &self.main_resources_pool[main_resources_index];
-
-            if !main_resources.should_render {
+            if !self.main_resources_pool[main_resources_index].should_render {
                 continue;
+            }
+
+            if self.shader_compiler.depth_prepass() {
+                if self.main_resources_pool[main_resources_index].depth_available {
+                    // Nothing to do.
+                } else {
+                    self.render_depth(depth_renderer::Parameters { main_resources_index });
+                }
+            } else {
+                // Intentionally delete depth for testing.
+                self.clear_main(main_resources_index);
             }
 
             // Ensure light resources are bound.
@@ -2183,6 +2192,8 @@ impl<'s> Context<'s> {
         } = *self;
 
         let main_resources = &mut main_resources_pool[main_resources_index];
+        main_resources.depth_available = false;
+
 
         unsafe {
             gl.viewport(
