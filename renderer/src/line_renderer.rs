@@ -63,6 +63,11 @@ impl Renderer {
                 );
 
                 gl.bind_vertex_array(self.vertex_array_name);
+
+                gl.enable(gl::DEPTH_TEST);
+                gl.depth_func(gl::GREATER);
+                gl.depth_mask(gl::WriteMask::Enabled);
+
                 gl.draw_elements(
                     gl::LINES,
                     u32::try_from(params.indices.flatten().len()).unwrap(),
