@@ -1589,7 +1589,7 @@ impl<'s> Context<'s> {
                                     }
                                 }
                                 configuration::VirtualStereoShow::Right => {
-                                    if let vr::Eye::Left = eye_key {
+                                    if let vr::Eye::Right = eye_key {
                                         Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
                                     } else {
                                         None
