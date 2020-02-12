@@ -16,8 +16,9 @@ glsl_defines! {
         },
         uniforms: {
             CLU_CAM_TO_REN_CLP_LOC = 0;
-            VISUALISATION_LOC = 1;
-            PASS_LOC = 2;
+            VISIBLE_ONLY_LOC = 1;
+            VISUALISATION_LOC = 2;
+            PASS_LOC = 3;
         },
     }
 }
@@ -25,12 +26,13 @@ glsl_defines! {
 pub struct Parameters<'a> {
     pub cluster_resources_index: ClusterResourcesIndex,
     pub clu_cam_to_ren_clp: &'a Matrix4<f64>,
-    pub configuration: configuration::ClusterVisualisation,
+    pub visualisation: configuration::ClusterVisualisation,
+    pub visible_only: bool,
 }
 
 impl Context<'_> {
     pub fn render_debug_clusters(&mut self, params: &Parameters) {
-        if params.configuration == configuration::ClusterVisualisation::Disabled {
+        if params.visualisation == configuration::ClusterVisualisation::Disabled {
             return;
         }
         unsafe {
@@ -89,30 +91,67 @@ impl Context<'_> {
                 gl.bind_buffer(gl::DRAW_INDIRECT_BUFFER, cluster_resources.draw_commands_buffer.name());
 
                 let clu_cam_to_ren_clp = params.clu_cam_to_ren_clp.cast::<f32>().unwrap();
-                gl.uniform_matrix4f(CLU_CAM_TO_REN_CLP_LOC, gl::MajorAxis::Column, clu_cam_to_ren_clp.as_ref());
+                gl.uniform_matrix4f(
+                    CLU_CAM_TO_REN_CLP_LOC,
+                    gl::MajorAxis::Column,
+                    clu_cam_to_ren_clp.as_ref(),
+                );
+
+                gl.uniform_1ui(
+                    VISIBLE_ONLY_LOC,
+                    params.visible_only as u32,
+                );
 
                 use configuration::ClusterVisualisation;
-                gl.uniform_1ui(VISUALISATION_LOC, match params.configuration {
-                    ClusterVisualisation::Disabled => 0,
-                    ClusterVisualisation::LightCountHeatmap => 1,
-                    ClusterVisualisation::LightCountVolumetric => 2,
-                    ClusterVisualisation::FragmentCountHeatmap => 3,
-                    ClusterVisualisation::FragmentCountVolumetric => 4,
-                });
+                gl.uniform_1ui(
+                    VISUALISATION_LOC,
+                    match params.visualisation {
+                        ClusterVisualisation::Disabled => 0,
+                        ClusterVisualisation::ClusterIndices => 1,
+                        ClusterVisualisation::LightCountHeatmap => 8,
+                        ClusterVisualisation::LightCountVolumetric => 9,
+                        ClusterVisualisation::FragmentCountHeatmap => 16,
+                        ClusterVisualisation::FragmentCountVolumetric => 17,
+                    },
+                );
 
                 // Draw opaque regardless.
                 gl.enable(gl::DEPTH_TEST);
                 gl.depth_func(gl::GREATER);
                 gl.depth_mask(gl::TRUE);
                 gl.uniform_1ui(PASS_LOC, 0);
-                gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
+                if params.visible_only {
+                    gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
+                } else {
+                    gl.draw_elements_instanced_base_vertex (
+                        gl::TRIANGLES,
+                        36,
+                        gl::UNSIGNED_INT,
+                        0,
+                        cluster_resources.computed.dimensions.product(),
+                        0,
+                    );
+                }
 
-                if let ClusterVisualisation::LightCountVolumetric | ClusterVisualisation::FragmentCountVolumetric = params.configuration {
-                        gl.depth_mask(gl::FALSE);
-                        gl.enable(gl::BLEND);
-                        gl.blend_func(gl::SRC_ALPHA, gl::ONE);
-                        gl.uniform_1ui(PASS_LOC, 1);
+                if let ClusterVisualisation::LightCountVolumetric | ClusterVisualisation::FragmentCountVolumetric =
+                    params.visualisation
+                {
+                    gl.depth_mask(gl::FALSE);
+                    gl.enable(gl::BLEND);
+                    gl.blend_func(gl::SRC_ALPHA, gl::ONE);
+                    gl.uniform_1ui(PASS_LOC, 1);
+                    if params.visible_only {
                         gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
+                    } else {
+                        gl.draw_elements_instanced_base_vertex(
+                            gl::TRIANGLES,
+                            36,
+                            gl::UNSIGNED_INT,
+                            0,
+                            cluster_resources.computed.dimensions.product(),
+                            0,
+                        );
+                    }
                 }
 
                 gl.depth_mask(gl::TRUE);
@@ -128,7 +167,12 @@ impl Context<'_> {
 impl Renderer {
     pub fn new(context: &mut RenderingContext) -> Self {
         Renderer {
-            program: vs_fs_program(context, "cls/cluster_renderer.vert", "cls/cluster_renderer.frag", fixed_header()),
+            program: vs_fs_program(
+                context,
+                "cls/cluster_renderer.vert",
+                "cls/cluster_renderer.frag",
+                fixed_header(),
+            ),
         }
     }
 }
