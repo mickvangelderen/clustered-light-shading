@@ -1975,12 +1975,16 @@ impl<'s> Context<'s> {
                             },
                         );
                     }
+                }
 
-                    let clu_cam_to_ren_clp = &(main_resources.camera.wld_to_clp
+                // Only render clusters from my own view.
+                if let Some(cluster_resources_index) =
+                    self.main_resources_pool[main_resources_index].cluster_resources_index
+                {
+                    let clu_cam_to_ren_clp = &(self.main_resources_pool[main_resources_index].camera.wld_to_clp
                         * self.cluster_resources_pool[cluster_resources_index]
                             .computed
                             .clu_cam_to_wld);
-
                     self.render_debug_clusters(&cluster_renderer::Parameters {
                         cluster_resources_index,
                         clu_cam_to_ren_clp,
