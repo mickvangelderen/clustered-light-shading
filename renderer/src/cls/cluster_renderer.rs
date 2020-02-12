@@ -16,7 +16,8 @@ glsl_defines! {
         },
         uniforms: {
             CLU_CAM_TO_REN_CLP_LOC = 0;
-            PASS_LOC = 1;
+            VISUALISATION_LOC = 1;
+            PASS_LOC = 2;
         },
     }
 }
@@ -24,12 +25,12 @@ glsl_defines! {
 pub struct Parameters<'a> {
     pub cluster_resources_index: ClusterResourcesIndex,
     pub clu_cam_to_ren_clp: &'a Matrix4<f64>,
-    pub configuration: configuration::DebugClusters,
+    pub configuration: configuration::ClusterVisualisation,
 }
 
 impl Context<'_> {
     pub fn render_debug_clusters(&mut self, params: &Parameters) {
-        if params.configuration == configuration::DebugClusters::Disabled {
+        if params.configuration == configuration::ClusterVisualisation::Disabled {
             return;
         }
         unsafe {
@@ -90,6 +91,15 @@ impl Context<'_> {
                 let clu_cam_to_ren_clp = params.clu_cam_to_ren_clp.cast::<f32>().unwrap();
                 gl.uniform_matrix4f(CLU_CAM_TO_REN_CLP_LOC, gl::MajorAxis::Column, clu_cam_to_ren_clp.as_ref());
 
+                use configuration::ClusterVisualisation;
+                gl.uniform_1ui(VISUALISATION_LOC, match params.configuration {
+                    ClusterVisualisation::Disabled => 0,
+                    ClusterVisualisation::LightCountHeatmap => 1,
+                    ClusterVisualisation::LightCountVolumetric => 2,
+                    ClusterVisualisation::FragmentCountHeatmap => 3,
+                    ClusterVisualisation::FragmentCountVolumetric => 4,
+                });
+
                 // Draw opaque regardless.
                 gl.enable(gl::DEPTH_TEST);
                 gl.depth_func(gl::GREATER);
@@ -97,7 +107,7 @@ impl Context<'_> {
                 gl.uniform_1ui(PASS_LOC, 0);
                 gl.draw_elements_indirect(gl::TRIANGLES, gl::UNSIGNED_INT, 0);
 
-                if params.configuration == configuration::DebugClusters::Additive {
+                if let ClusterVisualisation::LightCountVolumetric | ClusterVisualisation::FragmentCountVolumetric = params.configuration {
                         gl.depth_mask(gl::FALSE);
                         gl.enable(gl::BLEND);
                         gl.blend_func(gl::SRC_ALPHA, gl::ONE);
