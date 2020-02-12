@@ -996,7 +996,7 @@ impl<'s> Context<'s> {
                                         self.export_count += 1;
                                     }
                                     self.export_frames = Some(ExportStopCondition::Single);
-                                },
+                                }
                                 VirtualKeyCode::P => {
                                     if self.export_frames.is_some() {
                                         self.export_index = 0;
@@ -1440,7 +1440,9 @@ impl<'s> Context<'s> {
                 self.configuration.light.virtual_light_count,
             );
 
-            if self.configuration.light.virtual_light_count > 0 || self.configuration.light.shadows.enabled && self.point_lights.len() > 0 {
+            if self.configuration.light.virtual_light_count > 0
+                || self.configuration.light.shadows.enabled && self.point_lights.len() > 0
+            {
                 let draw_resources_index = next_draw_resources(
                     &mut self.resources.draw_resources_pool,
                     &self.gl,
@@ -2118,7 +2120,9 @@ impl<'s> Context<'s> {
                 self.frame_downloader.record_frame(
                     self.gl,
                     self.frame_index,
-                    self.paths.frames_dir.join(format!("export-{}-{}.jpg", self.export_count, self.export_index)),
+                    self.paths
+                        .frames_dir
+                        .join(format!("export-{}-{}.jpg", self.export_count, self.export_index)),
                     self.win_size.width as u32,
                     self.win_size.height as u32,
                     frame_downloader::Format::RGBA,
@@ -2132,10 +2136,8 @@ impl<'s> Context<'s> {
                 if self.transition_camera.progress == 1.0 {
                     export_complete = true
                 }
-            },
-            Some(ExportStopCondition::Single) => {
-                export_complete = true
             }
+            Some(ExportStopCondition::Single) => export_complete = true,
             _ => {}
         }
 
@@ -2200,7 +2202,6 @@ impl<'s> Context<'s> {
         let main_resources = &mut main_resources_pool[main_resources_index];
         main_resources.depth_available = false;
 
-
         unsafe {
             gl.viewport(
                 0,
@@ -2210,7 +2211,12 @@ impl<'s> Context<'s> {
             );
             gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
             gl.clear_color(clear_color[0], clear_color[1], clear_color[2], 1.0);
-            gl.color_mask(gl::WriteMask::Enabled, gl::WriteMask::Enabled, gl::WriteMask::Enabled, gl::WriteMask::Enabled);
+            gl.color_mask(
+                gl::WriteMask::Enabled,
+                gl::WriteMask::Enabled,
+                gl::WriteMask::Enabled,
+                gl::WriteMask::Enabled,
+            );
             // Reverse-Z.
             gl.clear_depth(0.0);
             gl.depth_mask(gl::WriteMask::Enabled);
