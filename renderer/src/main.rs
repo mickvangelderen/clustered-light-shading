@@ -1546,6 +1546,43 @@ impl<'s> Context<'s> {
                     ));
                 }
 
+                // if self.target_camera_key == CameraKey::Debug {
+                //     let dimensions = Vector2::new(self.win_size.width as i32, self.win_size.height as i32);
+                //     let render_c3 = {
+                //         CameraParameters::new(
+                //             render_wld_to_bdy,
+                //             render_bdy_to_wld,
+                //             mono_frustum(&render_camera, dimensions),
+                //             RENDER_RANGE,
+                //         )
+                //     };
+
+                //     let draw_resources_index = next_draw_resources(
+                //         &mut self.resources.draw_resources_pool,
+                //         &self.gl,
+                //         &mut self.profiling_context,
+                //     );
+
+                //     let main_resources_parameters = MainResourcesParameters {
+                //         gl: &self.gl,
+                //         profiling_context: &mut self.profiling_context,
+                //         camera: render_c3,
+                //         draw_resources_index,
+                //         cluster_resources_index: None,
+                //         dimensions: win_size,
+                //         sample_count: self.configuration.global.sample_count,
+                //         display_viewport: {
+                //             let w = self.win_size.width as i32;
+                //             let h = self.win_size.height as i32;
+                //             Some(Viewport::from_coordinates(Point2::origin(), Point2::new(w, h)))
+                //         },
+                //         should_render: true,
+                //     };
+
+                //     let _ =
+                //         next_main_resources(&mut self.main_resources_pool, main_resources_parameters);
+                // }
+
                 for &eye_key in EYE_KEYS.iter() {
                     let EyeData { tangents, ref hmd_cam } = eyes[eye_key];
 
@@ -1632,6 +1669,10 @@ impl<'s> Context<'s> {
                             }
                         },
                         should_render: true,
+                        // should_render: match self.target_camera_key {
+                        //     CameraKey::Main => true,
+                        //     CameraKey::Debug => false,
+                        // }
                     };
 
                     let main_resources_index =
