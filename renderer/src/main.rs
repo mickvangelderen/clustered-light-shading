@@ -1941,7 +1941,7 @@ impl<'s> Context<'s> {
                     self.render_debug_clusters(&cluster_renderer::Parameters {
                         cluster_resources_index,
                         clu_cam_to_ren_clp,
-                        configuration: self.configuration.global.debug_clusters,
+                        configuration: self.configuration.global.cluster_visualisation,
                     });
                 }
             }
