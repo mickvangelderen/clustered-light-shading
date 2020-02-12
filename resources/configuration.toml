@@ -17,10 +17,15 @@ sample_count = 0
 display_parameters = false
 
 # cluster_visualisation = "Disabled"
-cluster_visualisation = "LightCountHeatmap"
+cluster_visualisation = "ClusterIndices"
+# cluster_visualisation = "LightCountHeatmap"
 # cluster_visualisation = "LightCountVolumetric"
 # cluster_visualisation = "FragmentCountHeatmap"
 # cluster_visualisation = "FragmentCountVolumetric"
+cluster_visualisation_max_lights = 25
+cluster_visualisation_max_fragments = 2000
+# cluster_visualisation_visible_only = false
+cluster_visualisation_visible_only = true
 
 [mirror]
 enabled = false
