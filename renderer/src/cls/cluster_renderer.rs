@@ -32,9 +32,6 @@ pub struct Parameters<'a> {
 
 impl Context<'_> {
     pub fn render_debug_clusters(&mut self, params: &Parameters) {
-        if params.visualisation == configuration::ClusterVisualisation::Disabled {
-            return;
-        }
         unsafe {
             let Self {
                 ref gl,
@@ -106,7 +103,6 @@ impl Context<'_> {
                 gl.uniform_1ui(
                     VISUALISATION_LOC,
                     match params.visualisation {
-                        ClusterVisualisation::Disabled => 0,
                         ClusterVisualisation::ClusterIndices => 1,
                         ClusterVisualisation::LightCountHeatmap => 8,
                         ClusterVisualisation::LightCountVolumetric => 9,

@@ -1976,7 +1976,13 @@ impl<'s> Context<'s> {
                         );
                     }
                 }
+            }
 
+            if match self.configuration.global.cluster_visualisation_mode {
+                configuration::ClusterVisualisationMode::Disabled => false,
+                configuration::ClusterVisualisationMode::Enabled => true,
+                configuration::ClusterVisualisationMode::DebugOnly => self.target_camera_key == CameraKey::Debug,
+            } {
                 // Only render clusters from my own view.
                 if let Some(cluster_resources_index) =
                     self.main_resources_pool[main_resources_index].cluster_resources_index

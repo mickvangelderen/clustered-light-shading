@@ -69,12 +69,18 @@ pub struct ReplayConfiguration {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ClusterVisualisation {
-    Disabled,
     ClusterIndices,
     LightCountHeatmap,
     LightCountVolumetric,
     FragmentCountHeatmap,
     FragmentCountVolumetric,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusterVisualisationMode {
+    Disabled,
+    Enabled,
+    DebugOnly,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -84,6 +90,7 @@ pub struct GlobalConfiguration {
     pub sample_count: u32,
     pub display_parameters: bool,
     pub cluster_visualisation: ClusterVisualisation,
+    pub cluster_visualisation_mode: ClusterVisualisationMode,
     pub cluster_visualisation_max_lights: u32,
     pub cluster_visualisation_max_fragments: u32,
     pub cluster_visualisation_visible_only: bool,
