@@ -2107,8 +2107,13 @@ impl<'s> Context<'s> {
 
         self.frame_downloader.process_transfers(&self.gl, self.frame_index);
 
-        if self.export_frames.is_some() {
-            if self.export_index % 4 == 0 {
+        if let Some(stop) = self.export_frames.as_ref() {
+            let skip = match *stop {
+                ExportStopCondition::Single => 1,
+                ExportStopCondition::CameraTransitionComplete => 1,
+                ExportStopCondition::AllLights => 5,
+            };
+            if self.export_index % skip == 0 {
                 self.frame_downloader.record_frame(
                     self.gl,
                     self.frame_index,
