@@ -615,6 +615,7 @@ pub enum ExportStopCondition {
     Single,
     AllLights,
     CameraTransitionComplete,
+    AnimateHeadLight,
 }
 
 pub struct Context<'s> {
@@ -997,6 +998,13 @@ impl<'s> Context<'s> {
                                 }
                                 VirtualKeyCode::R => {
                                     reset_debug_camera = true;
+                                }
+                                VirtualKeyCode::U => {
+                                    if self.export_frames.is_some() {
+                                        self.export_index = 0;
+                                        self.export_count += 1;
+                                    }
+                                    self.export_frames = Some(ExportStopCondition::AnimateHeadLight);
                                 }
                                 VirtualKeyCode::I => {
                                     if self.export_frames.is_some() {
@@ -1391,8 +1399,12 @@ impl<'s> Context<'s> {
                         .pos_to_parent()
                         .transform_point(Point3 {
                             x: 0.0,
-                            y: 1.0,
-                            z: -4.0,
+                            y: if let Some(ExportStopCondition::AnimateHeadLight) = self.export_frames {
+                                3.0 - (self.export_index as f32)
+                            } else {
+                                1.0
+                            },
+                            z: -6.0,
                         }),
                     attenuation: {
                         let mut a = self.configuration.light.attenuation;
@@ -2178,6 +2190,7 @@ impl<'s> Context<'s> {
                 ExportStopCondition::Single => 1,
                 ExportStopCondition::CameraTransitionComplete => 1,
                 ExportStopCondition::AllLights => 5,
+                ExportStopCondition::AnimateHeadLight => 1,
             };
             if self.export_index % skip == 0 {
                 self.frame_downloader.record_frame(
@@ -2201,6 +2214,11 @@ impl<'s> Context<'s> {
                 }
             }
             Some(ExportStopCondition::Single) => export_complete = true,
+            Some(ExportStopCondition::AnimateHeadLight) => {
+                if self.export_index == 6 {
+                    export_complete = true
+                }
+            }
             _ => {}
         }
 
