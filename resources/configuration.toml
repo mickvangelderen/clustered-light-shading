@@ -41,7 +41,9 @@ vertices = [
 ]
 
 [light]
-display = true
+render_points = false
+render_volumes = true
+volume_opacity = 0.1
 virtual_light_count = 0
 static_lights = true
 head_light = true

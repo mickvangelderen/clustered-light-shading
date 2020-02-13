@@ -51,6 +51,8 @@ pub struct Resources {
     pub full_screen_vb: gl::BufferName,
     pub full_screen_eb: gl::BufferName,
 
+    pub icosphere1280: icosphere1280::Resources,
+
     pub cluster_vao: gl::VertexArrayName,
     pub cluster_vb: gl::BufferName,
     pub cluster_eb: gl::BufferName,
@@ -471,6 +473,7 @@ impl Resources {
             quad_vao,
             quad_vb,
             quad_eb,
+            icosphere1280: unsafe { icosphere1280::Resources::new(gl) },
             full_screen_vao,
             full_screen_vb,
             full_screen_eb,

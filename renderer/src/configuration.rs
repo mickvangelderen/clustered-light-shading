@@ -104,7 +104,9 @@ pub struct MirrorConfiguration {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LightConfiguration {
-    pub display: bool,
+    pub render_points: bool,
+    pub render_volumes: bool,
+    pub volume_opacity: f32,
     pub virtual_light_count: u32,
     pub static_lights: bool,
     pub head_light: bool,

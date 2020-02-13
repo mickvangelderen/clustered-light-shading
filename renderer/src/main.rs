@@ -41,9 +41,11 @@ mod pool;
 mod rain;
 mod rendering;
 mod resources;
+mod icosphere1280;
 mod shader_compiler;
 mod symlink;
 mod text_renderer;
+mod light_volume_renderer;
 mod text_rendering;
 mod toggle;
 mod viewport;
@@ -329,6 +331,7 @@ pub struct MainContext {
     pub line_renderer: line_renderer::Renderer,
     pub basic_renderer: basic_renderer::Renderer,
     pub light_renderer: light_renderer::Renderer,
+    pub light_volume_renderer: light_volume_renderer::Renderer,
     pub overlay_renderer: overlay_renderer::Renderer,
     pub cluster_renderer: cluster_renderer::Renderer,
     pub text_renderer: text_renderer::Renderer,
@@ -543,6 +546,7 @@ impl MainContext {
         let line_renderer = line_renderer::Renderer::new(&mut rendering_context);
         let basic_renderer = basic_renderer::Renderer::new(&mut rendering_context);
         let light_renderer = light_renderer::Renderer::new(&mut rendering_context);
+        let light_volume_renderer = light_volume_renderer::Renderer::new(&mut rendering_context);
         let overlay_renderer = overlay_renderer::Renderer::new(&mut rendering_context);
         let cluster_renderer = cluster_renderer::Renderer::new(&mut rendering_context);
         let text_renderer = text_renderer::Renderer::new(&mut rendering_context);
@@ -588,6 +592,7 @@ impl MainContext {
             line_renderer,
             basic_renderer,
             light_renderer,
+            light_volume_renderer,
             overlay_renderer,
             cluster_renderer,
             text_renderer,
@@ -638,6 +643,7 @@ pub struct Context<'s> {
     pub line_renderer: &'s mut line_renderer::Renderer,
     pub basic_renderer: &'s mut basic_renderer::Renderer,
     pub light_renderer: &'s mut light_renderer::Renderer,
+    pub light_volume_renderer: &'s mut light_volume_renderer::Renderer,
     pub overlay_renderer: &'s mut overlay_renderer::Renderer,
     pub cluster_renderer: &'s mut cluster_renderer::Renderer,
     pub text_renderer: &'s mut text_renderer::Renderer,
@@ -713,6 +719,7 @@ impl<'s> Context<'s> {
             ref mut line_renderer,
             ref mut basic_renderer,
             ref mut light_renderer,
+            ref mut light_volume_renderer,
             ref mut overlay_renderer,
             ref mut cluster_renderer,
             ref mut text_renderer,
@@ -773,6 +780,7 @@ impl<'s> Context<'s> {
             line_renderer,
             basic_renderer,
             light_renderer,
+            light_volume_renderer,
             overlay_renderer,
             cluster_renderer,
             text_renderer,
@@ -1915,8 +1923,12 @@ impl<'s> Context<'s> {
                 }
             }
 
-            if self.configuration.light.display {
+            if self.configuration.light.render_points {
                 self.render_lights(&light_renderer::Parameters { main_resources_index });
+            }
+
+            if self.configuration.light.render_volumes {
+                self.render_light_volumes(light_volume_renderer::Parameters { main_resources_index });
             }
 
             if self.target_camera_key == CameraKey::Debug {
