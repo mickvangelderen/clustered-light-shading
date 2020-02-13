@@ -11,7 +11,7 @@ impl NonMaxU32 {
         NonZeroU32::new(val.wrapping_add(1)).map(Self)
     }
 
-    pub fn get(&self) -> u32 {
+    pub fn get(self) -> u32 {
         self.0.get().wrapping_sub(1)
     }
 }

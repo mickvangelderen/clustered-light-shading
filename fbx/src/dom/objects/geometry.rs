@@ -116,7 +116,7 @@ impl Geometry {
         for node in node.children.iter() {
             stack.push(node.name.clone());
             match node.name.as_str() {
-                "GeometryVersion" => {
+                "Properties70" | "GeometryVersion" => {
                     // Don't care.
                 }
                 "Layer" => {

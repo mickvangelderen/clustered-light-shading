@@ -338,7 +338,10 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
 
                     attribute.elements[index].try_into().unwrap()
                 }
-                None => panic!("No material assigned"),
+                None => {
+                    // FIXME: Warn?
+                    0
+                }
             };
 
             assert!(
@@ -609,13 +612,26 @@ fn convert(path: impl AsRef<Path>, out_path: impl AsRef<Path>) {
                 instances.into_iter().map(|instance| Instance {
                     mesh_index: instance.mesh_index,
                     transform_index: instance.transform_index,
-                    material_index: instance.material_index.unwrap().get(),
+                    material_index: instance.material_index.map(NonMaxU32::get).unwrap_or(0),
                 })
             }),
     );
 
-    file.write(&mut std::io::BufWriter::new(std::fs::File::create(&out_path).unwrap()))
-        .unwrap();
+    use std::io::Write;
+    let out = &mut std::io::BufWriter::new(std::fs::File::create(&out_path).unwrap());
+    write!(out, "pub static VERTICES: [[f32; 3]; {}] = [\n", file.pos_in_obj_buffer.len()).unwrap();
+    for &p in file.pos_in_obj_buffer.iter() {
+        write!(out, "[{:.6}, {:.6}, {:.6}],\n", p[0].get(), p[1].get(), p[2].get()).unwrap();
+    }
+    write!(out, "];\n").unwrap();
+        write!(out, "pub static INDICES: [[u32; 3]; {}] = [\n", file.triangle_buffer.len()).unwrap();
+    for &p in file.triangle_buffer.iter() {
+        write!(out, "[{}, {}, {}],\n", p[0], p[1], p[2]).unwrap();
+    }
+    write!(out, "];\n").unwrap();
+
+    // file.write(&mut std::io::BufWriter::new(std::fs::File::create(&out_path).unwrap()))
+    //     .unwrap();
 
     // let mut file = std::fs::File::open(&out_path).unwrap();
     // let scene_file = SceneFile::read(&mut file).unwrap();
@@ -653,8 +669,9 @@ fn main() {
         // "emerald_square/Block_KWOW_Coffee.fbx",
         // "emerald_square/End_Cap.fbx",
         // "bistro/Bistro_Interior.fbx",
-        "bistro/Bistro_Exterior.fbx",
-        "sun_temple/SunTemple.fbx",
+        // "bistro/Bistro_Exterior.fbx",
+        // "sun_temple/SunTemple.fbx",
+        "icosphere1280.fbx",
     ] {
         let i = resource_dir.join(p);
         let o = i.with_extension("bin");

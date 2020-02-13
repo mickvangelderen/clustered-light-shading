@@ -104,15 +104,12 @@ impl Model {
         for node in node.children.iter() {
             stack.push(node.name.clone());
             match node.name.as_str() {
-                "Version" | "Shading" | "Culling" => {
-                    // Don't care.
-                }
                 "Properties70" => {
                     assert!(properties.is_none());
                     properties = Some(ModelProperties::from_fbx(node, stack))
                 }
                 unknown => {
-                    panic!("Unknown Model property {:?}", unknown);
+                    eprintln!("Unhandled Model property {:?}", unknown);
                 }
             }
             stack.pop();

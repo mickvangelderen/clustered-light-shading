@@ -21,16 +21,16 @@ impl FileHeader {
     pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let header = RawFileHeader::parse(reader)?;
         assert_eq!(header.magic, MAGIC);
-        assert_eq!(
-            {
-                // NOTE: Do an unaligned read of header.version, the pass the copy
-                // to assert_eq. It takes a reference by default and reading
-                // unaligned values from references is problematic.
-                let version = header.version;
-                version
-            },
-            VERSION_7300
-        );
+        // assert_eq!(
+        //     {
+        //         // NOTE: Do an unaligned read of header.version, the pass the copy
+        //         // to assert_eq. It takes a reference by default and reading
+        //         // unaligned values from references is problematic.
+        //         let version = header.version;
+        //         version
+        //     },
+        //     VERSION_7300
+        // );
         Ok(Self {
             version: header.version.to_ne(),
         })
