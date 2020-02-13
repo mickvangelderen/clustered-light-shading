@@ -32,7 +32,8 @@ void main() {
 
   if (visualisation == CLUSTER_INDICES) {
     if (inside) {
-      frag_color = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
+      vec4 temp = vec4(vec3(fs_idx_in_cls)/vec3(cluster_space.dimensions), 0.0);
+      frag_color = vec4(temp.xyz, 1.0);
     } else {
       frag_color = border_color;
     }
