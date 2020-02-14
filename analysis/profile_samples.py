@@ -52,9 +52,11 @@ class ProfileSamples:
             );
 
     def min_gpu_samples_by_name(self, sample_name):
-        frame_sample_index = self.sample_names.index(sample_name)
-        samples = self.deltas[:, :, frame_sample_index, 1]
-        return np.nanmin(samples, axis = 0) / 1000000.0
+        sample_indices = [index for index, name in enumerate(self.sample_names) if name == sample_name]
+        assert len(sample_indices) > 0, "Could not find any samples with name {}".format(sample_name)
+        samples_stack = [
+            np.nanmin(self.deltas[:, :, sample_index, 1], axis = 0) / 1000000.0 for sample_index in sample_indices]
+        return np.sum(np.vstack(samples_stack), axis=0)
 
     def sum_visible_clusters(self):
         return np.sum(self.cluster_buffers[:, :, 0], axis=1)
