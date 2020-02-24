@@ -1,3 +1,5 @@
+[![Stereoscopic Clustered Light Shading - Project Overview](media/project-overview-yt.png)](https://www.youtube.com/watch?v=BPpmmxFk0ZE)
+
 ![Decent VR-ready renderer screenshot](media/decent-vr-ready-renderer.jpg)
 
 Requires SteamVR (installed through steam) and standard OpenGL development
