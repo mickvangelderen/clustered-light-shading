@@ -153,3 +153,30 @@ where
         Point3::zip3(self, min, max, S::partial_clamp)
     }
 }
+
+pub trait ArrayExt {
+    fn dominant_axis(self) -> usize;
+}
+
+impl <S> ArrayExt for Vector3<S> where S: PartialOrd {
+    fn dominant_axis(self) -> usize {
+        let mut dominant_axis = 0;
+        for axis in 1..3 {
+            if self[axis] > self[dominant_axis] {
+                dominant_axis = axis
+            }
+        }
+        dominant_axis
+    }
+}
+
+pub trait RadExt {
+    fn cast<U>(self) -> Option<Rad<U>> where U: num_traits::Float;
+}
+
+impl<S> RadExt for Rad<S> where S: num_traits::Float {
+    #[inline]
+    fn cast<U>(self) -> Option<Rad<U>> where U: num_traits::Float {
+        Some(Self(num_traits::cast(self.0)?))
+    }
+}

@@ -635,3 +635,133 @@ where
         self.capacity = capacity;
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+pub struct DepthState {
+    pub enabled: bool,
+    pub function: gl::DepthFunc,
+    pub mask: gl::WriteMask,
+}
+
+impl DepthState {
+    pub unsafe fn apply(&self, gl: &gl::Gl) {
+        gl_set(gl, gl::DEPTH_TEST, self.enabled);
+        gl.depth_func(self.function);
+        gl.depth_mask(self.mask);
+    }
+
+    pub unsafe fn reconcile(&mut self, gl: &gl::Gl, state: Self) {
+        if self.enabled != state.enabled {
+            gl_set(gl,gl::DEPTH_TEST, state.enabled);
+            self.enabled = state.enabled;
+        }
+        if self.function != state.function {
+            gl.depth_func(state.function);
+            self.function = state.function;
+        }
+        if self.mask != state.mask {
+            gl.depth_mask(state.mask);
+            self.mask = state.mask;
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ColorState {
+    pub mask: [gl::WriteMask; 4],
+}
+
+impl ColorState {
+    pub unsafe fn apply(&self, gl: &gl::Gl) {
+        let [r, g, b, a] = self.mask;
+        gl.color_mask(r, g, b, a);
+    }
+
+    pub unsafe fn reconcile(&mut self, gl: &gl::Gl, state: Self) {
+        if self.mask != state.mask {
+            let [r, g, b, a] = state.mask;
+            gl.color_mask(r, g, b, a);
+            self.mask = state.mask;
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct BlendState {
+    pub enabled: bool,
+}
+
+impl BlendState {
+    pub unsafe fn apply(&self, gl: &gl::Gl) {
+        gl_set(gl, gl::BLEND, self.enabled);
+    }
+
+    pub unsafe fn reconcile(&mut self, gl: &gl::Gl, state: Self) {
+        if self.enabled != state.enabled {
+            gl_set(gl,gl::BLEND, state.enabled);
+            self.enabled = state.enabled;
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct CullState {
+    pub enabled: bool,
+    pub face: gl::CullFace,
+    pub front: gl::FrontFace,
+}
+
+unsafe fn gl_set(gl: &gl::Gl, capability: impl Into<gl::Capability>, enabled: bool) {
+    if enabled {
+        gl.enable(capability.into());
+    } else {
+        gl.disable(capability.into());
+    }
+}
+
+impl CullState {
+    pub unsafe fn apply(&self, gl: &gl::Gl) {
+        gl_set(gl, gl::CULL_FACE, self.enabled);
+        gl.cull_face(self.face);
+        gl.front_face(self.front);
+    }
+
+    pub unsafe fn reconcile(&mut self, gl: &gl::Gl, state: Self) {
+        if self.enabled != state.enabled {
+            gl_set(gl, gl::CULL_FACE, state.enabled);
+            self.enabled = state.enabled;
+        }
+        if self.face != state.face {
+            gl.cull_face(state.face);
+            self.face = state.face;
+        }
+        if self.front != state.front {
+            gl.front_face(state.front);
+            self.front = state.front;
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct RenderState {
+    pub depth: DepthState,
+    pub color: ColorState,
+    pub blend: BlendState,
+    pub cull: CullState,
+}
+
+impl RenderState {
+    pub unsafe fn apply(&self, gl: &gl::Gl) {
+        self.depth.apply(gl);
+        self.color.apply(gl);
+        self.blend.apply(gl);
+        self.cull.apply(gl);
+    }
+
+    pub unsafe fn reconcile(&mut self, gl: &gl::Gl, state: Self) {
+        self.depth.reconcile(gl, state.depth);
+        self.color.reconcile(gl, state.color);
+        self.blend.reconcile(gl, state.blend);
+        self.cull.reconcile(gl, state.cull);
+    }
+}

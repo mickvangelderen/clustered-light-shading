@@ -1,20 +1,6 @@
-#include "native/ATTENUATION_MODE"
 #include "native/RENDER_TECHNIQUE"
 #include "native/PROFILING"
 #include "native/DEPTH_PREPASS"
-
-#include "common.glsl"
-#include "heatmap.glsl"
-#include "light_buffer.glsl"
-#include "pbr.glsl"
-
-#if defined(RENDER_TECHNIQUE_CLUSTERED)
-#include "cls/cluster_space_buffer.glsl"
-#include "cls/cluster_maybe_active_cluster_indices_buffer.glsl"
-#include "cls/active_cluster_light_counts_buffer.glsl"
-#include "cls/active_cluster_light_offsets_buffer.glsl"
-#include "cls/light_indices_buffer.glsl"
-#endif
 
 #if !defined(PROFILING_TIME_SENSITIVE)
 #error PROFILING_TIME_SENSITIVE is not defined.
@@ -34,6 +20,20 @@
 
 #if !defined(DEPTH_PREPASS)
 #error DEPTH_PREPASS is not defined.
+#endif
+
+#include "common.glsl"
+#include "heatmap.glsl"
+#include "light_buffer.glsl"
+#include "point_light_attenuate.glsl"
+#include "pbr.glsl"
+
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+#include "cls/cluster_space_buffer.glsl"
+#include "cls/cluster_maybe_active_cluster_indices_buffer.glsl"
+#include "cls/active_cluster_light_counts_buffer.glsl"
+#include "cls/active_cluster_light_offsets_buffer.glsl"
+#include "cls/light_indices_buffer.glsl"
 #endif
 
 #if !PROFILING_TIME_SENSITIVE
@@ -67,17 +67,23 @@ layout(binding = EMISSIVE_SAMPLER_BINDING) uniform sampler2D emissive_sampler;
 layout(binding = AMBIENT_SAMPLER_BINDING) uniform sampler2D ambient_sampler;
 layout(binding = DIFFUSE_SAMPLER_BINDING) uniform sampler2D diffuse_sampler;
 layout(binding = SPECULAR_SAMPLER_BINDING) uniform sampler2D specular_sampler;
+// layout(binding = SHADOW_SAMPLER_BINDING) uniform samplerCubeShadow shadow_sampler;
+layout(binding = SHADOW_SAMPLER_BINDING) uniform samplerCube shadow_sampler;
+layout(binding = SHADOW_SAMPLER_BINDING_2) uniform samplerCube shadow_sampler_2;
+layout(binding = SHADOW_SAMPLER_BINDING_3) uniform samplerCube shadow_sampler_3;
 
 layout(location = CAM_POS_IN_LGT_LOC) uniform vec3 cam_pos_in_lgt;
+
+#if defined(RENDER_TECHNIQUE_CLUSTERED)
+layout(location = VIEWPORT_LOC) uniform vec4 viewport;
+layout(location = REN_CLP_TO_CLU_CAM_LOC) uniform mat4 ren_clp_to_clu_cam;
+#endif
 
 in vec3 fs_pos_in_lgt;
 in vec3 fs_nor_in_lgt;
 in vec3 fs_bin_in_lgt;
 in vec3 fs_tan_in_lgt;
 in vec2 fs_pos_in_tex;
-#if defined(RENDER_TECHNIQUE_CLUSTERED)
-in vec3 fs_pos_in_clu_cam;
-#endif
 
 layout(location = 0) out vec4 frag_color;
 
@@ -85,77 +91,6 @@ vec3 sample_nor_in_tan(vec2 pos_in_tex) {
   vec2 xy = texture(normal_sampler, pos_in_tex).xy * 2.0 - vec2(1.0);
   float z = sqrt(max(0.0, 1.0 - dot(xy, xy)));
   return vec3(xy, z);
-}
-
-float point_light_attenuate(PointLight point_light, vec3 frag_pos) {
-  vec3 pos_from_frag_to_light = point_light.position - frag_pos;
-  vec3 light_dir_norm = normalize(pos_from_frag_to_light);
-
-  float I = point_light.i;
-  float I0 = point_light.i0;
-  float R0 = point_light.r0;
-  float R1 = point_light.r1; // sqrt(I/I0)
-
-  // Attenuation.
-  float d_sq_unclipped = dot(pos_from_frag_to_light, pos_from_frag_to_light);
-  float d_unclipped = sqrt(d_sq_unclipped);
-
-  float d_sq = max(d_sq_unclipped, R0*R0);
-  float d = max(d_unclipped, R0);
-
-#if defined(ATTENUATION_MODE_STEP)
-  // Use physical intensity halfway between 0 and R1
-  float attenuation = d_sq_unclipped < R1*R1 ? 4*I/(R1*R1) : 0.0;
-#elif defined(ATTENUATION_MODE_LINEAR)
-  // Linear doesn't go infinite so we can use the unclipped distance.
-  float attenuation = d_unclipped < R1 ? I/2.0*(R1 - d_unclipped)/(R1 - 1.0) : 0.0;
-#elif defined(ATTENUATION_MODE_PHYSICAL)
-  float attenuation = I / d_sq;
-#elif defined(ATTENUATION_MODE_REDUCED)
-  float attenuation = d_sq < R1*R1 ? I / d_sq - I0 : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_RED_1)
-  float attenuation = d_sq < R1*R1 ? I / d_sq - I0/R1*d : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_RED_2)
-  float attenuation = d_sq < R1*R1 ? I / d_sq - (I0 / (R1*R1)) * d_sq : 0.0;
-#elif defined(ATTENUATION_MODE_SMOOTH)
-  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / R1) * d - 3.0 * I0 : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_SMO_1)
-  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / (R1*R1)) * d_sq - 3.0 * I0/R1 * d : 0.0;
-#elif defined(ATTENUATION_MODE_PHY_SMO_2)
-  float attenuation = d_sq < R1*R1 ? I / d_sq + (2.0 * I0 / (R1*R1*R1)) * (d_sq*d) - 3.0 * I0/(R1*R1) * d_sq : 0.0;
-#else
-#error invalid attenuation mode!
-#endif
-
-  return attenuation;
-}
-
-vec3 cook_torrance(PointLight point_light, vec3 P, vec3 N, vec3 V, vec3 kd, float roughness, float metalness) {
-  // roughness *= 0.6;
-  // metalness *= 2.0;
-
-  vec3 frag_to_light = point_light.position - P;
-  vec3 L = normalize(frag_to_light);
-
-  vec3 F0 = vec3(0.04);
-  F0 = mix(F0, kd, metalness);
-
-  // calculate per-light radiance
-  vec3 H = normalize(V + L);
-  vec3 radiance = point_light.tint * point_light_attenuate(point_light, P);
-
-  // Cook-Torrance BRDF
-  float NDF = DistributionGGX(N, H, roughness);
-  float G   = GeometrySmith(N, V, L, roughness);
-  vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
-
-  float NdotV = max(dot(N, V), 0.0);
-  float NdotL = max(dot(N, L), 0.0);
-  vec3 specular = NDF * G * F / max(4 * NdotV * NdotL, 0.001); // prevent divide by zero for NdotV=0.0 or NdotL=0.0
-
-  vec3 kD = (vec3(1.0) - F) * (1.0 - metalness);
-
-  return (kD * kd / PI + specular) * radiance * NdotL;
 }
 
 void main() {
@@ -196,24 +131,63 @@ void main() {
 
   vec3 color_accumulator = vec3(ke.xyz);
 #if defined(RENDER_TECHNIQUE_NAIVE)
-  for (uint i = 0; i < light_buffer.light_count.x; i++) {
-    color_accumulator += cook_torrance(light_buffer.point_lights[i], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+  for (uint i = 1; i < light_buffer.light_count.x; i += 1) {
+    PointLight light = light_buffer.point_lights[i];
+    vec3 f_to_l = light.position - frag_pos_in_lgt;
+    float f_to_l_mag = length(f_to_l);
+
+    color_accumulator +=
+      point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
+      light.tint *
+      cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
 #endif
   }
+  // Direct
+  // {
+  //   PointLight light = light_buffer.point_lights[0];
+  //   vec3 l_to_f = frag_pos_in_lgt - light.position;
+  //   float l_to_f_mag = length(l_to_f);
+
+  //   color_accumulator +=
+  //   (light.i/(l_to_f_mag*l_to_f_mag)) *
+  //   light.tint *
+  //   cook_torrance(l_to_f/(-l_to_f_mag), frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+  // }
 #elif defined(RENDER_TECHNIQUE_CLUSTERED)
-  vec3 pos_in_cls = cluster_cam_to_clp(fs_pos_in_clu_cam);
+  vec3 frag_pos_in_clu_cam = from_homogeneous(ren_clp_to_clu_cam * vec4(
+    gl_FragCoord.xy/viewport.zw * 2.0 - 1.0,
+    gl_FragCoord.z,
+    1.0
+  ));
+  vec3 pos_in_cls = cluster_cam_to_clp(frag_pos_in_clu_cam);
+
+  if (any(lessThan(pos_in_cls, vec3(0.0))) ||
+      any(greaterThanEqual(pos_in_cls, vec3(cluster_space.dimensions)))) {
+    discard;
+    return;
+  }
+
   uvec3 idx_in_cls = uvec3(pos_in_cls);
-  // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0);
+  // frag_color = vec4(pos_in_cls / vec3(cluster_space.dimensions.xyz), 1.0); return;
+
+  // DIFFUSE
+  // kd = textureLod(diffuse_sampler, frag_pos_in_tex, 1000.0);
+  // frag_color = vec4(kd.rgb, 1.0); return;
 
   // CLUSTER INDICES X, Y, Z
-  // frag_color = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 1.0);
+  vec4 pos_in_cls_norm = vec4(vec3(idx_in_cls)/vec3(cluster_space.dimensions), 0.5);
+  // frag_color = vec4(pos_in_cls_norm.xww, 1.0); return;
+  // frag_color = vec4(pos_in_cls_norm.wyw, 1.0); return;
+  // frag_color = vec4(pos_in_cls_norm.xyw, 1.0); return;
+  // frag_color = vec4(pos_in_cls_norm.xyz, 1.0); return;
 
   // CLUSTER INDICES X, Y, Z mod 3
   // vec3 cluster_index_colors = vec3((idx_in_cls % 3) + 1)/4.0;
   // frag_color = vec4(cluster_index_colors.xyz, 1.0);
+  // return;
 
   // CLUSTER MORTON INDEX
   // uint cluster_morton_index = to_morton_3(idx_in_cls);
@@ -236,12 +210,15 @@ void main() {
   uint cluster_light_count = active_cluster_light_counts[active_cluster_index];
   uint cluster_light_offset = active_cluster_light_offsets[active_cluster_index];
 
+  // HEATMAP
+  // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 25.0), 1.0); return;
+
   // ACTIVE CLUSTERINDEX
-  // frag_color = vec4(vec3(float(active_cluster_index) / 100.0), 1.0);
+  // color_accumulator = vec3(float(active_cluster_index) / 100.0);
 
   // CLUSTER LENGHTS
-  // frag_color = vec4(vec3(float(cluster_light_count) / 1000.0), 1.0);
-  // frag_color = vec4(heatmap(float(cluster_light_count), 0.0, 1000.0), 1.0);
+  // color_accumulator = vec3(float(cluster_light_count) / 400.0);
+  // color_accumulator = heatmap(float(cluster_light_count), 0.0, 100.0);
 
   // COLORED CLUSTER LENGTHS
   // if (cluster_light_count == 0) {
@@ -265,12 +242,65 @@ void main() {
   for (uint i = 0; i < cluster_light_count; i++) {
     uint light_index = light_indices[cluster_light_offset + i];
 
-    color_accumulator += cook_torrance(light_buffer.point_lights[light_index], frag_pos_in_lgt, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    PointLight light = light_buffer.point_lights[light_index];
+    vec3 f_to_l = light.position - frag_pos_in_lgt;
+    float f_to_l_mag = length(f_to_l);
+
+    // if (light_index == 0) {
+    //   continue;
+    // } else if (light_index < light_buffer.virtual_light_count) {
+    //   // float roughness = mix(0.0, light.r1, light._pad1)*ks.y;
+    //   float roughness = ks.y;
+    //   float metalness = ks.z;
+    //   color_accumulator +=
+    //     min(light.i, point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag)) *
+    //     light.tint *
+    //     cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, roughness, metalness);
+
+    // } else {
+      color_accumulator +=
+        point_light_attenuate(light.i, light.i0, light.r0, light.r1, f_to_l_mag) *
+        light.tint *
+        cook_torrance(f_to_l/f_to_l_mag, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+    // }
 
 #if !PROFILING_TIME_SENSITIVE
     atomicCounterIncrement(lighting_ops);
 #endif
   }
+
+  // SHADOW MAP
+  // PointLight light = light_buffer.point_lights[0];
+  // vec3 l_to_f = frag_pos_in_lgt - light.position;
+  // float d_l_to_f_closest = texture(shadow_sampler, l_to_f).r;
+  // float d_l_to_f = length(l_to_f);
+  // vec3 f_to_l_norm = l_to_f/-d_l_to_f;
+  // vec3 triangle_normal = normalize(cross(dFdx(frag_pos_in_lgt), dFdy(frag_pos_in_lgt)));
+
+  // float dot_n_lo = dot(f_to_l_norm, triangle_normal);
+  // float bias = 0.1*sqrt(1.0 - dot_n_lo*dot_n_lo);
+
+  // uint DISPLAY = 1;
+
+  // if (dot_n_lo > 0.0 && d_l_to_f < d_l_to_f_closest + bias) {
+  //   if (DISPLAY == 1) {
+  //     color_accumulator +=
+  //       point_light_attenuate(light.i, light.i0, light.r0, light.r1, d_l_to_f) *
+  //       light.tint *
+  //       cook_torrance(l_to_f/-d_l_to_f, frag_nor_in_lgt, frag_to_cam_nor, kd.xyz, ks.y, ks.z);
+  //   } else if (DISPLAY == 2) {
+  //     color_accumulator = step(d_l_to_f, light.r1) * (texture(shadow_sampler_2, l_to_f).rgb * 0.5 + 0.5);
+  //   } else if (DISPLAY == 3) {
+  //     color_accumulator = step(d_l_to_f, light.r1) * texture(shadow_sampler_3, l_to_f).rgb;
+  //   }
+  // } else {
+  //   if (DISPLAY == 2 || DISPLAY == 3) {
+  //     color_accumulator = vec3(0.0);
+  //   }
+  // }
+
+  // DIFFUSE
+  // color_accumulator = normalize(kd.rgb);
 #else
 #error Unimplemented render technique!
 #endif

@@ -10,11 +10,10 @@ layout(location = VS_INSTANCE_INDEX_LOC) in uint vs_instance_index;
 
 #if BASIC_PASS == BASIC_PASS_MASKED
 layout(location = VS_POS_IN_TEX_LOC) in vec2 vs_pos_in_tex;
+out vec2 fs_pos_in_tex;
 #endif
 
 invariant gl_Position;
-
-out vec2 fs_pos_in_tex;
 
 void main() {
   InstanceMatrices m = instance_matrices_buffer[vs_instance_index];

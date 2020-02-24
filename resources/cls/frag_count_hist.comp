@@ -8,38 +8,27 @@
 
 // NOTE(mickvangelderen): This whole shader expects local_size_z = 1
 // NOTE(mickvangelderen): We assume local_size_x equals the number of bins in the output histogram.
-layout(local_size_x = 32, local_size_y = 8) in;
+layout(local_size_x = 256) in;
 
-#define LOCAL_SIZE   (gl_WorkGroupSize.x * gl_WorkGroupSize.y)
-#define LOCAL_OFFSET  (gl_LocalInvocationID.y * gl_WorkGroupSize.x)
-#define LOCAL_INDEX  (LOCAL_OFFSET + gl_LocalInvocationID.x)
-#define GLOBAL_OFFSET (gl_WorkGroupID.x * LOCAL_SIZE)
-#define GLOBAL_INDEX (GLOBAL_OFFSET + LOCAL_INDEX)
+shared uint shared_values[gl_WorkGroupSize.x];
 
-shared uint shared_values[LOCAL_SIZE];
-
-uint bin(uint value) {
-  if (value == 0) {
-    return 0;
-  } else {
-    return findMSB(value) + 1;
-  }
+uint bin(uint n) {
+  return uint(8.0*log2(float(n)));
 }
 
 void main() {
-  bool within_bounds = GLOBAL_INDEX < cluster_space.cluster_count;
+  bool within_bounds = gl_GlobalInvocationID.x < cluster_space.cluster_count;
 
   // Read a block of data in one go.
-  shared_values[LOCAL_INDEX] = within_bounds ? cluster_fragment_counts[GLOBAL_INDEX] : 0;
+  shared_values[gl_LocalInvocationID.x] = within_bounds ? cluster_fragment_counts[gl_GlobalInvocationID.x] : 0;
   memoryBarrierShared();
   barrier();
 
-  // Have every thread go over up to local_size_x values
-  uint local_end = min(LOCAL_OFFSET + gl_WorkGroupSize.x, cluster_space.cluster_count - GLOBAL_OFFSET);
   uint acc = 0;
-  for (uint i = LOCAL_OFFSET; i < local_end; i++) {
+  int end = clamp(int(cluster_space.cluster_count) - int(gl_WorkGroupID.x * gl_WorkGroupSize.x), 0, 256);
+  for (int i = 0; i < end; i++) {
     uint value = shared_values[i];
-    if (bin(value) == gl_LocalInvocationID.x) {
+    if (value > 0 && bin(value) == gl_LocalInvocationID.x) {
       acc += 1;
     }
   }

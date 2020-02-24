@@ -37,7 +37,7 @@ class ProfileSamples:
 
             self.deltas = np.subtract(self.stamps[:, :, :, [1, 3]], self.stamps[:, :, :, [0, 2]])
 
-            cluster_buffer_u32_size = 4+32*3
+            cluster_buffer_u32_size = 256*4
 
             self.cluster_buffers = np.reshape(
                 np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*cluster_buffer_u32_size),
@@ -52,6 +52,20 @@ class ProfileSamples:
             );
 
     def min_gpu_samples_by_name(self, sample_name):
-        frame_sample_index = self.sample_names.index(sample_name)
-        samples = self.deltas[:, :, frame_sample_index, 1]
-        return np.nanmin(samples, axis = 0) / 1000000.0
+        sample_indices = [index for index, name in enumerate(self.sample_names) if name == sample_name]
+        assert len(sample_indices) > 0, "Could not find any samples with name {}".format(sample_name)
+        samples_stack = [
+            np.nanmin(self.deltas[:, :, sample_index, 1], axis = 0) / 1000000.0 for sample_index in sample_indices]
+        return np.sum(np.vstack(samples_stack), axis=0)
+
+    def sum_visible_clusters(self):
+        return np.sum(self.cluster_buffers[:, :, 0], axis=1)
+
+    def sum_light_indices(self):
+        return np.sum(self.cluster_buffers[:, :, 1], axis=1)
+
+    def sum_lighting_operations(self):
+        return np.sum(self.basic_buffers[:, :, 0], axis=1)
+
+    def sum_shading_operations(self):
+        return np.sum(self.basic_buffers[:, :, 1], axis=1)

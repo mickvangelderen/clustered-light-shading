@@ -14,8 +14,7 @@ glsl_defines!(fixed_header {
 });
 
 pub struct Parameters {
-    pub main_resources_index: MainResourcesIndex,
-    pub draw_resources_index: usize,
+    pub main_resources_index: usize,
 }
 
 impl Context<'_> {
@@ -26,13 +25,26 @@ impl Context<'_> {
             ref mut depth_renderer,
             ..
         } = *self;
-
         let main_resources = &self.main_resources_pool[params.main_resources_index];
-        let draw_resources = &self.resources.draw_resources_pool[params.draw_resources_index];
+        let draw_resources = &self.resources.draw_resources_pool[main_resources.draw_resources_index];
 
-        let profiler_index = self.profiling_context.start(gl, main_resources.depth_profiler);
+        let profiler_index = self
+            .profiling_context
+            .start(gl, main_resources.profilers.depth_profiler);
 
         unsafe {
+            self.gl
+                .bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
+            self.gl.depth_func(gl::GREATER);
+            self.gl.depth_mask(gl::WriteMask::Enabled);
+            self.gl.color_mask(
+                gl::WriteMask::Disabled,
+                gl::WriteMask::Disabled,
+                gl::WriteMask::Disabled,
+                gl::WriteMask::Disabled,
+            );
+            self.gl.disable(gl::BLEND);
+
             depth_renderer.opaque_program.update(&mut rendering_context!(self));
             depth_renderer.masked_program.update(&mut rendering_context!(self));
             if let (&ProgramName::Linked(opaque_program), &ProgramName::Linked(masked_program)) =
@@ -55,12 +67,12 @@ impl Context<'_> {
                     (
                         opaque_program,
                         resources::MaterialKind::Opaque,
-                        main_resources.depth_opaque_profiler,
+                        main_resources.profilers.depth_opaque_profiler,
                     ),
                     (
                         masked_program,
                         resources::MaterialKind::Masked,
-                        main_resources.depth_masked_profiler,
+                        main_resources.profilers.depth_masked_profiler,
                     ),
                 ]
                 .iter()
@@ -110,6 +122,9 @@ impl Context<'_> {
                 gl.unbind_vertex_array();
             }
         }
+
+        let main_resources = &mut self.main_resources_pool[params.main_resources_index];
+        assert_eq!(false, std::mem::replace(&mut main_resources.depth_available, true));
 
         self.profiling_context.stop(gl, profiler_index);
     }

@@ -23,7 +23,7 @@ layout(std140,
   float clp_to_cam_ay;
   float clp_to_cam_by;
   float clp_to_cam_az;
-  float clp_to_cam_bz;
+  float clp_to_cam_bz; // add_d_1
   float _pad2;
   float _pad3;
 }
@@ -43,7 +43,8 @@ vec3 cluster_cam_to_clp(vec3 pos_in_cam) {
   float frac_1_neg_z_cam = -1.0 / pos_in_cam.z;
   float x_cls = frac_1_neg_z_cam * (ax * pos_in_cam.x) + bx;
   float y_cls = frac_1_neg_z_cam * (ay * pos_in_cam.y) + by;
-  float z_cls = float(cluster_space.dimensions.z) - log(pos_in_cam.z * az) * bz;
+  float z = pos_in_cam.z * az;
+  float z_cls = float(cluster_space.dimensions.z) - (z < 0.0 ? (-1.0/0.0) : (log(z) * bz));
 #elif CLUSTERING_PROJECTION == CLUSTERING_PROJECTION_ORTHOGRAPHIC
   float x_cls = ax * pos_in_cam.x + bx;
   float y_cls = ay * pos_in_cam.y + by;

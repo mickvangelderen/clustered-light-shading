@@ -143,8 +143,8 @@ void main() {
 
 #if defined(PROFILING_TIME_SENSITIVE)
 #if !PROFILING_TIME_SENSITIVE
-    // NOTE: 32*8 should be the layout of light_count_hist.comp.
-    compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_HIST].work_group_x = ceiled_div_u32(active_cluster_count, 32*8);
+    // NOTE: 256 should be the layout of light_count_hist.comp.
+    compute_commands[COMPUTE_COMMAND_INDEX_ACTIVE_CLUSTER_HIST].work_group_x = ceiled_div_u32(active_cluster_count, 256);
     profiling_cluster_buffer.active_cluster_count = active_cluster_count;
 #endif
 #else

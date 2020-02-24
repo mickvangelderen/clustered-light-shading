@@ -1,31 +1,7 @@
 use crate::camera;
 use crate::profiling::ProfilingConfiguration;
+use cgmath::*;
 use std::path::PathBuf;
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
-pub struct Vector3<T> {
-    pub x: T,
-    pub y: T,
-    pub z: T,
-}
-
-impl<T> Vector3<T> {
-    pub fn to_array(self) -> [T; 3] {
-        [self.x, self.y, self.z]
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
-pub struct Vector2<T> {
-    pub x: T,
-    pub y: T,
-}
-
-impl<T> Vector2<T> {
-    pub fn to_array(self) -> [T; 2] {
-        [self.x, self.y]
-    }
-}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, PartialEq)]
 pub struct Attenuation {
@@ -43,6 +19,7 @@ impl Attenuation {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct Configuration {
     pub global: GlobalConfiguration,
+    pub mirror: MirrorConfiguration,
     pub light: LightConfiguration,
     pub rain: RainConfiguration,
     pub window: crate::WindowConfiguration,
@@ -90,32 +67,86 @@ pub struct ReplayConfiguration {
     pub path: PathBuf,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusterVisualisation {
+    ClusterIndices,
+    LightCountHeatmap,
+    LightCountVolumetric,
+    FragmentCountHeatmap,
+    FragmentCountVolumetric,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ClusterVisualisationMode {
+    Disabled,
+    Enabled,
+    DebugOnly,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GlobalConfiguration {
-    pub diffuse_srgb: bool,
     pub mode: ApplicationMode,
     pub scene_path: PathBuf,
     pub sample_count: u32,
+    pub display_parameters: bool,
+    pub cluster_visualisation: ClusterVisualisation,
+    pub cluster_visualisation_mode: ClusterVisualisationMode,
+    pub cluster_visualisation_max_lights: u32,
+    pub cluster_visualisation_max_fragments: u32,
+    pub cluster_visualisation_visible_only: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct MirrorConfiguration {
+    pub enabled: bool,
+    pub vertices: [Point3<f64>; 3],
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LightConfiguration {
-    pub display: bool,
+    pub render_points: bool,
+    pub render_volumes: bool,
+    pub volume_opacity: f32,
+    pub virtual_light_count: u32,
+    pub static_lights: bool,
+    pub head_light: bool,
     pub attenuation: Attenuation,
+    pub shadows: LightShadowsConfiguration,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct LightShadowsConfiguration {
+    pub enabled: bool,
+    pub dimensions: Vector2<u32>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct RainConfiguration {
-    pub max_count: u32,
-    pub bounds_min: Vector3<f64>,
-    pub bounds_max: Vector3<f64>,
+    pub max_count: usize,
+    pub bounds_min: Point3<f32>,
+    pub bounds_max: Point3<f32>,
+    pub drag: f32,
+    pub gravity: f32,
+    pub attraction_count: usize,
+    pub attraction_strength: f32,
+    pub attraction_epsilon: f32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum VirtualStereoShow {
+    Left,
+    Right,
+    Both,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct VirtualStereoConfiguration {
     pub enabled: bool,
-    pub pitch_deg: f32,
-    pub yaw_deg: f32,
+    pub show: VirtualStereoShow,
+    pub l_mat: [[f64; 4]; 4],
+    pub l_tan: [f64; 4],
+    pub r_mat: [[f64; 4]; 4],
+    pub r_tan: [f64; 4],
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
@@ -148,8 +179,10 @@ pub struct ClusteredLightShadingConfiguration {
     pub fragment_counting_strategy: FragmentCountingStrategy,
     pub projection: ClusteringProjection,
     pub grouping: ClusteringGrouping,
-    pub perspective_pixels: Vector2<u32>,
     pub orthographic_sides: Vector3<f64>,
+    pub perspective_pixels: Vector2<u32>,
+    pub perspective_align: bool,
+    pub perspective_displacement: f64,
     pub max_clusters: u32,
     pub max_active_clusters: u32,
     pub max_light_indices: u32,
