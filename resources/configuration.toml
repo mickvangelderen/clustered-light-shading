@@ -14,19 +14,19 @@ sample_count = 0
 # sample_count = 8
 # sample_count = 16
 
-display_parameters = false
+display_parameters = true
 
-cluster_visualisation_mode = "Disabled"
+# cluster_visualisation_mode = "Disabled"
 # cluster_visualisation_mode = "Enabled"
-# cluster_visualisation_mode = "DebugOnly"
+cluster_visualisation_mode = "DebugOnly"
 
-cluster_visualisation = "ClusterIndices"
+# cluster_visualisation = "ClusterIndices"
 # cluster_visualisation = "LightCountHeatmap"
-# cluster_visualisation = "LightCountVolumetric"
+cluster_visualisation = "LightCountVolumetric"
 # cluster_visualisation = "FragmentCountHeatmap"
 # cluster_visualisation = "FragmentCountVolumetric"
 
-cluster_visualisation_max_lights = 25
+cluster_visualisation_max_lights = 100
 cluster_visualisation_max_fragments = 2000
 
 # cluster_visualisation_visible_only = false
@@ -41,12 +41,12 @@ vertices = [
 ]
 
 [light]
-render_points = false
-render_volumes = true
-volume_opacity = 0.1
+render_points = true
+render_volumes = false
+volume_opacity = 0.10
 virtual_light_count = 0
 static_lights = true
-head_light = true
+head_light = false
 
 [light.shadows]
 enabled = false
@@ -54,16 +54,16 @@ dimensions = { x = 1024, y = 1024 }
 
 [light.attenuation]
 r0 = 0.01
-i = 8.00
-i0 = 0.25
+i = 4.00
+i0 = 0.2
 
 [rain]
-max_count = 0
+max_count = 1000
 bounds_min = { x = -60.0, y = -20.0, z = -60.0 }
 bounds_max = { x = +80.0, y = +60.0, z = +60.0 }
 drag = 0.99
 gravity = -0.04
-attraction_count = 8
+attraction_count = 1
 attraction_strength = 1.5
 attraction_epsilon = 5.0
 
@@ -76,7 +76,7 @@ path = "recording.bin"
 
 [profiling]
 # name = "not_auto_generated"
-display = false
+display = true
 record_events = true
 record_frames = false
 hide = [
@@ -89,8 +89,8 @@ vsync = false
 srgb = true
 rgb_bits = 24
 alpha_bits = 8
-width = 1280
-height = 720
+width = 1600
+height = 900
 
 [gl]
 framebuffer_srgb = true
@@ -99,8 +99,8 @@ framebuffer_srgb = true
 fragment_counting_strategy = "Depth"
 # fragment_counting_strategy = "Geometry"
 
-# projection = "Orthographic"
-projection = "Perspective"
+projection = "Orthographic"
+# projection = "Perspective"
 
 # grouping = "Individual"
 grouping = "Enclosed"
@@ -119,7 +119,7 @@ orthographic_sides = { x = 4.0, y = 4.0, z = 4.0 }
 # perspective_pixels = { x = 48, y = 48 }
 perspective_pixels = { x = 64, y = 64 }
 perspective_align = true
-perspective_displacement = 32.0
+perspective_displacement = 0.0
 
 max_clusters = 16777216 # 2^24 u32 64MB (count_fragments turns active_cluster_ids)
 max_active_clusters = 1048576 # 2^20 u32 4MB * (cluster index, light counts, light offsets)
@@ -130,27 +130,41 @@ enabled = false
 # show = "Left"
 # show = "Right"
 show = "Both"
+# l_mat = [
+#   [1.0, 0.0, 0.0, 0.0],
+#   [0.0, 1.0, 0.0, 0.0],
+#   [0.0, 0.0, 1.0, 0.0],
+#   [-0.0307, 0.0, 0.015, 1.0],
+# ]
+# l_tan = [ -1.3896277, 1.2424954, -1.4736392, 1.4612536 ]
+# r_mat = [
+#   [1.0, 0.0, 0.0, 0.0],
+#   [0.0, 1.0, 0.0, 0.0],
+#   [0.0, 0.0, 1.0, 0.0],
+#   [0.0307, 0.0, 0.015, 1.0],
+# ]
+# r_tan = [ -1.2475655, 1.3957016, -1.473202, 1.4637187 ]
 l_mat = [
   [1.0, 0.0, 0.0, 0.0],
   [0.0, 1.0, 0.0, 0.0],
   [0.0, 0.0, 1.0, 0.0],
-  [-0.0307, 0.0, 0.015, 1.0],
+  [-2.0307, 0.0, 0.015, 1.0],
 ]
-l_tan = [ -1.3896277, 1.2424954, -1.4736392, 1.4612536 ]
+l_tan = [ -1.3, 1.3, -1.47, 1.47 ]
 r_mat = [
   [1.0, 0.0, 0.0, 0.0],
   [0.0, 1.0, 0.0, 0.0],
   [0.0, 0.0, 1.0, 0.0],
-  [0.0307, 0.0, 0.015, 1.0],
+  [2.0307, 0.0, 0.015, 1.0],
 ]
-r_tan = [ -1.2475655, 1.3957016, -1.473202, 1.4637187 ]
+r_tan = [ -1.3, 1.3, -1.47, 1.47 ]
 
 [camera]
 maximum_smoothness = 0.80
 
 [main_camera]
 near = 0.4
-far = 50.0
+far = 80.0
 positional_velocity = 8.0
 angular_velocity = 0.4
 zoom_velocity = 0.5
