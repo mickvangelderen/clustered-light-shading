@@ -37,7 +37,7 @@ class ProfilingData:
 
             self.deltas = np.subtract(self.stamps[:, :, :, [1, 3]], self.stamps[:, :, :, [0, 2]])
 
-            cluster_buffer_u32_size = 4+32*3
+            cluster_buffer_u32_size = 256*4
 
             self.cluster_buffers = np.reshape(
                 np.fromfile(f, dtype='uint32', count = self.frame_count*self.cluster_buffer_count*cluster_buffer_u32_size),

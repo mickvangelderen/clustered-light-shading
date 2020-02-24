@@ -14,18 +14,32 @@ impl<T> Default for Pool<T> {
 }
 
 impl<T> Pool<T> {
-    pub fn next(&mut self, create: impl FnOnce() -> T) -> usize {
+    pub fn next(&mut self) -> Option<usize> {
+        let index = self.used;
+        if index < self.items.len() {
+            self.used += 1;
+            Some(index)
+        } else {
+            None
+        }
+    }
+
+    pub fn push(&mut self, item: T) -> usize {
+        // Ensure we only push when we've used up all unused items.
+        assert_eq!(self.used, self.items.len());
+
         let index = self.used;
         self.used += 1;
-        if index >= self.items.len() {
-            assert_eq!(index, self.items.len());
-            self.items.push(create());
-        }
+        self.items.push(item);
         index
     }
 
     pub fn reset(&mut self) {
         self.used = 0;
+    }
+
+    pub fn len(&self) -> usize {
+        self.used
     }
 
     pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, T> {

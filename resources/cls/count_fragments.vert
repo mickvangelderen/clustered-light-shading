@@ -13,8 +13,6 @@ layout(location = VS_INSTANCE_INDEX_LOC) in uint vs_instance_index;
 
 invariant gl_Position;
 
-out vec3 fs_pos_in_clu_cam;
-
 void main() {
   InstanceMatrices m = instance_matrices_buffer[vs_instance_index];
 
@@ -24,6 +22,4 @@ void main() {
 #if BASIC_PASS == BASIC_PASS_MASKED || BASIC_PASS == BASIC_PASS_TRANSPARENT
   fs_pos_in_tex = vec2(vs_pos_in_tex.x, 1.0 - vs_pos_in_tex.y);
 #endif
-
-  fs_pos_in_clu_cam = mat4x3(m.obj_to_clu_cam) * pos_in_obj;
 }

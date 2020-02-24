@@ -46,7 +46,7 @@ glsl_defines!(fixed_header {
     },
     uniforms: {
         DEPTH_SAMPLER_LOC = 0;
-        DEPTH_DIMENSIONS_LOC = 1;
+        VIEWPORT_LOC = 1;
         REN_CLP_TO_CLU_CAM_LOC = 2;
         ITEM_COUNT_LOC = 3;
         LGT_TO_CLU_CAM_LOC = 4;
@@ -117,7 +117,7 @@ impl Context<'_> {
         // Reborrow
         let gl = &self.gl;
         let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
-        cluster_resources.recompute();
+        cluster_resources.recompute(&self.main_resources_pool);
 
         let cluster_profiler_index = self.profiling_context.start(gl, cluster_resources.profilers.cluster);
 
@@ -141,51 +141,23 @@ impl Context<'_> {
 
         // NOTE: Work around borrow checker.
         for camera_resources_index in cluster_resources.camera_resources_pool.used_index_iter() {
-            let draw_resources_index = self.resources.draw_resources_pool.next({
-                let gl = &self.gl;
-                let profiling_context = &mut self.profiling_context;
-                move || resources::DrawResources::new(gl, profiling_context)
-            });
-
-            // Reborrow.
-            let gl = &self.gl;
             let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
             let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
-            let camera_parameters = &camera_resources.parameters;
-            let draw_resources = &mut self.resources.draw_resources_pool[draw_resources_index];
+            let main_resources = &mut self.main_resources_pool[camera_resources.parameters.main_resources_index];
+            let draw_resources_index = main_resources.draw_resources_index;
 
             let camera_profiler_index = self.profiling_context.start(gl, camera_resources.profilers.camera);
 
-            draw_resources.recompute(
-                &self.gl,
-                &mut self.profiling_context,
-                camera_parameters.camera.wld_to_clp,
-                cluster_resources.computed.wld_to_clu_cam,
-                &self.resources.scene_file.instances,
-                &self.resources.materials,
-                &self.resources.scene_file.transforms,
-                &self.resources.scene_file.mesh_descriptions,
-            );
+            let ren_clp_to_clu_cam = (cluster_resources.computed.wld_to_clu_cam * main_resources.camera.clp_to_wld)
+                .cast::<f32>()
+                .unwrap();
 
-            let main_resources_index = self.main_resources_pool.next_unused(
-                gl,
-                &mut self.profiling_context,
-                camera_parameters.frame_dims,
-                self.configuration.global.sample_count,
-            );
-
-            self.clear_and_render_depth(main_resources_index, draw_resources_index);
-
-            // Reborrow.
-            let gl = &self.gl;
-            let cluster_resources = &mut self.cluster_resources_pool[cluster_resources_index];
-            let camera_resources = &mut cluster_resources.camera_resources_pool[camera_resources_index];
-
-            let camera_parameters = &camera_resources.parameters;
-            let main_resources = &mut self.main_resources_pool[main_resources_index];
+            assert_eq!(true, main_resources.depth_available);
 
             // Re-bind buffers.
             unsafe {
+                gl.bind_framebuffer(gl::FRAMEBUFFER, main_resources.framebuffer.framebuffer_name);
+
                 gl.bind_buffer_base(
                     gl::SHADER_STORAGE_BUFFER,
                     cls_renderer::CLUSTER_FRAGMENT_COUNTS_BUFFER_BINDING,
@@ -213,26 +185,16 @@ impl Context<'_> {
                             if let ProgramName::Linked(name) = program.name {
                                 gl.use_program(name);
 
-                                gl.bind_texture_unit(
-                                    0,
-                                    main_resources
-                                        .cluster_depth_texture
-                                        .unwrap_or(main_resources.depth_texture),
-                                );
-
-                                gl.uniform_2i(
-                                    cls_renderer::DEPTH_DIMENSIONS_LOC,
-                                    main_resources.dimensions.cast::<i32>().unwrap().into(),
-                                );
-
-                                let ren_clp_to_clu_cam =
-                                    cluster_resources.computed.wld_to_clu_cam * camera_parameters.camera.clp_to_wld;
+                                let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
+                                gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
 
                                 gl.uniform_matrix4f(
                                     cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
                                     gl::MajorAxis::Column,
-                                    ren_clp_to_clu_cam.cast::<f32>().unwrap().as_ref(),
+                                    ren_clp_to_clu_cam.as_ref(),
                                 );
+
+                                gl.bind_texture_unit(0, main_resources.framebuffer.depth_texture_name);
 
                                 gl.memory_barrier(
                                     gl::MemoryBarrierFlag::TEXTURE_FETCH | gl::MemoryBarrierFlag::FRAMEBUFFER,
@@ -248,8 +210,8 @@ impl Context<'_> {
                                 };
 
                                 gl.dispatch_compute(
-                                    main_resources.dimensions.x.ceiled_div(lx) as u32,
-                                    main_resources.dimensions.y.ceiled_div(ly) as u32,
+                                    main_resources.framebuffer.dimensions.x.ceiled_div(lx) as u32,
+                                    main_resources.framebuffer.dimensions.y.ceiled_div(ly) as u32,
                                     1,
                                 );
 
@@ -300,8 +262,6 @@ impl Context<'_> {
                                 {
                                     let profiler_index = self.profiling_context.start(gl, profiler);
 
-                                    gl.use_program(program);
-
                                     gl.depth_func(gl::GEQUAL);
                                     gl.depth_mask(gl::WriteMask::Disabled);
                                     gl.color_mask(
@@ -309,6 +269,17 @@ impl Context<'_> {
                                         gl::WriteMask::Disabled,
                                         gl::WriteMask::Disabled,
                                         gl::WriteMask::Disabled,
+                                    );
+
+                                    gl.use_program(program);
+
+                                    let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
+                                    gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
+
+                                    gl.uniform_matrix4f(
+                                        cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
+                                        gl::MajorAxis::Column,
+                                        ren_clp_to_clu_cam.as_ref(),
                                     );
 
                                     for (material_index, material) in self
@@ -365,7 +336,9 @@ impl Context<'_> {
                     renderer
                         .count_fragments_transparent_program
                         .update(&mut rendering_context!(self));
-                    if let &ProgramName::Linked(transparent_program) = &renderer.count_fragments_opaque_program.name {
+                    if let &ProgramName::Linked(transparent_program) =
+                        &renderer.count_fragments_transparent_program.name
+                    {
                         let draw_resources = &self.resources.draw_resources_pool[draw_resources_index];
 
                         gl.bind_buffer_base(
@@ -390,8 +363,6 @@ impl Context<'_> {
                         {
                             let profiler_index = self.profiling_context.start(gl, profiler);
 
-                            gl.use_program(program);
-
                             gl.depth_func(gl::GEQUAL);
                             gl.depth_mask(gl::WriteMask::Disabled);
                             gl.color_mask(
@@ -399,6 +370,17 @@ impl Context<'_> {
                                 gl::WriteMask::Disabled,
                                 gl::WriteMask::Disabled,
                                 gl::WriteMask::Disabled,
+                            );
+
+                            gl.use_program(program);
+
+                            let dimensions = main_resources.framebuffer.dimensions.cast::<f32>().unwrap();
+                            gl.uniform_4f(cls_renderer::VIEWPORT_LOC, [0.0, 0.0, dimensions.x, dimensions.y]);
+
+                            gl.uniform_matrix4f(
+                                cls_renderer::REN_CLP_TO_CLU_CAM_LOC,
+                                gl::MajorAxis::Column,
+                                ren_clp_to_clu_cam.as_ref(),
                             );
 
                             for (material_index, material) in self
@@ -433,10 +415,10 @@ impl Context<'_> {
                                 gl::WriteMask::Enabled,
                             );
 
+                            gl.unuse_program();
+
                             self.profiling_context.stop(gl, profiler_index);
                         }
-
-                        gl.unuse_program();
 
                         gl.unbind_vertex_array();
                     }
@@ -473,8 +455,7 @@ impl Context<'_> {
                 program.update(&mut rendering_context!(self));
                 if let ProgramName::Linked(name) = program.name {
                     gl.use_program(name);
-                    // NOTE(mickvangelderen): 32*8 is defined in the shader
-                    gl.dispatch_compute(cluster_count.ceiled_div(32 * 8), 1, 1);
+                    gl.dispatch_compute(cluster_count.ceiled_div(256), 1, 1);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
@@ -675,7 +656,6 @@ impl Context<'_> {
                         cluster_resources.compute_commands_buffer.name(),
                     );
                     gl.memory_barrier(gl::MemoryBarrierFlag::COMMAND);
-                    // NOTE: the compute command at offset 2 should be (x = active_cluster_count/(32*8), y = 1, z = 0).
                     gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 2);
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }

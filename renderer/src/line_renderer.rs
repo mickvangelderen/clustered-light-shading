@@ -44,7 +44,11 @@ impl Renderer {
             if let ProgramName::Linked(program_name) = self.program.name {
                 gl.use_program(program_name);
 
-                gl.uniform_matrix4f(OBJ_TO_CLP_LOC, gl::MajorAxis::Column, params.obj_to_clp.cast().unwrap().as_ref());
+                gl.uniform_matrix4f(
+                    OBJ_TO_CLP_LOC,
+                    gl::MajorAxis::Column,
+                    params.obj_to_clp.cast().unwrap().as_ref(),
+                );
                 gl.uniform_3f(COLOR_LOC, params.color);
 
                 gl.named_buffer_data(
@@ -59,6 +63,11 @@ impl Renderer {
                 );
 
                 gl.bind_vertex_array(self.vertex_array_name);
+
+                gl.enable(gl::DEPTH_TEST);
+                gl.depth_func(gl::GREATER);
+                gl.depth_mask(gl::WriteMask::Enabled);
+
                 gl.draw_elements(
                     gl::LINES,
                     u32::try_from(params.indices.flatten().len()).unwrap(),
@@ -82,9 +91,7 @@ impl Renderer {
             gl.vertex_array_attrib_format(
                 vertex_array_name,
                 rendering::VS_POS_IN_OBJ_LOC,
-                3,
-                gl::FLOAT,
-                false,
+                resources::F32_3,
                 field_offset!(Vertex, pos_in_obj) as u32,
             );
             gl.enable_vertex_array_attrib(vertex_array_name, rendering::VS_POS_IN_OBJ_LOC);

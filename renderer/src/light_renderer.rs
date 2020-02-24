@@ -5,7 +5,7 @@ pub struct Renderer {
 }
 
 pub struct Parameters {
-    pub main_parameters_index: usize,
+    pub main_resources_index: usize,
 }
 
 glsl_defines!(fixed_header {
@@ -37,7 +37,7 @@ impl Context<'_> {
                     light_resources.buffer_ring[self.frame_index.to_usize()].name(),
                 );
 
-                let camera = &self.main_parameters_vec[params.main_parameters_index].camera;
+                let camera = &self.main_resources_pool[params.main_resources_index].camera;
 
                 gl.bind_vertex_array(self.resources.quad_vao);
                 gl.use_program(program);
@@ -51,7 +51,7 @@ impl Context<'_> {
                     gl::MajorAxis::Column,
                     camera.cam_to_clp.cast().unwrap().as_ref(),
                 );
-                // gl.bind_texture_unit(SAMPLER_BINDING, textures[material.emissive_texture_index].name);
+
                 gl.depth_mask(gl::FALSE);
                 gl.enable(gl::BLEND);
                 gl.blend_func(gl::SRC_ALPHA, gl::ONE);

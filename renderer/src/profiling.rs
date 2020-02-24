@@ -261,7 +261,8 @@ impl Context {
                         profilers_used += 1;
                         debug_assert!(
                             samples[sample_index.to_usize()].is_none(),
-                            "{:?} is writen to more than once",
+                            "{} ({:?}) is written to more than once",
+                            self.sample_names[sample_index.to_usize()],
                             sample_index
                         );
                         let sample = context.profilers[profiler_index].read(gl).unwrap();
@@ -549,12 +550,7 @@ pub enum MeasurementEvent {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 #[repr(C)]
 pub struct ClusterBuffer {
-    active_cluster_count: u32,
-    light_indices_count: u32,
-    _pad: [u32; 2],
-    fragments_per_cluster_hist: [u32; 32],
-    lights_per_cluster_hist: [u32; 32],
-    lights_per_fragment_hist: [u32; 32],
+    data: [[u32; 32]; 32],
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]

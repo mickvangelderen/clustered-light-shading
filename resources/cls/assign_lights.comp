@@ -89,9 +89,9 @@ void main() {
   float y1 = lerp_u32_f32(idx_in_cls.y + 1, 0, dimensions.y, frustum.y0, frustum.y1);
 
   // Depths. z0 < z1 < 0
-  float d = (frustum.x1 - frustum.x0) / float(dimensions.x);
-  float z0 = frustum.z1 * pow(1.0 + d, float(dimensions.z) - float(idx_in_cls.z));
-  float z1 = frustum.z1 * pow(1.0 + d, float(dimensions.z) - float(idx_in_cls.z + 1));
+  float add_d_1 = cluster_space.clp_to_cam_bz;
+  float z0 = frustum.z1 * pow(add_d_1, float(dimensions.z) - float(idx_in_cls.z));
+  float z1 = frustum.z1 * pow(add_d_1, float(dimensions.z) - float(idx_in_cls.z + 1));
 
   // Tangent plane normals.
   vec2 nx = normalize(vec2(-1.0, -x0));
@@ -178,7 +178,10 @@ void main() {
         d += r*r;
       }
 
-      did_intersect = d <= (light.w * light.w);
+      // NOTE: We want this to fail in case of d = NaN.
+      if (light.w * light.w > d) {
+        did_intersect = true;
+      }
     }
     // NOTE: I could do its only if we're within buffer bounds but I'd rather
     // ensure that all values are written to. This would only save a few writes

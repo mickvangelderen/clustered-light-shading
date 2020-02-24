@@ -1,5 +1,6 @@
 use crate::*;
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -113,43 +114,6 @@ impl Image {
     }
 }
 
-struct BufferRing {
-    ring: [Buffer; Self::CAPACITY],
-}
-
-impl BufferRing {
-    pub const CAPACITY: usize = 3;
-
-    pub fn new(gl: &gl::Gl) -> Self {
-        Self {
-            ring: [Buffer::new(gl), Buffer::new(gl), Buffer::new(gl)],
-        }
-    }
-
-    #[allow(unused)]
-    #[inline]
-    pub fn drop(self, gl: &gl::Gl) {
-        let [a, b, c] = self.ring;
-        a.drop(gl);
-        b.drop(gl);
-        c.drop(gl);
-    }
-}
-
-impl std::ops::Index<FrameIndex> for BufferRing {
-    type Output = Buffer;
-
-    fn index(&self, index: FrameIndex) -> &Self::Output {
-        &self.ring[index.to_usize() % Self::CAPACITY]
-    }
-}
-
-impl std::ops::IndexMut<FrameIndex> for BufferRing {
-    fn index_mut(&mut self, index: FrameIndex) -> &mut Self::Output {
-        &mut self.ring[index.to_usize() % Self::CAPACITY]
-    }
-}
-
 pub struct EncoderThread {
     tx: mpsc::SyncSender<(PathBuf, Image)>,
     handle: thread::JoinHandle<()>,
@@ -161,6 +125,26 @@ impl Default for EncoderThread {
 
         let handle = thread::spawn(move || {
             for (path, image) in rx.iter() {
+                // Clone bytes and flip-y while we're at it.
+                let image = unsafe {
+                    let mut bytes = Vec::<u8>::with_capacity(image.image_byte_count());
+                    bytes.set_len(image.image_byte_count());
+
+                    let row_byte_count = image.row_byte_count() as isize;
+                    let dst = bytes.as_mut_ptr();
+                    let src = image.bytes.as_ptr();
+
+                    for y in 0..image.height as isize {
+                        std::ptr::copy_nonoverlapping(
+                            src.offset((image.height as isize - 1 - y) * row_byte_count),
+                            dst.offset(y * row_byte_count),
+                            row_byte_count as usize,
+                        );
+                    }
+
+                    Image { bytes: bytes, ..image }
+                };
+
                 let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
                 let mut encoder = image::jpeg::JPEGEncoder::new_with_quality(&mut file, 95);
                 encoder
@@ -181,49 +165,80 @@ impl EncoderThread {
     }
 }
 
+struct Transfer {
+    frame_index: FrameIndex,
+    buffer: Buffer,
+    path: PathBuf,
+}
+
 pub struct FrameDownloader {
-    buffer_ring: BufferRing,
-    last_image: Image,
+    buffers: VecDeque<Buffer>,
+    transfers: VecDeque<Transfer>,
+    next_thread_index: usize,
     thread_pool: Vec<EncoderThread>,
 }
 
 impl FrameDownloader {
-    pub fn new(gl: &gl::Gl) -> Self {
+    pub fn new() -> Self {
         Self {
-            buffer_ring: BufferRing::new(gl),
-            last_image: Default::default(),
+            buffers: Default::default(),
+            transfers: Default::default(),
+            next_thread_index: 0,
             thread_pool: std::iter::repeat_with(EncoderThread::default).take(6).collect(),
         }
     }
 
-    pub fn record_frame(
-        &mut self,
-        frames_dir: &Path,
-        gl: &gl::Gl,
-        frame_index: FrameIndex,
-        width: u32,
-        height: u32,
-        format: Format,
-    ) -> &Image {
-        let buffer = &mut self.buffer_ring[frame_index];
+    pub fn process_transfers(&mut self, gl: &gl::Gl, frame_index: FrameIndex) {
+        while let Some(transfer) = self.transfers.front() {
+            if frame_index < transfer.frame_index {
+                break;
+            }
+            let Transfer {
+                buffer,
+                path,
+                ..
+            } = self.transfers.pop_front().unwrap();
 
-        unsafe {
-            if frame_index.to_usize() >= BufferRing::CAPACITY {
-                // Read back.
-                self.last_image.width = buffer.width;
-                self.last_image.height = buffer.height;
-                self.last_image.format = buffer.format;
-
+            // Read buffer data, submit to thread.
+            unsafe {
                 let src_ptr = gl.map_named_buffer(buffer.name, gl::MapAccessFlag::READ_ONLY) as *const u8;
                 if !src_ptr.is_null() {
-                    self.last_image.bytes.resize(buffer.len(), 0u8);
-                    let dst_ptr = self.last_image.bytes.as_mut_ptr();
-                    std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, buffer.len());
+                    let mut bytes = Vec::with_capacity(buffer.len());
+                    bytes.set_len(buffer.len());
+                    std::ptr::copy_nonoverlapping(src_ptr, bytes.as_mut_ptr(), buffer.len());
+
+                    let image = Image {
+                        bytes,
+                        width: buffer.width,
+                        height: buffer.height,
+                        format: buffer.format,
+                    };
+
+                    let thread_index = self.next_thread_index;
+                    self.next_thread_index = (self.next_thread_index + 1) % self.thread_pool.len();
+                    self.thread_pool[thread_index].tx.send((path, image)).unwrap();
                 }
                 drop(src_ptr);
                 gl.unmap_named_buffer(buffer.name);
             }
 
+            // Re-use buffer.
+            self.buffers.push_back(buffer);
+        }
+    }
+
+    pub fn record_frame(
+        &mut self,
+        gl: &gl::Gl,
+        frame_index: FrameIndex,
+        path: PathBuf,
+        width: u32,
+        height: u32,
+        format: Format,
+    ) {
+        let mut buffer = self.buffers.pop_front().unwrap_or_else(|| Buffer::new(gl));
+
+        unsafe {
             // Record.
             buffer.resize(gl, width, height, format);
             if buffer.len() > 0 {
@@ -245,46 +260,17 @@ impl FrameDownloader {
             }
         }
 
-        if frame_index.to_usize() >= BufferRing::CAPACITY {
-            let image_frame_index = frame_index.to_usize() - BufferRing::CAPACITY;
-
-            let path = frames_dir.join(&format!("{}.jpg", image_frame_index));
-
-            // Clone bytes and flip-y while we're at it.
-            let image = unsafe {
-                let mut bytes = Vec::<u8>::with_capacity(self.last_image.image_byte_count());
-                bytes.set_len(self.last_image.image_byte_count());
-
-                let row_byte_count = self.last_image.row_byte_count() as isize;
-                let dst = bytes.as_mut_ptr();
-                let src = self.last_image.bytes.as_ptr();
-
-                for y in 0..self.last_image.height as isize {
-                    std::ptr::copy_nonoverlapping(
-                        src.offset((self.last_image.height as isize - 1 - y) * row_byte_count),
-                        dst.offset(y * row_byte_count),
-                        row_byte_count as usize,
-                    );
-                }
-
-                Image {
-                    bytes: bytes,
-                    width: self.last_image.width,
-                    height: self.last_image.height,
-                    format: self.last_image.format,
-                }
-            };
-
-            let thread_index = image_frame_index % self.thread_pool.len();
-            self.thread_pool[thread_index].tx.send((path, image)).unwrap();
-        }
-
-        &self.last_image
+        self.transfers.push_back(Transfer {
+            frame_index: FrameIndex::from_usize(frame_index.to_usize() + 3),
+            buffer,
+            path,
+        });
     }
 }
 
 impl Drop for FrameDownloader {
     fn drop(&mut self) {
+        // FIXME: Drop buffers and frames!
         for thread in self.thread_pool.drain(..) {
             thread.join().unwrap();
         }

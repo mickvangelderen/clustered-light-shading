@@ -62,7 +62,7 @@ impl ClusterSpaceCoefficients {
     }
 
     #[inline]
-    pub fn perspective(frustum: &Frustum<f64>, dimensions: Vector3<f64>, d_per_c: f64) -> Self {
+    pub fn perspective(frustum: &Frustum<f64>, dimensions: Vector3<f64>) -> Self {
         let (ax, bx) = lic(frustum.x0, frustum.x1, 0.0, dimensions.x);
         let (ay, by) = lic(frustum.y0, frustum.y1, 0.0, dimensions.y);
         // // Linear.
@@ -75,7 +75,10 @@ impl ClusterSpaceCoefficients {
         // };
 
         // Geometric: z_clp = Z - ln(z_cam / fz1) / ln(1.0 + d)
-        let (az, bz) = ((1.0 / frustum.z1), 1.0 / (1.0 + d_per_c).ln());
+        let (az, bz) = {
+            let add_d_1 = (frustum.z0 / frustum.z1).powf(1.0/dimensions.z);
+            ((1.0 / frustum.z1), 1.0 / add_d_1.ln())
+        };
 
         Self {
             ax: ax as f32,
@@ -89,7 +92,7 @@ impl ClusterSpaceCoefficients {
     }
 
     #[inline]
-    pub fn inverse_perspective(frustum: &Frustum<f64>, dimensions: Vector3<f64>, d_per_c: f64) -> Self {
+    pub fn inverse_perspective(frustum: &Frustum<f64>, dimensions: Vector3<f64>) -> Self {
         let (ax, bx) = lic(0.0, dimensions.x, frustum.x0, frustum.x1);
         let (ay, by) = lic(0.0, dimensions.y, frustum.y0, frustum.y1);
         // // Linear
@@ -99,7 +102,10 @@ impl ClusterSpaceCoefficients {
         // };
 
         // Geometric: z_cam = fz1 * (1.0 + d)^(Z - z_clp)
-        let (az, bz) = (frustum.z1, 1.0 + d_per_c);
+        let (az, bz) = {
+            let add_d_1 = (frustum.z0 / frustum.z1).powf(1.0/dimensions.z);
+            (frustum.z1, add_d_1)
+        };
 
         Self {
             ax: ax as f32,

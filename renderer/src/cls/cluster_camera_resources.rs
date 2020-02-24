@@ -29,11 +29,7 @@ impl CameraStage {
 
 #[derive(Debug)]
 pub struct ClusterCameraParameters {
-    pub draw_resources_index: usize,
-
-    pub frame_dims: Vector2<i32>,
-
-    pub camera: CameraParameters,
+    pub main_resources_index: usize,
 }
 
 pub struct ClusterCameraResources {
@@ -49,7 +45,12 @@ impl ClusterCameraResources {
         }
     }
 
-    pub fn reset(&mut self, _gl: &gl::Gl, _profiling_context: &mut ProfilingContext, parameters: ClusterCameraParameters) {
+    pub fn reset(
+        &mut self,
+        _gl: &gl::Gl,
+        _profiling_context: &mut ProfilingContext,
+        parameters: ClusterCameraParameters,
+    ) {
         self.parameters = parameters;
     }
 }

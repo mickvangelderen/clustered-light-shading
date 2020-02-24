@@ -40,6 +40,7 @@ impl ClusterStage {
 #[derive(Debug)]
 pub struct ClusterParameters {
     pub configuration: configuration::ClusteredLightShadingConfiguration,
+    pub wld_to_clu_ori: Matrix4<f64>,
     pub clu_ori_to_wld: Matrix4<f64>,
 }
 
@@ -205,7 +206,7 @@ impl ClusterResources {
         }
     }
 
-    pub fn recompute(&mut self) {
+    pub fn recompute(&mut self, main_resources_pool: &Pool<MainResources>) {
         let parameters = &self.parameters;
         let cfg = &parameters.configuration;
 
@@ -215,9 +216,8 @@ impl ClusterResources {
                 let corners_in_clp = RENDER_RANGE.vertices();
                 let range = Range3::<f64>::from_points({
                     self.camera_resources_pool.used_slice().iter().flat_map(|camera| {
-                        let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp * parameters.clu_ori_to_wld)
-                            .invert()
-                            .unwrap();
+                        let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                        let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * main_resources.camera.clp_to_wld;
                         corners_in_clp
                             .iter()
                             .map(move |&p| ren_clp_to_clu_ori.transform_point(p))
@@ -225,17 +225,14 @@ impl ClusterResources {
                 })
                 .unwrap();
 
-                let dimensions = range
-                    .delta()
-                    .div_element_wise(Vector3::from(cfg.orthographic_sides.to_array()))
-                    .map(f64::ceil);
+                let dimensions = range.delta().div_element_wise(cfg.orthographic_sides).map(f64::ceil);
 
                 let frustum = Frustum::from_range(&range);
 
                 ClusterComputed {
                     dimensions: dimensions.cast::<u32>().unwrap(),
                     frustum,
-                    wld_to_clu_cam: parameters.clu_ori_to_wld.invert().unwrap(),
+                    wld_to_clu_cam: parameters.wld_to_clu_ori,
                     clu_cam_to_wld: parameters.clu_ori_to_wld,
                     cam_to_clp: ClusterSpaceCoefficients::orthographic(&frustum, dimensions),
                     clp_to_cam: ClusterSpaceCoefficients::inverse_orthographic(&frustum, dimensions),
@@ -247,42 +244,50 @@ impl ClusterResources {
                 match cameras.len() {
                     1 => {
                         let camera = &cameras[0];
+                        let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
 
-                        let dims = camera.parameters.frame_dims;
-                        let f = camera.parameters.camera.frustum;
+                        cgmath::assert_relative_eq!(main_resources.camera.cam_to_wld, parameters.clu_ori_to_wld);
 
-                        let px = cfg.perspective_pixels.x;
-                        let py = cfg.perspective_pixels.y;
+                        let Displacement { origin, frustum } =
+                            Displacement::compute(cfg.perspective_displacement, main_resources.camera.frustum);
 
-                        let x_per_c = f.dx() * px as f64 / dims.x as f64;
-                        let y_per_c = f.dy() * py as f64 / dims.y as f64;
-                        let d_per_c = (x_per_c + y_per_c) * 0.5;
-                        let dimensions = Vector3::new(
-                            dims.x.ceiled_div(px as i32) as f64,
-                            dims.y.ceiled_div(py as i32) as f64,
-                            (f.z0 / f.z1).log(1.0 + d_per_c).ceil(),
-                        );
+                        let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
+                        let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
+                        let frame_dimensions = main_resources.framebuffer.dimensions.cast::<f64>().unwrap();
+
+                        let dimensions = {
+                            let dimensions =
+                                compute_perspective_dimensions(cfg, &main_resources.camera.frustum, frame_dimensions);
+                            if cfg.perspective_displacement != 0.0 {
+                                let volume = compute_perspective_volume(frustum);
+                                compute_perspective_dimensions_with_volume(frustum, volume / dimensions.product())
+                            } else {
+                                dimensions
+                            }
+                        };
 
                         // We adjust the frustum to make clusters line up nicely
                         // with pixels in the framebuffer..
-                        let frustum = Frustum {
-                            x0: f.x0,
-                            x1: f.x0 + dimensions.x * x_per_c,
-                            y0: f.y0,
-                            y1: f.y0 + dimensions.y * y_per_c,
-                            z0: f.z1 * (1.0 + d_per_c).powi(dimensions.z as i32),
-                            z1: f.z1,
+                        let frustum = {
+                            let mut frustum = frustum;
+                            if cfg.perspective_displacement == 0.0 && cfg.perspective_align {
+                                let r = dimensions
+                                    .truncate()
+                                    .mul_element_wise(cfg.perspective_pixels.cast::<f64>().unwrap())
+                                    .div_element_wise(frame_dimensions);
+                                frustum.x1 = frustum.x0 + r.x * frustum.dx();
+                                frustum.y1 = frustum.y0 + r.y * frustum.dy();
+                            }
+                            frustum
                         };
-
-                        cgmath::assert_relative_eq!(camera.parameters.camera.cam_to_wld, parameters.clu_ori_to_wld);
 
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
-                            wld_to_clu_cam: parameters.clu_ori_to_wld.invert().unwrap(),
-                            clu_cam_to_wld: parameters.clu_ori_to_wld,
-                            cam_to_clp: ClusterSpaceCoefficients::perspective(&frustum, dimensions, d_per_c),
-                            clp_to_cam: ClusterSpaceCoefficients::inverse_perspective(&frustum, dimensions, d_per_c),
+                            wld_to_clu_cam: clu_ori_to_clu_cam * parameters.wld_to_clu_ori,
+                            clu_cam_to_wld: parameters.clu_ori_to_wld * clu_cam_to_clu_ori,
+                            cam_to_clp: ClusterSpaceCoefficients::perspective(&frustum, dimensions),
+                            clp_to_cam: ClusterSpaceCoefficients::inverse_perspective(&frustum, dimensions),
                         }
                     }
                     2 => {
@@ -294,10 +299,8 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp
-                                    * parameters.clu_ori_to_wld)
-                                    .invert()
-                                    .unwrap();
+                                let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                                let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * main_resources.camera.clp_to_wld;
                                 far_pos_in_clp
                                     .iter()
                                     .map(move |&pos_in_clp| ren_clp_to_clu_ori.transform_point(pos_in_clp))
@@ -309,10 +312,8 @@ impl ClusterResources {
                             .used_slice()
                             .iter()
                             .flat_map(|camera| {
-                                let ren_clp_to_clu_ori = (camera.parameters.camera.wld_to_clp
-                                    * parameters.clu_ori_to_wld)
-                                    .invert()
-                                    .unwrap();
+                                let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                                let ren_clp_to_clu_ori = parameters.wld_to_clu_ori * main_resources.camera.clp_to_wld;
                                 near_pos_in_clp
                                     .iter()
                                     .map(move |&pos_in_clp| ren_clp_to_clu_ori.transform_point(pos_in_clp))
@@ -445,133 +446,90 @@ impl ClusterResources {
 
                         let p_max = planes.iter().max_by(|a, b| a.z.partial_cmp(&b.z).unwrap()).unwrap();
 
-                        let mut x0 = None;
-                        let mut x1 = None;
-                        let mut y0 = None;
-                        let mut y1 = None;
-                        let mut z0 = None;
-                        let mut z1 = None;
+                        let frustum = {
+                            let mut x0 = std::f64::INFINITY;
+                            let mut x1 = -std::f64::INFINITY;
+                            let mut y0 = std::f64::INFINITY;
+                            let mut y1 = -std::f64::INFINITY;
+                            let mut z0 = std::f64::INFINITY;
+                            let mut z1 = -std::f64::INFINITY;
 
-                        let origin = Point3::new(0.0, 0.0, p_max.z);
-                        for &p in far_pos_in_clu_ori.iter().chain(near_pos_in_clu_ori.iter()) {
-                            if match z0 {
-                                Some(z0) => p.z < z0,
-                                None => true,
-                            } {
-                                z0 = Some(p.z);
-                            }
-
-                            if match z1 {
-                                Some(z1) => p.z > z1,
-                                None => true,
-                            } {
-                                z1 = Some(p.z)
+                            fn min(a: f64, b: f64) -> f64 {
+                                if a < b {
+                                    a
+                                } else {
+                                    b
+                                }
                             }
 
-                            let o_to_p = p - origin;
-                            let mut all_nx = true;
-                            let mut all_px = true;
-                            let mut all_ny = true;
-                            let mut all_py = true;
-                            for &q in far_pos_in_clu_ori.iter().chain(near_pos_in_clu_ori.iter()) {
-                                let o_to_q = q - origin;
-                                let sign_x = take_xz(o_to_p).perp_dot(take_xz(o_to_q));
-                                if sign_x > 0.0 {
-                                    all_nx = false;
-                                }
-                                if sign_x < 0.0 {
-                                    all_px = false;
-                                }
-                                let sign_y = take_yz(o_to_p).perp_dot(take_yz(o_to_q));
-                                if sign_y > 0.0 {
-                                    all_ny = false;
-                                }
-                                if sign_y < 0.0 {
-                                    all_py = false;
+                            fn max(a: f64, b: f64) -> f64 {
+                                if a > b {
+                                    a
+                                } else {
+                                    b
                                 }
                             }
-                            if all_nx {
-                                x0 = Some(o_to_p.x / o_to_p.z);
+
+                            // NOTE: We know that from the new origin,
+                            // all points should be enclosed if we take
+                            // the min an max tangents.
+                            for &p in far_pos_in_clu_ori.iter().chain(near_pos_in_clu_ori.iter()) {
+                                let frac_1_z = 1.0 / (p_max.z - p.z);
+
+                                let x = p.x * frac_1_z;
+                                x0 = min(x0, x);
+                                x1 = max(x1, x);
+
+                                let y = p.y * frac_1_z;
+                                y0 = min(y0, y);
+                                y1 = max(y1, y);
+
+                                let z = p.z - p_max.z;
+                                z0 = min(z0, z);
+                                z1 = max(z1, z);
                             }
-                            if all_px {
-                                x1 = Some(o_to_p.x / o_to_p.z);
-                            }
-                            if all_ny {
-                                y0 = Some(o_to_p.y / o_to_p.z);
-                            }
-                            if all_py {
-                                y1 = Some(o_to_p.y / o_to_p.z);
-                            }
-                        }
+
+                            Frustum { x0, x1, y0, y1, z0, z1 }
+                        };
+
+                        let Displacement { origin, frustum } =
+                            Displacement::compute(cfg.perspective_displacement, frustum);
+
+                        let origin = origin
+                            + Vector3 {
+                                x: 0.0,
+                                y: 0.0,
+                                z: p_max.z,
+                            };
 
                         let clu_cam_to_clu_ori = Matrix4::from_translation(origin - Point3::origin());
+                        let clu_ori_to_clu_cam = Matrix4::from_translation(Point3::origin() - origin);
 
-                        let f = Frustum {
-                            x0: x0.unwrap(),
-                            x1: x1.unwrap(),
-                            y0: y0.unwrap(),
-                            y1: y1.unwrap(),
-                            z0: z0.unwrap() - origin.z,
-                            z1: z1.unwrap() - origin.z,
-                        };
+                        let cluster_volume = self
+                            .camera_resources_pool
+                            .used_slice()
+                            .iter()
+                            .map(|camera| {
+                                let main_resources = &main_resources_pool[camera.parameters.main_resources_index];
+                                let dimensions = compute_perspective_dimensions(
+                                    cfg,
+                                    &main_resources.camera.frustum,
+                                    main_resources.framebuffer.dimensions.cast::<f64>().unwrap(),
+                                );
+                                let volume = compute_perspective_volume(main_resources.camera.frustum);
+                                volume / dimensions.product()
+                            })
+                            .sum::<f64>()
+                            / self.camera_resources_pool.used_slice().len() as f64;
 
-                        let avg_x_per_c = {
-                            let sum: f64 = self
-                                .camera_resources_pool
-                                .used_slice()
-                                .iter()
-                                .map(|camera| {
-                                    let d = &camera.parameters.frame_dims;
-                                    let f = &camera.parameters.camera.frustum;
-                                    f.dx() / d.x as f64
-                                })
-                                .sum();
-                            sum / self.camera_resources_pool.used_slice().len() as f64
-                        } * cfg.perspective_pixels.x as f64;
-
-                        let avg_y_per_c = {
-                            let sum: f64 = self
-                                .camera_resources_pool
-                                .used_slice()
-                                .iter()
-                                .map(|camera| {
-                                    let d = &camera.parameters.frame_dims;
-                                    let f = &camera.parameters.camera.frustum;
-                                    f.dy() / d.y as f64
-                                })
-                                .sum();
-                            sum / self.camera_resources_pool.used_slice().len() as f64
-                        } * cfg.perspective_pixels.y as f64;
-
-                        let cls_x = (f.dx() / avg_x_per_c).ceil();
-                        let cls_y = (f.dy() / avg_y_per_c).ceil();
-
-                        let x_per_c = f.dx() / cls_x;
-                        let y_per_c = f.dy() / cls_y;
-                        let d_per_c = (x_per_c + y_per_c) * 0.5;
-
-                        let cls_z = (f.z0 / f.z1).log(1.0 + d_per_c).ceil();
-
-                        let dimensions = Vector3::new(cls_x, cls_y, cls_z);
-
-                        let frustum = Frustum {
-                            x0: f.x0,
-                            x1: f.x0 + cls_x * x_per_c,
-                            y0: f.y0,
-                            y1: f.y0 + cls_y * y_per_c,
-                            z0: f.z1 * (1.0 + d_per_c).powi(cls_z as i32),
-                            z1: f.z1,
-                        };
-
-                        let clu_cam_to_wld = parameters.clu_ori_to_wld * clu_cam_to_clu_ori;
-
+                        let dimensions = compute_perspective_dimensions_with_volume(frustum, cluster_volume);
                         ClusterComputed {
                             dimensions: dimensions.cast::<u32>().unwrap(),
                             frustum,
-                            wld_to_clu_cam: clu_cam_to_wld.invert().unwrap(),
-                            clu_cam_to_wld,
-                            cam_to_clp: ClusterSpaceCoefficients::perspective(&frustum, dimensions, d_per_c),
-                            clp_to_cam: ClusterSpaceCoefficients::inverse_perspective(&frustum, dimensions, d_per_c),
+                            wld_to_clu_cam: clu_ori_to_clu_cam * parameters.wld_to_clu_ori,
+                            clu_cam_to_wld: parameters.clu_ori_to_wld * clu_cam_to_clu_ori,
+                            cam_to_clp: ClusterSpaceCoefficients::perspective(&frustum, dimensions),
+                            clp_to_cam: ClusterSpaceCoefficients::inverse_perspective(&frustum, dimensions),
                         }
                     }
                     _ => {
@@ -607,4 +565,86 @@ impl_frame_pool! {
     ClusterResourcesIndex,
     ClusterResourcesIndexIter,
     (gl: &gl::Gl, profiling_context: &mut ProfilingContext, parameters: ClusterParameters),
+}
+
+struct Displacement {
+    origin: Point3<f64>,
+    frustum: Frustum<f64>,
+}
+
+impl Displacement {
+    #[inline]
+    fn compute(d: f64, f: Frustum<f64>) -> Self {
+        let origin = {
+            let neg_frac_d_2 = d * (-0.5);
+            Point3 {
+                x: (f.x0 + f.x1) * neg_frac_d_2,
+                y: (f.y0 + f.y1) * neg_frac_d_2,
+                z: d,
+            }
+        };
+
+        let frustum = {
+            let frac_1_sub_z0_d = 1.0 / (f.z0 - d);
+            Frustum {
+                x0: (f.z0 * f.x0 + origin.x) * frac_1_sub_z0_d,
+                x1: (f.z0 * f.x1 + origin.x) * frac_1_sub_z0_d,
+                y0: (f.z0 * f.y0 + origin.y) * frac_1_sub_z0_d,
+                y1: (f.z0 * f.y1 + origin.y) * frac_1_sub_z0_d,
+                z0: f.z0 - d,
+                z1: f.z1 - d,
+            }
+        };
+
+        Self { origin, frustum }
+    }
+}
+
+fn compute_perspective_dimensions(
+    cfg: &configuration::ClusteredLightShadingConfiguration,
+    frustum: &Frustum<f64>,
+    dimensions: Vector2<f64>,
+) -> Vector3<f64> {
+    let pixels_per_cluster = cfg.perspective_pixels.cast::<f64>().unwrap();
+    let Vector2 { x, y } = dimensions.div_element_wise(pixels_per_cluster);
+    let d = (frustum.dx() / x + frustum.dy() / y) * 0.5;
+    let z = (frustum.z0 / frustum.z1).log(1.0 + d);
+    Vector3 { x, y, z }.map(f64::ceil)
+}
+
+fn compute_perspective_volume(frustum: Frustum<f64>) -> f64 {
+    frustum.dx() * frustum.dy() * (frustum.z1.powi(3) - frustum.z0.powi(3)) / 3.0
+}
+
+fn compute_perspective_dimensions_with_volume(frustum: Frustum<f64>, cluster_volume: f64) -> Vector3<f64> {
+    let Frustum { x0, x1, y0, y1, z0, z1 } = frustum;
+    // Solve
+    // 1. d = dx/X = dy/Y,
+    // 2. Z = ln(z0/z1)/ln(1 + d),
+    // 3. X*Y*Z = frustum_volume/cluster_volume.
+
+    let a = (3.0 * cluster_volume * (z0 / z1).ln()) / (z1.powi(3) - z0.powi(3));
+
+    // Approximate d with newton rhapson.
+
+    fn val(d: f64) -> f64 {
+        d * d * d.ln_1p()
+    }
+
+    fn der(d: f64) -> f64 {
+        d * (d / (1.0 + d) + 2.0 * d.ln_1p())
+    }
+
+    let d = (0..8).into_iter().fold(a.cbrt(), |d, _| d - (val(d) - a) / der(d));
+
+    if (val(d) - a).abs() >= 0.0000001 {
+        panic!("Failed to compute d.");
+    }
+
+    Vector3 {
+        x: (x1 - x0) / d,
+        y: (y1 - y0) / d,
+        z: (z0 / z1).ln() / d.ln_1p(),
+    }
+    .map(f64::ceil)
 }
