@@ -7,6 +7,7 @@ import toml
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as matplotlib
+from mpl_toolkits.axes_grid1 import AxesGrid
 from profile_samples import ProfileSamples
 import thesis
 
@@ -96,9 +97,9 @@ class ClusteringProjectionOrthographic(ClusteringProjection):
 
     def short_name(self):
         if self.x == self.y and self.y == self.z:
-            return "ortho {}".format(self.x)
+            return r"\texttt{{Ortho}} {}".format(self.x)
         else:
-            return "ortho {}x{}x{}".format(self.x, self.y, self.z)
+            return r"\texttt{{Ortho}} {}x{}x{}".format(self.x, self.y, self.z)
 
     def color_name(self):
         return "Blues"
@@ -121,8 +122,7 @@ class ClusteringProjectionPerspective(ClusteringProjection):
 
     def short_name(self):
         dimensions_string = "{}".format(self.x) if self.x == self.y else "{}x{}".format(self.x, self.y)
-        displacement_string = "" if self.displacement == 0.0 else "{:.0f}".format(self.displacement)
-        return "persp {} {}".format(dimensions_string, displacement_string)
+        return r"\texttt{{Persp}} {}".format(dimensions_string) if self.displacement == 0.0 else r"\texttt{{Displ}} {} {:.0f}".format(dimensions_string, self.displacement)
 
     def color_name(self):
         return "Oranges" if self.displacement == 0.0 else "Greens"
@@ -164,8 +164,8 @@ scenes = [
 ]
 
 tuned_projections = [
-    ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
     ClusteringProjectionPerspective(64, 64, 0.0),
+    ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
     ClusteringProjectionPerspective(64, 64, 32.0),
 ]
 
@@ -177,26 +177,42 @@ sample_tuples = [
 
 def generate_tune_plots(profiles):
     projection_map = {
-        "ortho": [ClusteringProjectionOrthographic(side, side, side) for side in [1.0, 2.0, 4.0, 8.0, 16.0]],
         "persp": [ClusteringProjectionPerspective(side, side, 0.0) for side in [16, 32, 64, 96, 128]],
-        "persp_displ": [ClusteringProjectionOrthographic(4.0, 4.0, 4.0)] + [ClusteringProjectionPerspective(64, 64, displacement) for displacement in [0.0, 1.0, 4.0, 32.0, 256.0]],
+        "ortho": [ClusteringProjectionOrthographic(side, side, side) for side in [1.0, 2.0, 4.0, 8.0, 16.0]],
+        "displ": [ClusteringProjectionPerspective(64, 64, displacement) for displacement in [1.0, 4.0, 32.0, 256.0]],
+        "tuned": [
+            ClusteringProjectionPerspective(64, 64, 0.0),
+            ClusteringProjectionOrthographic(4.0, 4.0, 4.0),
+            ClusteringProjectionPerspective(64, 64, 32.0),
+        ]
     }
+
+    sample_label_funcs = [
+        ("Visible Clusters", lambda samples: samples.sum_visible_clusters()),
+        ("Clustering (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/cluster")),
+        ("Lighting Computations", lambda samples: samples.sum_shading_operations()),
+        ("Shading Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/basic")),
+        ("Total Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame")),
+        # ("Total Light Indices", lambda samples: samples.sum_light_indices()),
+    ]
 
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     for (scene_name, scene_path) in scenes:
         for projection_group, projection_list in projection_map.items():
-            figsize = (thesis.textwidth, thesis.textwidth *2/3)
-            fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+            row_count = len(sample_label_funcs)
+            col_count = len(lightings)
+            figsize = (thesis.textwidth, thesis.textwidth * row_count/col_count * 2/3)
+            fig, axes = plt.subplots(row_count, col_count, sharex = 'col', squeeze=False, figsize=figsize, dpi = thesis.dpi,
                 gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 1.5, 0.3)
             )
 
-            for row, (sample_label, sample_path) in enumerate(sample_tuples):
+            for row, (sample_label, sample_func) in enumerate(sample_label_funcs):
                 for col, lighting in enumerate(lightings):
                     ax = axes[row, col]
 
                     if row == 0:
-                        ax.set_title("{} lights (r1 = {:.2f})".format(
+                        ax.set_title("{} lights ($R_1 = {:.2f}$)".format(
                             lighting.count,
                             lighting.attenuation.r1
                         ))
@@ -221,7 +237,7 @@ def generate_tune_plots(profiles):
                             and projection == ClusteringProjection.from_configuration(profile.configuration)
                             and lighting == Lighting.from_configuration(profile.configuration)
                         ])
-                        samples = profile.samples.min_gpu_samples_by_name(sample_path)
+                        samples = sample_func(profile.samples)
 
                         color_name = projection.color_name()
                         cmap_counts[color_name] += 1
@@ -351,86 +367,32 @@ def generate_stackplots(profiles):
 
             fig.savefig('../../thesis/media/stack_clustering_{}.pdf'.format(scene_name), format='pdf')
 
-def generate_ortho_vs_persp_plots(profiles):
-    lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
-
-    why_dont_i_have_scopes000 = [
-        ("Total Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame")),
-        ("Shading Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/basic")),
-        ("Shading Operations", lambda samples: samples.sum_shading_operations()),
-        ("Clustering (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/cluster")),
-        ("Visible Clusters", lambda samples: samples.sum_visible_clusters()),
-        ("Light Indices", lambda samples: samples.sum_light_indices()),
-    ]
-
-    for (scene_name, scene_path) in scenes:
-        row_count = len(why_dont_i_have_scopes000)
-        col_count = len(lightings)
-        figsize = (thesis.textwidth, thesis.textwidth * row_count/col_count * 2/3)
-        fig, axes = plt.subplots(
-            row_count, col_count, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
-            gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
-        )
-
-        for row, (sample_label, sample_func) in enumerate(why_dont_i_have_scopes000):
-            for col, lighting in enumerate(lightings):
-                ax = axes[row, col]
-
-                if row == 0:
-                    ax.set_title("{} lights (r1 = {:.2f})".format(
-                        lighting.count,
-                        lighting.attenuation.r1
-                    ))
-
-                if row + 1 == row_count:
-                    ax.set_xlabel("frame")
-                else:
-                    ax.tick_params(axis='x',bottom=False)
-
-                if col == 0:
-                    ax.set_ylabel("{}".format(sample_label))
-                else:
-                    ax.tick_params(axis='y',left=False)
-
-                for projection in tuned_projections:
-                    profile = single([profile for profile in profiles
-                        if profile.configuration["global"]["scene_path"] == scene_path
-                        and lighting == Lighting.from_configuration(profile.configuration)
-                        and projection == ClusteringProjection.from_configuration(profile.configuration)
-                    ])
-
-                    samples = sample_func(profile.samples)
-                    ax.plot(samples, label=projection.short_name())
-                    ax.set_xlim(0, len(samples) - 1)
-
-                if row == 0 and col == 0:
-                    ax.legend(loc = 'upper left')
-
-        fig.align_ylabels(axes)
-
-        fig.savefig('../../thesis/media/ortho_vs_persp_{}.pdf'.format(scene_name), format='pdf')
-
 def generate_indi_vs_encl(profiles):
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
-    sample_labels = [
-        "Shading Operations",
-        "Visible Clusters",
-        "Light Indices",
+    sample_label_funcs = [
+        ("Visible Clusters", lambda samples: samples.sum_visible_clusters()),
+        ("Clustering (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/cluster")),
+        ("Lighting Computations", lambda samples: samples.sum_shading_operations()),
+        ("Shading Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/basic")),
+        ("Total Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame")),
+        # ("Total Light Indices", lambda samples: samples.sum_light_indices()),
     ]
 
     for (scene_name, scene_path) in scenes:
-        figsize = (thesis.textwidth, thesis.textwidth * 2/3)
-        fig, axes = plt.subplots(len(sample_tuples), len(lightings), sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+        col_count = len(lightings)
+        row_count = len(sample_label_funcs)
+        figsize = (thesis.textwidth, thesis.textwidth * row_count/col_count * 2/3)
+        fig, axes = plt.subplots(row_count, col_count, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
             gridspec_kw = gridspec_box(0.6, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
         )
 
-        for row, sample_label in enumerate(sample_labels):
+        for row, (sample_label, sample_func) in enumerate(sample_label_funcs):
             for col, lighting in enumerate(lightings):
                 ax = axes[row, col]
 
                 if row == 0:
-                    ax.set_title("{} lights (r1 = {:.2f})".format(
+                    ax.set_title("{} lights ($R_1 = {:.2f}$)".format(
                         lighting.count,
                         lighting.attenuation.r1
                     ))
@@ -457,12 +419,7 @@ def generate_indi_vs_encl(profiles):
                                 and grouping == profile.configuration["clustered_light_shading"]["grouping"]
                         ])
 
-                        if row == 0:
-                            samples = profile.samples.sum_shading_operations()
-                        if row == 1:
-                            samples = profile.samples.sum_visible_clusters()
-                        if row == 2:
-                            samples = profile.samples.sum_light_indices()
+                        samples = sample_func(profile.samples)
 
                         ax.plot(samples, color=color_palette(color_base * 4 + color_offset), linestyle=linestyle, label="{} {}".format(grouping, projection.short_name()))
                         ax.set_xlim(0, len(samples) - 1)
@@ -478,18 +435,22 @@ def generate_heatmap(profiles):
     lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
 
     samples_array = [
-        ("Fragments per Cluster", "Total Cluster Count", "Normalized Cluster Count\n" + r"$\textrm{Bin} = \left\lfloor 8\log_2(\textrm{Fragment Count})\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,257:512]),
-        ("Lights per Cluster", "Total Cluster Count", "Normalized Cluster Count\n" + r"$\textrm{Bin} = \left\lfloor\textrm{Light Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,512:768]),
-        ("Lights per Fragment", "Total Fragment Count", "Normalized Fragment Count\n" + r"$\textrm{Bin} = \left\lfloor\textrm{Light Count}\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,768:1024]),
+        ("fragments_per_cluster", "Fragments per Cluster", "Cluster\nCount", "Total\nCluster Count", "Binned by\n" + r"$\left\lfloor 8\log_2(\textrm{Frag. Cnt.})\right\rfloor$", lambda samples: samples.cluster_buffers[:,0,257:512], 4),
+        ("lights_per_cluster", "Lights per Cluster", "Cluster\nCount", "Total\nCluster Count", "Binned by\nLight Count", lambda samples: samples.cluster_buffers[:,0,512:768], 4),
+        ("lights_per_fragment", "Lights per Fragment", "Fragment\nCount", "Total\nFragment Count", "Binned by\nLight Count", lambda samples: samples.cluster_buffers[:,0,768:1024], 20),
     ]
 
+    # https://jdhao.github.io/2017/06/11/mpl_multiplot_one_colorbar/
+
     for (scene_name, scene_path) in scenes:
-        for suptitle, sum_label, bin_label, hist_sample_func in samples_array:
-            figsize = (thesis.textwidth, thesis.textwidth * 2/4)
-            fig, axes = plt.subplots(2, 2, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
-                gridspec_kw = gridspec_box(0.8, 0.01, 0.5, 0.3, figsize[0], figsize[1], 0.0, 0.0)
+        for path_suffix, suptitle, count_label, sum_label, bin_label, hist_sample_func, base in samples_array:
+            row_count = 2
+            col_count = 3
+            figsize = (thesis.textwidth, 2/5 * thesis.textwidth)
+            fig, axes = plt.subplots(row_count, col_count, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+                gridspec_kw = gridspec_box(0.8, 0.8, 0.4, 0.2, figsize[0], figsize[1], 0.0, 0.0)
             )
-            fig.suptitle(suptitle)
+            # fig.suptitle(suptitle)
 
             ortho_profile = single([
                 profile for profile in profiles
@@ -505,55 +466,191 @@ def generate_heatmap(profiles):
                     and tuned_projections[1] == ClusteringProjection.from_configuration(profile.configuration)
             ])
 
+            displ_profile = single([
+                profile for profile in profiles
+                    if scene_path == profile.configuration["global"]["scene_path"]
+                    and lightings[2] == Lighting.from_configuration(profile.configuration)
+                    and tuned_projections[2] == ClusteringProjection.from_configuration(profile.configuration)
+            ])
+
             # Divide each frame by the sum.
-            ortho_hist = np.transpose(hist_sample_func(ortho_profile.samples))
-            ortho_fsum = np.sum(ortho_hist, axis = 0)
-            ortho_dist = ortho_hist/ortho_fsum
+            ortho_samp = np.transpose(hist_sample_func(ortho_profile.samples))
+            ortho_hist = np.floor(np.log2(ortho_samp * 2 + 1))
+            ortho_fsum = np.sum(ortho_samp, axis = 0)
+            # ortho_dist = ortho_hist/ortho_fsum
 
-            persp_hist = np.transpose(hist_sample_func(persp_profile.samples))
-            persp_fsum = np.sum(persp_hist, axis = 0)
-            persp_dist = persp_hist/persp_fsum
+            persp_samp = np.transpose(hist_sample_func(persp_profile.samples))
+            persp_hist = np.floor(np.log2(persp_samp * 2 + 1))
+            persp_fsum = np.sum(persp_samp, axis = 0)
+            # persp_dist = persp_hist/persp_fsum
 
-            vmin = np.min(np.vstack([ortho_dist, persp_dist]))
-            vmax = np.max(np.vstack([ortho_dist, persp_dist]))
+            displ_samp = np.transpose(hist_sample_func(displ_profile.samples))
+            displ_hist = np.floor(np.log2(displ_samp * 2 + 1))
+            displ_fsum = np.sum(displ_samp, axis = 0)
+            # displ_dist = displ_hist/displ_fsum
+
+            vmin = 1
+            vmax = np.max(np.vstack([ortho_samp, persp_samp, displ_samp]))
+
+            # norm = matplotlib.colors.LogNorm(vmin=vmin, vmax=vmax)
+            boundaries = [0, 1, base, base**2, base**3, base**4, base**5]
+            norm = matplotlib.colors.BoundaryNorm(boundaries=boundaries, ncolors=len(boundaries) - 1)
+            cmap = matplotlib.cm.get_cmap('viridis', len(boundaries) - 1)
 
             ax = axes[0, 0]
-            ax.imshow(ortho_dist, origin='lower', vmin=vmin, vmax=vmax, cmap='hot')
+            ax.imshow(ortho_samp, origin='lower', interpolation='nearest', norm=norm, cmap=cmap)
             ax.set_title(tuned_projections[0].short_name())
             ax.set_xlim(0, len(ortho_fsum) - 1)
             ax.set_ylabel(bin_label)
             ax.tick_params(axis='x',bottom=False)
 
             ax = axes[0, 1]
-            ax.imshow(persp_dist, origin='lower', vmin=vmin, vmax=vmax, cmap='hot')
+            ax.imshow(persp_samp, origin='lower', interpolation='nearest', norm=norm, cmap=cmap)
             ax.set_title(tuned_projections[1].short_name())
             ax.set_xlim(0, len(persp_fsum) - 1)
             ax.tick_params(axis='x',bottom=False)
             ax.tick_params(axis='y',left=False)
 
+            ax = axes[0, 2]
+            ax.imshow(displ_samp, origin='lower', interpolation='nearest', norm=norm, cmap=cmap)
+            ax.set_title(tuned_projections[2].short_name())
+            ax.set_xlim(0, len(displ_fsum) - 1)
+            ax.tick_params(axis='x',bottom=False)
+            ax.tick_params(axis='y',left=False)
+
             ax = axes[1, 0]
-            ax.plot(ortho_fsum)
+            color_palette = plt.get_cmap(tuned_projections[0].color_name(), 3)
+            ax.plot(ortho_fsum, color=color_palette(1))
             ax.set_xlabel("Frame")
             ax.set_ylabel(sum_label)
 
             ax = axes[1, 1]
-            ax.plot(persp_fsum)
+            color_palette = plt.get_cmap(tuned_projections[1].color_name(), 3)
+            ax.plot(persp_fsum, color=color_palette(1))
+            ax.set_xlabel("Frame")
+
+            ax = axes[1, 2]
+            color_palette = plt.get_cmap(tuned_projections[2].color_name(), 3)
+            ax.plot(displ_fsum, color=color_palette(1))
             ax.set_xlabel("Frame")
             ax.tick_params(axis='y',left=False)
 
             fig.align_ylabels(axes)
+
+            colorbar_ax = fig.add_axes([0.9, 0.4/figsize[1], 0.02, 1 - 0.78/figsize[1]])
+            colorbar = fig.colorbar(matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap), cax=colorbar_ax, ax=axes[0, :], format='%1i')
+            colorbar_ax.set_title(count_label)
+
+            output_path = '../../thesis/media/heatmap_{}_{}.pdf'.format(scene_name, path_suffix)
+            fig.savefig(output_path, format='pdf', dpi=thesis.dpi)
+
+def generate_indi_vs_encl_pres(profiles):
+    lightings = sorted({ Lighting.from_configuration(profile.configuration) for profile in profiles }, key = lambda x: x.count)
+
+    lightings = [lighting for lighting in lightings if lighting.count == 10000]
+
+    sample_labels = [
+        ("Total Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame")),
+        ("Shading Time (ms)", lambda samples: samples.min_gpu_samples_by_name("/frame/basic")),
+        ("Shading Operations", lambda samples: samples.sum_shading_operations()),
+        ("Clustering (ms)", lambda samples:
+                samples.min_gpu_samples_by_name("/frame/cluster"),
+        ),
+        ("Light Assignment (ms)", lambda samples:
+         np.sum(np.vstack([
+             samples.min_gpu_samples_by_name("/frame/cluster/count_lights"),
+             samples.min_gpu_samples_by_name("/frame/cluster/compact_lights"),
+             samples.min_gpu_samples_by_name("/frame/cluster/assign_lights")
+         ]), axis=0)
+        ),
+        ("Visible Clusters", lambda samples: samples.sum_visible_clusters()),
+        ("Light Indices", lambda samples: samples.sum_light_indices()),
+    ]
+
+    sample_groups = [
+        [0],
+        [1],
+        [2],
+        [1, 2],
+        [3],
+        [4],
+        [5],
+        [4, 5],
+    ]
+
+    for (scene_name, scene_path) in scenes:
+        for figure_index, sample_group in enumerate(sample_groups):
+            local_sample_labels = [sample_labels[sample_index] for sample_index in sample_group]
+
+            row_count = len(local_sample_labels)
+            col_count = len(lightings)
+            figsize = (thesis.textwidth, thesis.textwidth * col_count/row_count * 2/3)
+            fig, axes = plt.subplots(row_count, col_count, sharex = 'col', sharey = 'row', squeeze=False, figsize=figsize, dpi = thesis.dpi,
+                gridspec_kw = gridspec_box(1.5, 0.01, 1.0, 0.3, figsize[0], figsize[1], 0.0, 0.0)
+            )
+
+            for row, (sample_label, sample_func) in enumerate(local_sample_labels):
+                for col, lighting in enumerate(lightings):
+
+                    ax = axes[row, col]
+
+                    # if row == 0:
+                    #     ax.set_title("{} lights ($R_1 = {:.2f}$)".format(
+                    #         lighting.count,
+                    #         lighting.attenuation.r1
+                    #     ))
+
+                    if row + 1 == np.shape(axes)[0]:
+                        ax.set_xlabel("frame")
+                    else:
+                        ax.tick_params(axis='x',bottom=False)
+
+                    if col == 0:
+                        ax.set_ylabel(sample_label)
+                    else:
+                        ax.tick_params(axis='y',left=False)
+
+                    # color_palette = plt.get_cmap("tab20c")
+
+                    for color_base, projection in enumerate(tuned_projections[1:2]):
+                        for color_offset, (linestyle, grouping) in enumerate([ ("-", "Individual"), (":", "Enclosed") ]):
+                            profile = single([
+                                profile for profile in profiles
+                                    if scene_path == profile.configuration["global"]["scene_path"]
+                                    and lighting == Lighting.from_configuration(profile.configuration)
+                                    and projection == ClusteringProjection.from_configuration(profile.configuration)
+                                    and grouping == profile.configuration["clustered_light_shading"]["grouping"]
+                            ])
+
+                            samples = sample_func(profile.samples);
+
+                            ax.plot(samples, label="{}".format(grouping))
+                            # ax.plot(samples, color=color_palette(color_base * 4 + color_offset), linestyle=linestyle, label="{}".format(grouping))
+                            ax.set_xlim(0, len(samples) - 1)
+
+                    if row == 0 and col == 0:
+                        ax.legend(loc = 'upper left')
+
+            fig.align_ylabels(axes)
+
+            output_path = 'stereo_atemporal_{}_{}.png'.format(scene_name, figure_index)
+            fig.savefig(output_path, format='png', dpi=thesis.dpi)
+            # subprocess.run(["mogrify", "-format", "jpg", output_path])
 
 profile_dir_regex = re.compile(r"^(suntem|bistro)_\d{7}_(ortho|persp)_\d{4}(_\d+)?$");
 profiles_0 = load_profiles("../profiling", profile_dir_regex);
 
 generate_tune_plots(profiles_0)
 generate_stackplots(profiles_0)
-generate_ortho_vs_persp_plots(profiles_0)
 generate_heatmap(profiles_0)
 
 stereo_profile_dir_regex = re.compile(r"^stereo_(suntem|bistro)_\d{7}_(indi|encl)_(ortho|persp)_\d{4}$")
 stereo_profiles_0 = load_profiles("../profiling", stereo_profile_dir_regex)
 
+# for name in stereo_profiles_0[0].samples.sample_names:
+#     print(name)
+
 generate_indi_vs_encl(stereo_profiles_0)
+# generate_indi_vs_encl_pres(stereo_profiles_0)
 
 # plt.show()
