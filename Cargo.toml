@@ -8,10 +8,12 @@ members = [
     "kernel-generator",
     "fbx",
     "dds",
+    "lab",
 ]
 exclude = [
     "polygen/profiling",
 ]
+resolver = "2"
 
 [profile.dev]
 opt-level = 2
