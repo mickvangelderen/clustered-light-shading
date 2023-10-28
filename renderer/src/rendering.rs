@@ -40,7 +40,7 @@ pub const COMMON_DECLARATION: &'static str = concat!(
 );
 
 #[derive(Debug)]
-#[repr(C, align(256))]
+#[repr(C, align(32))]
 pub struct CameraBuffer {
     pub wld_to_cam: Matrix4<f32>,
     pub cam_to_wld: Matrix4<f32>,

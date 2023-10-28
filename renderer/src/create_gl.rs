@@ -17,7 +17,7 @@ pub fn create_gl(gl_window: &glutin::GlWindow, cfg: &GlConfiguration) -> gl::Gl 
         }
 
         // NOTE: This alignment is hardcoded in rendering.rs.
-        assert_eq!(256, gl.get_uniform_buffer_offset_alignment());
+        assert_eq!(32, gl.get_uniform_buffer_offset_alignment());
 
         // Reverse-Z.
         gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);
