@@ -14,8 +14,8 @@ exclude = [
 ]
 
 [profile.dev]
-opt-level = 3
+opt-level = 2
 
 [profile.test]
-opt-level = 3
+opt-level = 2
 
