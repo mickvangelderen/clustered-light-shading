@@ -1,7 +1,6 @@
+/.vscode/
+/profiling
 /target
-state.bin
 recording.bin
 samples.bin
-/profiling
-
-
+state.bin
