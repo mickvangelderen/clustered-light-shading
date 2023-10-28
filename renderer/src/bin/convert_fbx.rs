@@ -652,8 +652,8 @@ fn main() {
         // "emerald_square/End_Cap_Corner.fbx",
         // "emerald_square/Block_KWOW_Coffee.fbx",
         // "emerald_square/End_Cap.fbx",
-        // "bistro/Bistro_Interior.fbx",
-        "bistro/Bistro_Exterior.fbx",
+        // "bistro/BistroInterior.fbx",
+        "bistro/BistroExterior.fbx",
         "sun_temple/SunTemple.fbx",
     ] {
         let i = resource_dir.join(p);

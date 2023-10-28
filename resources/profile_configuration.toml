@@ -3,8 +3,8 @@
 # mode = "Record"
 mode = "Replay"
 
-scene_path = "bistro/Bistro_Exterior.bin"
-# scene_path = "bistro/Bistro_Interior.bin"
+scene_path = "bistro/BistroExterior.bin"
+# scene_path = "bistro/BistroInterior.bin"
 # scene_path = "sun_temple/SunTemple.bin"
 
 sample_count = 0

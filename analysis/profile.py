@@ -159,7 +159,7 @@ def gridspec_box(l, r, b, t, w, h, ws, hs):
     }
 
 scenes = [
-    ("bistro", "bistro/Bistro_Exterior.bin"),
+    ("bistro", "bistro/BistroExterior.bin"),
     ("suntem", "sun_temple/SunTemple.bin"),
 ]
 

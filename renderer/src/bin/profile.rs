@@ -86,7 +86,7 @@ pub fn main() {
     let scenes = [
         Scene {
             short_name: "bistro",
-            scene_path: PathBuf::from("bistro/Bistro_Exterior.bin"),
+            scene_path: PathBuf::from("bistro/BistroExterior.bin"),
             replay_path: PathBuf::from("replay_bistro.bin"),
         },
         Scene {
