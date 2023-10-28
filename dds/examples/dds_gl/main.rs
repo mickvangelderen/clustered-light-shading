@@ -7,6 +7,7 @@ extern crate dds;
 mod bmp;
 
 use gl_typed as gl;
+use glutin::event_loop::ControlFlow;
 use glutin::PossiblyCurrent;
 use std::io;
 use std::path::Path;
@@ -181,8 +182,7 @@ fn decompress_bc1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
 
     dds.layers
         .iter()
-        .enumerate()
-        .map(|(layer_index, layer)| {
+        .map(|layer| {
             let w = layer.width as usize;
             let h = layer.height as usize;
 
@@ -201,7 +201,7 @@ fn decompress_bc1(dds: &dds::File) -> Vec<Image<[u8; 3]>> {
                 )
             };
 
-            let mut pixels: Vec<[u8; 3]> = (0..(w * h)).into_iter().map(|_| [0; 3]).collect();
+            let mut pixels: Vec<[u8; 3]> = (0..(w * h)).map(|_| [0; 3]).collect();
 
             for by in 0..block_counts.1 {
                 for bx in 0..block_counts.0 {
@@ -236,8 +236,7 @@ fn decompress_bc2(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
 
     dds.layers
         .iter()
-        .enumerate()
-        .map(|(layer_index, layer)| {
+        .map(|layer| {
             let w = layer.width as usize;
             let h = layer.height as usize;
 
@@ -297,8 +296,7 @@ fn decompress_bc3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
 
     dds.layers
         .iter()
-        .enumerate()
-        .map(|(layer_index, layer)| {
+        .map(|layer| {
             let w = layer.width as usize;
             let h = layer.height as usize;
 
@@ -356,10 +354,10 @@ fn decompress_bc3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
 fn old_main() {
     env_logger::init();
 
-    let mut event_loop = glutin::EventsLoop::new();
+    let event_loop = glutin::event_loop::EventLoopBuilder::new().build();
 
-    let mut window = create_window(
-        &mut event_loop,
+    let window = create_window(
+        &event_loop,
         &WindowConfiguration {
             vsync: true,
             rgb_bits: 24,
@@ -372,7 +370,7 @@ fn old_main() {
     .unwrap();
 
     let gl = create_gl(
-        &mut window,
+        &window,
         &GlConfiguration {
             framebuffer_srgb: false,
         },
@@ -380,46 +378,48 @@ fn old_main() {
 
     let _textures = load_textures(&gl, "resources/bistro/Textures").unwrap();
 
-    let mut running = true;
+    event_loop.run(move |event, _, cf| {
+        *cf = ControlFlow::Poll;
 
-    while running {
-        event_loop.poll_events(|event| {
-            use glutin::Event;
-            match event {
-                Event::WindowEvent { event, .. } => {
-                    use glutin::WindowEvent;
-                    match event {
-                        WindowEvent::CloseRequested => running = false,
-                        // WindowEvent::HiDpiFactorChanged(val) => {
-                        //     let size = self.win_size.to_logical(self.win_dpi);
-                        //     self.win_dpi = val;
-                        //     self.win_size = size.to_physical(val);
-                        // }
-                        // WindowEvent::Focused(val) => self.focus = val,
-                        // WindowEvent::Resized(val) => {
-                        //     self.win_size = val.to_physical(self.win_dpi);
-                        // }
-                        _ => {}
+        use glutin::event::Event;
+        match event {
+            Event::WindowEvent { event, .. } => {
+                use glutin::event::WindowEvent;
+                match event {
+                    WindowEvent::CloseRequested => {
+                        *cf = ControlFlow::Exit;
                     }
+                    WindowEvent::Resized(physical_size) => {
+                        window.resize(physical_size);
+                    }
+                    _ => {}
                 }
-                // Event::DeviceEvent { event, .. } => {
-                //     use glutin::DeviceEvent;
-                //     match event {
-                //         DeviceEvent::Key(keyboard_input) => {
-                //             frame_events.push(FrameEvent::DeviceKey(keyboard_input));
-                //         }
-                //         DeviceEvent::Motion { axis, value } => {
-                //             frame_events.push(FrameEvent::DeviceMotion { axis, value });
-                //         }
-                //         _ => (),
-                //     }
-                // }
-                _ => (),
             }
-        });
+            Event::DeviceEvent { event, .. } => {
+                use glutin::event::DeviceEvent;
+                match event {
+                    DeviceEvent::Added | DeviceEvent::Removed => {
+                        println!("{event:#?}");
+                    }
+                    DeviceEvent::Key(key) => {
+                        use glutin::event::VirtualKeyCode;
+                        match key.virtual_keycode {
+                            Some(VirtualKeyCode::Escape) => {
+                                *cf = ControlFlow::Exit;
+                            }
+                            Some(_) => {}
+                            None => {}
+                        }
+                        println!("{event:#?}");
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
 
         window.swap_buffers().unwrap();
-    }
+    });
 }
 
 #[derive(Debug, Clone)]
@@ -432,15 +432,13 @@ pub struct WindowConfiguration {
     pub height: u32,
 }
 
-pub fn create_window(
-    event_loop: &mut glutin::EventsLoop,
+pub fn create_window<ET>(
+    event_loop: &glutin::event_loop::EventLoopWindowTarget<ET>,
     cfg: &WindowConfiguration,
 ) -> Result<glutin::WindowedContext<PossiblyCurrent>, glutin::CreationError> {
     // Jump through some hoops to ensure a physical size, which is
     // what I want in case I'm recording at a specific resolution.
-    let dimensions = glutin::dpi::PhysicalSize::new(f64::from(cfg.width), f64::from(cfg.height))
-        .to_logical(event_loop.get_primary_monitor().get_hidpi_factor());
-
+    let dimensions = glutin::dpi::PhysicalSize::new(f64::from(cfg.width), f64::from(cfg.height));
     let gl_window = glutin::ContextBuilder::new()
         .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
         .with_gl_profile(glutin::GlProfile::Core)
@@ -451,11 +449,11 @@ pub fn create_window(
         .with_srgb(cfg.srgb)
         .with_double_buffer(Some(true))
         .build_windowed(
-            glutin::WindowBuilder::new()
+            glutin::window::WindowBuilder::new()
                 .with_title("VR Lab - Loading...")
-                .with_dimensions(dimensions)
+                .with_inner_size(dimensions)
                 .with_maximized(false),
-            &event_loop,
+            event_loop,
         )?;
 
     Ok(unsafe { gl_window.make_current().unwrap() })

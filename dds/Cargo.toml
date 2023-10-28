@@ -11,6 +11,6 @@ belene = { git = "https://github.com/mickvangelderen/belene" }
 
 [dev-dependencies]
 gl-typed = { git = "https://github.com/mickvangelderen/gl-typed-rust", branch = "master" }
-glutin = { version = "0.21.0", features = ["serde"] }
+glutin = { version = "0.29.0", features = ["serde"] }
 log = "0.4.8"
 env_logger = "0.7.1"
