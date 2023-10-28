@@ -227,11 +227,11 @@ fn main() {
     for path in sample_paths.iter() {
         let bytes = path.as_bytes();
         let count = bytes.len() as u64;
-        file.write(&count.to_ne_bytes()).unwrap();
-        file.write(bytes).unwrap();
+        file.write_all(&count.to_ne_bytes()).unwrap();
+        file.write_all(bytes).unwrap();
         const ZEROS: [u8; 8] = [0; 8];
         if (count % 8) != 0 {
-            file.write(&ZEROS[0..(8 - (count % 8)) as usize]).unwrap();
+            file.write_all(&ZEROS[0..(8 - (count % 8)) as usize]).unwrap();
         }
     }
 

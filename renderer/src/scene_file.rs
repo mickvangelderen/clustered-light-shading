@@ -239,11 +239,11 @@ unsafe fn write_vec<T, W: std::io::Write>(vec: &Vec<T>, writer: &mut W) -> std::
 
 unsafe fn read_vec<T, R: std::io::Read>(count: usize, reader: &mut R) -> std::io::Result<Vec<T>> {
     let mut vec = Vec::<T>::with_capacity(count);
-    vec.set_len(count);
     reader.read_exact(std::slice::from_raw_parts_mut(
         vec.as_mut_ptr() as *mut u8,
         std::mem::size_of_val(&vec[..]),
     ))?;
+    vec.set_len(count);
     Ok(vec)
 }
 

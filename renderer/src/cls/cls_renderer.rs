@@ -636,7 +636,7 @@ impl Context<'_> {
                         cluster_resources.compute_commands_buffer.name(),
                     );
                     gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
-                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
+                    gl.dispatch_compute_indirect(0); // std::mem::size_of::<ComputeCommand>() * 0
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }
@@ -755,7 +755,7 @@ impl Context<'_> {
                         cluster_resources.compute_commands_buffer.name(),
                     );
                     gl.memory_barrier(gl::MemoryBarrierFlag::BUFFER_UPDATE | gl::MemoryBarrierFlag::COMMAND);
-                    gl.dispatch_compute_indirect(std::mem::size_of::<ComputeCommand>() * 0);
+                    gl.dispatch_compute_indirect(0); // std::mem::size_of::<ComputeCommand>() * 0
                     gl.memory_barrier(gl::MemoryBarrierFlag::SHADER_STORAGE);
                 }
             }

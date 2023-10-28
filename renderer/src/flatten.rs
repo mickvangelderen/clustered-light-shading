@@ -1,3 +1,5 @@
+#![warn(clippy::modulo_one)]
+
 pub trait Flatten<T> {
     fn flatten(self) -> T;
 }

@@ -128,7 +128,6 @@ impl Default for EncoderThread {
                 // Clone bytes and flip-y while we're at it.
                 let image = unsafe {
                     let mut bytes = Vec::<u8>::with_capacity(image.image_byte_count());
-                    bytes.set_len(image.image_byte_count());
 
                     let row_byte_count = image.row_byte_count() as isize;
                     let dst = bytes.as_mut_ptr();
@@ -142,7 +141,9 @@ impl Default for EncoderThread {
                         );
                     }
 
-                    Image { bytes: bytes, ..image }
+                    bytes.set_len(image.image_byte_count());
+
+                    Image { bytes, ..image }
                 };
 
                 let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
@@ -204,8 +205,8 @@ impl FrameDownloader {
                 let src_ptr = gl.map_named_buffer(buffer.name, gl::MapAccessFlag::READ_ONLY) as *const u8;
                 if !src_ptr.is_null() {
                     let mut bytes = Vec::with_capacity(buffer.len());
-                    bytes.set_len(buffer.len());
                     std::ptr::copy_nonoverlapping(src_ptr, bytes.as_mut_ptr(), buffer.len());
+                    bytes.set_len(buffer.len());
 
                     let image = Image {
                         bytes,
