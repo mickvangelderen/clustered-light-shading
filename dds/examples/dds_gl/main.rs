@@ -7,6 +7,7 @@ extern crate dds;
 mod bmp;
 
 use gl_typed as gl;
+use glutin::PossiblyCurrent;
 use std::io;
 use std::path::Path;
 
@@ -130,7 +131,7 @@ fn decompress_textures(dir_path: impl AsRef<Path>) -> io::Result<()> {
 }
 
 fn main() {
-    // old_main();
+    old_main();
     env_logger::init();
     decompress_textures("resources/bistro/Textures").unwrap();
 }
@@ -352,7 +353,6 @@ fn decompress_bc3(dds: &dds::File) -> Vec<Image<[u8; 4]>> {
         .collect()
 }
 
-#[allow(unused)]
 fn old_main() {
     env_logger::init();
 
@@ -435,32 +435,30 @@ pub struct WindowConfiguration {
 pub fn create_window(
     event_loop: &mut glutin::EventsLoop,
     cfg: &WindowConfiguration,
-) -> Result<glutin::GlWindow, glutin::CreationError> {
+) -> Result<glutin::WindowedContext<PossiblyCurrent>, glutin::CreationError> {
     // Jump through some hoops to ensure a physical size, which is
     // what I want in case I'm recording at a specific resolution.
     let dimensions = glutin::dpi::PhysicalSize::new(f64::from(cfg.width), f64::from(cfg.height))
         .to_logical(event_loop.get_primary_monitor().get_hidpi_factor());
 
-    let mut gl_window = glutin::GlWindow::new(
-        glutin::WindowBuilder::new()
-            .with_title("VR Lab - Loading...")
-            .with_dimensions(dimensions)
-            .with_maximized(false),
-        glutin::ContextBuilder::new()
-            .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
-            .with_gl_profile(glutin::GlProfile::Core)
-            .with_gl_debug_flag(cfg!(debug_assertions))
-            .with_vsync(cfg.vsync)
-            // .with_multisampling(16)
-            .with_pixel_format(cfg.rgb_bits, cfg.alpha_bits)
-            .with_srgb(cfg.srgb)
-            .with_double_buffer(Some(true)),
-        &event_loop,
-    )?;
+    let gl_window = glutin::ContextBuilder::new()
+        .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 5)))
+        .with_gl_profile(glutin::GlProfile::Core)
+        .with_gl_debug_flag(cfg!(debug_assertions))
+        .with_vsync(cfg.vsync)
+        // .with_multisampling(16)
+        .with_pixel_format(cfg.rgb_bits, cfg.alpha_bits)
+        .with_srgb(cfg.srgb)
+        .with_double_buffer(Some(true))
+        .build_windowed(
+            glutin::WindowBuilder::new()
+                .with_title("VR Lab - Loading...")
+                .with_dimensions(dimensions)
+                .with_maximized(false),
+            &event_loop,
+        )?;
 
-    unsafe { glutin::GlContext::make_current(&mut gl_window).unwrap() };
-
-    Ok(gl_window)
+    Ok(unsafe { gl_window.make_current().unwrap() })
 }
 
 #[derive(Debug, Clone)]
@@ -468,9 +466,9 @@ pub struct GlConfiguration {
     pub framebuffer_srgb: bool,
 }
 
-pub fn create_gl(gl_window: &glutin::GlWindow, cfg: &GlConfiguration) -> gl::Gl {
+pub fn create_gl(gl_window: &glutin::WindowedContext<PossiblyCurrent>, cfg: &GlConfiguration) -> gl::Gl {
     unsafe {
-        let gl = gl::Gl::load_with(|s| glutin::GlContext::get_proc_address(gl_window.context(), s) as *const _);
+        let gl = gl::Gl::load_with(|s| glutin::Context::get_proc_address(gl_window.context(), s) as *const _);
 
         println!("OpenGL version {}.", gl.get_string(gl::VERSION));
         let flags = gl.get_context_flags();
@@ -480,7 +478,7 @@ pub fn create_gl(gl_window: &glutin::GlWindow, cfg: &GlConfiguration) -> gl::Gl 
         }
 
         // NOTE: This alignment is hardcoded in rendering.rs.
-        assert_eq!(256, gl.get_uniform_buffer_offset_alignment());
+        assert_eq!(32, gl.get_uniform_buffer_offset_alignment());
 
         // Reverse-Z.
         gl.clip_control(gl::LOWER_LEFT, gl::ZERO_TO_ONE);

@@ -26,8 +26,8 @@
 // enum Compression {
 //     BITFIELDS = 0x03,
 // }
-use std::io::Write;
 use std::convert::TryFrom;
+use std::io::Write;
 
 pub fn rgba_header(width: u32, height: u32) -> [u8; 122] {
     #[rustfmt::skip]

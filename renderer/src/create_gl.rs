@@ -1,13 +1,14 @@
 use gl_typed as gl;
+use glutin::PossiblyCurrent;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct GlConfiguration {
     pub framebuffer_srgb: bool,
 }
 
-pub fn create_gl(gl_window: &glutin::GlWindow, cfg: &GlConfiguration) -> gl::Gl {
+pub fn create_gl(gl_window: &glutin::WindowedContext<PossiblyCurrent>, cfg: &GlConfiguration) -> gl::Gl {
     unsafe {
-        let gl = gl::Gl::load_with(|s| glutin::GlContext::get_proc_address(gl_window.context(), s) as *const _);
+        let gl = gl::Gl::load_with(|s| glutin::Context::get_proc_address(gl_window.context(), s) as *const _);
 
         println!("OpenGL version {}.", gl.get_string(gl::VERSION));
         let flags = gl.get_context_flags();

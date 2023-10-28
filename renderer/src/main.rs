@@ -8,6 +8,7 @@ mod macros;
 extern crate dds;
 
 pub(crate) use gl_typed as gl;
+use glutin::PossiblyCurrent;
 pub(crate) use log::*;
 pub(crate) use rand::prelude::*;
 pub(crate) use regex::{Regex, RegexBuilder};
@@ -306,7 +307,7 @@ pub struct MainContext {
     pub paths: Paths,
     pub configuration: Configuration,
     pub events_loop: glutin::EventsLoop,
-    pub gl_window: glutin::GlWindow,
+    pub gl_window: glutin::WindowedContext<PossiblyCurrent>,
     pub gl: gl::Gl,
     pub vr: Option<vr::Context>,
     pub fs_watcher: notify::RecommendedWatcher,
@@ -557,8 +558,8 @@ impl MainContext {
         let resources = resources::Resources::new(&gl, &resource_dir, &configuration);
         let frame_downloader = FrameDownloader::new();
 
-        let initial_win_dpi = gl_window.get_hidpi_factor();
-        let initial_win_size = gl_window.get_inner_size().unwrap().to_physical(initial_win_dpi);
+        let initial_win_dpi = gl_window.window().get_hidpi_factor();
+        let initial_win_size = gl_window.window().get_inner_size().unwrap().to_physical(initial_win_dpi);
 
         let light_resources = light::LightResources::new(&gl, &mut profiling_context, &configuration);
 
@@ -623,7 +624,7 @@ pub struct Context<'s> {
     pub paths: &'s Paths,
     pub configuration: Configuration,
     pub events_loop: &'s mut glutin::EventsLoop,
-    pub gl_window: &'s mut glutin::GlWindow,
+    pub gl_window: &'s mut glutin::WindowedContext<PossiblyCurrent>,
     pub gl: &'s gl::Gl,
     pub vr: &'s mut Option<vr::Context>,
     pub fs_rx: &'s mut mpsc::Receiver<notify::DebouncedEvent>,
