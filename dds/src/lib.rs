@@ -310,8 +310,8 @@ impl File {
 
         let bytes = unsafe {
             let mut bytes = Vec::<u8>::with_capacity(state.byte_offset);
-            reader.read_exact(std::slice::from_raw_parts_mut(bytes.as_mut_ptr(), bytes.capacity()))?;
-            bytes.set_len(bytes.capacity());
+            reader.read_exact(std::slice::from_raw_parts_mut(bytes.as_mut_ptr(), state.byte_offset))?;
+            bytes.set_len(state.byte_offset);
             bytes
         };
 

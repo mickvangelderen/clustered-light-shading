@@ -241,7 +241,7 @@ unsafe fn read_vec<T, R: std::io::Read>(count: usize, reader: &mut R) -> std::io
     let mut vec = Vec::<T>::with_capacity(count);
     reader.read_exact(std::slice::from_raw_parts_mut(
         vec.as_mut_ptr() as *mut u8,
-        std::mem::size_of_val(&vec[..]),
+        std::mem::size_of::<T>() * count,
     ))?;
     vec.set_len(count);
     Ok(vec)
