@@ -10,7 +10,7 @@ use num::*;
 pub use raw::*;
 
 pub const MAGIC: [u8; 21] = *b"Kaydara FBX Binary  \0";
-pub const VERSION_7300: u32le = u32le::from_ne(7300);
+pub const VERSION_7500: u32le = u32le::from_ne(7500);
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct FileHeader {
@@ -21,18 +21,9 @@ impl FileHeader {
     pub fn parse<R: io::Read>(reader: &mut R) -> io::Result<Self> {
         let header = RawFileHeader::parse(reader)?;
         assert_eq!(header.magic, MAGIC);
-        assert_eq!(
-            {
-                // NOTE: Do an unaligned read of header.version, the pass the copy
-                // to assert_eq. It takes a reference by default and reading
-                // unaligned values from references is problematic.
-                let version = header.version;
-                version
-            },
-            VERSION_7300
-        );
+        assert_eq!(header.version, VERSION_7500);
         Ok(Self {
-            version: header.version.to_ne(),
+            version: header.version.into()
         })
     }
 }
@@ -267,7 +258,7 @@ pub struct Node {
 impl Node {
     pub fn parse<R: io::Read + io::Seek>(reader: &mut R) -> io::Result<Option<Self>> {
         let header = RawNodeHeader::parse(reader)?;
-        let end_offset = header.end_offset.to_ne() as u64;
+        let end_offset = header.end_offset.to_ne();
 
         match end_offset {
             0 => Ok(None),

@@ -171,6 +171,9 @@ impl Geometry {
                                 assert!(indices.is_none());
                                 indices = Some(node.properties[0].as_i32_array_exact().to_vec());
                             }
+                            "NormalsW" => {
+                                // TODO: Figure out what this is.
+                            }
                             other => {
                                 panic!("Unexpected layer elements property {:?}", other);
                             }

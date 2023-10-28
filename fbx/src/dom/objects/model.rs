@@ -97,7 +97,7 @@ impl Model {
             String::from(&name[0..name.len() - postfix.len()])
         };
 
-        assert_eq!("Mesh", node.properties[2].as_str());
+        // assert_eq!("Mesh", node.properties[2].as_str());
 
         let mut properties = None;
 

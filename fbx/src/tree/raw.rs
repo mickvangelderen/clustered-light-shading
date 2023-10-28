@@ -66,9 +66,9 @@ impl_parse!(RawArrayHeader);
 #[derive(Debug, Copy, Clone)]
 #[repr(C, packed)]
 pub struct RawNodeHeader {
-    pub end_offset: u32le,
-    pub property_count: u32le,
-    pub properties_byte_count: u32le,
+    pub end_offset: u64le,
+    pub property_count: u64le,
+    pub properties_byte_count: u64le,
     pub name_len: u8,
 }
 

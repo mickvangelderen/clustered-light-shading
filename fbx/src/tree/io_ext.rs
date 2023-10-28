@@ -32,7 +32,7 @@ impl<R: io::Read> ReadExt for R {
         unsafe {
             let mut bytes = Vec::with_capacity(byte_count);
             self.read_exact(std::slice::from_raw_parts_mut(
-                bytes.as_mut_ptr() as *mut u8,
+                bytes.as_mut_ptr(),
                 byte_count,
             ))?;
             bytes.set_len(byte_count);
