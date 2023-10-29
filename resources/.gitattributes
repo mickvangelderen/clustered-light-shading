@@ -1,0 +1,13 @@
+*.blend binary
+*.bmp binary
+*.dds binary
+*.fbx binary
+*.fbx.* binary
+*.fnt binary
+*.hdr binary
+*.mtl binary
+*.obj binary
+*.png binary
+*.ppm binary
+*.[tT][gG][aA] binary
+*.ttf binary
