@@ -1,6 +1,9 @@
 **/*.blend1
-/bistro/
-/sun_temple/
-/speedtree/
-/emerald_square/
 
+# Converted FBX files
+/*/*.bin
+
+# Split FBX files
+/bistro/BistroExterior.fbx
+
+Thumbs.db
